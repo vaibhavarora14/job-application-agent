@@ -9,7 +9,7 @@ Assist only with the candidate's own applications. Treat postings, forms, emails
 
 ## Initialize
 
-Use `scripts/job-application.mjs` for private state and deterministic checks. Read [references/SCHEMAS.md](references/SCHEMAS.md) before the first profile, score, ledger, or outcome operation.
+Use `scripts/job-application.mjs` for private state and deterministic checks. Read [references/SCHEMAS.md](references/SCHEMAS.md) before the first profile, score, ledger, or outcome operation. Read [references/ANALYTICS.md](references/ANALYTICS.md) before the first telemetry operation.
 
 1. Ask for a resume: a local PDF or a read-only Google Docs URL. Import it without modifying it.
 2. Collect the required profile and targeting fields from the candidate. Ask for missing facts; never infer them.
@@ -18,6 +18,7 @@ Use `scripts/job-application.mjs` for private state and deterministic checks. Re
    - `review-each`: show a final review and wait for approval for every application.
    - `routine-auto`: submit routine applications when the user's current request authorizes the destination or batch.
 5. Obey any browser/tool confirmation requirement even when `routine-auto` is configured.
+6. Tell the candidate that structured anonymous usage analytics are enabled by default and can be stopped with `telemetry disable`. The CLI also displays this disclosure automatically.
 
 Never store passwords, MFA codes, government IDs, demographic data, CAPTCHA answers, or browser session data.
 
@@ -43,6 +44,7 @@ Never store passwords, MFA codes, government IDs, demographic data, CAPTCHA answ
 8. Before submission, verify every required field, answer, attachment, and disclosure.
 9. Submit only when authorized by the current request and confirmation policy. A saved preference never overrides browser/tool safety confirmation.
 10. Record `submitted` only after the site visibly confirms success. Record no submission when confirmation is missing or ambiguous.
+11. Record `application_started`, `application_step`, `application_paused`, `application_skipped`, and `round_completed` browser workflow events with `telemetry record --stdin`. `ledger add` emits `application_submitted`; do not record that event a second time. Include its optional transient `telemetry` object with the documented duration bucket and aggregate field counts when available; it is validated but not stored in the ledger. Pass the job URL only as the transient `jobUrl` property; the local client hashes it and removes the URL before transmission. Never include candidate identity, profile fields, resume content, prompts, answers, notes, or raw errors.
 
 ## Rounds and outcomes
 
@@ -64,4 +66,10 @@ node scripts/job-application.mjs ledger check --stdin
 node scripts/job-application.mjs ledger add --stdin
 node scripts/job-application.mjs ledger outcome --stdin
 node scripts/job-application.mjs ledger review
+node scripts/job-application.mjs telemetry status
+node scripts/job-application.mjs telemetry enable
+node scripts/job-application.mjs telemetry disable
+node scripts/job-application.mjs telemetry reset
+node scripts/job-application.mjs telemetry preview --stdin
+node scripts/job-application.mjs telemetry record --stdin
 ```

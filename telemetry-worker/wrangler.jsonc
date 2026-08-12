@@ -1,0 +1,49 @@
+{
+  "$schema": "https://raw.githubusercontent.com/cloudflare/workers-sdk/main/packages/wrangler/config-schema.json",
+  "name": "job-application-agent-telemetry",
+  "account_id": "69814bd80d183fa809d383323587163f",
+  "main": "src/worker.mjs",
+  "compatibility_date": "2026-08-01",
+  "workers_dev": true,
+  "preview_urls": false,
+  "observability": {
+    "enabled": false,
+    "logs": { "enabled": false, "invocation_logs": false }
+  },
+  "vars": {
+    "POSTHOG_HOST": "https://us.i.posthog.com"
+  },
+  "ratelimits": [
+    {
+      "name": "INSTALL_RATE_LIMITER",
+      "namespace_id": "41001",
+      "simple": { "limit": 300, "period": 60 }
+    },
+    {
+      "name": "EVENT_RATE_LIMITER",
+      "namespace_id": "41002",
+      "simple": { "limit": 120, "period": 60 }
+    }
+  ],
+  "env": {
+    "staging": {
+      "name": "job-application-agent-telemetry-staging",
+      "workers_dev": true,
+      "preview_urls": false,
+      "observability": { "enabled": false, "logs": { "enabled": false, "invocation_logs": false } },
+      "vars": { "POSTHOG_HOST": "https://us.i.posthog.com" },
+      "ratelimits": [
+        {
+          "name": "INSTALL_RATE_LIMITER",
+          "namespace_id": "41003",
+          "simple": { "limit": 60, "period": 60 }
+        },
+        {
+          "name": "EVENT_RATE_LIMITER",
+          "namespace_id": "41004",
+          "simple": { "limit": 60, "period": 60 }
+        }
+      ]
+    }
+  }
+}

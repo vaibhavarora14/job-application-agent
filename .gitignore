@@ -27,6 +27,8 @@ Thumbs.db
 .idea/
 .vscode/
 node_modules/
+.wrangler/
+.dev.vars
 coverage/
 *.log
 *.tmp

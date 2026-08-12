@@ -3,22 +3,125 @@
 import { createHash } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
 import { appendFile, chmod, mkdir, readFile, rename, writeFile } from 'node:fs/promises';
-import { homedir } from 'node:os';
+import { homedir, platform } from 'node:os';
 import { basename, join, resolve } from 'node:path';
+
+import { TelemetryClient } from './telemetry-client.mjs';
+import { jobIdentity } from './telemetry-schema.mjs';
 
 const KEYCHAIN_SERVICE = process.env.JOB_APPLICATION_AGENT_KEYCHAIN_SERVICE ?? 'com.openai.codex.job-application-agent';
 const KEYCHAIN_ACCOUNT = 'profile';
 const DEFAULT_STATE_DIR = join(homedir(), 'Library/Application Support/Codex/job-application-agent');
-const SOURCES = new Set(['linkedin', 'greenhouse', 'lever', 'ashby', 'workable', 'company', 'email', 'other']);
+const SOURCES = new Set(['linkedin', 'greenhouse', 'lever', 'ashby', 'workable', 'comeet', 'workday', 'rippling', 'smartrecruiters', 'google-form', 'company', 'email', 'other']);
 const ELIGIBILITY = new Set(['eligible', 'unclear', 'ineligible']);
 const APPROVALS = new Set(['APPROVE SUBMIT', 'STANDING AUTHORIZATION']);
 const MODES = new Set(['review-each', 'routine-auto']);
+const TELEMETRY_DURATIONS = new Set(['under-1s', '1-5s', '5-30s', '30-60s', '1-2m', '2-5m', '5-15m', '15m-plus']);
 const REQUIRED_PROFILE = ['name', 'email', 'phone', 'location', 'workAuthorization', 'roleFamilies', 'seniority', 'targetLocations', 'workModes', 'submissionMode'];
 const STRING_PROFILE_FIELDS = new Set(['name', 'email', 'phone', 'location', 'workAuthorization', 'linkedin', 'github', 'portfolio', 'availability', 'currentCompensation', 'targetCompensation', 'submissionMode']);
 const ARRAY_PROFILE_FIELDS = new Set(['roleFamilies', 'seniority', 'skills', 'targetLocations', 'excludedLocations', 'workModes', 'industries', 'excludedCompanies']);
 
 function stateDir() {
   return process.env.JOB_APPLICATION_AGENT_STATE_DIR || DEFAULT_STATE_DIR;
+}
+
+export function durationBucket(milliseconds) {
+  if (milliseconds < 1_000) return 'under-1s';
+  if (milliseconds < 5_000) return '1-5s';
+  if (milliseconds < 30_000) return '5-30s';
+  if (milliseconds < 60_000) return '30-60s';
+  if (milliseconds < 120_000) return '1-2m';
+  if (milliseconds < 300_000) return '2-5m';
+  if (milliseconds < 900_000) return '5-15m';
+  return '15m-plus';
+}
+
+export function commandCategory([area, action]) {
+  if (area === 'profile' && action === 'set') return 'onboard';
+  if (area === 'profile') return 'profile';
+  if (area === 'resume') return 'resume';
+  if (area === 'score') return 'assess';
+  if (area === 'ledger' && action === 'add') return 'apply';
+  if (area === 'ledger' && action === 'outcome') return 'outcome';
+  if (area === 'ledger' && action === 'review') return 'review';
+  if (area === 'ledger') return 'apply';
+  if (area === 'telemetry') return 'telemetry';
+  return 'other';
+}
+
+function telemetryStage(command) {
+  return ({ search: 'discovery', assess: 'assessment', apply: 'submission', outcome: 'outcome', review: 'review', resume: 'resume', profile: 'contact', onboard: 'contact' })[command] ?? 'application';
+}
+
+function telemetryErrorCode(error) {
+  const message = String(error?.message ?? '');
+  if (/keychain|authentication|login/i.test(message)) return 'authentication_required';
+  if (/network|fetch|http/i.test(message)) return 'network_failure';
+  if (/invalid|must|required|expected|unsupported/i.test(message)) return 'invalid_input';
+  return 'internal_error';
+}
+
+function sourceToAts(source) {
+  return SOURCES.has(source) ? source : 'other';
+}
+
+function assessmentTags(result) {
+  const matches = [];
+  const gaps = [];
+  for (const reason of result.reasons ?? []) {
+    if (/^Role family:/i.test(reason)) matches.push('role_family');
+    else if (/^Seniority:/i.test(reason)) matches.push('seniority');
+    else if (/^Skills:/i.test(reason)) matches.push('skills');
+    else if (/^Industry:/i.test(reason)) matches.push('industry');
+    else if (/Remote-compatible/i.test(reason)) matches.push('remote');
+    else if (/Target location:/i.test(reason)) matches.push('location');
+  }
+  for (const gap of result.gaps ?? []) {
+    if (/role family/i.test(gap)) gaps.push('role_family');
+    else if (/seniority/i.test(gap)) gaps.push('seniority');
+    else if (/skill/i.test(gap)) gaps.push('skills');
+    else if (/location|work mode/i.test(gap)) gaps.push('location');
+    else if (/eligibility|authorization/i.test(gap)) gaps.push('authorization_unclear');
+    else gaps.push('other');
+  }
+  return { matchTags: [...new Set(matches)], gapTags: [...new Set(gaps)] };
+}
+
+export async function telemetryJobAssessed(job, result) {
+  if (!job.url) return null;
+  const identity = await jobIdentity(job.url);
+  return {
+    event: 'job_assessed',
+    properties: {
+      ...identity,
+      company: job.company,
+      title: job.title,
+      ats: sourceToAts(String(job.source).toLowerCase()),
+      fitScore: result.score,
+      eligibility: String(job.eligibility).toLowerCase(),
+      decision: result.decision,
+      ...assessmentTags(result),
+    },
+  };
+}
+
+async function telemetryApplicationSubmitted(entry, details = {}) {
+  const identity = await jobIdentity(entry.url);
+  const answers = Object.keys(entry.answers ?? {});
+  return {
+    event: 'application_submitted',
+    properties: {
+      ...identity,
+      company: entry.company,
+      title: entry.role,
+      ats: sourceToAts(entry.source),
+      durationBucket: details.durationBucket ?? 'under-1s',
+      fieldsFilled: details.fieldsFilled ?? answers.length,
+      shortAnswerCount: details.shortAnswerCount ?? answers.filter((key) => !/resume|attachment/i.test(key)).length,
+      resumeUploaded: details.resumeUploaded ?? answers.some((key) => /resume|attachment/i.test(key)),
+      approvalMode: entry.approval === 'STANDING AUTHORIZATION' ? 'routine-auto' : 'review-each',
+    },
+  };
 }
 
 function object(value, label) {
@@ -149,8 +252,21 @@ export function validateLedgerEntry(input) {
   return normalized;
 }
 
+export function validateSubmissionTelemetry(input) {
+  if (input == null) return {};
+  const value = object(input, 'entry.telemetry');
+  const allowed = new Set(['durationBucket', 'fieldsFilled', 'shortAnswerCount', 'resumeUploaded']);
+  for (const key of Object.keys(value)) if (!allowed.has(key)) throw new Error(`Unknown entry.telemetry property: ${key}.`);
+  if (value.durationBucket != null && !TELEMETRY_DURATIONS.has(value.durationBucket)) throw new Error('entry.telemetry.durationBucket is invalid.');
+  for (const [key, max] of [['fieldsFilled', 500], ['shortAnswerCount', 100]]) {
+    if (value[key] != null && (!Number.isInteger(value[key]) || value[key] < 0 || value[key] > max)) throw new Error(`entry.telemetry.${key} must be an integer from 0 to ${max}.`);
+  }
+  if (value.resumeUploaded != null && typeof value.resumeUploaded !== 'boolean') throw new Error('entry.telemetry.resumeUploaded must be a Boolean.');
+  return Object.fromEntries(Object.entries(value).filter(([, item]) => item != null));
+}
+
 export function buildReview(entries) {
-  const submissions = entries.filter((entry) => entry.status === 'submitted' && !Number.isNaN(Date.parse(entry.submittedAt)));
+  const submissions = entries.filter((entry) => !Number.isNaN(Date.parse(entry.submittedAt)));
   const outcomes = entries.filter((entry) => ['interview', 'rejected', 'offer', 'withdrawn'].includes(entry.status));
   return {
     reviewDue: submissions.length > 0 && submissions.length % 10 === 0,
@@ -202,9 +318,9 @@ async function jsonLines(file) {
   }
 }
 
-async function profileSet() {
+async function profileSet(profileInput) {
   if (process.platform !== 'darwin') throw new Error('Secure profile storage currently requires macOS Keychain.');
-  const profile = validateProfile(await jsonStdin());
+  const profile = validateProfile(profileInput);
   const raw = JSON.stringify(profile);
   try {
     execFileSync('security', ['add-generic-password', '-a', KEYCHAIN_ACCOUNT, '-s', KEYCHAIN_SERVICE, '-U', '-w', raw], { stdio: ['ignore', 'pipe', 'pipe'] });
@@ -251,8 +367,8 @@ async function ledgerCheck(candidate) {
   return { duplicate: Boolean(match), match: match ? { id: match.id, company: match.company, role: match.role, submittedAt: match.submittedAt } : null };
 }
 
-async function ledgerAdd() {
-  const entry = validateLedgerEntry(await jsonStdin());
+async function ledgerAdd(entryInput) {
+  const entry = validateLedgerEntry(entryInput);
   const dir = await ensureStateDir();
   const file = join(dir, 'applications.ndjson');
   const entries = await jsonLines(file);
@@ -263,15 +379,18 @@ async function ledgerAdd() {
   return { recorded: entry.id, review: buildReview([...entries, entry]) };
 }
 
-async function ledgerOutcome() {
-  const input = object(await jsonStdin(), 'outcome');
+async function ledgerOutcome(outcomeInput) {
+  const input = object(outcomeInput, 'outcome');
   const status = string(input.status, 'outcome.status', 40).toLowerCase();
   if (!['interview', 'rejected', 'offer', 'withdrawn'].includes(status)) throw new Error('Invalid outcome status.');
-  const event = { id: string(input.id, 'outcome.id', 180), status, occurredAt: input.occurredAt ?? new Date().toISOString(), note: typeof input.note === 'string' ? input.note.slice(0, 2000) : undefined };
+  const occurredAt = string(input.occurredAt ?? new Date().toISOString(), 'outcome.occurredAt', 80);
+  if (Number.isNaN(Date.parse(occurredAt))) throw new Error('outcome.occurredAt must be an ISO date.');
+  const event = { id: string(input.id, 'outcome.id', 180), status, occurredAt, note: typeof input.note === 'string' ? input.note.slice(0, 2000) : undefined };
   const file = join(await ensureStateDir(), 'outcomes.ndjson');
   await appendFile(file, `${JSON.stringify(event)}\n`, { mode: 0o600 });
   await chmod(file, 0o600);
-  return { recordedOutcome: event.id, status };
+  const applications = await jsonLines(join(await ensureStateDir(), 'applications.ndjson'));
+  return { result: { recordedOutcome: event.id, status }, application: applications.find((entry) => entry.id === event.id) ?? null, occurredAt: event.occurredAt };
 }
 
 async function ledgerReview() {
@@ -286,26 +405,115 @@ function print(value) {
   process.stdout.write(`${JSON.stringify(value, null, 2)}\n`);
 }
 
-async function main([area, action, value]) {
-  if (area === 'profile' && action === 'set' && value === '--stdin') return print(await profileSet());
-  if (area === 'profile' && action === 'check') {
+async function outcomeTelemetry(application, outcome, occurredAt) {
+  if (!application) return null;
+  const identity = await jobIdentity(application.url);
+  return {
+    event: 'outcome_recorded',
+    properties: {
+      ...identity,
+      company: application.company,
+      title: application.role,
+      ats: sourceToAts(application.source),
+      outcome,
+      daysSinceSubmission: Math.max(0, Math.min(3650, Math.floor((Date.parse(occurredAt) - Date.parse(application.submittedAt)) / 86_400_000))),
+    },
+  };
+}
+
+function reviewTelemetry(review) {
+  return {
+    event: 'review_generated',
+    properties: {
+      submissionCount: review.submittedTotal,
+      interviewCount: review.outcomeCounts.interview,
+      rejectionCount: review.outcomeCounts.rejected,
+      offerCount: review.outcomeCounts.offer,
+      withdrawalCount: review.outcomeCounts.withdrawn,
+      reviewDue: review.reviewDue,
+    },
+  };
+}
+
+async function executeCommand([area, action, value], telemetry, session) {
+  const domainEvents = [];
+  let result;
+  if (area === 'profile' && action === 'set' && value === '--stdin') {
+    const profile = await jsonStdin();
+    result = await profileSet(profile);
+  } else if (area === 'profile' && action === 'check') {
     const profile = keychainProfile();
-    return print({ configured: true, required: REQUIRED_PROFILE, fields: Object.keys(profile).sort() });
-  }
-  if (area === 'profile' && action === 'field' && value) {
+    result = { configured: true, required: REQUIRED_PROFILE, fields: Object.keys(profile).sort() };
+  } else if (area === 'profile' && action === 'field' && value) {
     if (![...STRING_PROFILE_FIELDS, ...ARRAY_PROFILE_FIELDS].includes(value)) throw new Error('Profile field is not allowed.');
-    return print({ [value]: keychainProfile()[value] ?? null });
-  }
-  if (area === 'resume' && action === 'import' && value) return print(await importResume(value));
-  if (area === 'score' && action === '--stdin') {
+    result = { [value]: keychainProfile()[value] ?? null };
+  } else if (area === 'resume' && action === 'import' && value) result = await importResume(value);
+  else if (area === 'score' && action === '--stdin') {
     const job = await jsonStdin();
-    return print(scoreJob(job, job.target ?? keychainProfile()));
+    result = scoreJob(job, job.target ?? keychainProfile());
+    const event = await telemetryJobAssessed(job, result);
+    if (event) domainEvents.push(event);
+  } else if (area === 'ledger' && action === 'check' && value === '--stdin') result = await ledgerCheck(await jsonStdin());
+  else if (area === 'ledger' && action === 'add' && value === '--stdin') {
+    const input = await jsonStdin();
+    const telemetryDetails = validateSubmissionTelemetry(input.telemetry);
+    const entry = validateLedgerEntry(input);
+    result = await ledgerAdd(entry);
+    domainEvents.push(await telemetryApplicationSubmitted(entry, telemetryDetails));
+  } else if (area === 'ledger' && action === 'outcome' && value === '--stdin') {
+    const outcome = await ledgerOutcome(await jsonStdin());
+    result = outcome.result;
+    const event = await outcomeTelemetry(outcome.application, outcome.result.status, outcome.occurredAt);
+    if (event) domainEvents.push(event);
+  } else if (area === 'ledger' && action === 'review') {
+    result = await ledgerReview();
+    domainEvents.push(reviewTelemetry(result));
+  } else throw new Error('Usage: profile set --stdin|check|field <name>; resume import <url-or-pdf>; score --stdin; ledger check|add|outcome --stdin; ledger review; telemetry status|enable|disable|reset|preview --stdin|record --stdin');
+  for (const event of domainEvents) await telemetry.record(event, session);
+  return result;
+}
+
+async function recordInstallationStart(telemetry, session) {
+  if (!session.installationEventPending) return;
+  let submissionMode = 'unconfigured';
+  try { submissionMode = keychainProfile().submissionMode; } catch {}
+  await telemetry.record({
+    event: 'installation_started',
+    properties: {
+      osFamily: ({ darwin: 'macos', linux: 'linux', win32: 'windows' })[platform()] ?? 'other',
+      nodeMajor: Number(process.versions.node.split('.')[0]),
+      submissionMode,
+    },
+  }, session);
+}
+
+async function main(args) {
+  const [area, action, value] = args;
+  const telemetry = new TelemetryClient({ stateDir: stateDir() });
+  if (area === 'telemetry') {
+    if (['status', 'enable', 'disable', 'reset'].includes(action) && value == null) return print(await telemetry.configure(action));
+    if (action === 'preview' && value === '--stdin') return print(await telemetry.preview(await jsonStdin()));
+    if (action === 'record' && value === '--stdin') {
+      const session = await telemetry.beginCommand('telemetry');
+      await recordInstallationStart(telemetry, session);
+      return print(await telemetry.record(await jsonStdin(), session, { strict: true }));
+    }
+    throw new Error('Usage: telemetry status|enable|disable|reset|preview --stdin|record --stdin');
   }
-  if (area === 'ledger' && action === 'check' && value === '--stdin') return print(await ledgerCheck(await jsonStdin()));
-  if (area === 'ledger' && action === 'add' && value === '--stdin') return print(await ledgerAdd());
-  if (area === 'ledger' && action === 'outcome' && value === '--stdin') return print(await ledgerOutcome());
-  if (area === 'ledger' && action === 'review') return print(await ledgerReview());
-  throw new Error('Usage: profile set --stdin|check|field <name>; resume import <url-or-pdf>; score --stdin; ledger check|add|outcome --stdin; ledger review');
+
+  const command = commandCategory(args);
+  const session = await telemetry.beginCommand(command);
+  await recordInstallationStart(telemetry, session);
+  const started = Date.now();
+  try {
+    const result = await executeCommand(args, telemetry, session);
+    await telemetry.record({ event: 'command_completed', properties: { command, result: 'success', durationBucket: durationBucket(Date.now() - started) } }, session);
+    return print(result);
+  } catch (error) {
+    await telemetry.record({ event: 'skill_error', properties: { errorCode: telemetryErrorCode(error), stage: telemetryStage(command), recoverable: true } }, session);
+    await telemetry.record({ event: 'command_completed', properties: { command, result: 'error', durationBucket: durationBucket(Date.now() - started) } }, session);
+    throw error;
+  }
 }
 
 if (import.meta.url === `file://${process.argv[1]}`) {

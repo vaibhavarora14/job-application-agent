@@ -1,0 +1,37 @@
+name: Test telemetry staging
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  staging:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment: telemetry-staging
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: npm run check && npm test && npm run privacy-audit
+      - name: Deploy staging Worker
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          workingDirectory: telemetry-worker
+          command: deploy --env staging --keep-vars
+          secrets: |
+            SIGNING_SECRET
+            POSTHOG_PROJECT_TOKEN
+        env:
+          SIGNING_SECRET: ${{ secrets.TELEMETRY_STAGING_SIGNING_SECRET }}
+          POSTHOG_PROJECT_TOKEN: ${{ secrets.POSTHOG_STAGING_PROJECT_TOKEN }}
+      - name: Run staging contract test
+        run: node telemetry-worker/tests/e2e-staging.mjs
+        env:
+          TELEMETRY_STAGING_URL: https://job-application-agent-telemetry-staging.varora1406.workers.dev

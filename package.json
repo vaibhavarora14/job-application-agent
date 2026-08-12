@@ -1,0 +1,14 @@
+{
+  "name": "job-application-agent",
+  "version": "1.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node --test job-application-agent/tests/*.test.mjs telemetry-worker/tests/*.test.mjs",
+    "privacy-audit": "node --test job-application-agent/tests/privacy-audit.test.mjs",
+    "check": "node --check job-application-agent/scripts/job-application.mjs && node --check job-application-agent/scripts/telemetry-client.mjs && node --check job-application-agent/scripts/telemetry-schema.mjs && node --check telemetry-worker/src/worker.mjs"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
