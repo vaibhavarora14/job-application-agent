@@ -1,0 +1,52 @@
+name: Validate
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install skill validator dependency
+        run: python -m pip install --disable-pip-version-check PyYAML
+
+      - name: Validate skill structure
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import re
+          import yaml
+
+          path = Path("job-application-agent/SKILL.md")
+          text = path.read_text(encoding="utf-8")
+          match = re.match(r"^---\n(.*?)\n---\n", text, re.S)
+          assert match, "SKILL.md must start with YAML frontmatter"
+          data = yaml.safe_load(match.group(1))
+          assert set(data) == {"name", "description"}, "Frontmatter must contain only name and description"
+          assert data["name"] == "job-application-agent", "Skill name must match its directory"
+          assert isinstance(data["description"], str) and data["description"].strip(), "Description is required"
+          print("Skill is valid!")
+          PY
+
+      - name: Run tests
+        run: node --test job-application-agent/tests/job-application.test.mjs

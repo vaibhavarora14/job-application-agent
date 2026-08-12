@@ -1,44 +1,144 @@
-# Job Application Agent for Codex
+<div align="center">
 
-A reusable, candidate-agnostic Codex skill for discovering, validating, completing, and tracking a person's own job applications.
+# 💼 Job Application Agent
 
-## Install
+### A privacy-first Codex skill for a more disciplined job search
 
-Copy the `job-application-agent` directory into your Codex skills directory:
+[![Validate](https://github.com/vaibhavarora14/job-application-agent/actions/workflows/validate.yml/badge.svg)](https://github.com/vaibhavarora14/job-application-agent/actions/workflows/validate.yml)
+[![MIT License](https://img.shields.io/badge/license-MIT-2563EB.svg)](LICENSE)
+[![Codex Skill](https://img.shields.io/badge/Codex-skill-111827)](job-application-agent/SKILL.md)
+[![Node 20+](https://img.shields.io/badge/Node.js-20%2B-339933?logo=nodedotjs&logoColor=white)](https://nodejs.org/)
+
+**Discover better roles · Apply with verified facts · Keep private data local · Learn from outcomes**
+
+[Quick start](#-quick-start) · [How it works](#-how-it-works) · [Safety](#-safety-by-design) · [Privacy](#-privacy-model) · [Security](SECURITY.md)
+
+</div>
+
+---
+
+Job Application Agent helps Codex discover, qualify, complete, and track your own job applications—without inventing credentials or hiding consequential decisions. It combines browser-assisted form filling with a verified résumé, candidate-defined targeting, secure local profile storage, duplicate detection, and an application ledger.
+
+> [!IMPORTANT]
+> You stay in control. The agent pauses for authentication, CAPTCHA, legal attestations, demographic questions, unclear eligibility, sensitive identifiers, and unverifiable claims.
+
+## ✨ What it does
+
+| 🔎 Discover | 🎯 Qualify | 📝 Apply |
+|---|---|---|
+| Finds active roles on direct career pages and major ATS platforms. | Scores seniority, skills, location, eligibility, work mode, and compensation. | Fills forms using only verified profile and résumé facts. |
+| Resolves social and aggregator leads to direct employer pages. | Skips closed, duplicated, ineligible, and weak-fit opportunities. | Uploads one canonical résumé and drafts truthful short answers. |
+
+| 🔐 Protect | 📚 Track | 📈 Improve |
+|---|---|---|
+| Keeps profile data in macOS Keychain and browser auth in the browser. | Records only visibly confirmed submissions in a private local ledger. | Reviews results every ten applications and proposes targeting changes. |
+| Stops at sensitive or judgment-heavy steps. | Captures interviews, rejections, offers, and withdrawals. | Never changes preferences or instructions without your approval. |
+
+## 🛡️ Safety by design
+
+The skill deliberately pauses for decisions or actions that should stay with you:
+
+- passwords, SSO, MFA, and CAPTCHA;
+- demographic and voluntary self-identification questions;
+- legal attestations and government identifiers;
+- unclear work authorization, sponsorship, location, or compensation;
+- claims that cannot be verified from your profile or résumé.
+
+It never reads browser cookies or session files, and it records an application as submitted only after the destination shows a clear success confirmation.
+
+## 🚀 Quick start
+
+### 1. Install the skill
 
 ```sh
-cp -R job-application-agent ~/.codex/skills/
+git clone https://github.com/vaibhavarora14/job-application-agent.git
+mkdir -p ~/.codex/skills
+cp -R job-application-agent/job-application-agent ~/.codex/skills/
 ```
 
-Restart Codex, then start with:
+Restart Codex so it discovers the skill.
+
+### 2. Onboard your profile
+
+Start a new Codex task with:
 
 ```text
 Use $job-application-agent to onboard my resume and job-search preferences.
 ```
 
-If you do not want to install a skill, paste the contents of `SHARE_PROMPT.md` into a new task.
+Codex will ask for your canonical résumé and missing application facts. You choose one of two submission modes:
 
-## Privacy and safety
+- `review-each` — inspect every completed application before submission.
+- `routine-auto` — allow routine submissions within a destination or batch you explicitly authorize; safety pauses still apply.
 
-- The package contains no candidate data or resume.
-- Profiles are stored in macOS Keychain.
-- The canonical resume and application ledger use owner-only local permissions.
-- Passwords, MFA, CAPTCHA, demographic data, legal attestations, and government identifiers are never stored or automated.
-- Forms are submitted only when authorized and visibly confirmed.
+### 3. Use natural commands
 
-## Requirements
+```text
+search jobs
+apply https://company.example/jobs/123
+apply all relevant jobs from this thread: <URL>
+run a round of 10
+record outcome Company — Senior Engineer — interview
+```
+
+## 🧭 How it works
+
+```mermaid
+flowchart LR
+    A["Verified résumé + profile"] --> B["Discover direct roles"]
+    B --> C["Validate activity and eligibility"]
+    C --> D["Score and deduplicate"]
+    D --> E["Fill truthful application"]
+    E --> F{"Manual action needed?"}
+    F -- Yes --> G["Pause for candidate"]
+    F -- No --> H["Validate and submit"]
+    G --> H
+    H --> I["Confirm success and update ledger"]
+```
+
+The bundled script provides deterministic profile validation, résumé import, scoring, deduplication, ledger updates, and ten-application reviews. Codex handles discovery and browser interaction while following the guardrails in [`SKILL.md`](job-application-agent/SKILL.md).
+
+## 🔐 Privacy model
+
+| Data | Storage | Repository |
+|---|---|---|
+| Candidate profile | macOS Keychain | Never committed |
+| Canonical résumé | Owner-only local state directory | Never committed |
+| Application ledger | Owner-only local state directory | Never committed |
+| Browser authentication | Existing browser session | Never exported |
+| Skill instructions and scripts | Local skill directory | Version controlled |
+
+The package contains no candidate profile, résumé, application history, credentials, or browser data. The included [`.gitignore`](.gitignore) adds a second line of defense against committing common private artifacts.
+
+## 🧰 Requirements
 
 - Codex with browser-control capability
 - Node.js 20 or newer
 - macOS Keychain for persistent profile storage
 
-## Validate
+The workflow can be adapted to another OS-backed secret store, but the bundled profile implementation currently targets macOS.
+
+## ✅ Validate locally
 
 ```sh
 python3 ~/.codex/skills/.system/skill-creator/scripts/quick_validate.py job-application-agent
 node --test job-application-agent/tests/job-application.test.mjs
 ```
 
-## License
+GitHub Actions runs the same skill validation and test suite on every push and pull request.
 
-MIT
+## 💬 Use without installation
+
+Paste [`SHARE_PROMPT.md`](SHARE_PROMPT.md) into a new Codex task. The installed skill is recommended for repeat use because it bundles deterministic checks and private local state handling.
+
+## ⚖️ Responsible use
+
+This project assists a person with their own job search. It does not guarantee interviews, offers, eligibility, or application accuracy. You are responsible for reviewing factual claims, complying with applicable laws and platform terms, and deciding when an application should be submitted. Do not use it to impersonate another person, evade access controls, bypass CAPTCHA, or make deceptive claims.
+
+## 🛡️ Security
+
+Please report suspected privacy or security issues using the private process in [`SECURITY.md`](SECURITY.md). Do not open a public issue containing personal data, credentials, résumé content, or application records.
+
+## 📄 License
+
+Released under the [MIT License](LICENSE).
