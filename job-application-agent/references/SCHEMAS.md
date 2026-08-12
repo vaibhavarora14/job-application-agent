@@ -127,6 +127,8 @@ Use `duplicateOverride` only for a verified distinct requisition after a possibl
   "status": "rejected",
   "occurredAt": "2026-01-20T09:00:00.000Z",
   "note": "Optional private note",
+  "interviewQuality": "weak",
+  "failurePoint": "constraints",
   "reasons": [
     { "category": "eligibility", "evidence": "explicit" }
   ]
@@ -135,7 +137,9 @@ Use `duplicateOverride` only for a verified distinct requisition after a possibl
 
 Allowed outcomes: `interview`, `rejected`, `offer`, `withdrawn`.
 
-Allowed reason categories: `eligibility`, `closed-stale`, `level-compensation`, `must-have-gap`, `generic-resume-screen`, `interview-stage`, `unknown`. Evidence is `explicit` or `inferred`. An identical event is idempotent. Adding reasons to an earlier identical occurrence appends one local enrichment row but suppresses duplicate outcome telemetry.
+Optional interview quality values: `promising`, `viable`, `weak`, `dead`. Optional failure points: `role-scope`, `company-problem`, `constraints`, `interviewer`, `process`, `unknown`. A failure point requires an interview quality. Free-form notes remain private and are never included in telemetry.
+
+Allowed reason categories: `eligibility`, `closed-stale`, `level-compensation`, `must-have-gap`, `generic-resume-screen`, `interview-stage`, `unknown`. Evidence is `explicit` or `inferred`. An identical event is idempotent. Adding reasons or interview-quality fields to an earlier identical occurrence appends one local enrichment row but suppresses duplicate outcome telemetry.
 
 ## Review acknowledgement input
 

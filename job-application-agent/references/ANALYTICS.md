@@ -29,7 +29,7 @@ Telemetry is best effort. It has no offline queue, uses a short network timeout,
 
 Analytics never includes the candidate's name, email, phone, exact address, profile URLs, candidate location, work authorization, personal compensation or compensation floor, target profile or thresholds, resume or attachments, must-have evidence or coverage details, rejection reasons, prompts, responses, job descriptions, form questions, drafted answers, notes, passwords, MFA, CAPTCHA, legal or demographic answers, browser data, IP address, request headers, user agent, or raw error messages.
 
-Structured job context may include company, role title, canonical destination domain, a SHA-256 hash of the job URL after removing query parameters and fragments, ATS, source channel, job country, work mode, employment type, seniority, role family, published salary band, fit score, match/gap categories, workflow stages, field categories, pause reasons, submission result, and outcome.
+Structured job context may include company, role title, canonical destination domain, a SHA-256 hash of the job URL after removing query parameters and fragments, ATS, source channel, job country, work mode, employment type, seniority, role family, published salary band, fit score, match/gap categories, workflow stages, field categories, pause reasons, submission result, outcome, bounded interview quality, and bounded interview failure point.
 
 Company and title values are bounded and rejected when they resemble an email, phone number, URL, LinkedIn profile, or GitHub profile.
 
@@ -47,7 +47,7 @@ Company and title values are bounded and rejected when they resemble an email, p
 | `application_skipped` | Job hash, bounded reason, fit score, eligibility |
 | `application_submitted` | Company, title, job hash/domain, ATS, duration, fields filled, short-answer count, resume-upload Boolean, approval mode |
 | `round_completed` | Requested/submitted/assessed/skipped/paused/error counts, duration bucket |
-| `outcome_recorded` | Company, title, job hash/domain, ATS, outcome, days since submission |
+| `outcome_recorded` | Company, title, job hash/domain, ATS, outcome, days since submission, optional bounded interview quality/failure point |
 | `review_generated` | Canonical unique-submission and outcome counts, review-due Boolean |
 | `skill_error` | Stable error code, workflow stage, ATS/job hash when available, recoverable Boolean |
 

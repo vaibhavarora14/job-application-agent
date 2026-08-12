@@ -19,6 +19,8 @@ const WORK_MODES = new Set(['remote', 'hybrid', 'onsite', 'unspecified']);
 const JOB_SENIORITIES = new Set(['junior', 'mid', 'senior', 'staff', 'principal', 'lead', 'manager', 'director', 'founding', 'unspecified']);
 const ROLE_FAMILIES = new Set(['frontend', 'backend', 'full-stack', 'product-engineering', 'ai-ml', 'platform', 'infrastructure', 'mobile', 'engineering-management', 'architecture', 'security', 'data', 'other']);
 const MUST_HAVE_STATUS = new Set(['met', 'partial', 'missing', 'unclear']);
+const INTERVIEW_QUALITIES = new Set(['promising', 'viable', 'weak', 'dead']);
+const FAILURE_POINTS = new Set(['role-scope', 'company-problem', 'constraints', 'interviewer', 'process', 'unknown']);
 const APPROVALS = new Set(['APPROVE SUBMIT', 'STANDING AUTHORIZATION']);
 const MODES = new Set(['review-each', 'routine-auto']);
 const TELEMETRY_DURATIONS = new Set(['under-1s', '1-5s', '5-30s', '30-60s', '1-2m', '2-5m', '5-15m', '15m-plus']);
@@ -452,20 +454,24 @@ export function buildReview(entries, outcomeEntries = [], acknowledgements = [],
     groups.get(key).push(entry);
   });
   const canonical = [...groups.values()].map((group) => [...group].sort((a, b) => Date.parse(a.submittedAt) - Date.parse(b.submittedAt))[0]);
-  const outcomeById = new Map();
+  const outcomesById = new Map();
   for (const outcome of outcomes) {
-    const previous = outcomeById.get(outcome.id);
-    if (!previous || (Date.parse(outcome.occurredAt ?? 0) || 0) >= (Date.parse(previous.occurredAt ?? 0) || 0)) outcomeById.set(outcome.id, outcome);
+    if (!outcomesById.has(outcome.id)) outcomesById.set(outcome.id, []);
+    outcomesById.get(outcome.id).push(outcome);
   }
   const canonicalOutcomes = [];
   const matureCanonicalOutcomes = [];
+  const canonicalInterviewDetails = [];
   for (const group of groups.values()) {
     const candidates = explicitOutcomes
-      ? group.map((entry) => outcomeById.get(entry.id)).filter(Boolean)
+      ? group.flatMap((entry) => outcomesById.get(entry.id) ?? [])
       : group.filter((entry) => ['interview', 'rejected', 'offer', 'withdrawn'].includes(entry.status));
     if (candidates.length) {
-      const latest = candidates.sort((a, b) => (Date.parse(b.occurredAt ?? 0) || 0) - (Date.parse(a.occurredAt ?? 0) || 0))[0];
+      const ordered = [...candidates].sort((a, b) => (Date.parse(b.occurredAt ?? 0) || 0) - (Date.parse(a.occurredAt ?? 0) || 0));
+      const latest = ordered[0];
       canonicalOutcomes.push(latest);
+      const latestInterviewDetail = ordered.find((entry) => entry.interviewQuality);
+      if (latestInterviewDetail) canonicalInterviewDetails.push(latestInterviewDetail);
       const canonicalApplication = [...group].sort((a, b) => Date.parse(a.submittedAt) - Date.parse(b.submittedAt))[0];
       if (businessDaysBetween(canonicalApplication.submittedAt, now) >= 10) matureCanonicalOutcomes.push(latest);
     }
@@ -480,6 +486,8 @@ export function buildReview(entries, outcomeEntries = [], acknowledgements = [],
   const matureOutcomeCounts = Object.fromEntries(['interview', 'rejected', 'offer', 'withdrawn'].map((status) => [status, matureCanonicalOutcomes.filter((entry) => entry.status === status).length]));
   const reasonCounts = {};
   for (const outcome of canonicalOutcomes) for (const reason of outcome.reasons ?? []) reasonCounts[reason.category] = (reasonCounts[reason.category] ?? 0) + 1;
+  const interviewQualityCounts = Object.fromEntries([...INTERVIEW_QUALITIES].map((quality) => [quality, canonicalInterviewDetails.filter((entry) => entry.interviewQuality === quality).length]));
+  const failurePointCounts = Object.fromEntries([...FAILURE_POINTS].map((point) => [point, canonicalInterviewDetails.filter((entry) => entry.failurePoint === point).length]));
   const rate = (count) => maturedApplications ? Math.round((1000 * count) / maturedApplications) / 10 : 0;
   return {
     reviewDue: reviewReasons.length > 0,
@@ -493,6 +501,8 @@ export function buildReview(entries, outcomeEntries = [], acknowledgements = [],
     outcomeCounts,
     matureOutcomeCounts,
     reasonCounts,
+    interviewQualityCounts,
+    failurePointCounts,
     conversionRates: Object.fromEntries(Object.entries(matureOutcomeCounts).map(([status, count]) => [status, rate(count)])),
     autoAppliedChanges: false,
     nextStep: reviewReasons.length
@@ -664,6 +674,8 @@ async function ledgerAdd(entryInput, duplicateOverride) {
 
 async function ledgerOutcome(outcomeInput) {
   const input = object(outcomeInput, 'outcome');
+  const allowed = new Set(['id', 'status', 'occurredAt', 'note', 'reasons', 'interviewQuality', 'failurePoint']);
+  for (const key of Object.keys(input)) if (!allowed.has(key)) throw new Error(`Unknown outcome property: ${key}.`);
   const status = string(input.status, 'outcome.status', 40).toLowerCase();
   if (!['interview', 'rejected', 'offer', 'withdrawn'].includes(status)) throw new Error('Invalid outcome status.');
   const occurredAt = string(input.occurredAt ?? new Date().toISOString(), 'outcome.occurredAt', 80);
@@ -678,21 +690,32 @@ async function ledgerOutcome(outcomeInput) {
     if (!evidenceLevels.has(evidence)) throw new Error(`outcome.reasons[${index}].evidence is invalid.`);
     return { category, evidence };
   });
-  const event = { id: string(input.id, 'outcome.id', 180), status, occurredAt, ...(typeof input.note === 'string' ? { note: input.note.slice(0, 2000) } : {}), ...(reasons.length ? { reasons } : {}) };
+  const interviewQuality = input.interviewQuality == null ? null : string(input.interviewQuality, 'outcome.interviewQuality', 40).toLowerCase();
+  if (interviewQuality != null && !INTERVIEW_QUALITIES.has(interviewQuality)) throw new Error('outcome.interviewQuality is invalid.');
+  const failurePoint = input.failurePoint == null ? null : string(input.failurePoint, 'outcome.failurePoint', 40).toLowerCase();
+  if (failurePoint != null && !FAILURE_POINTS.has(failurePoint)) throw new Error('outcome.failurePoint is invalid.');
+  if (failurePoint != null && interviewQuality == null) throw new Error('outcome.failurePoint requires outcome.interviewQuality.');
+  const event = {
+    id: string(input.id, 'outcome.id', 180), status, occurredAt,
+    ...(typeof input.note === 'string' ? { note: input.note.slice(0, 2000) } : {}),
+    ...(reasons.length ? { reasons } : {}),
+    ...(interviewQuality ? { interviewQuality } : {}),
+    ...(failurePoint ? { failurePoint } : {}),
+  };
   const storage = await withStateLock('outcomes', async (dir) => {
     const file = join(dir, 'outcomes.ndjson');
     const existing = await jsonLines(file);
     const sameOccurrence = existing.filter((item) => item.id === event.id && item.status === event.status && item.occurredAt === event.occurredAt);
-    const reasonKey = JSON.stringify(event.reasons ?? []);
-    const duplicate = sameOccurrence.some((item) => JSON.stringify(item.reasons ?? []) === reasonKey);
+    const detailKey = (item) => JSON.stringify({ reasons: item.reasons ?? [], interviewQuality: item.interviewQuality ?? null, failurePoint: item.failurePoint ?? null });
+    const duplicate = sameOccurrence.some((item) => detailKey(item) === detailKey(event));
     if (duplicate) return { stored: false, enriched: false };
-    const enriched = event.reasons?.length > 0 && sameOccurrence.some((item) => !item.reasons?.length);
+    const enriched = sameOccurrence.length > 0;
     await appendFile(file, `${JSON.stringify(event)}\n`, { mode: 0o600 });
     await chmod(file, 0o600);
     return { stored: true, enriched };
   });
   const applications = await jsonLines(join(await ensureStateDir(), 'applications.ndjson'));
-  return { result: { recorded: storage.stored, duplicate: !storage.stored, enriched: storage.enriched, recordedOutcome: event.id, status }, application: applications.find((entry) => entry.id === event.id) ?? null, occurredAt: event.occurredAt };
+  return { result: { recorded: storage.stored, duplicate: !storage.stored, enriched: storage.enriched, recordedOutcome: event.id, status }, application: applications.find((entry) => entry.id === event.id) ?? null, event };
 }
 
 async function ledgerReview() {
@@ -721,7 +744,7 @@ function print(value) {
   process.stdout.write(`${JSON.stringify(value, null, 2)}\n`);
 }
 
-async function outcomeTelemetry(application, outcome, occurredAt) {
+async function outcomeTelemetry(application, outcome) {
   if (!application) return null;
   const identity = await jobIdentity(application.url);
   return {
@@ -731,8 +754,10 @@ async function outcomeTelemetry(application, outcome, occurredAt) {
       company: application.company,
       title: application.role,
       ats: sourceToAts(application.source),
-      outcome,
-      daysSinceSubmission: Math.max(0, Math.min(3650, Math.floor((Date.parse(occurredAt) - Date.parse(application.submittedAt)) / 86_400_000))),
+      outcome: outcome.status,
+      daysSinceSubmission: Math.max(0, Math.min(3650, Math.floor((Date.parse(outcome.occurredAt) - Date.parse(application.submittedAt)) / 86_400_000))),
+      ...(outcome.interviewQuality ? { interviewQuality: outcome.interviewQuality } : {}),
+      ...(outcome.failurePoint ? { failurePoint: outcome.failurePoint } : {}),
     },
   };
 }
@@ -780,7 +805,7 @@ async function executeCommand([area, action, value], telemetry, session) {
   } else if (area === 'ledger' && action === 'outcome' && value === '--stdin') {
     const outcome = await ledgerOutcome(await jsonStdin());
     result = outcome.result;
-    const event = outcome.result.recorded && !outcome.result.enriched ? await outcomeTelemetry(outcome.application, outcome.result.status, outcome.occurredAt) : null;
+    const event = outcome.result.recorded && !outcome.result.enriched ? await outcomeTelemetry(outcome.application, outcome.event) : null;
     if (event) domainEvents.push(event);
   } else if (area === 'ledger' && action === 'review') {
     result = await ledgerReview();

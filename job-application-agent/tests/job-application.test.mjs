@@ -289,6 +289,35 @@ test('records structured outcomes idempotently without duplicate rows', async (t
   assert.equal((await readFile(join(directory, 'outcomes.ndjson'), 'utf8')).trim().split('\n').length, 2);
 });
 
+test('records bounded interview quality and failure-point enrichment idempotently', async (t) => {
+  const directory = await mkdtemp(join(tmpdir(), 'public-job-agent-interview-quality-'));
+  t.after(() => rm(directory, { recursive: true, force: true }));
+  const script = new URL('../scripts/job-application.mjs', import.meta.url).pathname;
+  await writeFile(join(directory, 'telemetry.json'), JSON.stringify({ version: 1, enabled: false, disclosed: true, graceConsumed: true, installationEventPending: false }));
+  await writeFile(join(directory, 'applications.ndjson'), `${JSON.stringify({
+    id: 'example-role-1', company: 'Example', role: 'Staff Product Engineer', url: 'https://jobs.example.com/123', source: 'company', score: 91,
+    status: 'submitted', submittedAt: '2026-01-15T10:00:00Z', approval: 'STANDING AUTHORIZATION', answers: {},
+  })}\n`);
+  const env = { ...process.env, JOB_APPLICATION_AGENT_STATE_DIR: directory };
+  const base = { id: 'example-role-1', status: 'interview', occurredAt: '2026-01-20T09:00:00Z' };
+  const enriched = { ...base, interviewQuality: 'weak', failurePoint: 'role-scope' };
+  const first = JSON.parse(execFileSync(process.execPath, [script, 'ledger', 'outcome', '--stdin'], { input: JSON.stringify(base), env, encoding: 'utf8' }));
+  const second = JSON.parse(execFileSync(process.execPath, [script, 'ledger', 'outcome', '--stdin'], { input: JSON.stringify(enriched), env, encoding: 'utf8' }));
+  const third = JSON.parse(execFileSync(process.execPath, [script, 'ledger', 'outcome', '--stdin'], { input: JSON.stringify(enriched), env, encoding: 'utf8' }));
+  assert.equal(first.recorded, true);
+  assert.equal(second.recorded, true);
+  assert.equal(second.enriched, true);
+  assert.equal(third.duplicate, true);
+  const rows = (await readFile(join(directory, 'outcomes.ndjson'), 'utf8')).trim().split('\n').map(JSON.parse);
+  assert.equal(rows.length, 2);
+  assert.equal(rows[1].interviewQuality, 'weak');
+  assert.equal(rows[1].failurePoint, 'role-scope');
+
+  const invalid = await runCli(script, ['ledger', 'outcome', '--stdin'], { ...base, occurredAt: '2026-01-21T09:00:00Z', interviewQuality: 'excellent' }, env);
+  assert.equal(invalid.code, 1);
+  assert.match(invalid.stderr, /interviewQuality/i);
+});
+
 test('builds canonical mature-cohort reviews and honors explicit acknowledgement', () => {
   const old = Array.from({ length: 20 }, (_, index) => ({
     id: `old-${index}`, company: `Company ${index}`, role: 'Senior Engineer', url: `https://jobs.example.com/${index}`,
@@ -300,8 +329,8 @@ test('builds canonical mature-cohort reviews and honors explicit acknowledgement
   }));
   const duplicate = { ...old[0], id: 'old-0-duplicate', url: 'https://another-ats.example.com/requisition/old-0' };
   const outcomes = [
-    { id: 'old-0', status: 'interview', occurredAt: '2025-12-10T10:00:00Z' },
-    { id: 'old-1', status: 'rejected', occurredAt: '2025-12-11T10:00:00Z', reasons: [{ category: 'must-have-gap', evidence: 'inferred' }] },
+    { id: 'old-0', status: 'interview', occurredAt: '2025-12-10T10:00:00Z', interviewQuality: 'promising' },
+    { id: 'old-1', status: 'rejected', occurredAt: '2025-12-11T10:00:00Z', interviewQuality: 'dead', failurePoint: 'constraints', reasons: [{ category: 'must-have-gap', evidence: 'inferred' }] },
   ];
   const now = new Date('2026-01-20T12:00:00Z');
   const review = buildReview([...old, ...recent, duplicate], outcomes, [], now);
@@ -312,6 +341,9 @@ test('builds canonical mature-cohort reviews and honors explicit acknowledgement
   assert.equal(review.reviewDue, true);
   assert.deepEqual(review.reviewReasons.sort(), ['outcome-effectiveness', 'submission-hygiene']);
   assert.equal(review.reasonCounts['must-have-gap'], 1);
+  assert.equal(review.interviewQualityCounts.promising, 1);
+  assert.equal(review.interviewQualityCounts.dead, 1);
+  assert.equal(review.failurePointCounts.constraints, 1);
   assert.equal(review.matureOutcomeCounts.interview, 1);
   assert.equal(review.matureOutcomeCounts.rejected, 1);
   assert.equal(review.conversionRates.interview, 5);
@@ -321,6 +353,21 @@ test('builds canonical mature-cohort reviews and honors explicit acknowledgement
     reviewedAt: '2026-01-20T11:00:00Z', uniqueSubmissionCount: 22, maturedApplicationCount: 20,
   }], now);
   assert.equal(acknowledged.reviewDue, false);
+});
+
+test('preserves interview quality after a later final outcome', () => {
+  const applications = [{
+    id: 'role-1', company: 'Example', role: 'Staff Engineer', url: 'https://jobs.example.com/role-1',
+    status: 'submitted', submittedAt: '2025-12-01T10:00:00Z', source: 'company', score: 90, approval: 'STANDING AUTHORIZATION', answers: {},
+  }];
+  const outcomes = [
+    { id: 'role-1', status: 'interview', occurredAt: '2025-12-10T10:00:00Z', interviewQuality: 'promising' },
+    { id: 'role-1', status: 'rejected', occurredAt: '2025-12-15T10:00:00Z' },
+  ];
+  const review = buildReview(applications, outcomes, [], new Date('2026-01-20T12:00:00Z'));
+  assert.equal(review.outcomeCounts.rejected, 1);
+  assert.equal(review.outcomeCounts.interview, 0);
+  assert.equal(review.interviewQualityCounts.promising, 1);
 });
 
 test('acknowledges a generated review only through the explicit CLI command', async (t) => {

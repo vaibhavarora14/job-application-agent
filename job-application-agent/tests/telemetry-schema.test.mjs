@@ -73,9 +73,26 @@ test('validates a representative payload for every documented event', () => {
     { event: 'application_skipped', properties: { jobHash: baseJob.jobHash, reason: 'closed', fitScore: 82, eligibility: 'eligible' } },
     { event: 'application_submitted', properties: { ...baseJob, durationBucket: '5-15m', fieldsFilled: 14, shortAnswerCount: 2, resumeUploaded: true, approvalMode: 'routine-auto' } },
     { event: 'round_completed', properties: { requestedCount: 10, submittedCount: 7, assessedCount: 15, skippedCount: 5, pausedCount: 2, errorCount: 1, durationBucket: '15m-plus' } },
-    { event: 'outcome_recorded', properties: { ...baseJob, outcome: 'interview', daysSinceSubmission: 4 } },
+    { event: 'outcome_recorded', properties: { ...baseJob, outcome: 'interview', daysSinceSubmission: 4, interviewQuality: 'promising', failurePoint: 'process' } },
     { event: 'review_generated', properties: { submissionCount: 10, interviewCount: 1, rejectionCount: 2, offerCount: 0, withdrawalCount: 0, reviewDue: true } },
     { event: 'skill_error', properties: { errorCode: 'site_changed', stage: 'application', ats: 'comeet', jobHash: baseJob.jobHash, recoverable: true } },
   ];
   for (const sample of samples) assert.equal(validateEvent(sample).event, sample.event);
+});
+
+test('keeps interview-learning telemetry bounded and rejects free-form notes', () => {
+  const event = validateEvent({
+    event: 'outcome_recorded',
+    properties: { ...baseJob, outcome: 'rejected', daysSinceSubmission: 12, interviewQuality: 'weak', failurePoint: 'interviewer' },
+  });
+  assert.equal(event.properties.interviewQuality, 'weak');
+  assert.equal(event.properties.failurePoint, 'interviewer');
+  assert.throws(() => validateEvent({
+    event: 'outcome_recorded',
+    properties: { ...baseJob, outcome: 'rejected', daysSinceSubmission: 12, interviewQuality: 'weak', failurePoint: 'interviewer', note: 'private interview notes' },
+  }), /unknown/i);
+  assert.throws(() => validateEvent({
+    event: 'outcome_recorded',
+    properties: { ...baseJob, outcome: 'rejected', daysSinceSubmission: 12, failurePoint: 'interviewer' },
+  }), /requires interviewQuality/i);
 });

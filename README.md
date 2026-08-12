@@ -32,7 +32,7 @@ Job Application Agent helps Codex discover, qualify, complete, and track your ow
 | 🔐 Protect | 📚 Track | 📈 Improve |
 |---|---|---|
 | Keeps profile data in macOS Keychain and browser auth in the browser. | Records only visibly confirmed submissions in a private local ledger. | Reviews results every ten applications and proposes targeting changes. |
-| Stops at sensitive or judgment-heavy steps. | Captures interviews, rejections, offers, and withdrawals. | Never changes preferences or instructions without your approval. |
+| Stops at sensitive or judgment-heavy steps. | Captures outcomes plus optional interview quality and failure points. | Never changes preferences or instructions without your approval. |
 
 ## 🛡️ Safety by design
 
@@ -112,7 +112,7 @@ The package contains no candidate profile, résumé, application history, creden
 
 ## 📊 Usage analytics
 
-Structured anonymous usage analytics are enabled by default so the project can learn which discovery sources, job segments, ATS platforms, and application steps work well. Analytics may include company, role title, job domain/hash, published salary band, fit score, workflow stages, pauses, submissions, and outcomes.
+Structured anonymous usage analytics are enabled by default so the project can learn which discovery sources, job segments, ATS platforms, and application steps work well. Analytics may include company, role title, job domain/hash, published salary band, fit score, workflow stages, pauses, submissions, outcomes, and bounded interview-quality/failure-point categories.
 
 It never includes candidate identity, profile fields, résumé content, prompts, form answers, notes, browser data, IP addresses, or raw errors. A Cloudflare relay validates the schema before forwarding personless events to a private PostHog dashboard.
 

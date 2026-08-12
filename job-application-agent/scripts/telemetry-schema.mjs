@@ -26,6 +26,8 @@ const FIELD_CATEGORIES = values('contact', 'links', 'location', 'authorization',
 const PAUSE_REASONS = values('login', 'sso', 'mfa', 'captcha', 'legal', 'demographic', 'eligibility', 'compensation', 'sensitive-id', 'unverifiable', 'attachment', 'candidate-judgment', 'site-error', 'other');
 const SKIP_REASONS = values('closed', 'duplicate', 'ineligible', 'low-fit', 'location', 'salary', 'seniority', 'candidate-choice', 'no-direct-link', 'other');
 const OUTCOMES = values('interview', 'rejected', 'offer', 'withdrawn');
+const INTERVIEW_QUALITIES = values('promising', 'viable', 'weak', 'dead');
+const FAILURE_POINTS = values('role-scope', 'company-problem', 'constraints', 'interviewer', 'process', 'unknown');
 const ERROR_CODES = values('invalid_input', 'network_failure', 'relay_unavailable', 'authentication_required', 'site_changed', 'upload_failed', 'submission_unconfirmed', 'rate_limited', 'internal_error');
 const MATCH_TAGS = values('role_family', 'seniority', 'skills', 'industry', 'location', 'remote', 'salary', 'ai', 'product', 'leadership', 'authorization');
 const GAP_TAGS = values('role_family', 'seniority', 'skills', 'industry', 'location', 'salary_unknown', 'salary_below', 'authorization_unclear', 'sponsorship', 'experience', 'domain', 'other');
@@ -51,7 +53,10 @@ export const EVENT_SCHEMAS = {
   application_skipped: { required: { jobHash: { kind: 'hash' }, reason: enumValue(SKIP_REASONS), fitScore: integer(0, 100), eligibility: enumValue(ELIGIBILITY) } },
   application_submitted: { required: { ...JOB, durationBucket: enumValue(DURATIONS), fieldsFilled: integer(0, 500), shortAnswerCount: integer(0, 100), resumeUploaded: boolean, approvalMode: enumValue(APPROVAL_MODES) } },
   round_completed: { required: { requestedCount: integer(1, 1000), submittedCount: integer(0, 1000), assessedCount: integer(0, 10000), skippedCount: integer(0, 10000), pausedCount: integer(0, 10000), errorCount: integer(0, 10000), durationBucket: enumValue(DURATIONS) } },
-  outcome_recorded: { required: { ...JOB, outcome: enumValue(OUTCOMES), daysSinceSubmission: integer(0, 3650) } },
+  outcome_recorded: {
+    required: { ...JOB, outcome: enumValue(OUTCOMES), daysSinceSubmission: integer(0, 3650) },
+    optional: { interviewQuality: enumValue(INTERVIEW_QUALITIES), failurePoint: enumValue(FAILURE_POINTS) },
+  },
   review_generated: { required: { submissionCount: integer(0, 100000), interviewCount: integer(0, 100000), rejectionCount: integer(0, 100000), offerCount: integer(0, 100000), withdrawalCount: integer(0, 100000), reviewDue: boolean } },
   skill_error: { required: { errorCode: enumValue(ERROR_CODES), stage: enumValue(STAGES), recoverable: boolean }, optional: { ats: enumValue(ATS), jobHash: { kind: 'hash' } } },
 };
@@ -112,6 +117,7 @@ export function validateEvent(input) {
     properties[name] = validateProperty(name, input.properties[name], rule);
   }
   for (const [name, rule] of Object.entries(schema.optional ?? {})) if (name in input.properties) properties[name] = validateProperty(name, input.properties[name], rule);
+  if (input.event === 'outcome_recorded' && properties.failurePoint && !properties.interviewQuality) throw new Error('failurePoint requires interviewQuality.');
   const result = { event: input.event, properties };
   if (new TextEncoder().encode(JSON.stringify(result)).length > TELEMETRY_MAX_BYTES) throw new Error('Telemetry event exceeds 4 KB.');
   return result;
