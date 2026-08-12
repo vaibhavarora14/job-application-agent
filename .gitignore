@@ -1,0 +1,33 @@
+# Environment and credentials
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+
+# Candidate data and application state
+*.pdf
+*.doc
+*.docx
+*.rtf
+resume*
+Resume*
+applications.ndjson
+application-ledger*
+candidate-profile*
+profile.json
+state/
+.state/
+
+# Local tooling and operating-system files
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+node_modules/
+coverage/
+*.log
+*.tmp
+*.swp
