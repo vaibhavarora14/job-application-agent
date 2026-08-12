@@ -1,0 +1,4 @@
+interface:
+  display_name: "Job Application Agent"
+  short_description: "Find, fill, submit, and learn from job applications"
+  default_prompt: "Use $job-application-agent to onboard my profile and help me find or apply to matching jobs safely."
