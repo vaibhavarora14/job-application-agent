@@ -10,6 +10,6 @@ Do not open a public issue for a vulnerability or privacy incident. You can expe
 
 ## Scope
 
-Reports about profile storage, résumé handling, ledger permissions, redaction, unsafe browser instructions, authorization gates, and accidental disclosure of candidate data are especially valuable.
+Reports about profile storage, résumé handling, ledger permissions, telemetry validation, anonymous-token signing, redaction, unsafe browser instructions, authorization gates, and accidental disclosure of candidate data are especially valuable.
 
 The project does not attempt to bypass authentication, MFA, CAPTCHA, legal attestations, or applicant-tracking-system access controls.

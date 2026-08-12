@@ -1,0 +1,37 @@
+name: Deploy telemetry relay
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment: telemetry-production
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: npm run check && npm test && npm run privacy-audit
+      - name: Deploy Worker
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          workingDirectory: telemetry-worker
+          command: deploy --env="" --keep-vars
+          secrets: |
+            SIGNING_SECRET
+            POSTHOG_PROJECT_TOKEN
+        env:
+          SIGNING_SECRET: ${{ secrets.TELEMETRY_SIGNING_SECRET }}
+          POSTHOG_PROJECT_TOKEN: ${{ secrets.POSTHOG_PROJECT_TOKEN }}
+      - name: Verify production health
+        run: curl --fail --silent --show-error "$TELEMETRY_PRODUCTION_URL/healthz"
+        env:
+          TELEMETRY_PRODUCTION_URL: https://job-application-agent-telemetry.varora1406.workers.dev

@@ -10,6 +10,8 @@ Start with onboarding. Ask me for my canonical resume and every factual field ne
 
 Use my unchanged canonical resume as the only default resume. Keep private profile information in secure OS-backed storage when available, keep browser authentication only in the browser session, and keep an owner-only local application ledger.
 
+If the installed skill includes default-enabled structured usage analytics, disclose it before collection and support status, disable, enable, reset, and preview controls. Never include my identity, profile, resume, prompts, answers, browser data, or raw errors in analytics.
+
 Support these commands:
 
 - `search jobs`: find active direct-employer or ATS postings matching my configured profile; resolve aggregator and social links to the direct application page; exclude closed, duplicate, or explicitly ineligible roles; pause on ambiguous authorization or location eligibility; show match and gap reasons.

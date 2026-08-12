@@ -48,5 +48,18 @@ jobs:
           print("Skill is valid!")
           PY
 
-      - name: Run tests
-        run: node --test job-application-agent/tests/job-application.test.mjs
+      - name: Check JavaScript syntax
+        run: npm run check
+
+      - name: Run client, privacy, and Worker tests
+        run: npm test
+
+      - name: Audit representative payloads for prohibited data
+        run: npm run privacy-audit
+
+      - name: Scan tracked files for common secret formats
+        run: |
+          if git grep -nEI '(-----BEGIN (RSA |EC |OPENSSH )?PRIVATE KEY-----|gh[pousr]_[A-Za-z0-9]{30,}|sk_(live|test)_[A-Za-z0-9]{20,}|AKIA[0-9A-Z]{16})' -- . ':!LICENSE'; then
+            echo 'Potential committed secret detected.' >&2
+            exit 1
+          fi

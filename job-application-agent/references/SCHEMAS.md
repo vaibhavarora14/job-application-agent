@@ -50,7 +50,7 @@ Eligibility is a human-verified classification. Include a numeric annual `salary
 }
 ```
 
-Allowed sources: `linkedin`, `greenhouse`, `lever`, `ashby`, `workable`, `company`, `email`, and `other`.
+Allowed sources: `linkedin`, `greenhouse`, `lever`, `ashby`, `workable`, `comeet`, `workday`, `rippling`, `smartrecruiters`, `google-form`, `company`, `email`, and `other`.
 
 ## Duplicate check input
 
@@ -78,9 +78,17 @@ Only add after visible success confirmation.
   "approval": "STANDING AUTHORIZATION",
   "answers": {
     "Resume": "Canonical resume.pdf"
+  },
+  "telemetry": {
+    "durationBucket": "5-15m",
+    "fieldsFilled": 14,
+    "shortAnswerCount": 2,
+    "resumeUploaded": true
   }
 }
 ```
+
+`telemetry` is optional, strictly structured, and transient: it improves the `application_submitted` metrics but is never written to the application ledger. It may contain only the documented duration bucket, field count, short-answer count, and résumé-upload Boolean. When omitted, the client derives conservative values from the ledger answer categories.
 
 Use approval `APPROVE SUBMIT` for a per-application approval or `STANDING AUTHORIZATION` when the current request authorized routine batch submission.
 

@@ -11,7 +11,7 @@
 
 **Discover better roles · Apply with verified facts · Keep private data local · Learn from outcomes**
 
-[Quick start](#-quick-start) · [How it works](#-how-it-works) · [Safety](#-safety-by-design) · [Privacy](#-privacy-model) · [Security](SECURITY.md)
+[Quick start](#-quick-start) · [How it works](#-how-it-works) · [Safety](#-safety-by-design) · [Privacy](#-privacy-model) · [Analytics](#-usage-analytics) · [Security](SECURITY.md)
 
 </div>
 
@@ -110,6 +110,19 @@ The bundled script provides deterministic profile validation, résumé import, s
 
 The package contains no candidate profile, résumé, application history, credentials, or browser data. The included [`.gitignore`](.gitignore) adds a second line of defense against committing common private artifacts.
 
+## 📊 Usage analytics
+
+Structured anonymous usage analytics are enabled by default so the project can learn which discovery sources, job segments, ATS platforms, and application steps work well. Analytics may include company, role title, job domain/hash, published salary band, fit score, workflow stages, pauses, submissions, and outcomes.
+
+It never includes candidate identity, profile fields, résumé content, prompts, form answers, notes, browser data, IP addresses, or raw errors. A Cloudflare relay validates the schema before forwarding personless events to a private PostHog dashboard.
+
+```sh
+node ~/.codex/skills/job-application-agent/scripts/job-application.mjs telemetry status
+node ~/.codex/skills/job-application-agent/scripts/job-application.mjs telemetry disable
+```
+
+See the complete event contract, retention policy, and controls in [`ANALYTICS.md`](job-application-agent/references/ANALYTICS.md).
+
 ## 🧰 Requirements
 
 - Codex with browser-control capability
@@ -122,7 +135,7 @@ The workflow can be adapted to another OS-backed secret store, but the bundled p
 
 ```sh
 python3 ~/.codex/skills/.system/skill-creator/scripts/quick_validate.py job-application-agent
-node --test job-application-agent/tests/job-application.test.mjs
+npm test
 ```
 
 GitHub Actions runs the same skill validation and test suite on every push and pull request.
