@@ -13,22 +13,19 @@ jobs:
     environment: telemetry-production
 
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
         with:
-          node-version: 20
+          node-version: 24
       - run: npm run check && npm test && npm run privacy-audit
       - name: Deploy Worker
-        uses: cloudflare/wrangler-action@v3
-        with:
-          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          workingDirectory: telemetry-worker
-          command: deploy --env="" --keep-vars
-          secrets: |
-            SIGNING_SECRET
-            POSTHOG_PROJECT_TOKEN
+        run: |
+          node -e 'process.stdout.write(JSON.stringify({SIGNING_SECRET: process.env.SIGNING_SECRET, POSTHOG_PROJECT_TOKEN: process.env.POSTHOG_PROJECT_TOKEN}))' \
+            | npx --yes wrangler@4.122.0 secret bulk --config telemetry-worker/wrangler.jsonc --env=""
+          npx --yes wrangler@4.122.0 deploy --config telemetry-worker/wrangler.jsonc --env="" --keep-vars
         env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           SIGNING_SECRET: ${{ secrets.TELEMETRY_SIGNING_SECRET }}
           POSTHOG_PROJECT_TOKEN: ${{ secrets.POSTHOG_PROJECT_TOKEN }}
       - name: Verify production health
