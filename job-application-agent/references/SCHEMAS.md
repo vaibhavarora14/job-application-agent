@@ -2,38 +2,45 @@
 
 ## Profile input
 
-Send one JSON object to `profile set --stdin`.
+Send one JSON object to `profile set --stdin`. Send an object containing only intentional overrides to `profile migrate --stdin`; migration preserves existing identity fields, maps legacy `salaryPreference` to `targetCompensation`, adds current defaults, validates the complete result, and writes it atomically.
 
 ```json
 {
   "name": "Candidate Name",
   "email": "candidate@example.com",
-  "phone": "+1 555 0100",
-  "location": "City, Region, Country",
+  "phone": "+91 90000 00000",
+  "location": "Bengaluru, India",
   "workAuthorization": "Exact countries or arrangements",
   "linkedin": "https://linkedin.com/in/example",
   "github": "https://github.com/example",
   "portfolio": "https://example.com",
   "availability": "30 days",
   "currentCompensation": "Optional exact value and currency",
-  "targetCompensation": "Optional minimum and currency",
-  "roleFamilies": ["product engineer", "backend engineer"],
+  "targetCompensation": "Optional legacy-compatible free text",
+  "compensationFloor": { "amount": 9000000, "currency": "INR", "period": "year" },
+  "roleFamilies": ["product-engineering", "full-stack", "ai-ml"],
   "seniority": ["senior", "staff"],
-  "skills": ["TypeScript", "Python", "React"],
-  "targetLocations": ["India", "Remote"],
+  "skills": ["TypeScript", "Python", "React", "Node.js", "PostgreSQL", "MCP", "AI agents"],
+  "targetLocations": ["India", "Remote", "Worldwide"],
   "excludedLocations": [],
-  "workModes": ["remote", "hybrid"],
+  "workModes": ["remote"],
   "industries": ["AI", "developer tools"],
   "excludedCompanies": [],
-  "submissionMode": "review-each"
+  "submissionMode": "routine-auto",
+  "yearsExperience": 10,
+  "autoSubmitMinScore": 80,
+  "manualReviewMinScore": 70,
+  "minMustHaveCoverage": 70
 }
 ```
 
-Required fields are `name`, `email`, `phone`, `location`, `workAuthorization`, `roleFamilies`, `seniority`, `targetLocations`, `workModes`, and `submissionMode`.
+Required fields are `name`, `email`, `phone`, `location`, `workAuthorization`, `roleFamilies`, `seniority`, `targetLocations`, `workModes`, `submissionMode`, `yearsExperience`, `autoSubmitMinScore`, `manualReviewMinScore`, and `minMustHaveCoverage`.
 
-## Job-scoring input
+`compensationFloor` is optional and must use a three-letter currency code and `period: "year"`. Compare a job salary only when its basis and currency are directly comparable.
 
-Eligibility is a human-verified classification. Include a numeric annual `salaryMinimum` only when the posting states a comparable figure.
+## Job assessment input
+
+Treat `mustHaves[].evidence` as private resume analysis. It is used locally and is not included in telemetry.
 
 ```json
 {
@@ -42,28 +49,50 @@ Eligibility is a human-verified classification. Include a numeric annual `salary
   "description": "Posting text",
   "source": "greenhouse",
   "url": "https://job-boards.greenhouse.io/example/jobs/123",
+  "postingStatus": "active",
+  "eligibility": "eligible",
+  "roleFamily": "product-engineering",
+  "seniority": "senior",
+  "experienceMin": 7,
+  "experienceMax": 12,
+  "workMode": "remote",
   "remote": true,
   "locations": ["Remote", "India"],
-  "eligibility": "eligible",
-  "salaryMinimum": 100000,
-  "salaryCurrency": "USD"
+  "salaryMaximum": 12000000,
+  "salaryCurrency": "INR",
+  "mustHaves": [
+    { "requirement": "TypeScript", "status": "met", "evidence": "Resume-backed example" },
+    { "requirement": "Distributed systems", "status": "partial", "evidence": "Related platform work, not exact claim" },
+    { "requirement": "GraphQL", "status": "missing" }
+  ]
 }
 ```
 
 Allowed sources: `linkedin`, `greenhouse`, `lever`, `ashby`, `workable`, `comeet`, `workday`, `rippling`, `smartrecruiters`, `google-form`, `company`, `email`, and `other`.
 
+Allowed posting statuses: `active`, `closed`, `unclear`. Allowed eligibility: `eligible`, `unclear`, `ineligible`. Allowed seniority: `junior`, `mid`, `senior`, `staff`, `principal`, `lead`, `manager`, `director`, `founding`, `unspecified`. Allowed work modes: `remote`, `hybrid`, `onsite`, `unspecified`. Must-have statuses: `met`, `partial`, `missing`, `unclear`.
+
+Assessment output retains `review`, `ask`, `skip`, and `exclude`, and adds `autoEligible`, `mustHaveCoverage`, and structured `gates`. `review` does not itself authorize submission.
+
 ## Duplicate check input
+
+Include as many identifiers as are known.
 
 ```json
 {
   "id": "example-senior-product-engineer-2026-01-15",
-  "url": "https://jobs.example.com/roles/123"
+  "company": "Example",
+  "role": "Senior Product Engineer",
+  "url": "https://jobs.example.com/roles/123?utm_source=board",
+  "employerJobId": "greenhouse:123"
 }
 ```
 
+The check removes fragments and non-job query parameters while retaining recognized job or requisition identifiers. Matching ledger ID, canonical URL, or same-company employer job ID is a hard duplicate. Same company and role without a shared job ID is a possible duplicate.
+
 ## Confirmed submission input
 
-Only add after visible success confirmation.
+Add only after visible success confirmation.
 
 ```json
 {
@@ -71,14 +100,14 @@ Only add after visible success confirmation.
   "company": "Example",
   "role": "Senior Product Engineer",
   "url": "https://jobs.example.com/roles/123",
+  "employerJobId": "greenhouse:123",
   "source": "company",
   "score": 84,
   "status": "submitted",
   "submittedAt": "2026-01-15T10:00:00.000Z",
   "approval": "STANDING AUTHORIZATION",
-  "answers": {
-    "Resume": "Canonical resume.pdf"
-  },
+  "duplicateOverride": "NEW REQUISITION CONFIRMED",
+  "answers": { "Resume": "Canonical resume.pdf" },
   "telemetry": {
     "durationBucket": "5-15m",
     "fieldsFilled": 14,
@@ -88,19 +117,34 @@ Only add after visible success confirmation.
 }
 ```
 
-`telemetry` is optional, strictly structured, and transient: it improves the `application_submitted` metrics but is never written to the application ledger. It may contain only the documented duration bucket, field count, short-answer count, and résumé-upload Boolean. When omitted, the client derives conservative values from the ledger answer categories.
-
-Use approval `APPROVE SUBMIT` for a per-application approval or `STANDING AUTHORIZATION` when the current request authorized routine batch submission.
+Use `duplicateOverride` only for a verified distinct requisition after a possible-duplicate warning. It and `telemetry` are transient and are not written to the application ledger. Use approval `APPROVE SUBMIT` for per-application approval or `STANDING AUTHORIZATION` when the current request authorizes routine batch submission.
 
 ## Outcome input
 
 ```json
 {
   "id": "example-senior-product-engineer-2026-01-15",
-  "status": "interview",
+  "status": "rejected",
   "occurredAt": "2026-01-20T09:00:00.000Z",
-  "note": "Recruiter screen requested"
+  "note": "Optional private note",
+  "reasons": [
+    { "category": "eligibility", "evidence": "explicit" }
+  ]
 }
 ```
 
-Allowed outcomes: `interview`, `rejected`, `offer`, and `withdrawn`.
+Allowed outcomes: `interview`, `rejected`, `offer`, `withdrawn`.
+
+Allowed reason categories: `eligibility`, `closed-stale`, `level-compensation`, `must-have-gap`, `generic-resume-screen`, `interview-stage`, `unknown`. Evidence is `explicit` or `inferred`. An identical event is idempotent. Adding reasons to an earlier identical occurrence appends one local enrichment row but suppresses duplicate outcome telemetry.
+
+## Review acknowledgement input
+
+Generate `ledger review` first. Acknowledge only after the candidate has reviewed it.
+
+```json
+{
+  "reviewedAt": "2026-01-21T09:00:00.000Z"
+}
+```
+
+The acknowledgement stores the current canonical unique-submission and mature-application counts in append-only `reviews.ndjson`.

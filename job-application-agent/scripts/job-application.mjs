@@ -2,7 +2,7 @@
 
 import { createHash } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
-import { appendFile, chmod, mkdir, readFile, rename, writeFile } from 'node:fs/promises';
+import { appendFile, chmod, mkdir, open, readFile, rename, unlink, writeFile } from 'node:fs/promises';
 import { homedir, platform } from 'node:os';
 import { basename, join, resolve } from 'node:path';
 
@@ -14,12 +14,33 @@ const KEYCHAIN_ACCOUNT = 'profile';
 const DEFAULT_STATE_DIR = join(homedir(), 'Library/Application Support/Codex/job-application-agent');
 const SOURCES = new Set(['linkedin', 'greenhouse', 'lever', 'ashby', 'workable', 'comeet', 'workday', 'rippling', 'smartrecruiters', 'google-form', 'company', 'email', 'other']);
 const ELIGIBILITY = new Set(['eligible', 'unclear', 'ineligible']);
+const POSTING_STATUS = new Set(['active', 'closed', 'unclear']);
+const WORK_MODES = new Set(['remote', 'hybrid', 'onsite', 'unspecified']);
+const JOB_SENIORITIES = new Set(['junior', 'mid', 'senior', 'staff', 'principal', 'lead', 'manager', 'director', 'founding', 'unspecified']);
+const ROLE_FAMILIES = new Set(['frontend', 'backend', 'full-stack', 'product-engineering', 'ai-ml', 'platform', 'infrastructure', 'mobile', 'engineering-management', 'architecture', 'security', 'data', 'other']);
+const MUST_HAVE_STATUS = new Set(['met', 'partial', 'missing', 'unclear']);
 const APPROVALS = new Set(['APPROVE SUBMIT', 'STANDING AUTHORIZATION']);
 const MODES = new Set(['review-each', 'routine-auto']);
 const TELEMETRY_DURATIONS = new Set(['under-1s', '1-5s', '5-30s', '30-60s', '1-2m', '2-5m', '5-15m', '15m-plus']);
-const REQUIRED_PROFILE = ['name', 'email', 'phone', 'location', 'workAuthorization', 'roleFamilies', 'seniority', 'targetLocations', 'workModes', 'submissionMode'];
+const REQUIRED_PROFILE = ['name', 'email', 'phone', 'location', 'workAuthorization', 'roleFamilies', 'seniority', 'targetLocations', 'workModes', 'submissionMode', 'yearsExperience', 'autoSubmitMinScore', 'manualReviewMinScore', 'minMustHaveCoverage'];
 const STRING_PROFILE_FIELDS = new Set(['name', 'email', 'phone', 'location', 'workAuthorization', 'linkedin', 'github', 'portfolio', 'availability', 'currentCompensation', 'targetCompensation', 'submissionMode']);
 const ARRAY_PROFILE_FIELDS = new Set(['roleFamilies', 'seniority', 'skills', 'targetLocations', 'excludedLocations', 'workModes', 'industries', 'excludedCompanies']);
+const NUMBER_PROFILE_FIELDS = new Set(['yearsExperience', 'autoSubmitMinScore', 'manualReviewMinScore', 'minMustHaveCoverage']);
+const OBJECT_PROFILE_FIELDS = new Set(['compensationFloor']);
+const LEGACY_PROFILE_FIELDS = new Set(['salaryPreference']);
+const DEFAULT_TARGETING = {
+  roleFamilies: ['product-engineering', 'full-stack', 'ai-ml'],
+  seniority: ['senior', 'staff'],
+  skills: ['TypeScript', 'Python', 'React', 'Node.js', 'PostgreSQL', 'MCP', 'AI agents'],
+  targetLocations: ['India', 'Remote', 'Worldwide'],
+  workModes: ['remote'],
+  industries: ['AI', 'developer tools'],
+  submissionMode: 'routine-auto',
+  yearsExperience: 10,
+  autoSubmitMinScore: 80,
+  manualReviewMinScore: 70,
+  minMustHaveCoverage: 70,
+};
 
 function stateDir() {
   return process.env.JOB_APPLICATION_AGENT_STATE_DIR || DEFAULT_STATE_DIR;
@@ -38,12 +59,14 @@ export function durationBucket(milliseconds) {
 
 export function commandCategory([area, action]) {
   if (area === 'profile' && action === 'set') return 'onboard';
+  if (area === 'profile' && action === 'migrate') return 'onboard';
   if (area === 'profile') return 'profile';
   if (area === 'resume') return 'resume';
   if (area === 'score') return 'assess';
   if (area === 'ledger' && action === 'add') return 'apply';
   if (area === 'ledger' && action === 'outcome') return 'outcome';
   if (area === 'ledger' && action === 'review') return 'review';
+  if (area === 'ledger' && action === 'review-ack') return 'review';
   if (area === 'ledger') return 'apply';
   if (area === 'telemetry') return 'telemetry';
   return 'other';
@@ -139,11 +162,26 @@ function stringArray(value, label, required = false) {
   return value.map((item, index) => string(item, `${label}[${index}]`, 300));
 }
 
+function integer(value, label, min, max) {
+  if (!Number.isInteger(value) || value < min || value > max) throw new Error(`${label} must be an integer from ${min} to ${max}.`);
+  return value;
+}
+
+function compensationFloor(value) {
+  const input = object(value, 'profile.compensationFloor');
+  const allowed = new Set(['amount', 'currency', 'period']);
+  for (const key of Object.keys(input)) if (!allowed.has(key)) throw new Error(`Unknown profile.compensationFloor property: ${key}.`);
+  const currency = string(input.currency, 'profile.compensationFloor.currency', 3).toUpperCase();
+  if (!/^[A-Z]{3}$/.test(currency)) throw new Error('profile.compensationFloor.currency must be a three-letter currency code.');
+  if (input.period !== 'year') throw new Error('profile.compensationFloor.period must be year.');
+  return { amount: integer(input.amount, 'profile.compensationFloor.amount', 0, 100_000_000), currency, period: 'year' };
+}
+
 function normalizeUrl(value) {
   const url = new URL(string(value, 'url', 2048));
   url.hash = '';
   for (const key of [...url.searchParams.keys()]) {
-    if (/^(utm_|gh_src|source|ref|trk)/i.test(key)) url.searchParams.delete(key);
+    if (!/^(job|jobid|jid|gh_jid|requisition|requisitionid|reqid|posting|postingid|position|positionid|vacancy|vacancyid)$/i.test(key)) url.searchParams.delete(key);
   }
   return url.toString().replace(/\/$/, '').toLowerCase();
 }
@@ -160,13 +198,38 @@ export function validateProfile(input) {
   const profile = object(input, 'profile');
   for (const field of REQUIRED_PROFILE) {
     if (ARRAY_PROFILE_FIELDS.has(field)) stringArray(profile[field], `profile.${field}`, true);
+    else if (NUMBER_PROFILE_FIELDS.has(field)) integer(profile[field], `profile.${field}`, field === 'yearsExperience' ? 0 : 0, field === 'yearsExperience' ? 80 : 100);
     else string(profile[field], `profile.${field}`, 1000);
   }
   if (!MODES.has(profile.submissionMode)) throw new Error('profile.submissionMode must be review-each or routine-auto.');
+  if (profile.manualReviewMinScore > profile.autoSubmitMinScore) throw new Error('profile.manualReviewMinScore must not exceed profile.autoSubmitMinScore.');
   for (const field of STRING_PROFILE_FIELDS) if (profile[field] != null) string(profile[field], `profile.${field}`, 2000);
   for (const field of ARRAY_PROFILE_FIELDS) if (profile[field] != null) stringArray(profile[field], `profile.${field}`);
-  const allowed = new Set([...STRING_PROFILE_FIELDS, ...ARRAY_PROFILE_FIELDS]);
-  return Object.fromEntries(Object.entries(profile).filter(([key]) => allowed.has(key)));
+  for (const field of NUMBER_PROFILE_FIELDS) if (profile[field] != null) integer(profile[field], `profile.${field}`, 0, field === 'yearsExperience' ? 80 : 100);
+  const normalized = Object.fromEntries(Object.entries(profile).filter(([key]) => STRING_PROFILE_FIELDS.has(key) || ARRAY_PROFILE_FIELDS.has(key) || NUMBER_PROFILE_FIELDS.has(key) || OBJECT_PROFILE_FIELDS.has(key)));
+  if (profile.compensationFloor != null) normalized.compensationFloor = compensationFloor(profile.compensationFloor);
+  return normalized;
+}
+
+export function profileStatus(input) {
+  const profile = object(input, 'profile');
+  const missing = REQUIRED_PROFILE.filter((field) => profile[field] == null || profile[field] === '' || (Array.isArray(profile[field]) && profile[field].length === 0));
+  const legacyFields = Object.keys(profile).filter((field) => LEGACY_PROFILE_FIELDS.has(field));
+  let valid = false;
+  let validationError = null;
+  if (missing.length === 0) {
+    try { validateProfile(profile); valid = true; } catch (error) { validationError = error.message; }
+  }
+  return { configured: valid, missing, legacyFields, ...(validationError ? { validationError } : {}), fields: Object.keys(profile).sort() };
+}
+
+export function migrateProfile(existingInput, overridesInput = {}) {
+  const existing = object(existingInput, 'existing profile');
+  const overrides = object(overridesInput, 'profile migration');
+  const migrated = { ...DEFAULT_TARGETING, ...existing, ...overrides };
+  if (migrated.targetCompensation == null && existing.salaryPreference != null) migrated.targetCompensation = existing.salaryPreference;
+  for (const field of LEGACY_PROFILE_FIELDS) delete migrated[field];
+  return validateProfile(migrated);
 }
 
 export function scoreJob(input, target) {
@@ -177,52 +240,141 @@ export function scoreJob(input, target) {
   const description = string(job.description, 'job.description', 40000);
   const source = string(job.source, 'job.source', 40).toLowerCase();
   const eligibility = string(job.eligibility, 'job.eligibility', 40).toLowerCase();
+  const postingStatus = string(job.postingStatus ?? 'unclear', 'job.postingStatus', 40).toLowerCase();
+  const seniority = string(job.seniority ?? 'unspecified', 'job.seniority', 40).toLowerCase();
+  const roleFamily = string(job.roleFamily ?? 'other', 'job.roleFamily', 80).toLowerCase();
+  const workMode = string(job.workMode ?? (job.remote === true ? 'remote' : 'unspecified'), 'job.workMode', 40).toLowerCase();
   if (!SOURCES.has(source)) throw new Error('job.source is invalid.');
   if (!ELIGIBILITY.has(eligibility)) throw new Error('job.eligibility must be eligible, unclear, or ineligible.');
+  if (!POSTING_STATUS.has(postingStatus)) throw new Error('job.postingStatus must be active, closed, or unclear.');
+  if (!JOB_SENIORITIES.has(seniority)) throw new Error('job.seniority is invalid.');
+  if (!ROLE_FAMILIES.has(roleFamily)) throw new Error('job.roleFamily is invalid.');
+  if (!WORK_MODES.has(workMode)) throw new Error('job.workMode is invalid.');
 
+  const gates = [];
+  const result = (decision, score, reasons, gaps, mustHaveCoverage = null, autoEligible = false) => ({ score, decision, autoEligible, mustHaveCoverage, gates, reasons, gaps });
   const excludedCompany = terms(profile.excludedCompanies ?? []).some((name) => company.toLowerCase().includes(name));
   if (eligibility === 'ineligible' || excludedCompany) {
-    return { score: 0, decision: 'exclude', reasons: [], gaps: [excludedCompany ? 'Company is excluded by the candidate.' : 'Posting is explicitly ineligible.'] };
+    const gap = excludedCompany ? 'Company is excluded by the candidate.' : 'Posting is explicitly ineligible.';
+    gates.push({ name: excludedCompany ? 'company' : 'eligibility', status: 'fail', reason: gap });
+    return result('exclude', 0, [], [gap]);
   }
+  if (eligibility === 'unclear') {
+    const gap = 'Work eligibility or authorization needs candidate confirmation.';
+    gates.push({ name: 'eligibility', status: 'ask', reason: gap });
+    return result('ask', 0, [], [gap]);
+  }
+  gates.push({ name: 'eligibility', status: 'pass', reason: 'Posting is explicitly eligible.' });
+
+  if (postingStatus === 'closed') {
+    const gap = 'Posting or application channel is closed or stale.';
+    gates.push({ name: 'posting-status', status: 'fail', reason: gap });
+    return result('exclude', 0, [], [gap]);
+  }
+  if (postingStatus === 'unclear') {
+    const gap = 'Posting status or application channel needs verification.';
+    gates.push({ name: 'posting-status', status: 'ask', reason: gap });
+    return result('ask', 0, [], [gap]);
+  }
+  gates.push({ name: 'posting-status', status: 'pass', reason: 'Direct application channel is active.' });
 
   const text = `${title}\n${description}`.toLowerCase();
   const locations = Array.isArray(job.locations) ? job.locations.join(' ').toLowerCase() : '';
-  let score = 0;
   const reasons = [];
   const gaps = [];
 
-  const roleMatches = matchesAny(title.toLowerCase(), profile.roleFamilies);
-  if (roleMatches.length) { score += 30; reasons.push(`Role family: ${roleMatches.join(', ')}.`); }
-  else gaps.push('Title does not directly match a target role family.');
-
-  const seniorityMatches = matchesAny(title.toLowerCase(), profile.seniority);
-  if (seniorityMatches.length) { score += 20; reasons.push(`Seniority: ${seniorityMatches.join(', ')}.`); }
-  else gaps.push('Seniority does not directly match the target.');
-
-  const skillMatches = matchesAny(text, profile.skills ?? []);
-  if (skillMatches.length) {
-    score += Math.min(25, skillMatches.length * 5);
-    reasons.push(`Skills: ${skillMatches.slice(0, 6).join(', ')}.`);
-  } else if ((profile.skills ?? []).length) gaps.push('No configured skill keywords found.');
-
-  const industryMatches = matchesAny(text, profile.industries ?? []);
-  if (industryMatches.length) { score += Math.min(10, industryMatches.length * 5); reasons.push(`Industry: ${industryMatches.join(', ')}.`); }
-
   const excludedLocation = terms(profile.excludedLocations ?? []).some((place) => locations.includes(place));
-  if (excludedLocation) return { score: 0, decision: 'exclude', reasons, gaps: [...gaps, 'Posting is in an excluded location.'] };
+  if (excludedLocation) {
+    const gap = 'Posting is in an excluded location.';
+    gates.push({ name: 'location', status: 'fail', reason: gap });
+    return result('exclude', 0, reasons, [...gaps, gap]);
+  }
+  if (!terms(profile.workModes).includes(workMode)) {
+    if (workMode === 'unspecified') {
+      const gap = 'Work mode or location needs verification.';
+      gates.push({ name: 'work-mode', status: 'ask', reason: gap });
+      return result('ask', 0, reasons, [...gaps, gap]);
+    }
+    const gap = 'Posting work mode is incompatible with the candidate target.';
+    gates.push({ name: 'work-mode', status: 'fail', reason: gap });
+    return result('exclude', 0, reasons, [...gaps, gap]);
+  }
+  gates.push({ name: 'work-mode', status: 'pass', reason: `Work mode matches: ${workMode}.` });
+
+  if (!terms(profile.seniority).includes(seniority)) {
+    const gap = `Seniority is outside the candidate target: ${seniority}.`;
+    gates.push({ name: 'seniority', status: 'fail', reason: gap });
+    return result(seniority === 'unspecified' ? 'ask' : 'skip', 0, reasons, [...gaps, gap]);
+  }
+  gates.push({ name: 'seniority', status: 'pass', reason: `Seniority matches: ${seniority}.` });
+
+  if (!Array.isArray(job.mustHaves) || job.mustHaves.length === 0) {
+    const gap = 'Structured must-have evidence is missing.';
+    gates.push({ name: 'must-have-evidence', status: 'ask', reason: gap });
+    return result('ask', 0, reasons, [...gaps, gap]);
+  }
+  const mustHaves = job.mustHaves.map((item, index) => {
+    const requirement = string(object(item, `job.mustHaves[${index}]`).requirement, `job.mustHaves[${index}].requirement`, 500);
+    const status = string(item.status, `job.mustHaves[${index}].status`, 40).toLowerCase();
+    if (!MUST_HAVE_STATUS.has(status)) throw new Error(`job.mustHaves[${index}].status is invalid.`);
+    if (item.evidence != null) string(item.evidence, `job.mustHaves[${index}].evidence`, 2000);
+    return { requirement, status };
+  });
+  if (mustHaves.some((item) => item.status === 'unclear')) {
+    const gap = 'One or more must-have requirements need evidence verification.';
+    gates.push({ name: 'must-have-evidence', status: 'ask', reason: gap });
+    return result('ask', 0, reasons, [...gaps, gap]);
+  }
+  const mustHaveCoverage = Math.round(100 * mustHaves.reduce((sum, item) => sum + (item.status === 'met' ? 1 : item.status === 'partial' ? 0.5 : 0), 0) / mustHaves.length);
+  if (mustHaveCoverage < profile.minMustHaveCoverage) {
+    const gap = `Must-have evidence coverage is ${mustHaveCoverage}%, below ${profile.minMustHaveCoverage}%.`;
+    gates.push({ name: 'must-have-evidence', status: 'fail', reason: gap });
+    return result('skip', 0, reasons, [...gaps, gap], mustHaveCoverage);
+  }
+  gates.push({ name: 'must-have-evidence', status: 'pass', reason: `Must-have evidence coverage is ${mustHaveCoverage}%.` });
+
+  if (profile.compensationFloor && job.salaryMaximum != null && String(job.salaryCurrency ?? '').toUpperCase() === profile.compensationFloor.currency) {
+    integer(job.salaryMaximum, 'job.salaryMaximum', 0, 100_000_000);
+    if (job.salaryMaximum < profile.compensationFloor.amount) {
+      const gap = 'Published compensation maximum is below the configured floor.';
+      gates.push({ name: 'compensation', status: 'fail', reason: gap });
+      return result('skip', 0, reasons, [...gaps, gap], mustHaveCoverage);
+    }
+  }
+
+  let score = 0;
+  if (terms(profile.roleFamilies).includes(roleFamily)) { score += 25; reasons.push(`Role family: ${roleFamily}.`); }
+  else gaps.push('Role family does not directly match the target.');
+  score += 15;
+  reasons.push(`Seniority: ${seniority}.`);
+  score += Math.round(mustHaveCoverage * 0.4);
+  reasons.push(`Skills evidence: ${mustHaveCoverage}% of must-haves.`);
   const locationMatches = matchesAny(locations, profile.targetLocations);
-  const remoteWanted = terms(profile.workModes).includes('remote');
-  if (locationMatches.length || (job.remote === true && remoteWanted)) {
-    score += 15;
+  if (locationMatches.length || workMode === 'remote') {
+    score += 10;
     reasons.push(job.remote === true ? 'Remote-compatible.' : `Target location: ${locationMatches.join(', ')}.`);
   } else gaps.push('Location or work mode is not an explicit match.');
+  const industryMatches = matchesAny(text, profile.industries ?? []);
+  if (industryMatches.length) { score += 5; reasons.push(`Industry: ${industryMatches[0]}.`); }
+  if (profile.compensationFloor && job.salaryMaximum != null && String(job.salaryCurrency ?? '').toUpperCase() === profile.compensationFloor.currency) {
+    score += 5;
+    reasons.push('Published compensation meets the configured floor.');
+  } else gaps.push('Published compensation is unavailable or not directly comparable.');
 
-  if (eligibility === 'unclear') {
-    gaps.push('Work eligibility or location needs candidate confirmation.');
-    return { score: Math.min(score, 100), decision: 'ask', reasons, gaps };
+  let experienceMismatch = false;
+  if (job.experienceMin != null) integer(job.experienceMin, 'job.experienceMin', 0, 80);
+  if (job.experienceMax != null) integer(job.experienceMax, 'job.experienceMax', 0, 80);
+  if ((job.experienceMax != null && profile.yearsExperience > job.experienceMax + 2) || (job.experienceMin != null && profile.yearsExperience + 2 < job.experienceMin)) {
+    experienceMismatch = true;
+    score = Math.min(score, profile.autoSubmitMinScore - 1);
+    gaps.push('Explicit experience range is materially misaligned.');
+    gates.push({ name: 'experience', status: 'warn', reason: 'Experience mismatch requires manual review.' });
   }
   const finalScore = Math.min(score, 100);
-  return { score: finalScore, decision: finalScore >= 60 ? 'review' : 'skip', reasons, gaps };
+  const decision = finalScore >= profile.manualReviewMinScore ? 'review' : 'skip';
+  const autoEligible = decision === 'review' && ['senior', 'staff'].includes(seniority) && !experienceMismatch
+    && finalScore >= profile.autoSubmitMinScore && mustHaveCoverage >= profile.minMustHaveCoverage;
+  return result(decision, finalScore, reasons, gaps, mustHaveCoverage, autoEligible);
 }
 
 export function validateLedgerEntry(input) {
@@ -239,6 +391,7 @@ export function validateLedgerEntry(input) {
     approval: string(entry.approval, 'entry.approval', 80),
     answers: entry.answers ?? {},
   };
+  if (entry.employerJobId != null) normalized.employerJobId = string(entry.employerJobId, 'entry.employerJobId', 300);
   if (!SOURCES.has(normalized.source)) throw new Error('entry.source is invalid.');
   if (!Number.isInteger(normalized.score) || normalized.score < 0 || normalized.score > 100) throw new Error('entry.score must be an integer from 0 to 100.');
   if (normalized.status !== 'submitted') throw new Error('New ledger entries must have status submitted.');
@@ -265,15 +418,84 @@ export function validateSubmissionTelemetry(input) {
   return Object.fromEntries(Object.entries(value).filter(([, item]) => item != null));
 }
 
-export function buildReview(entries) {
+function normalizedText(value) {
+  return String(value ?? '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+}
+
+function canonicalApplicationKey(entry, fallback = '') {
+  if (entry.employerJobId) return `job:${normalizedText(entry.company)}:${String(entry.employerJobId).toLowerCase()}`;
+  if (entry.company && entry.role) return `legacy-role:${normalizedText(entry.company)}:${normalizedText(entry.role)}`;
+  if (entry.url) return `url:${normalizeUrl(entry.url)}`;
+  return `id:${entry.id ?? fallback}`;
+}
+
+function businessDaysBetween(startValue, endValue) {
+  const start = new Date(startValue);
+  const end = new Date(endValue);
+  if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime()) || end <= start) return 0;
+  let days = 0;
+  for (const date = new Date(start); date < end; date.setUTCDate(date.getUTCDate() + 1)) {
+    const weekday = date.getUTCDay();
+    if (weekday !== 0 && weekday !== 6) days += 1;
+  }
+  return days;
+}
+
+export function buildReview(entries, outcomeEntries = [], acknowledgements = [], now = new Date()) {
   const submissions = entries.filter((entry) => !Number.isNaN(Date.parse(entry.submittedAt)));
-  const outcomes = entries.filter((entry) => ['interview', 'rejected', 'offer', 'withdrawn'].includes(entry.status));
+  const explicitOutcomes = outcomeEntries.length > 0;
+  const outcomes = explicitOutcomes ? outcomeEntries : entries.filter((entry) => ['interview', 'rejected', 'offer', 'withdrawn'].includes(entry.status));
+  const groups = new Map();
+  submissions.forEach((entry, index) => {
+    const key = canonicalApplicationKey(entry, String(index));
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(entry);
+  });
+  const canonical = [...groups.values()].map((group) => [...group].sort((a, b) => Date.parse(a.submittedAt) - Date.parse(b.submittedAt))[0]);
+  const outcomeById = new Map();
+  for (const outcome of outcomes) {
+    const previous = outcomeById.get(outcome.id);
+    if (!previous || (Date.parse(outcome.occurredAt ?? 0) || 0) >= (Date.parse(previous.occurredAt ?? 0) || 0)) outcomeById.set(outcome.id, outcome);
+  }
+  const canonicalOutcomes = [];
+  const matureCanonicalOutcomes = [];
+  for (const group of groups.values()) {
+    const candidates = explicitOutcomes
+      ? group.map((entry) => outcomeById.get(entry.id)).filter(Boolean)
+      : group.filter((entry) => ['interview', 'rejected', 'offer', 'withdrawn'].includes(entry.status));
+    if (candidates.length) {
+      const latest = candidates.sort((a, b) => (Date.parse(b.occurredAt ?? 0) || 0) - (Date.parse(a.occurredAt ?? 0) || 0))[0];
+      canonicalOutcomes.push(latest);
+      const canonicalApplication = [...group].sort((a, b) => Date.parse(a.submittedAt) - Date.parse(b.submittedAt))[0];
+      if (businessDaysBetween(canonicalApplication.submittedAt, now) >= 10) matureCanonicalOutcomes.push(latest);
+    }
+  }
+  const maturedApplications = canonical.filter((entry) => businessDaysBetween(entry.submittedAt, now) >= 10).length;
+  const lastAck = acknowledgements.length ? acknowledgements[acknowledgements.length - 1] : {};
+  const submittedSinceLastReview = Math.max(0, canonical.length - (lastAck.uniqueSubmissionCount ?? 0));
+  const hygieneDue = submittedSinceLastReview >= 10;
+  const outcomeDue = maturedApplications - (lastAck.maturedApplicationCount ?? 0) >= 20;
+  const reviewReasons = [...(hygieneDue ? ['submission-hygiene'] : []), ...(outcomeDue ? ['outcome-effectiveness'] : [])];
+  const outcomeCounts = Object.fromEntries(['interview', 'rejected', 'offer', 'withdrawn'].map((status) => [status, canonicalOutcomes.filter((entry) => entry.status === status).length]));
+  const matureOutcomeCounts = Object.fromEntries(['interview', 'rejected', 'offer', 'withdrawn'].map((status) => [status, matureCanonicalOutcomes.filter((entry) => entry.status === status).length]));
+  const reasonCounts = {};
+  for (const outcome of canonicalOutcomes) for (const reason of outcome.reasons ?? []) reasonCounts[reason.category] = (reasonCounts[reason.category] ?? 0) + 1;
+  const rate = (count) => maturedApplications ? Math.round((1000 * count) / maturedApplications) / 10 : 0;
   return {
-    reviewDue: submissions.length > 0 && submissions.length % 10 === 0,
-    submittedTotal: submissions.length,
-    outcomeCounts: Object.fromEntries(['interview', 'rejected', 'offer', 'withdrawn'].map((status) => [status, outcomes.filter((entry) => entry.status === status).length])),
+    reviewDue: reviewReasons.length > 0,
+    reviewReasons,
+    submittedTotal: canonical.length,
+    uniqueSubmittedTotal: canonical.length,
+    rawSubmissionRows: submissions.length,
+    duplicateSubmissionRows: submissions.length - canonical.length,
+    submittedSinceLastReview,
+    maturedApplications,
+    outcomeCounts,
+    matureOutcomeCounts,
+    reasonCounts,
+    conversionRates: Object.fromEntries(Object.entries(matureOutcomeCounts).map(([status, count]) => [status, rate(count)])),
     autoAppliedChanges: false,
-    nextStep: submissions.length > 0 && submissions.length % 10 === 0
+    nextStep: reviewReasons.length
       ? 'Propose evidence-based targeting and answer-guidance changes for candidate approval.'
       : 'Continue recording confirmed submissions and outcomes.',
   };
@@ -284,10 +506,14 @@ function decodeKeychain(value) {
   return /^[0-9a-f]+$/i.test(trimmed) && trimmed.length % 2 === 0 ? Buffer.from(trimmed, 'hex').toString('utf8') : value;
 }
 
-function keychainProfile() {
+function keychainProfileRaw() {
   if (process.platform !== 'darwin') throw new Error('Secure profile storage currently requires macOS Keychain.');
   const value = execFileSync('security', ['find-generic-password', '-s', KEYCHAIN_SERVICE, '-a', KEYCHAIN_ACCOUNT, '-w'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
-  try { return validateProfile(JSON.parse(decodeKeychain(value))); } catch { throw new Error('The Keychain profile is missing or invalid. Run profile set again.'); }
+  try { return object(JSON.parse(decodeKeychain(value)), 'profile'); } catch { throw new Error('The Keychain profile is missing or unreadable. Run profile set again.'); }
+}
+
+function keychainProfile() {
+  try { return validateProfile(keychainProfileRaw()); } catch { throw new Error('The Keychain profile needs migration. Run profile check, then profile migrate --stdin.'); }
 }
 
 async function ensureStateDir() {
@@ -318,7 +544,28 @@ async function jsonLines(file) {
   }
 }
 
-async function profileSet(profileInput) {
+async function withStateLock(name, action) {
+  const dir = await ensureStateDir();
+  const lockPath = join(dir, `.${name}.lock`);
+  let handle;
+  for (let attempt = 0; attempt < 100; attempt += 1) {
+    try {
+      handle = await open(lockPath, 'wx', 0o600);
+      break;
+    } catch (error) {
+      if (error.code !== 'EEXIST') throw error;
+      await new Promise((resolveDelay) => setTimeout(resolveDelay, 10));
+    }
+  }
+  if (!handle) throw new Error(`Could not acquire ${name} ledger lock.`);
+  try { return await action(dir); }
+  finally {
+    await handle.close();
+    await unlink(lockPath).catch((error) => { if (error.code !== 'ENOENT') throw error; });
+  }
+}
+
+async function storeProfile(profileInput) {
   if (process.platform !== 'darwin') throw new Error('Secure profile storage currently requires macOS Keychain.');
   const profile = validateProfile(profileInput);
   const raw = JSON.stringify(profile);
@@ -327,7 +574,24 @@ async function profileSet(profileInput) {
   } catch {
     throw new Error('Keychain could not store the profile. Unlock macOS Keychain and retry; no profile data was logged.');
   }
+  return profile;
+}
+
+async function profileSet(profileInput) {
+  const profile = await storeProfile(profileInput);
   return { stored: true, fields: Object.keys(profile).sort() };
+}
+
+async function profileMigrate(overrides) {
+  const before = keychainProfileRaw();
+  const profile = migrateProfile(before, overrides);
+  await storeProfile(profile);
+  return {
+    migrated: true,
+    fields: Object.keys(profile).sort(),
+    addedFields: Object.keys(profile).filter((field) => !(field in before)).sort(),
+    mappedLegacyFields: before.salaryPreference != null && profile.targetCompensation != null ? ['salaryPreference'] : [],
+  };
 }
 
 async function importResume(source) {
@@ -359,24 +623,43 @@ async function importResume(source) {
   return { path: target, sha256: metadata.sha256, bytes: metadata.bytes };
 }
 
+function duplicateResult(entries, candidate) {
+  const candidateCompany = normalizedText(candidate.company);
+  const candidateRole = normalizedText(candidate.role);
+  const candidateUrl = normalizeUrl(candidate.url);
+  const sameCompanyRole = (entry) => candidateCompany && candidateRole && normalizedText(entry.company) === candidateCompany && normalizedText(entry.role) === candidateRole;
+  const hard = entries.find((entry) => entry.id === candidate.id
+    || (candidate.employerJobId && entry.employerJobId && normalizedText(entry.company) === candidateCompany && entry.employerJobId.toLowerCase() === String(candidate.employerJobId).toLowerCase())
+    || normalizeUrl(entry.url) === candidateUrl);
+  const possible = hard ? null : entries.find(sameCompanyRole);
+  const match = hard ?? possible;
+  return {
+    duplicate: Boolean(hard),
+    possibleDuplicate: Boolean(possible),
+    reason: hard ? (hard.id === candidate.id ? 'id' : candidate.employerJobId && hard.employerJobId ? 'employer-job-id' : 'url') : possible ? 'company-role' : null,
+    match: match ? { id: match.id, company: match.company, role: match.role, submittedAt: match.submittedAt } : null,
+  };
+}
+
 async function ledgerCheck(candidate) {
   object(candidate, 'candidate');
   const entries = await jsonLines(join(await ensureStateDir(), 'applications.ndjson'));
-  const normalized = normalizeUrl(candidate.url);
-  const match = entries.find((entry) => entry.id === candidate.id || normalizeUrl(entry.url) === normalized);
-  return { duplicate: Boolean(match), match: match ? { id: match.id, company: match.company, role: match.role, submittedAt: match.submittedAt } : null };
+  string(candidate.url, 'candidate.url', 2048);
+  return duplicateResult(entries, candidate);
 }
 
-async function ledgerAdd(entryInput) {
+async function ledgerAdd(entryInput, duplicateOverride) {
   const entry = validateLedgerEntry(entryInput);
-  const dir = await ensureStateDir();
-  const file = join(dir, 'applications.ndjson');
-  const entries = await jsonLines(file);
-  const normalized = normalizeUrl(entry.url);
-  if (entries.some((existing) => existing.id === entry.id || normalizeUrl(existing.url) === normalized)) throw new Error('This application is already recorded.');
-  await appendFile(file, `${JSON.stringify(entry)}\n`, { mode: 0o600 });
-  await chmod(file, 0o600);
-  return { recorded: entry.id, review: buildReview([...entries, entry]) };
+  return withStateLock('applications', async (dir) => {
+    const file = join(dir, 'applications.ndjson');
+    const entries = await jsonLines(file);
+    const duplicate = duplicateResult(entries, entry);
+    if (duplicate.duplicate) throw new Error('This application is already recorded.');
+    if (duplicate.possibleDuplicate && duplicateOverride !== 'NEW REQUISITION CONFIRMED') throw new Error('A possible same-company role duplicate requires NEW REQUISITION CONFIRMED.');
+    await appendFile(file, `${JSON.stringify(entry)}\n`, { mode: 0o600 });
+    await chmod(file, 0o600);
+    return { recorded: entry.id, review: buildReview([...entries, entry]) };
+  });
 }
 
 async function ledgerOutcome(outcomeInput) {
@@ -385,20 +668,53 @@ async function ledgerOutcome(outcomeInput) {
   if (!['interview', 'rejected', 'offer', 'withdrawn'].includes(status)) throw new Error('Invalid outcome status.');
   const occurredAt = string(input.occurredAt ?? new Date().toISOString(), 'outcome.occurredAt', 80);
   if (Number.isNaN(Date.parse(occurredAt))) throw new Error('outcome.occurredAt must be an ISO date.');
-  const event = { id: string(input.id, 'outcome.id', 180), status, occurredAt, note: typeof input.note === 'string' ? input.note.slice(0, 2000) : undefined };
-  const file = join(await ensureStateDir(), 'outcomes.ndjson');
-  await appendFile(file, `${JSON.stringify(event)}\n`, { mode: 0o600 });
-  await chmod(file, 0o600);
+  const reasonCategories = new Set(['eligibility', 'closed-stale', 'level-compensation', 'must-have-gap', 'generic-resume-screen', 'interview-stage', 'unknown']);
+  const evidenceLevels = new Set(['explicit', 'inferred']);
+  const reasons = input.reasons == null ? [] : input.reasons.map((item, index) => {
+    const reason = object(item, `outcome.reasons[${index}]`);
+    const category = string(reason.category, `outcome.reasons[${index}].category`, 80);
+    const evidence = string(reason.evidence, `outcome.reasons[${index}].evidence`, 40);
+    if (!reasonCategories.has(category)) throw new Error(`outcome.reasons[${index}].category is invalid.`);
+    if (!evidenceLevels.has(evidence)) throw new Error(`outcome.reasons[${index}].evidence is invalid.`);
+    return { category, evidence };
+  });
+  const event = { id: string(input.id, 'outcome.id', 180), status, occurredAt, ...(typeof input.note === 'string' ? { note: input.note.slice(0, 2000) } : {}), ...(reasons.length ? { reasons } : {}) };
+  const storage = await withStateLock('outcomes', async (dir) => {
+    const file = join(dir, 'outcomes.ndjson');
+    const existing = await jsonLines(file);
+    const sameOccurrence = existing.filter((item) => item.id === event.id && item.status === event.status && item.occurredAt === event.occurredAt);
+    const reasonKey = JSON.stringify(event.reasons ?? []);
+    const duplicate = sameOccurrence.some((item) => JSON.stringify(item.reasons ?? []) === reasonKey);
+    if (duplicate) return { stored: false, enriched: false };
+    const enriched = event.reasons?.length > 0 && sameOccurrence.some((item) => !item.reasons?.length);
+    await appendFile(file, `${JSON.stringify(event)}\n`, { mode: 0o600 });
+    await chmod(file, 0o600);
+    return { stored: true, enriched };
+  });
   const applications = await jsonLines(join(await ensureStateDir(), 'applications.ndjson'));
-  return { result: { recordedOutcome: event.id, status }, application: applications.find((entry) => entry.id === event.id) ?? null, occurredAt: event.occurredAt };
+  return { result: { recorded: storage.stored, duplicate: !storage.stored, enriched: storage.enriched, recordedOutcome: event.id, status }, application: applications.find((entry) => entry.id === event.id) ?? null, occurredAt: event.occurredAt };
 }
 
 async function ledgerReview() {
   const dir = await ensureStateDir();
   const applications = await jsonLines(join(dir, 'applications.ndjson'));
   const outcomes = await jsonLines(join(dir, 'outcomes.ndjson'));
-  const latest = new Map(outcomes.map((entry) => [entry.id, entry]));
-  return buildReview(applications.map((entry) => latest.has(entry.id) ? { ...entry, status: latest.get(entry.id).status } : entry));
+  const acknowledgements = await jsonLines(join(dir, 'reviews.ndjson'));
+  return buildReview(applications, outcomes, acknowledgements);
+}
+
+async function ledgerReviewAcknowledge(input) {
+  const value = object(input, 'review acknowledgement');
+  const reviewedAt = string(value.reviewedAt ?? new Date().toISOString(), 'reviewedAt', 80);
+  if (Number.isNaN(Date.parse(reviewedAt))) throw new Error('reviewedAt must be an ISO date.');
+  const review = await ledgerReview();
+  const event = { reviewedAt, uniqueSubmissionCount: review.uniqueSubmittedTotal, maturedApplicationCount: review.maturedApplications };
+  await withStateLock('reviews', async (dir) => {
+    const file = join(dir, 'reviews.ndjson');
+    await appendFile(file, `${JSON.stringify(event)}\n`, { mode: 0o600 });
+    await chmod(file, 0o600);
+  });
+  return { acknowledged: true, ...event };
 }
 
 function print(value) {
@@ -441,11 +757,12 @@ async function executeCommand([area, action, value], telemetry, session) {
   if (area === 'profile' && action === 'set' && value === '--stdin') {
     const profile = await jsonStdin();
     result = await profileSet(profile);
+  } else if (area === 'profile' && action === 'migrate' && value === '--stdin') {
+    result = await profileMigrate(await jsonStdin());
   } else if (area === 'profile' && action === 'check') {
-    const profile = keychainProfile();
-    result = { configured: true, required: REQUIRED_PROFILE, fields: Object.keys(profile).sort() };
+    result = { ...profileStatus(keychainProfileRaw()), required: REQUIRED_PROFILE };
   } else if (area === 'profile' && action === 'field' && value) {
-    if (![...STRING_PROFILE_FIELDS, ...ARRAY_PROFILE_FIELDS].includes(value)) throw new Error('Profile field is not allowed.');
+    if (![...STRING_PROFILE_FIELDS, ...ARRAY_PROFILE_FIELDS, ...NUMBER_PROFILE_FIELDS, ...OBJECT_PROFILE_FIELDS].includes(value)) throw new Error('Profile field is not allowed.');
     result = { [value]: keychainProfile()[value] ?? null };
   } else if (area === 'resume' && action === 'import' && value) result = await importResume(value);
   else if (area === 'score' && action === '--stdin') {
@@ -458,17 +775,19 @@ async function executeCommand([area, action, value], telemetry, session) {
     const input = await jsonStdin();
     const telemetryDetails = validateSubmissionTelemetry(input.telemetry);
     const entry = validateLedgerEntry(input);
-    result = await ledgerAdd(entry);
+    result = await ledgerAdd(entry, input.duplicateOverride);
     domainEvents.push(await telemetryApplicationSubmitted(entry, telemetryDetails));
   } else if (area === 'ledger' && action === 'outcome' && value === '--stdin') {
     const outcome = await ledgerOutcome(await jsonStdin());
     result = outcome.result;
-    const event = await outcomeTelemetry(outcome.application, outcome.result.status, outcome.occurredAt);
+    const event = outcome.result.recorded && !outcome.result.enriched ? await outcomeTelemetry(outcome.application, outcome.result.status, outcome.occurredAt) : null;
     if (event) domainEvents.push(event);
   } else if (area === 'ledger' && action === 'review') {
     result = await ledgerReview();
     domainEvents.push(reviewTelemetry(result));
-  } else throw new Error('Usage: profile set --stdin|check|field <name>; resume import <url-or-pdf>; score --stdin; ledger check|add|outcome --stdin; ledger review; telemetry status|enable|disable|reset|preview --stdin|record --stdin');
+  } else if (area === 'ledger' && action === 'review-ack' && value === '--stdin') {
+    result = await ledgerReviewAcknowledge(await jsonStdin());
+  } else throw new Error('Usage: profile set|migrate --stdin; profile check|field <name>; resume import <url-or-pdf>; score --stdin; ledger check|add|outcome|review-ack --stdin; ledger review; telemetry status|enable|disable|reset|preview --stdin|record --stdin');
   for (const event of domainEvents) await telemetry.record(event, session);
   return result;
 }
