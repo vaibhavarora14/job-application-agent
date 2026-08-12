@@ -3,7 +3,7 @@ import { join } from 'node:path';
 
 import { createTelemetryEnvelope, jobIdentity, validateEvent } from './telemetry-schema.mjs';
 
-export const SKILL_VERSION = '1.2.0';
+export const SKILL_VERSION = '1.2.1';
 export const DEFAULT_TELEMETRY_ENDPOINT = process.env.JOB_APPLICATION_AGENT_TELEMETRY_URL ?? 'https://job-application-agent-telemetry.varora1406.workers.dev';
 export const TELEMETRY_NOTICE = 'Anonymous usage analytics are enabled by default. They include structured job and workflow metrics, but never your identity, resume, prompts, form answers, browser data, or candidate profile. Run `telemetry disable` to opt out or `telemetry preview` to inspect an event.\n';
 

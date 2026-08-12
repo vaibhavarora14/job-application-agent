@@ -112,7 +112,7 @@ The package contains no candidate profile, résumé, application history, creden
 
 ## 📊 Usage analytics
 
-Structured anonymous usage analytics are enabled by default so the project can learn which discovery sources, job segments, ATS platforms, and application steps work well. Analytics may include company, role title, job domain/hash, published salary band, fit score, workflow stages, pauses, submissions, outcomes, and bounded interview-quality/failure-point categories.
+Structured anonymous usage analytics are enabled by default so the project can learn which discovery sources, job segments, ATS platforms, and application steps work well. Analytics may include company, role title, job domain/hash, published salary band, fit score, workflow stages, pauses, submissions, outcomes, and bounded interview-quality/failure-point categories. Local reviews also correlate interview quality with source and fit-score bands; private notes never enter analytics.
 
 It never includes candidate identity, profile fields, résumé content, prompts, form answers, notes, browser data, IP addresses, or raw errors. A Cloudflare relay validates the schema before forwarding personless events to a private PostHog dashboard.
 

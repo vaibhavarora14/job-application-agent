@@ -469,10 +469,14 @@ export function buildReview(entries, outcomeEntries = [], acknowledgements = [],
     if (candidates.length) {
       const ordered = [...candidates].sort((a, b) => (Date.parse(b.occurredAt ?? 0) || 0) - (Date.parse(a.occurredAt ?? 0) || 0));
       const latest = ordered[0];
+      const canonicalApplication = [...group].sort((a, b) => Date.parse(a.submittedAt) - Date.parse(b.submittedAt))[0];
       canonicalOutcomes.push(latest);
       const latestInterviewDetail = ordered.find((entry) => entry.interviewQuality);
-      if (latestInterviewDetail) canonicalInterviewDetails.push(latestInterviewDetail);
-      const canonicalApplication = [...group].sort((a, b) => Date.parse(a.submittedAt) - Date.parse(b.submittedAt))[0];
+      if (latestInterviewDetail) canonicalInterviewDetails.push({
+        ...latestInterviewDetail,
+        source: canonicalApplication.source,
+        score: canonicalApplication.score,
+      });
       if (businessDaysBetween(canonicalApplication.submittedAt, now) >= 10) matureCanonicalOutcomes.push(latest);
     }
   }
@@ -488,6 +492,23 @@ export function buildReview(entries, outcomeEntries = [], acknowledgements = [],
   for (const outcome of canonicalOutcomes) for (const reason of outcome.reasons ?? []) reasonCounts[reason.category] = (reasonCounts[reason.category] ?? 0) + 1;
   const interviewQualityCounts = Object.fromEntries([...INTERVIEW_QUALITIES].map((quality) => [quality, canonicalInterviewDetails.filter((entry) => entry.interviewQuality === quality).length]));
   const failurePointCounts = Object.fromEntries([...FAILURE_POINTS].map((point) => [point, canonicalInterviewDetails.filter((entry) => entry.failurePoint === point).length]));
+  const interviewLearningSegmentCounts = new Map();
+  for (const detail of canonicalInterviewDetails) {
+    const score = Number(detail.score);
+    const lower = Number.isFinite(score) ? Math.floor(Math.max(0, Math.min(100, score)) / 10) * 10 : null;
+    const fitScoreBand = lower == null ? 'unknown' : `${lower}-${Math.min(100, lower + 9)}`;
+    const segment = {
+      source: detail.source ?? 'other',
+      fitScoreBand,
+      interviewQuality: detail.interviewQuality,
+      failurePoint: detail.failurePoint ?? 'unknown',
+    };
+    const key = JSON.stringify(segment);
+    interviewLearningSegmentCounts.set(key, (interviewLearningSegmentCounts.get(key) ?? 0) + 1);
+  }
+  const interviewLearningSegments = [...interviewLearningSegmentCounts.entries()]
+    .map(([key, count]) => ({ ...JSON.parse(key), count }))
+    .sort((a, b) => a.source.localeCompare(b.source) || a.fitScoreBand.localeCompare(b.fitScoreBand) || a.interviewQuality.localeCompare(b.interviewQuality) || a.failurePoint.localeCompare(b.failurePoint));
   const rate = (count) => maturedApplications ? Math.round((1000 * count) / maturedApplications) / 10 : 0;
   return {
     reviewDue: reviewReasons.length > 0,
@@ -503,6 +524,7 @@ export function buildReview(entries, outcomeEntries = [], acknowledgements = [],
     reasonCounts,
     interviewQualityCounts,
     failurePointCounts,
+    interviewLearningSegments,
     conversionRates: Object.fromEntries(Object.entries(matureOutcomeCounts).map(([status, count]) => [status, rate(count)])),
     autoAppliedChanges: false,
     nextStep: reviewReasons.length

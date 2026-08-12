@@ -344,6 +344,10 @@ test('builds canonical mature-cohort reviews and honors explicit acknowledgement
   assert.equal(review.interviewQualityCounts.promising, 1);
   assert.equal(review.interviewQualityCounts.dead, 1);
   assert.equal(review.failurePointCounts.constraints, 1);
+  assert.deepEqual(review.interviewLearningSegments, [
+    { source: 'company', fitScoreBand: '80-89', interviewQuality: 'dead', failurePoint: 'constraints', count: 1 },
+    { source: 'company', fitScoreBand: '80-89', interviewQuality: 'promising', failurePoint: 'unknown', count: 1 },
+  ]);
   assert.equal(review.matureOutcomeCounts.interview, 1);
   assert.equal(review.matureOutcomeCounts.rejected, 1);
   assert.equal(review.conversionRates.interview, 5);

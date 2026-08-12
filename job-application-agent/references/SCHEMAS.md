@@ -152,3 +152,5 @@ Generate `ledger review` first. Acknowledge only after the candidate has reviewe
 ```
 
 The acknowledgement stores the current canonical unique-submission and mature-application counts in append-only `reviews.ndjson`.
+
+`ledger review` also returns `interviewLearningSegments`. Each row combines the canonical application's source and ten-point fit-score band with the latest recorded interview quality and failure point, plus a count. This supports evidence-based targeting reviews without exposing private notes or automatically changing score weights.

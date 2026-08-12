@@ -58,7 +58,7 @@ Do not lower seniority, compensation, location, work mode, or evidence threshold
 - Record outcomes with `ledger outcome --stdin`. Use structured rejection reasons and mark each as `explicit` or `inferred`. Do not treat an inference as a candidate fact.
 - After an interview, optionally record `interviewQuality` (`promising`, `viable`, `weak`, or `dead`) and a bounded `failurePoint`. Keep free-form interview notes private.
 - Rely on idempotent outcome recording; identical events do not append rows or emit duplicate telemetry.
-- Run `ledger review` for canonical unique submissions, duplicate-row counts, mature applications, reasons, interview-quality/failure-point counts, and mature-cohort conversions.
+- Run `ledger review` for canonical unique submissions, duplicate-row counts, mature applications, reasons, interview-quality/failure-point counts, source and fit-score learning segments, and mature-cohort conversions.
 - Review submission hygiene after each ten newly acknowledged unique submissions.
 - Review outcome effectiveness only after at least 20 newly acknowledged applications have aged ten business days.
 - Generate proposals only. Change targeting, profile facts, resume claims, scoring thresholds, or answer guidance only with candidate approval.
