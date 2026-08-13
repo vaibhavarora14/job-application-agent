@@ -1,88 +1,87 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { buildPublicStats, publicStatsQueries } from '../src/public-stats.mjs';
+import { buildPublicStats, recordPublicAggregate } from '../src/public-stats.mjs';
 import worker from '../src/worker.mjs';
 
-function queryEnv() {
-  const requests = [];
-  const fixtures = {
-    'public usage dashboard summary': {
-      columns: ['installations', 'active_installations_30d', 'jobs_assessed', 'applications_submitted', 'interviews', 'offers'],
-      results: [[42, 18, 310, 96, 12, 2]],
-    },
-    'public usage dashboard timeline': {
-      columns: ['day', 'assessed', 'submitted'],
-      results: [['2026-08-12', 14, 5], ['2026-08-13', 21, 8]],
-    },
-    'public usage dashboard ATS mix': {
-      columns: ['label', 'count'],
-      results: [['ashby', 30], ['greenhouse', 20], ['tiny-segment', 2]],
-    },
-    'public usage dashboard seniority mix': {
-      columns: ['label', 'count'],
-      results: [['senior', 50], ['staff', 25], ['principal', 1]],
-    },
-    'public usage dashboard outcomes': {
-      columns: ['label', 'count'],
-      results: [['interview', 12], ['offer', 2]],
-    },
-  };
+function result(results = []) { return { results, success: true }; }
+
+function readDb() {
+  const queued = [
+    result([{ installations: 42, active_installations_30d: 18, jobs_assessed: 310, applications_submitted: 96, interviews: 12, offers: 2 }]),
+    result([{ day: '2026-08-12', assessed: 14, submitted: 5 }, { day: '2026-08-13', assessed: 21, submitted: 8 }]),
+    result([{ label: 'ashby', count: 30 }, { label: 'greenhouse', count: 20 }, { label: 'tiny-segment', count: 2 }]),
+    result([{ label: 'senior', count: 50 }, { label: 'staff', count: 25 }, { label: 'principal', count: 1 }]),
+    result([{ label: 'interview', count: 12 }, { label: 'offer', count: 2 }]),
+  ];
+  const queries = [];
   return {
-    POSTHOG_PERSONAL_API_KEY: 'phx_private_test_key',
-    POSTHOG_PROJECT_ID: '556627',
-    POSTHOG_APP_HOST: 'https://us.posthog.com',
-    POSTHOG_QUERY_FETCH: async (url, options) => {
-      requests.push({ url, options });
-      const name = JSON.parse(options.body).name;
-      return Response.json(fixtures[name], { status: 200 });
+    prepare(query) {
+      queries.push(query);
+      return { all: async () => queued.shift() };
     },
-    requests,
+    queries,
   };
 }
 
-test('public stats returns bounded aggregate metrics and suppresses small segments', async () => {
-  const env = queryEnv();
-  const result = await buildPublicStats(env, new Date('2026-08-14T00:00:00Z'));
-  assert.equal(result.metrics.installations, 42);
-  assert.equal(result.metrics.applicationsSubmitted, 96);
-  assert.deepEqual(result.timeline[0], { day: '2026-08-12', assessed: 14, submitted: 5 });
-  assert.deepEqual(result.breakdowns.ats, [
+function writeDb() {
+  const writes = [];
+  return {
+    prepare(query) {
+      return {
+        bind(...values) {
+          return { run: async () => { writes.push({ query, values }); return { success: true }; } };
+        },
+      };
+    },
+    writes,
+  };
+}
+
+test('public stats returns aggregate metrics and suppresses small segments', async () => {
+  const db = readDb();
+  const data = await buildPublicStats(db, new Date('2026-08-14T00:00:00Z'));
+  assert.equal(data.metrics.installations, 42);
+  assert.equal(data.metrics.applicationsSubmitted, 96);
+  assert.deepEqual(data.timeline[0], { day: '2026-08-12', assessed: 14, submitted: 5 });
+  assert.deepEqual(data.breakdowns.ats, [
     { label: 'ashby', count: 30 },
     { label: 'greenhouse', count: 20 },
     { label: 'other', count: 2 },
   ]);
-  assert.equal(result.privacy.minimumSegmentCount, 3);
-  assert.equal(JSON.stringify(result).includes('distinct_id'), false);
-  assert.equal(env.requests.length, 5);
-  for (const request of env.requests) {
-    assert.equal(request.options.headers.authorization, 'Bearer phx_private_test_key');
-    assert.equal(request.options.body.includes('distinct_id'), publicStatsQueries.summary === JSON.parse(request.options.body).query.query);
+  assert.equal(data.privacy.minimumSegmentCount, 3);
+  assert.equal(JSON.stringify(data).includes('installation_hash'), false);
+  for (const query of db.queries) {
+    assert.doesNotMatch(query, /SELECT\s+\*/i);
+    assert.doesNotMatch(query, /installation_hash\s+AS/i);
   }
 });
 
-test('public endpoint keeps the PostHog credential server-side and advertises cache policy', async () => {
-  const env = queryEnv();
-  const response = await worker.fetch(new Request('https://relay.example.com/api/public-stats'), env);
+test('event aggregation stores only an HMAC installation hash and bounded dimensions', async () => {
+  const db = writeDb();
+  await recordPublicAggregate(db, {
+    installationId: '11111111-1111-4111-8111-111111111111',
+    event: 'application_submitted',
+    properties: { ats: 'ashby' },
+  }, 'test-signing-secret-with-sufficient-length', new Date('2026-08-14T00:00:00Z'));
+  const serialized = JSON.stringify(db.writes);
+  assert.equal(serialized.includes('11111111-1111-4111-8111-111111111111'), false);
+  assert.equal(serialized.includes('ashby'), true);
+  assert.equal(db.writes.length, 3);
+});
+
+test('public endpoint exposes only aggregate output and cache policy', async () => {
+  const response = await worker.fetch(new Request('https://relay.example.com/api/public-stats'), { PUBLIC_STATS_DB: readDb() });
   assert.equal(response.status, 200);
   assert.match(response.headers.get('cache-control'), /s-maxage=900/);
   const body = await response.text();
-  assert.equal(body.includes('phx_private_test_key'), false);
+  assert.equal(body.includes('installation_hash'), false);
   assert.equal(body.includes('distinct_id'), false);
 });
 
-test('public endpoint fails closed when analytics credentials or upstream data are unavailable', async () => {
+test('public endpoint fails closed without the aggregate store', async () => {
   const response = await worker.fetch(new Request('https://relay.example.com/api/public-stats'), {});
   assert.equal(response.status, 503);
   assert.deepEqual(await response.json(), { error: 'stats_unavailable' });
   assert.equal(response.headers.get('cache-control'), 'no-store');
-});
-
-test('public queries are fixed aggregates with retention windows and no raw row projection', () => {
-  for (const query of Object.values(publicStatsQueries)) {
-    assert.match(query, /count|uniqExact/i);
-    assert.match(query, /timestamp >=/i);
-    assert.doesNotMatch(query, /SELECT\s+\*/i);
-    assert.doesNotMatch(query, /properties\.company|properties\.title|properties\.jobHash/i);
-  }
 });

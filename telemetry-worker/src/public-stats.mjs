@@ -1,54 +1,5 @@
 const CACHE_SECONDS = 15 * 60;
-const MAX_AGE_MONTHS = 24;
 const MIN_SEGMENT_COUNT = 3;
-
-const SUMMARY_QUERY = `
-SELECT
-  uniqExactIf(distinct_id, event = 'installation_started') AS installations,
-  uniqExactIf(distinct_id, timestamp >= now() - INTERVAL 30 DAY AND event IN ('job_assessed', 'application_submitted')) AS active_installations_30d,
-  countIf(event = 'job_assessed') AS jobs_assessed,
-  countIf(event = 'application_submitted') AS applications_submitted,
-  countIf(event = 'outcome_recorded' AND properties.outcome = 'interview') AS interviews,
-  countIf(event = 'outcome_recorded' AND properties.outcome = 'offer') AS offers
-FROM events
-WHERE timestamp >= now() - INTERVAL ${MAX_AGE_MONTHS} MONTH`;
-
-const TIMELINE_QUERY = `
-SELECT
-  toDate(timestamp) AS day,
-  countIf(event = 'job_assessed') AS assessed,
-  countIf(event = 'application_submitted') AS submitted
-FROM events
-WHERE timestamp >= now() - INTERVAL 30 DAY
-  AND event IN ('job_assessed', 'application_submitted')
-GROUP BY day
-ORDER BY day`;
-
-const ATS_QUERY = `
-SELECT properties.ats AS label, count() AS count
-FROM events
-WHERE timestamp >= now() - INTERVAL 90 DAY
-  AND event = 'application_submitted'
-GROUP BY label
-ORDER BY count DESC, label
-LIMIT 12`;
-
-const SENIORITY_QUERY = `
-SELECT properties.seniority AS label, count() AS count
-FROM events
-WHERE timestamp >= now() - INTERVAL 90 DAY
-  AND event = 'job_discovered'
-GROUP BY label
-ORDER BY count DESC, label
-LIMIT 12`;
-
-const OUTCOMES_QUERY = `
-SELECT properties.outcome AS label, count() AS count
-FROM events
-WHERE timestamp >= now() - INTERVAL 365 DAY
-  AND event = 'outcome_recorded'
-GROUP BY label
-ORDER BY count DESC, label`;
 
 function responseHeaders() {
   return {
@@ -64,11 +15,6 @@ function number(value) {
   return Number.isFinite(result) && result >= 0 ? result : 0;
 }
 
-function rows(payload) {
-  if (!payload || !Array.isArray(payload.results)) throw new Error('Invalid analytics response.');
-  return payload.results;
-}
-
 function suppressSmallSegments(entries) {
   const visible = [];
   let suppressed = 0;
@@ -82,65 +28,95 @@ function suppressSmallSegments(entries) {
   return visible;
 }
 
-async function runQuery(env, query, name) {
-  if (!env.POSTHOG_PERSONAL_API_KEY || !env.POSTHOG_PROJECT_ID) throw new Error('Public analytics is not configured.');
-  const fetchFn = env.POSTHOG_QUERY_FETCH ?? fetch;
-  const host = (env.POSTHOG_APP_HOST ?? 'https://us.posthog.com').replace(/\/$/, '');
-  const upstream = await fetchFn(`${host}/api/projects/${encodeURIComponent(env.POSTHOG_PROJECT_ID)}/query/`, {
-    method: 'POST',
-    headers: {
-      authorization: `Bearer ${env.POSTHOG_PERSONAL_API_KEY}`,
-      'content-type': 'application/json',
-    },
-    body: JSON.stringify({ query: { kind: 'HogQLQuery', query }, name }),
-  });
-  if (!upstream.ok) throw new Error('Analytics query failed.');
-  return upstream.json();
+async function anonymousInstallationHash(installationId, secret) {
+  if (typeof secret !== 'string' || secret.length < 24) throw new Error('Signing secret is not configured.');
+  const encoder = new TextEncoder();
+  const key = await crypto.subtle.importKey('raw', encoder.encode(secret), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
+  const digest = await crypto.subtle.sign('HMAC', key, encoder.encode(`public-stats:${installationId}`));
+  return [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, '0')).join('');
 }
 
-function mapRows(payload) {
-  const columns = Array.isArray(payload.columns) ? payload.columns : [];
-  return rows(payload).map((row) => Object.fromEntries(columns.map((column, index) => [column, row[index]])));
+async function increment(db, day, metric, segment = '') {
+  await db.prepare(`
+    INSERT INTO public_daily_metrics (day, metric, segment, count)
+    VALUES (?, ?, ?, 1)
+    ON CONFLICT(day, metric, segment) DO UPDATE SET count = count + 1
+  `).bind(day, metric, segment).run();
 }
 
-export async function buildPublicStats(env, now = new Date()) {
-  const [summaryPayload, timelinePayload, atsPayload, seniorityPayload, outcomesPayload] = await Promise.all([
-    runQuery(env, SUMMARY_QUERY, 'public usage dashboard summary'),
-    runQuery(env, TIMELINE_QUERY, 'public usage dashboard timeline'),
-    runQuery(env, ATS_QUERY, 'public usage dashboard ATS mix'),
-    runQuery(env, SENIORITY_QUERY, 'public usage dashboard seniority mix'),
-    runQuery(env, OUTCOMES_QUERY, 'public usage dashboard outcomes'),
+export async function recordPublicAggregate(db, event, signingSecret, now = new Date()) {
+  if (!db?.prepare) return;
+  const day = now.toISOString().slice(0, 10);
+  const active = event.event === 'job_assessed' || event.event === 'application_submitted';
+  if (event.event === 'installation_started' || active) {
+    const installationHash = await anonymousInstallationHash(event.installationId, signingSecret);
+    await db.prepare(`
+      INSERT INTO public_installations (installation_hash, installed_at, last_active_at)
+      VALUES (?, ?, ?)
+      ON CONFLICT(installation_hash) DO UPDATE SET
+        last_active_at = COALESCE(excluded.last_active_at, public_installations.last_active_at)
+    `).bind(installationHash, now.toISOString(), active ? now.toISOString() : null).run();
+  }
+  if (event.event === 'job_assessed') await increment(db, day, 'jobs_assessed');
+  if (event.event === 'application_submitted') {
+    await increment(db, day, 'applications_submitted');
+    await increment(db, day, 'ats', event.properties.ats);
+  }
+  if (event.event === 'job_discovered') await increment(db, day, 'seniority', event.properties.seniority);
+  if (event.event === 'outcome_recorded') {
+    await increment(db, day, 'outcome', event.properties.outcome);
+    if (event.properties.outcome === 'interview') await increment(db, day, 'interviews');
+    if (event.properties.outcome === 'offer') await increment(db, day, 'offers');
+  }
+}
+
+function rows(result) {
+  return Array.isArray(result?.results) ? result.results : [];
+}
+
+export async function buildPublicStats(db, now = new Date()) {
+  if (!db?.prepare) throw new Error('Public aggregate store is not configured.');
+  const [summary, timeline, ats, seniority, outcomes] = await Promise.all([
+    db.prepare(`
+      SELECT
+        (SELECT COUNT(*) FROM public_installations) AS installations,
+        (SELECT COUNT(*) FROM public_installations WHERE last_active_at >= datetime('now', '-30 days')) AS active_installations_30d,
+        COALESCE(SUM(CASE WHEN metric = 'jobs_assessed' THEN count ELSE 0 END), 0) AS jobs_assessed,
+        COALESCE(SUM(CASE WHEN metric = 'applications_submitted' THEN count ELSE 0 END), 0) AS applications_submitted,
+        COALESCE(SUM(CASE WHEN metric = 'interviews' THEN count ELSE 0 END), 0) AS interviews,
+        COALESCE(SUM(CASE WHEN metric = 'offers' THEN count ELSE 0 END), 0) AS offers
+      FROM public_daily_metrics
+      WHERE day >= date('now', '-24 months')
+    `).all(),
+    db.prepare(`
+      SELECT day,
+        SUM(CASE WHEN metric = 'jobs_assessed' THEN count ELSE 0 END) AS assessed,
+        SUM(CASE WHEN metric = 'applications_submitted' THEN count ELSE 0 END) AS submitted
+      FROM public_daily_metrics
+      WHERE day >= date('now', '-30 days')
+        AND metric IN ('jobs_assessed', 'applications_submitted')
+      GROUP BY day ORDER BY day
+    `).all(),
+    db.prepare(`SELECT segment AS label, SUM(count) AS count FROM public_daily_metrics WHERE day >= date('now', '-90 days') AND metric = 'ats' GROUP BY segment ORDER BY count DESC, label LIMIT 12`).all(),
+    db.prepare(`SELECT segment AS label, SUM(count) AS count FROM public_daily_metrics WHERE day >= date('now', '-90 days') AND metric = 'seniority' GROUP BY segment ORDER BY count DESC, label LIMIT 12`).all(),
+    db.prepare(`SELECT segment AS label, SUM(count) AS count FROM public_daily_metrics WHERE day >= date('now', '-365 days') AND metric = 'outcome' GROUP BY segment ORDER BY count DESC, label`).all(),
   ]);
-  const summary = mapRows(summaryPayload)[0] ?? {};
-  const timeline = mapRows(timelinePayload).map((entry) => ({
-    day: String(entry.day),
-    assessed: number(entry.assessed),
-    submitted: number(entry.submitted),
-  }));
-  const segment = (payload) => suppressSmallSegments(mapRows(payload).map((entry) => ({ label: entry.label, count: entry.count })));
-  const metrics = {
-    installations: number(summary.installations),
-    activeInstallations30d: number(summary.active_installations_30d),
-    jobsAssessed: number(summary.jobs_assessed),
-    applicationsSubmitted: number(summary.applications_submitted),
-    interviews: number(summary.interviews),
-    offers: number(summary.offers),
-  };
+  const totals = rows(summary)[0] ?? {};
+  const segment = (result) => suppressSmallSegments(rows(result));
   return {
     generatedAt: now.toISOString(),
-    window: { retentionMonths: MAX_AGE_MONTHS, activityDays: 30 },
-    metrics,
-    timeline,
-    breakdowns: {
-      ats: segment(atsPayload),
-      seniority: segment(seniorityPayload),
-      outcomes: segment(outcomesPayload),
+    window: { retentionMonths: 24, activityDays: 30 },
+    metrics: {
+      installations: number(totals.installations),
+      activeInstallations30d: number(totals.active_installations_30d),
+      jobsAssessed: number(totals.jobs_assessed),
+      applicationsSubmitted: number(totals.applications_submitted),
+      interviews: number(totals.interviews),
+      offers: number(totals.offers),
     },
-    privacy: {
-      aggregateOnly: true,
-      minimumSegmentCount: MIN_SEGMENT_COUNT,
-      identityCollected: false,
-    },
+    timeline: rows(timeline).map((entry) => ({ day: String(entry.day), assessed: number(entry.assessed), submitted: number(entry.submitted) })),
+    breakdowns: { ats: segment(ats), seniority: segment(seniority), outcomes: segment(outcomes) },
+    privacy: { aggregateOnly: true, minimumSegmentCount: MIN_SEGMENT_COUNT, identityCollected: false },
   };
 }
 
@@ -151,16 +127,11 @@ export async function publicStatsResponse(request, env) {
   const cached = cache ? await cache.match(cacheKey) : null;
   if (cached) return cached;
   try {
-    const stats = await buildPublicStats(env);
+    const stats = await buildPublicStats(env.PUBLIC_STATS_DB);
     const result = new Response(JSON.stringify(stats), { status: 200, headers: responseHeaders() });
     if (cache) await cache.put(cacheKey, result.clone());
     return result;
   } catch {
-    return new Response(JSON.stringify({ error: 'stats_unavailable' }), {
-      status: 503,
-      headers: { ...responseHeaders(), 'cache-control': 'no-store', 'retry-after': '60' },
-    });
+    return new Response(JSON.stringify({ error: 'stats_unavailable' }), { status: 503, headers: { ...responseHeaders(), 'cache-control': 'no-store', 'retry-after': '60' } });
   }
 }
-
-export const publicStatsQueries = Object.freeze({ summary: SUMMARY_QUERY, timeline: TIMELINE_QUERY, ats: ATS_QUERY, seniority: SENIORITY_QUERY, outcomes: OUTCOMES_QUERY });

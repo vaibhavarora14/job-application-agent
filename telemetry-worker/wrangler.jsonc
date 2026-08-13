@@ -16,10 +16,16 @@
     "logs": { "enabled": false, "invocation_logs": false }
   },
   "vars": {
-    "POSTHOG_HOST": "https://us.i.posthog.com",
-    "POSTHOG_APP_HOST": "https://us.posthog.com",
-    "POSTHOG_PROJECT_ID": "556627"
+    "POSTHOG_HOST": "https://us.i.posthog.com"
   },
+  "d1_databases": [
+    {
+      "binding": "PUBLIC_STATS_DB",
+      "database_name": "job-application-agent-public-stats",
+      "database_id": "a763216d-064e-4b31-a518-5a978065b879",
+      "migrations_dir": "migrations"
+    }
+  ],
   "ratelimits": [
     {
       "name": "INSTALL_RATE_LIMITER",
@@ -43,7 +49,15 @@
         "run_worker_first": ["/api/*", "/v1/*", "/healthz"]
       },
       "observability": { "enabled": false, "logs": { "enabled": false, "invocation_logs": false } },
-      "vars": { "POSTHOG_HOST": "https://us.i.posthog.com", "POSTHOG_APP_HOST": "https://us.posthog.com", "POSTHOG_PROJECT_ID": "556627" },
+      "vars": { "POSTHOG_HOST": "https://us.i.posthog.com" },
+      "d1_databases": [
+        {
+          "binding": "PUBLIC_STATS_DB",
+          "database_name": "job-application-agent-public-stats-staging",
+          "database_id": "cfad338c-0e53-4b44-a372-886815b8d10e",
+          "migrations_dir": "migrations"
+        }
+      ],
       "ratelimits": [
         {
           "name": "INSTALL_RATE_LIMITER",

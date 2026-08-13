@@ -1,5 +1,5 @@
 import { TELEMETRY_SCHEMA_VERSION, TELEMETRY_MAX_BYTES, validateTelemetryEnvelope } from '../../job-application-agent/scripts/telemetry-schema.mjs';
-import { publicStatsResponse } from './public-stats.mjs';
+import { publicStatsResponse, recordPublicAggregate } from './public-stats.mjs';
 
 const encoder = new TextEncoder();
 const decoder = new TextDecoder();
@@ -101,6 +101,7 @@ async function events(request, env) {
     return response({ error: 'upstream_unavailable' }, 503);
   }
   if (!upstream.ok) return response({ error: 'upstream_unavailable' }, 503);
+  try { await recordPublicAggregate(env.PUBLIC_STATS_DB, envelope, env.SIGNING_SECRET); } catch { /* Public aggregates are best effort. */ }
   return response({ accepted: true, eventId }, 202);
 }
 

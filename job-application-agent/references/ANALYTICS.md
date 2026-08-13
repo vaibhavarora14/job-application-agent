@@ -62,6 +62,6 @@ Only documented enums, bounded numbers, Booleans, bounded company/title/country 
 - Anonymous installation IDs remain stable until reset.
 - The product retention policy is 24 months and dashboards are private. Dashboard queries exclude data older than 24 months.
 - A public usage dashboard exposes only fixed aggregate metrics. It never exposes raw events or anonymous installation IDs, rolls segment counts below three into `other`, and caches results at the edge for 15 minutes.
-- Public dashboard reads use a scoped PostHog personal API key stored only as the Cloudflare Worker secret `POSTHOG_PERSONAL_API_KEY`; the browser never receives that credential.
+- After PostHog accepts an event, the relay best-effort increments a separate Cloudflare D1 store containing daily counters and HMAC-derived installation hashes. The public endpoint reads only this aggregate store; it has no PostHog read credential.
 - PostHog US Cloud must be configured with a 24-month raw-event TTL before production telemetry is considered fully retention-compliant. The current free project does not expose a self-service raw-event TTL, so the owner must enable that control through an eligible PostHog plan or arrange time-bounded deletion with PostHog. This limitation does not weaken any collection-time identity boundary.
 - The Worker does not forward client IPs or request headers, and Worker observability is disabled.

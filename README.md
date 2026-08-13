@@ -149,7 +149,7 @@ Structured anonymous usage analytics are enabled by default so the project can l
 
 It never includes candidate identity, profile fields, résumé content, prompts, form answers, notes, browser data, IP addresses, or raw errors. A Cloudflare relay validates the schema before forwarding personless events to a private PostHog dashboard.
 
-The [public usage dashboard](https://job-application-agent-telemetry.varora1406.workers.dev/) shows aggregate installations, activity, applications, outcomes, ATS mix, and role seniority. Its API runs fixed server-side queries, exposes no raw events or installation identifiers, suppresses small segments, and keeps the PostHog personal API key in a Worker secret.
+The [public usage dashboard](https://job-application-agent-telemetry.varora1406.workers.dev/) shows aggregate installations, activity, applications, outcomes, ATS mix, and role seniority. The relay increments a separate aggregate-only Cloudflare D1 store after PostHog accepts each event. The public API exposes no raw events or installation identifiers and suppresses small segments.
 
 ```sh
 node ~/.codex/skills/job-application-agent/scripts/job-application.mjs telemetry status

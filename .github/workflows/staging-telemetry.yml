@@ -18,9 +18,14 @@ jobs:
         with:
           node-version: 24
       - run: npm run check && npm test && npm run privacy-audit
+      - name: Apply aggregate database migrations
+        run: npx --yes wrangler@4.122.0 d1 migrations apply job-application-agent-public-stats-staging --remote --config telemetry-worker/wrangler.jsonc --env staging
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
       - name: Deploy staging Worker
         run: |
-          node -e 'process.stdout.write(JSON.stringify({SIGNING_SECRET: process.env.SIGNING_SECRET, POSTHOG_PROJECT_TOKEN: process.env.POSTHOG_PROJECT_TOKEN, POSTHOG_PERSONAL_API_KEY: process.env.POSTHOG_PERSONAL_API_KEY}))' \
+          node -e 'process.stdout.write(JSON.stringify({SIGNING_SECRET: process.env.SIGNING_SECRET, POSTHOG_PROJECT_TOKEN: process.env.POSTHOG_PROJECT_TOKEN}))' \
             | npx --yes wrangler@4.122.0 secret bulk --config telemetry-worker/wrangler.jsonc --env staging
           npx --yes wrangler@4.122.0 deploy --config telemetry-worker/wrangler.jsonc --env staging --keep-vars
         env:
@@ -28,7 +33,6 @@ jobs:
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           SIGNING_SECRET: ${{ secrets.TELEMETRY_STAGING_SIGNING_SECRET }}
           POSTHOG_PROJECT_TOKEN: ${{ secrets.POSTHOG_STAGING_PROJECT_TOKEN }}
-          POSTHOG_PERSONAL_API_KEY: ${{ secrets.POSTHOG_PERSONAL_API_KEY }}
       - name: Run staging contract test
         run: node telemetry-worker/tests/e2e-staging.mjs
         env:
