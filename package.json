@@ -1,12 +1,44 @@
 {
   "name": "job-application-agent",
-  "version": "1.2.1",
-  "private": true,
+  "version": "2.0.0",
+  "description": "A self-updating Codex skill for evidence-based job discovery, application completion, and outcome tracking.",
+  "license": "MIT",
   "type": "module",
+  "bin": {
+    "job-application-agent": "bin/job-application-agent.mjs"
+  },
+  "files": [
+    "bin/",
+    "installer/src/",
+    "job-application-agent/",
+    "LICENSE",
+    "README.md"
+  ],
+  "keywords": [
+    "codex",
+    "skill",
+    "job-search",
+    "job-application",
+    "career"
+  ],
+  "homepage": "https://github.com/vaibhavarora14/job-application-agent#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/vaibhavarora14/job-application-agent.git"
+  },
+  "bugs": {
+    "url": "https://github.com/vaibhavarora14/job-application-agent/issues"
+  },
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
+  },
   "scripts": {
-    "test": "node --test job-application-agent/tests/*.test.mjs telemetry-worker/tests/*.test.mjs",
+    "test": "node --test job-application-agent/tests/*.test.mjs telemetry-worker/tests/*.test.mjs installer/tests/*.test.mjs",
     "privacy-audit": "node --test job-application-agent/tests/privacy-audit.test.mjs",
-    "check": "node --check job-application-agent/scripts/job-application.mjs && node --check job-application-agent/scripts/telemetry-client.mjs && node --check job-application-agent/scripts/telemetry-schema.mjs && node --check telemetry-worker/src/worker.mjs"
+    "smoke:package": "node scripts/smoke-package.mjs",
+    "check": "node --check job-application-agent/scripts/job-application.mjs && node --check job-application-agent/scripts/telemetry-client.mjs && node --check job-application-agent/scripts/telemetry-schema.mjs && node --check telemetry-worker/src/worker.mjs && node --check installer/src/cli.mjs && node --check installer/src/installer.mjs && node --check installer/src/runner.mjs && node --check installer/src/scheduler.mjs && node --check bin/job-application-agent.mjs",
+    "prepack": "npm run check && npm test && npm run privacy-audit"
   },
   "engines": {
     "node": ">=20"
