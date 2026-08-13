@@ -57,6 +57,22 @@ jobs:
       - name: Audit representative payloads for prohibited data
         run: npm run privacy-audit
 
+      - name: Verify npm package contents and executable
+        run: |
+          npm pack --dry-run
+          package_file=$(npm pack --silent)
+          test -n "$package_file"
+          tar -tzf "$package_file" | grep -q '^package/bin/job-application-agent.mjs$'
+          tar -tzf "$package_file" | grep -q '^package/job-application-agent/SKILL.md$'
+          if tar -tzf "$package_file" | grep -Eq 'applications\.ndjson|resume\.pdf|profile\.json|telemetry-worker/'; then
+            echo 'npm package contains private state or server-only code.' >&2
+            exit 1
+          fi
+          rm "$package_file"
+
+      - name: Smoke-test installation from the packed npm artifact
+        run: npm run smoke:package
+
       - name: Scan tracked files for common secret formats
         run: |
           if git grep -nEI '(-----BEGIN (RSA |EC |OPENSSH )?PRIVATE KEY-----|gh[pousr]_[A-Za-z0-9]{30,}|sk_(live|test)_[A-Za-z0-9]{20,}|AKIA[0-9A-Z]{16})' -- . ':!LICENSE'; then

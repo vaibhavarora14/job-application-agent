@@ -1,4 +1,5 @@
 import { readFile } from 'node:fs/promises';
+import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -31,13 +32,14 @@ export async function runCli(args, options = {}) {
   const output = options.output || (value => process.stdout.write(`${value}\n`));
   const packageRoot = options.packageRoot || defaultPackageRoot();
   const packageVersion = options.packageVersion || await defaultVersion(packageRoot);
+  const scheduler = process.env.JOB_APPLICATION_AGENT_NO_SCHEDULER === '1' ? false : options.scheduler;
   const shared = {
     packageRoot,
     packageVersion,
     homeDir: options.homeDir,
     codexHome: options.codexHome,
     platform: options.platform,
-    scheduler: options.scheduler,
+    scheduler,
   };
   const command = args[0];
 
@@ -50,7 +52,7 @@ export async function runCli(args, options = {}) {
   }
 
   if (command === 'updates' && ['enable', 'disable'].includes(args[1])) {
-    const status = await setAutomaticUpdates(args[1] === 'enable', { codexHome: options.codexHome, homeDir: options.homeDir, platform: options.platform, scheduler: options.scheduler });
+    const status = await setAutomaticUpdates(args[1] === 'enable', { codexHome: options.codexHome, homeDir: options.homeDir, platform: options.platform, scheduler });
     output(`Automatic updates: ${status.automaticUpdates ? 'enabled' : 'disabled'}`);
     return status;
   }
@@ -58,14 +60,15 @@ export async function runCli(args, options = {}) {
   if (command === 'auto-update') {
     const current = await readInstallStatus({ codexHome: options.codexHome });
     if (!current.automaticUpdates) { output('Automatic updates are disabled.'); return current; }
-    const status = await updateSkill(shared);
+    if (current.installedVersion === packageVersion) { output(`Job Application Agent ${packageVersion} is already current.`); return current; }
+    const status = await updateSkill({ ...shared, scheduler: false });
     output(`Updated job-application-agent to ${status.installedVersion}.`);
     return status;
   }
 
   if (command === 'install' || command === 'update') {
-    if (options.scheduler !== false) {
-      const codexHome = options.codexHome || path.join(options.homeDir || process.env.HOME, '.codex');
+    if (scheduler !== false) {
+      const codexHome = options.codexHome || path.join(options.homeDir || os.homedir(), '.codex');
       const runner = await createUpdateRunner({ platform: options.platform, codexHome, npmCliPath: await locateNpmCli() });
       shared.command = runner.path;
     }

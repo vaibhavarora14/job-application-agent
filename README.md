@@ -19,6 +19,28 @@
 
 Job Application Agent helps Codex discover, qualify, complete, and track your own job applications—without inventing credentials or hiding consequential decisions. It combines browser-assisted form filling with a verified résumé, candidate-defined targeting, secure local profile storage, duplicate detection, and an application ledger.
 
+## Install once, stay current automatically
+
+```bash
+npx job-application-agent@latest install
+```
+
+Requires Node.js 20 or newer. The installer places the skill at `~/.codex/skills/job-application-agent` and enables automatic updates by default. It checks npm at login and every hour on macOS, Linux, and Windows, then installs the newest published version without asking users to reinstall. Candidate profile data, the canonical résumé, telemetry identity, and application ledgers remain outside the replaceable skill directory.
+
+```bash
+# See the installed version and update mode
+npx job-application-agent@latest status
+
+# Update immediately
+npx job-application-agent@latest update
+
+# Explicitly opt out or back in
+npx job-application-agent@latest updates disable
+npx job-application-agent@latest updates enable
+```
+
+Updates are staged and validated before replacement. The immediately previous skill version is retained locally so a failed installation leaves the working version intact.
+
 > [!IMPORTANT]
 > You stay in control. The agent pauses for authentication, CAPTCHA, legal attestations, demographic questions, unclear eligibility, sensitive identifiers, and unverifiable claims.
 
