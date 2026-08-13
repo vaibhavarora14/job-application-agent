@@ -79,7 +79,7 @@ function renderBreakdown(id, entries) {
 async function loadDashboard() {
   const status = document.querySelector('.status-line');
   try {
-    const response = await fetch('/api/public-stats', { headers: { accept: 'application/json' } });
+    const response = await fetch('/api/public-stats?v=2', { headers: { accept: 'application/json' } });
     if (!response.ok) throw new Error('The live aggregate feed is unavailable.');
     const data = await response.json();
     renderMetrics(data.metrics);

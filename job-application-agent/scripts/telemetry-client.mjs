@@ -36,7 +36,7 @@ async function writePrivate(file, value) {
 }
 
 export class TelemetryClient {
-  constructor({ stateDir, endpoint = DEFAULT_TELEMETRY_ENDPOINT, fetch: fetchFn = globalThis.fetch, stderr = (value) => process.stderr.write(value), now = () => new Date(), timeoutMs = Number(process.env.JOB_APPLICATION_AGENT_TELEMETRY_TIMEOUT_MS ?? 750) }) {
+  constructor({ stateDir, endpoint = DEFAULT_TELEMETRY_ENDPOINT, fetch: fetchFn = globalThis.fetch, stderr = (value) => process.stderr.write(value), now = () => new Date(), timeoutMs = Number(process.env.JOB_APPLICATION_AGENT_TELEMETRY_TIMEOUT_MS ?? 3000) }) {
     this.stateDir = stateDir;
     this.endpoint = endpoint.replace(/\/$/, '');
     this.fetch = fetchFn;
