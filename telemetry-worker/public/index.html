@@ -1,0 +1,131 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="description" content="Anonymous, aggregate usage statistics for the open-source Job Application Agent.">
+    <meta name="theme-color" content="#f4efe3">
+    <title>Job Application Agent — Public Usage</title>
+    <link rel="stylesheet" href="/styles.css">
+    <script type="module" src="/dashboard.js"></script>
+  </head>
+  <body>
+    <a class="skip-link" href="#main">Skip to dashboard</a>
+    <header class="site-header">
+      <a class="brand" href="https://github.com/vaibhavarora14/job-application-agent" aria-label="Job Application Agent on GitHub">
+        <span class="brand-mark" aria-hidden="true">JA</span>
+        <span>Job Application Agent</span>
+      </a>
+      <nav aria-label="Primary navigation">
+        <a href="#activity">Activity</a>
+        <a href="#mix">Mix</a>
+        <a href="#privacy">Privacy</a>
+        <a class="github-link" href="https://github.com/vaibhavarora14/job-application-agent">View source <span aria-hidden="true">↗</span></a>
+      </nav>
+    </header>
+
+    <main id="main">
+      <section class="hero" aria-labelledby="page-title">
+        <p class="eyebrow">Public usage report</p>
+        <h1 id="page-title">A transparent look at the agent in the wild.</h1>
+        <p class="hero-copy">Aggregate signals from people using the open-source agent to discover, assess, and apply for jobs. No names, résumés, prompts, or application answers—ever.</p>
+        <div class="status-line" role="status" aria-live="polite">
+          <span class="status-dot" aria-hidden="true"></span>
+          <span id="data-status">Loading live aggregate data…</span>
+        </div>
+      </section>
+
+      <section class="metrics" aria-labelledby="metrics-title">
+        <h2 id="metrics-title" class="sr-only">Headline metrics</h2>
+        <article class="metric primary">
+          <p>Anonymous installations</p>
+          <strong data-metric="installations">—</strong>
+          <span>All time, within the 24-month reporting window</span>
+        </article>
+        <article class="metric">
+          <p>Active installations</p>
+          <strong data-metric="activeInstallations30d">—</strong>
+          <span>Assessed or submitted in the last 30 days</span>
+        </article>
+        <article class="metric">
+          <p>Jobs assessed</p>
+          <strong data-metric="jobsAssessed">—</strong>
+          <span>Structured fit reviews completed</span>
+        </article>
+        <article class="metric">
+          <p>Applications submitted</p>
+          <strong data-metric="applicationsSubmitted">—</strong>
+          <span>Confirmed employer or ATS success states</span>
+        </article>
+        <article class="metric">
+          <p>Interviews recorded</p>
+          <strong data-metric="interviews">—</strong>
+          <span>Explicit progression reported by users</span>
+        </article>
+        <article class="metric">
+          <p>Offers recorded</p>
+          <strong data-metric="offers">—</strong>
+          <span>Explicit offers reported by users</span>
+        </article>
+      </section>
+
+      <section id="activity" class="panel activity-panel" aria-labelledby="activity-title">
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">Last 30 days</p>
+            <h2 id="activity-title">Assessment to submission</h2>
+          </div>
+          <div class="legend" aria-label="Chart legend">
+            <span><i class="assessed" aria-hidden="true"></i> Assessed</span>
+            <span><i class="submitted" aria-hidden="true"></i> Submitted</span>
+          </div>
+        </div>
+        <div id="timeline-chart" class="chart" role="img" aria-label="Jobs assessed and applications submitted during the last 30 days"></div>
+      </section>
+
+      <section id="mix" class="mix-grid" aria-label="Usage breakdowns">
+        <article class="panel breakdown-panel">
+          <div class="section-heading">
+            <div><p class="eyebrow">Last 90 days</p><h2>Where applications happen</h2></div>
+          </div>
+          <div id="ats-breakdown" class="breakdown-list"></div>
+        </article>
+        <article class="panel breakdown-panel">
+          <div class="section-heading">
+            <div><p class="eyebrow">Last 90 days</p><h2>Seniority being explored</h2></div>
+          </div>
+          <div id="seniority-breakdown" class="breakdown-list"></div>
+        </article>
+        <article class="panel breakdown-panel outcomes-panel">
+          <div class="section-heading">
+            <div><p class="eyebrow">Reported outcomes</p><h2>What happens next</h2></div>
+          </div>
+          <div id="outcomes-breakdown" class="breakdown-list"></div>
+        </article>
+      </section>
+
+      <section id="privacy" class="privacy-panel" aria-labelledby="privacy-title">
+        <div>
+          <p class="eyebrow">Built for public trust</p>
+          <h2 id="privacy-title">The dashboard sees patterns, not people.</h2>
+        </div>
+        <div class="privacy-copy">
+          <p>Every number is calculated server-side from personless events. Small segments are rolled into “other,” raw events are never exposed, and analytics credentials never reach the browser.</p>
+          <a href="https://github.com/vaibhavarora14/job-application-agent/blob/main/job-application-agent/references/ANALYTICS.md">Read the telemetry contract <span aria-hidden="true">↗</span></a>
+        </div>
+      </section>
+    </main>
+
+    <footer>
+      <span>Open source. Aggregate by design.</span>
+      <span id="updated-at">Awaiting live data</span>
+    </footer>
+
+    <template id="empty-template">
+      <div class="empty-state">
+        <span aria-hidden="true">↗</span>
+        <p><strong>Early days.</strong> This view will fill as anonymous telemetry arrives.</p>
+      </div>
+    </template>
+  </body>
+</html>
