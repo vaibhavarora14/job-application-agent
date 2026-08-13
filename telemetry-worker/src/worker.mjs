@@ -1,4 +1,5 @@
 import { TELEMETRY_SCHEMA_VERSION, TELEMETRY_MAX_BYTES, validateTelemetryEnvelope } from '../../job-application-agent/scripts/telemetry-schema.mjs';
+import { publicStatsResponse } from './public-stats.mjs';
 
 const encoder = new TextEncoder();
 const decoder = new TextDecoder();
@@ -106,6 +107,7 @@ async function events(request, env) {
 export async function handleRequest(request, env) {
   const { pathname } = new URL(request.url);
   if (request.method === 'GET' && pathname === '/healthz') return response({ ok: true, schemaVersion: TELEMETRY_SCHEMA_VERSION });
+  if (pathname === '/api/public-stats') return publicStatsResponse(request, env);
   if (request.method === 'POST' && pathname === '/v1/install') return install(request, env);
   if (request.method === 'POST' && pathname === '/v1/events') return events(request, env);
   return response({ error: 'not_found' }, 404);
