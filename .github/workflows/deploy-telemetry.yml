@@ -20,7 +20,7 @@ jobs:
       - run: npm run check && npm test && npm run privacy-audit
       - name: Deploy Worker
         run: |
-          node -e 'process.stdout.write(JSON.stringify({SIGNING_SECRET: process.env.SIGNING_SECRET, POSTHOG_PROJECT_TOKEN: process.env.POSTHOG_PROJECT_TOKEN}))' \
+          node -e 'process.stdout.write(JSON.stringify({SIGNING_SECRET: process.env.SIGNING_SECRET, POSTHOG_PROJECT_TOKEN: process.env.POSTHOG_PROJECT_TOKEN, POSTHOG_PERSONAL_API_KEY: process.env.POSTHOG_PERSONAL_API_KEY}))' \
             | npx --yes wrangler@4.122.0 secret bulk --config telemetry-worker/wrangler.jsonc --env=""
           npx --yes wrangler@4.122.0 deploy --config telemetry-worker/wrangler.jsonc --env="" --keep-vars
         env:
@@ -28,7 +28,11 @@ jobs:
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           SIGNING_SECRET: ${{ secrets.TELEMETRY_SIGNING_SECRET }}
           POSTHOG_PROJECT_TOKEN: ${{ secrets.POSTHOG_PROJECT_TOKEN }}
+          POSTHOG_PERSONAL_API_KEY: ${{ secrets.POSTHOG_PERSONAL_API_KEY }}
       - name: Verify production health
-        run: curl --fail --silent --show-error "$TELEMETRY_PRODUCTION_URL/healthz"
+        run: |
+          curl --fail --silent --show-error "$TELEMETRY_PRODUCTION_URL/healthz"
+          curl --fail --silent --show-error "$TELEMETRY_PRODUCTION_URL/api/public-stats"
+          curl --fail --silent --show-error "$TELEMETRY_PRODUCTION_URL/"
         env:
           TELEMETRY_PRODUCTION_URL: https://job-application-agent-telemetry.varora1406.workers.dev

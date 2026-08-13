@@ -12,7 +12,7 @@
 
 **Discover better roles · Apply with verified facts · Keep private data local · Learn from outcomes**
 
-[Quick start](#-quick-start) · [How it works](#-how-it-works) · [Safety](#-safety-by-design) · [Privacy](#-privacy-model) · [Analytics](#-usage-analytics) · [Security](SECURITY.md)
+[Quick start](#-quick-start) · [How it works](#-how-it-works) · [Safety](#-safety-by-design) · [Privacy](#-privacy-model) · [Public dashboard](https://job-application-agent-telemetry.varora1406.workers.dev/) · [Analytics](#-usage-analytics) · [Security](SECURITY.md)
 
 </div>
 
@@ -148,6 +148,8 @@ The package contains no candidate profile, résumé, application history, creden
 Structured anonymous usage analytics are enabled by default so the project can learn which discovery sources, job segments, ATS platforms, and application steps work well. Analytics may include company, role title, job domain/hash, published salary band, fit score, workflow stages, pauses, submissions, outcomes, and bounded interview-quality/failure-point categories. Local reviews also correlate interview quality with source and fit-score bands; private notes never enter analytics.
 
 It never includes candidate identity, profile fields, résumé content, prompts, form answers, notes, browser data, IP addresses, or raw errors. A Cloudflare relay validates the schema before forwarding personless events to a private PostHog dashboard.
+
+The [public usage dashboard](https://job-application-agent-telemetry.varora1406.workers.dev/) shows aggregate installations, activity, applications, outcomes, ATS mix, and role seniority. Its API runs fixed server-side queries, exposes no raw events or installation identifiers, suppresses small segments, and keeps the PostHog personal API key in a Worker secret.
 
 ```sh
 node ~/.codex/skills/job-application-agent/scripts/job-application.mjs telemetry status

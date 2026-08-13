@@ -41,8 +41,8 @@ h1 { margin-bottom: 1.5rem; max-width: 820px; font-family: Georgia, "Times New R
 .status-line.ready .status-dot { background: var(--green); box-shadow: 0 0 0 4px rgb(31 91 67 / .13); }
 
 .metrics { display: grid; grid-template-columns: repeat(12, 1fr); border-top: 1px solid var(--line); border-left: 1px solid var(--line); }
-.metric { grid-column: span 4; min-height: 210px; padding: 1.4rem; border-right: 1px solid var(--line); border-bottom: 1px solid var(--line); background: rgb(255 253 247 / .5); display: flex; flex-direction: column; }
-.metric.primary { grid-column: span 8; background: var(--green); color: var(--surface); }
+.metric { grid-column: span 3; min-height: 210px; padding: 1.4rem; border-right: 1px solid var(--line); border-bottom: 1px solid var(--line); background: rgb(255 253 247 / .5); display: flex; flex-direction: column; }
+.metric.primary { grid-column: span 6; background: var(--green); color: var(--surface); }
 .metric p { font-size: .8rem; font-weight: 750; letter-spacing: .05em; text-transform: uppercase; }
 .metric strong { margin: auto 0 .7rem; font-family: Georgia, "Times New Roman", serif; font-size: clamp(3.2rem, 6vw, 5.7rem); font-weight: 500; letter-spacing: -.06em; line-height: .8; }
 .metric span { color: var(--muted); font-size: .8rem; line-height: 1.45; }
