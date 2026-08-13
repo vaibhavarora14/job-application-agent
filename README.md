@@ -8,6 +8,7 @@
 [![MIT License](https://img.shields.io/badge/license-MIT-2563EB.svg)](LICENSE)
 [![Codex Skill](https://img.shields.io/badge/Codex-skill-111827)](job-application-agent/SKILL.md)
 [![Node 20+](https://img.shields.io/badge/Node.js-20%2B-339933?logo=nodedotjs&logoColor=white)](https://nodejs.org/)
+[![npm](https://img.shields.io/npm/v/job-application-agent?logo=npm&color=CB3837)](https://www.npmjs.com/package/job-application-agent)
 
 **Discover better roles · Apply with verified facts · Keep private data local · Learn from outcomes**
 
@@ -19,13 +20,25 @@
 
 Job Application Agent helps Codex discover, qualify, complete, and track your own job applications—without inventing credentials or hiding consequential decisions. It combines browser-assisted form filling with a verified résumé, candidate-defined targeting, secure local profile storage, duplicate detection, and an application ledger.
 
-## Install once, stay current automatically
+## Install — for humans and agents
+
+Run this one canonical command in a terminal:
 
 ```bash
 npx job-application-agent@latest install
 ```
 
-Requires Node.js 20 or newer. The installer places the skill at `~/.codex/skills/job-application-agent` and enables automatic updates by default. It checks npm at login and every hour on macOS, Linux, and Windows, then installs the newest published version without asking users to reinstall. Candidate profile data, the canonical résumé, telemetry identity, and application ledgers remain outside the replaceable skill directory.
+If you are asking a coding agent to set it up, paste this:
+
+```text
+Install the Job Application Agent by running:
+npx job-application-agent@latest install
+
+Then confirm the installed version with:
+npx job-application-agent@latest status
+```
+
+Requires Node.js 20 or newer. The installer places the skill at `~/.codex/skills/job-application-agent` and enables automatic updates by default. Restart Codex after the first installation so it discovers the skill. The updater checks npm at login, every hour on macOS, Linux, and Windows, and at the start of a job-application workflow. Candidate profile data, the canonical résumé, telemetry identity, and application ledgers remain outside the replaceable skill directory.
 
 ```bash
 # See the installed version and update mode
@@ -73,12 +86,10 @@ It never reads browser cookies or session files, and it records an application a
 ### 1. Install the skill
 
 ```sh
-git clone https://github.com/vaibhavarora14/job-application-agent.git
-mkdir -p ~/.codex/skills
-cp -R job-application-agent/job-application-agent ~/.codex/skills/
+npx job-application-agent@latest install
 ```
 
-Restart Codex so it discovers the skill.
+This is the supported installation path for both people and coding agents. Restart Codex so it discovers the skill.
 
 ### 2. Onboard your profile
 
