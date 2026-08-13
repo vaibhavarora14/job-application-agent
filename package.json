@@ -1,6 +1,6 @@
 {
   "name": "job-application-agent",
-  "version": "2.0.2",
+  "version": "2.0.3",
   "description": "A self-updating Codex skill for evidence-based job discovery, application completion, and outcome tracking.",
   "license": "MIT",
   "type": "module",
