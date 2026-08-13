@@ -33,3 +33,4 @@ coverage/
 *.log
 *.tmp
 *.swp
+.gstack/
