@@ -25,13 +25,21 @@ export function deriveCommunityStats(data) {
   const outcomesReported = total(outcomes);
   const seniorRoles = countFor(seniority, ['senior', 'staff', 'principal', 'founding', 'manager']);
   const seniorityTotal = total(seniority);
-  const recent = timeline.slice(-7);
+  const anchor = new Date(data?.generatedAt ?? Date.now());
+  const recentThreshold = new Date(anchor);
+  recentThreshold.setUTCDate(anchor.getUTCDate() - 6);
+  recentThreshold.setUTCHours(0, 0, 0, 0);
+  const recent = timeline.filter((day) => {
+    const date = new Date(`${day.day}T00:00:00Z`);
+    return Number.isFinite(date.getTime()) && date >= recentThreshold && date <= anchor;
+  });
+  const lastSevenSubmissions = recent.reduce((sum, day) => sum + number(day.submitted), 0);
 
   return {
-    lastSevenSubmissions: recent.reduce((sum, day) => sum + number(day.submitted), 0),
+    lastSevenSubmissions,
     peakSubmissions: Math.max(0, ...timeline.map((day) => number(day.submitted))),
     activeDays: timeline.filter((day) => number(day.assessed) || number(day.submitted)).length,
-    applicationsPerActiveInstallation: activeInstallations ? Math.round((submitted / activeInstallations) * 10) / 10 : 0,
+    applicationsPerActiveInstallation: activeInstallations ? Math.round((lastSevenSubmissions / activeInstallations) * 10) / 10 : 0,
     outcomesReported,
     outcomesUnknown: Math.max(0, submitted - outcomesReported),
     outcomeCoverage: percent(outcomesReported, submitted),

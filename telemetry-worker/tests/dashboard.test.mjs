@@ -6,6 +6,7 @@ import { deriveCommunityStats } from '../public/dashboard.js';
 
 test('community statistics are derived from aggregate data without invented values', () => {
   const stats = deriveCommunityStats({
+    generatedAt: '2026-08-13T12:00:00Z',
     metrics: {
       installations: 42,
       activeInstallations30d: 2,
@@ -15,6 +16,7 @@ test('community statistics are derived from aggregate data without invented valu
       offers: 2,
     },
     timeline: [
+      { day: '2026-08-01', assessed: 25, submitted: 20 },
       { day: '2026-08-12', assessed: 14, submitted: 5 },
       { day: '2026-08-13', assessed: 21, submitted: 8 },
     ],
@@ -33,9 +35,9 @@ test('community statistics are derived from aggregate data without invented valu
   });
 
   assert.equal(stats.lastSevenSubmissions, 13);
-  assert.equal(stats.peakSubmissions, 8);
-  assert.equal(stats.activeDays, 2);
-  assert.equal(stats.applicationsPerActiveInstallation, 48);
+  assert.equal(stats.peakSubmissions, 20);
+  assert.equal(stats.activeDays, 3);
+  assert.equal(stats.applicationsPerActiveInstallation, 6.5);
   assert.equal(stats.outcomesReported, 14);
   assert.equal(stats.outcomeCoverage, 14.6);
   assert.equal(stats.interviewProgression, 12.5);
