@@ -59,8 +59,8 @@ jobs:
 
       - name: Verify npm package contents and executable
         run: |
-          npm pack --dry-run
-          package_file=$(npm pack --silent)
+          npm pack --dry-run --ignore-scripts
+          package_file=$(npm pack --silent --ignore-scripts)
           test -n "$package_file"
           tar -tzf "$package_file" | grep -q '^package/bin/job-application-agent.mjs$'
           tar -tzf "$package_file" | grep -q '^package/job-application-agent/SKILL.md$'
