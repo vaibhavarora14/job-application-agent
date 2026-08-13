@@ -54,4 +54,6 @@ test('community dashboard exposes its primary actions and honest data labels', a
   assert.match(html, /View methodology/i);
   assert.match(html, /backfill/i);
   assert.match(html, /outcomes reported/i);
+  assert.match(html, /Latest seven-day submissions ÷ installations active in 30 days/i);
+  assert.match(html, /Active days/i);
 });

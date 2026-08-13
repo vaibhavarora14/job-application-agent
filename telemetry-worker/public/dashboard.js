@@ -49,10 +49,10 @@ export function deriveCommunityStats(data) {
 }
 
 function setText(selector, value, { title } = {}) {
-  const element = document.querySelector(selector);
-  if (!element) return;
-  element.textContent = value;
-  if (title != null) element.title = String(title);
+  document.querySelectorAll(selector).forEach((element) => {
+    element.textContent = value;
+    if (title != null) element.title = String(title);
+  });
 }
 
 function emptyState() {
