@@ -6,6 +6,7 @@ import { promisify } from 'node:util';
 
 const execFileAsync = promisify(execFile);
 const root = process.cwd();
+const packageManifest = JSON.parse(await readFile(path.join(root, 'package.json'), 'utf8'));
 const temp = await mkdtemp(path.join(os.tmpdir(), 'job-application-agent-package-'));
 const codexHome = path.join(temp, '.codex');
 let tarball;
@@ -28,7 +29,7 @@ try {
   const skill = await readFile(path.join(codexHome, 'skills', 'job-application-agent', 'SKILL.md'), 'utf8');
   const config = JSON.parse(await readFile(path.join(codexHome, 'job-application-agent', 'install.json'), 'utf8'));
   if (!skill.includes('# Job Application Agent')) throw new Error('Packed skill did not install correctly.');
-  if (config.installedVersion !== '2.0.0' || config.automaticUpdates !== true) throw new Error('Packed installer state is incorrect.');
+  if (config.installedVersion !== packageManifest.version || config.automaticUpdates !== true) throw new Error('Packed installer state is incorrect.');
   if (((await stat(path.join(codexHome, 'job-application-agent', 'install.json'))).mode & 0o777) !== 0o600) throw new Error('Install configuration permissions are not private.');
   process.stdout.write('Packed npm installation smoke test passed.\n');
 } finally {
