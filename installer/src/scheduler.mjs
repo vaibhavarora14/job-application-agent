@@ -3,7 +3,8 @@ import { chmod, mkdir, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { promisify } from 'node:util';
 
-export const SCHEDULER_LABEL = 'com.vaibhavarora.codex.job-application-agent-update';
+export const SCHEDULER_LABEL = 'com.vaibhavarora.job-application-agent-update';
+export const LEGACY_SCHEDULER_LABEL = 'com.vaibhavarora.codex.job-application-agent-update';
 const execFileAsync = promisify(execFile);
 
 async function defaultRunCommand(command, args) {
@@ -20,12 +21,24 @@ async function writeExecutable(filePath, content) {
   await chmod(filePath, 0o700);
 }
 
-export async function installScheduler({ platform = process.platform, homeDir, command, userId = process.getuid?.(), runCommand = defaultRunCommand }) {
+function agentHomeFor(homeDir, agentHome) {
+  return agentHome || path.join(homeDir, '.agents');
+}
+
+async function removeDarwinLaunchAgent(homeDir, label, userId, runCommand) {
+  const filePath = path.join(homeDir, 'Library', 'LaunchAgents', `${label}.plist`);
+  try { await runCommand('launchctl', ['bootout', `gui/${userId}`, filePath]); } catch {}
+  await rm(filePath, { force: true });
+}
+
+export async function installScheduler({ platform = process.platform, homeDir, agentHome, command, userId = process.getuid?.(), runCommand = defaultRunCommand }) {
   if (platform === 'test') return { installed: false, platform };
-  const logsDir = path.join(homeDir, '.codex', 'logs');
+  const resolvedAgentHome = agentHomeFor(homeDir, agentHome);
+  const logsDir = path.join(resolvedAgentHome, 'logs');
   await mkdir(logsDir, { recursive: true });
 
   if (platform === 'darwin') {
+    await removeDarwinLaunchAgent(homeDir, LEGACY_SCHEDULER_LABEL, userId, runCommand);
     const launchAgents = path.join(homeDir, 'Library', 'LaunchAgents');
     const filePath = path.join(launchAgents, `${SCHEDULER_LABEL}.plist`);
     await mkdir(launchAgents, { recursive: true });
@@ -50,7 +63,7 @@ export async function installScheduler({ platform = process.platform, homeDir, c
   }
 
   if (platform === 'win32') {
-    const scriptPath = path.join(homeDir, '.codex', 'job-application-agent', 'register-update-task.ps1');
+    const scriptPath = path.join(resolvedAgentHome, 'job-application-agent', 'register-update-task.ps1');
     const script = `$action = New-ScheduledTaskAction -Execute '${command.replaceAll("'", "''")}' -Argument 'auto-update'\n$logon = New-ScheduledTaskTrigger -AtLogOn\n$hourly = New-ScheduledTaskTrigger -Once -At (Get-Date).AddMinutes(2) -RepetitionInterval (New-TimeSpan -Hours 1)\nRegister-ScheduledTask -TaskName 'JobApplicationAgentUpdate' -Action $action -Trigger @($logon, $hourly) -Force | Out-Null\n`;
     await writeExecutable(scriptPath, script);
     await runCommand('powershell.exe', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', scriptPath]);
@@ -60,11 +73,11 @@ export async function installScheduler({ platform = process.platform, homeDir, c
   return { installed: false, platform, reason: 'unsupported-platform' };
 }
 
-export async function removeScheduler({ platform = process.platform, homeDir, userId = process.getuid?.(), runCommand = defaultRunCommand }) {
+export async function removeScheduler({ platform = process.platform, homeDir, agentHome, userId = process.getuid?.(), runCommand = defaultRunCommand }) {
+  const resolvedAgentHome = agentHomeFor(homeDir, agentHome);
   if (platform === 'darwin') {
-    const filePath = path.join(homeDir, 'Library', 'LaunchAgents', `${SCHEDULER_LABEL}.plist`);
-    try { await runCommand('launchctl', ['bootout', `gui/${userId}`, filePath]); } catch {}
-    await rm(filePath, { force: true });
+    await removeDarwinLaunchAgent(homeDir, SCHEDULER_LABEL, userId, runCommand);
+    await removeDarwinLaunchAgent(homeDir, LEGACY_SCHEDULER_LABEL, userId, runCommand);
   } else if (platform === 'linux') {
     const systemdDir = path.join(homeDir, '.config', 'systemd', 'user');
     try { await runCommand('systemctl', ['--user', 'disable', '--now', 'job-application-agent-update.timer']); } catch {}
@@ -73,6 +86,7 @@ export async function removeScheduler({ platform = process.platform, homeDir, us
     try { await runCommand('systemctl', ['--user', 'daemon-reload']); } catch {}
   } else if (platform === 'win32') {
     try { await runCommand('schtasks.exe', ['/Delete', '/TN', 'JobApplicationAgentUpdate', '/F']); } catch {}
+    await rm(path.join(resolvedAgentHome, 'job-application-agent', 'register-update-task.ps1'), { force: true });
     await rm(path.join(homeDir, '.codex', 'job-application-agent', 'register-update-task.ps1'), { force: true });
   }
   return { removed: true, platform };

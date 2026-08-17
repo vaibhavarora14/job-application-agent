@@ -2,11 +2,11 @@
 
 # 💼 Job Application Agent
 
-### A privacy-first Codex skill for a more disciplined job search
+### A privacy-first Agent Skill for a more disciplined job search
 
 [![Validate](https://github.com/vaibhavarora14/job-application-agent/actions/workflows/validate.yml/badge.svg)](https://github.com/vaibhavarora14/job-application-agent/actions/workflows/validate.yml)
 [![MIT License](https://img.shields.io/badge/license-MIT-2563EB.svg)](LICENSE)
-[![Codex Skill](https://img.shields.io/badge/Codex-skill-111827)](job-application-agent/SKILL.md)
+[![Agent Skill](https://img.shields.io/badge/Agent_Skills-compatible-111827)](job-application-agent/SKILL.md)
 [![Node 20+](https://img.shields.io/badge/Node.js-20%2B-339933?logo=nodedotjs&logoColor=white)](https://nodejs.org/)
 [![npm](https://img.shields.io/npm/v/job-application-agent?logo=npm&color=CB3837)](https://www.npmjs.com/package/job-application-agent)
 
@@ -18,7 +18,7 @@
 
 ---
 
-Job Application Agent helps Codex discover, qualify, complete, and track your own job applications—without inventing credentials or hiding consequential decisions. It combines browser-assisted form filling with a verified résumé, candidate-defined targeting, secure local profile storage, duplicate detection, and an application ledger.
+Job Application Agent helps you discover, qualify, complete, and track your own job applications from any Agent Skills-compatible coding agent—without inventing credentials or hiding consequential decisions. It combines browser-assisted form filling with a verified résumé, candidate-defined targeting, secure local profile storage, duplicate detection, and an application ledger.
 
 ## Install — for humans and agents
 
@@ -38,7 +38,7 @@ Then confirm the installed version with:
 npx job-application-agent@latest status
 ```
 
-Requires Node.js 20 or newer. The installer places the skill at `~/.codex/skills/job-application-agent` and enables automatic updates by default. Restart Codex after the first installation so it discovers the skill. The updater checks npm at login, every hour on macOS, Linux, and Windows, and at the start of a job-application workflow. Candidate profile data, the canonical résumé, telemetry identity, and application ledgers remain outside the replaceable skill directory.
+Requires Node.js 20 or newer. The installer places the skill at `~/.agents/skills/job-application-agent` and enables automatic updates by default. Compatible agents load that vendor-neutral path; if a vendor skills directory such as `~/.cursor/skills` already exists, the installer also copies the skill there. The updater checks npm at login, every hour on macOS, Linux, and Windows, and at the start of a job-application workflow. Candidate profile data, the canonical résumé, telemetry identity, and application ledgers remain outside the replaceable skill directory.
 
 ```bash
 # See the installed version and update mode
@@ -66,7 +66,7 @@ Updates are staged and validated before replacement. The immediately previous sk
 
 | 🔐 Protect | 📚 Track | 📈 Improve |
 |---|---|---|
-| Keeps profile data in macOS Keychain and browser auth in the browser. | Records only visibly confirmed submissions in a private local ledger. | Reviews results every ten applications and proposes targeting changes. |
+| Keeps profile data in OS-backed storage and browser auth in the browser. | Records only visibly confirmed submissions in a private local ledger. | Reviews results every ten applications and proposes targeting changes. |
 | Stops at sensitive or judgment-heavy steps. | Captures outcomes plus optional interview quality and failure points. | Never changes preferences or instructions without your approval. |
 
 ## 🛡️ Safety by design
@@ -89,17 +89,17 @@ It never reads browser cookies or session files, and it records an application a
 npx job-application-agent@latest install
 ```
 
-This is the supported installation path for both people and coding agents. Restart Codex so it discovers the skill.
+This is the supported installation path for both people and coding agents. After install, ask the current agent to list available skills if it does not pick up `job-application-agent` immediately.
 
 ### 2. Onboard your profile
 
-Start a new Codex task with:
+Start a new agent chat and invoke this skill however your agent names skills (`$job-application-agent`, `/job-application-agent`, or natural language):
 
 ```text
-Use $job-application-agent to onboard my resume and job-search preferences.
+Use job-application-agent to onboard my resume and job-search preferences.
 ```
 
-Codex will ask for your canonical résumé and missing application facts. You choose one of two submission modes:
+The agent will ask for your canonical résumé and missing application facts. You choose one of two submission modes:
 
 - `review-each` — inspect every completed application before submission.
 - `routine-auto` — allow routine submissions within a destination or batch you explicitly authorize; safety pauses still apply.
@@ -129,13 +129,13 @@ flowchart LR
     H --> I["Confirm success and update ledger"]
 ```
 
-The bundled script provides deterministic profile validation, résumé import, scoring, deduplication, ledger updates, and ten-application reviews. Codex handles discovery and browser interaction while following the guardrails in [`SKILL.md`](job-application-agent/SKILL.md).
+The bundled script provides deterministic profile validation, résumé import, scoring, deduplication, ledger updates, and ten-application reviews. The current coding agent handles discovery and browser interaction while following the guardrails in [`SKILL.md`](job-application-agent/SKILL.md).
 
 ## 🔐 Privacy model
 
 | Data | Storage | Repository |
 |---|---|---|
-| Candidate profile | macOS Keychain | Never committed |
+| Candidate profile | OS-backed secret store (macOS Keychain, or Windows Credential Manager + DPAPI) | Never committed |
 | Canonical résumé | Owner-only local state directory | Never committed |
 | Application ledger | Owner-only local state directory | Never committed |
 | Browser authentication | Existing browser session | Never exported |
@@ -152,32 +152,31 @@ It never includes candidate identity, profile fields, résumé content, prompts,
 The [public usage dashboard](https://job-application-agent-telemetry.varora1406.workers.dev/) shows aggregate installations, activity, applications, outcomes, ATS mix, and role seniority. The relay increments a separate aggregate-only Cloudflare D1 store after PostHog accepts each event. The public API exposes no raw events or installation identifiers and suppresses small segments.
 
 ```sh
-node ~/.codex/skills/job-application-agent/scripts/job-application.mjs telemetry status
-node ~/.codex/skills/job-application-agent/scripts/job-application.mjs telemetry disable
+node ~/.agents/skills/job-application-agent/scripts/job-application.mjs telemetry status
+node ~/.agents/skills/job-application-agent/scripts/job-application.mjs telemetry disable
 ```
 
 See the complete event contract, retention policy, and controls in [`ANALYTICS.md`](job-application-agent/references/ANALYTICS.md).
 
 ## 🧰 Requirements
 
-- Codex with browser-control capability
 - Node.js 20 or newer
-- macOS Keychain for persistent profile storage
+- A browser-capable coding agent that loads [Agent Skills](https://agentskills.io/specification)
+- OS-backed profile storage (macOS Keychain, or Windows Credential Manager + DPAPI)
 
-The workflow can be adapted to another OS-backed secret store, but the bundled profile implementation currently targets macOS.
+Secure profile storage is supported on macOS and Windows. Linux can keep ledgers and a canonical résumé locally, but profile storage needs macOS or Windows.
 
 ## ✅ Validate locally
 
 ```sh
-python3 ~/.codex/skills/.system/skill-creator/scripts/quick_validate.py job-application-agent
 npm test
 ```
 
-GitHub Actions runs the same skill validation and test suite on every push and pull request.
+GitHub Actions validates the skill frontmatter and runs the same test suite on every push and pull request.
 
 ## 💬 Use without installation
 
-Paste [`SHARE_PROMPT.md`](SHARE_PROMPT.md) into a new Codex task. The installed skill is recommended for repeat use because it bundles deterministic checks and private local state handling.
+Paste [`SHARE_PROMPT.md`](SHARE_PROMPT.md) into a new agent chat. The installed skill is recommended for repeat use because it bundles deterministic checks and private local state handling.
 
 ## ⚖️ Responsible use
 

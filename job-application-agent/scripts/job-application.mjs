@@ -1,17 +1,14 @@
 #!/usr/bin/env node
 
 import { createHash } from 'node:crypto';
-import { execFileSync } from 'node:child_process';
 import { appendFile, chmod, mkdir, open, readFile, rename, unlink, writeFile } from 'node:fs/promises';
-import { homedir, platform } from 'node:os';
+import { platform } from 'node:os';
 import { basename, join, resolve } from 'node:path';
 
+import { createSecretStore, migrateLegacyStateDir, resolveStateDir } from './secret-store.mjs';
 import { TelemetryClient } from './telemetry-client.mjs';
 import { jobIdentity } from './telemetry-schema.mjs';
 
-const KEYCHAIN_SERVICE = process.env.JOB_APPLICATION_AGENT_KEYCHAIN_SERVICE ?? 'com.openai.codex.job-application-agent';
-const KEYCHAIN_ACCOUNT = 'profile';
-const DEFAULT_STATE_DIR = join(homedir(), 'Library/Application Support/Codex/job-application-agent');
 const SOURCES = new Set(['linkedin', 'greenhouse', 'lever', 'ashby', 'workable', 'comeet', 'workday', 'rippling', 'smartrecruiters', 'google-form', 'company', 'email', 'other']);
 const ELIGIBILITY = new Set(['eligible', 'unclear', 'ineligible']);
 const POSTING_STATUS = new Set(['active', 'closed', 'unclear']);
@@ -45,8 +42,10 @@ const DEFAULT_TARGETING = {
 };
 
 function stateDir() {
-  return process.env.JOB_APPLICATION_AGENT_STATE_DIR || DEFAULT_STATE_DIR;
+  return resolveStateDir();
 }
+
+const secretStore = createSecretStore({ stateDir });
 
 export function durationBucket(milliseconds) {
   if (milliseconds < 1_000) return 'under-1s';
@@ -80,7 +79,7 @@ function telemetryStage(command) {
 
 function telemetryErrorCode(error) {
   const message = String(error?.message ?? '');
-  if (/keychain|authentication|login/i.test(message)) return 'authentication_required';
+  if (/keychain|credential manager|dpapi|authentication|login/i.test(message)) return 'authentication_required';
   if (/network|fetch|http/i.test(message)) return 'network_failure';
   if (/invalid|must|required|expected|unsupported/i.test(message)) return 'invalid_input';
   return 'internal_error';
@@ -533,23 +532,23 @@ export function buildReview(entries, outcomeEntries = [], acknowledgements = [],
   };
 }
 
-function decodeKeychain(value) {
-  const trimmed = value.trim();
-  return /^[0-9a-f]+$/i.test(trimmed) && trimmed.length % 2 === 0 ? Buffer.from(trimmed, 'hex').toString('utf8') : value;
+function storedProfileRaw() {
+  try { return object(JSON.parse(secretStore.readProfile()), 'profile'); } catch (error) {
+    if (/missing or unreadable|requires macOS or Windows|could not store|Windows profile storage/i.test(error.message)) throw error;
+    throw new Error('The stored profile is missing or unreadable. Run profile set again.');
+  }
 }
 
-function keychainProfileRaw() {
-  if (process.platform !== 'darwin') throw new Error('Secure profile storage currently requires macOS Keychain.');
-  const value = execFileSync('security', ['find-generic-password', '-s', KEYCHAIN_SERVICE, '-a', KEYCHAIN_ACCOUNT, '-w'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
-  try { return object(JSON.parse(decodeKeychain(value)), 'profile'); } catch { throw new Error('The Keychain profile is missing or unreadable. Run profile set again.'); }
-}
-
-function keychainProfile() {
-  try { return validateProfile(keychainProfileRaw()); } catch { throw new Error('The Keychain profile needs migration. Run profile check, then profile migrate --stdin.'); }
+function storedProfile() {
+  try { return validateProfile(storedProfileRaw()); } catch (error) {
+    if (/requires macOS or Windows/i.test(error.message)) throw error;
+    throw new Error('The stored profile needs migration. Run profile check, then profile migrate --stdin.');
+  }
 }
 
 async function ensureStateDir() {
   const dir = stateDir();
+  await migrateLegacyStateDir(dir);
   await mkdir(dir, { recursive: true, mode: 0o700 });
   await chmod(dir, 0o700);
   return dir;
@@ -598,14 +597,9 @@ async function withStateLock(name, action) {
 }
 
 async function storeProfile(profileInput) {
-  if (process.platform !== 'darwin') throw new Error('Secure profile storage currently requires macOS Keychain.');
   const profile = validateProfile(profileInput);
-  const raw = JSON.stringify(profile);
-  try {
-    execFileSync('security', ['add-generic-password', '-a', KEYCHAIN_ACCOUNT, '-s', KEYCHAIN_SERVICE, '-U', '-w', raw], { stdio: ['ignore', 'pipe', 'pipe'] });
-  } catch {
-    throw new Error('Keychain could not store the profile. Unlock macOS Keychain and retry; no profile data was logged.');
-  }
+  if (process.platform === 'win32') await ensureStateDir();
+  secretStore.writeProfile(JSON.stringify(profile));
   return profile;
 }
 
@@ -615,7 +609,7 @@ async function profileSet(profileInput) {
 }
 
 async function profileMigrate(overrides) {
-  const before = keychainProfileRaw();
+  const before = storedProfileRaw();
   const profile = migrateProfile(before, overrides);
   await storeProfile(profile);
   return {
@@ -807,14 +801,14 @@ async function executeCommand([area, action, value], telemetry, session) {
   } else if (area === 'profile' && action === 'migrate' && value === '--stdin') {
     result = await profileMigrate(await jsonStdin());
   } else if (area === 'profile' && action === 'check') {
-    result = { ...profileStatus(keychainProfileRaw()), required: REQUIRED_PROFILE };
+    result = { ...profileStatus(storedProfileRaw()), required: REQUIRED_PROFILE };
   } else if (area === 'profile' && action === 'field' && value) {
     if (![...STRING_PROFILE_FIELDS, ...ARRAY_PROFILE_FIELDS, ...NUMBER_PROFILE_FIELDS, ...OBJECT_PROFILE_FIELDS].includes(value)) throw new Error('Profile field is not allowed.');
-    result = { [value]: keychainProfile()[value] ?? null };
+    result = { [value]: storedProfile()[value] ?? null };
   } else if (area === 'resume' && action === 'import' && value) result = await importResume(value);
   else if (area === 'score' && action === '--stdin') {
     const job = await jsonStdin();
-    result = scoreJob(job, job.target ?? keychainProfile());
+    result = scoreJob(job, job.target ?? storedProfile());
     const event = await telemetryJobAssessed(job, result);
     if (event) domainEvents.push(event);
   } else if (area === 'ledger' && action === 'check' && value === '--stdin') result = await ledgerCheck(await jsonStdin());
@@ -842,7 +836,7 @@ async function executeCommand([area, action, value], telemetry, session) {
 async function recordInstallationStart(telemetry, session) {
   if (!session.installationEventPending) return;
   let submissionMode = 'unconfigured';
-  try { submissionMode = keychainProfile().submissionMode; } catch {}
+  try { submissionMode = storedProfile().submissionMode; } catch {}
   await telemetry.record({
     event: 'installation_started',
     properties: {
