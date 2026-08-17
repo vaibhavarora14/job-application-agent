@@ -1,6 +1,6 @@
 # Shareable job-application prompt
 
-Copy the prompt below into a new Codex task. It works without installing the skill, although installing the bundled skill makes the workflow reusable across future tasks.
+Copy the prompt below into a new agent chat. It works without installing the skill, although installing the bundled skill makes the workflow reusable across future tasks.
 
 ---
 
