@@ -2,118 +2,36 @@
 
 # 💼 Job Application Agent
 
-### A privacy-first Agent Skill for a more disciplined job search
+### Find better roles, apply with verified facts, and learn from outcomes.
 
 [![Validate](https://github.com/vaibhavarora14/job-application-agent/actions/workflows/validate.yml/badge.svg)](https://github.com/vaibhavarora14/job-application-agent/actions/workflows/validate.yml)
-[![MIT License](https://img.shields.io/badge/license-MIT-2563EB.svg)](LICENSE)
-[![Agent Skill](https://img.shields.io/badge/Agent_Skills-compatible-111827)](job-application-agent/SKILL.md)
-[![Node 20+](https://img.shields.io/badge/Node.js-20%2B-339933?logo=nodedotjs&logoColor=white)](https://nodejs.org/)
 [![npm](https://img.shields.io/npm/v/job-application-agent?logo=npm&color=CB3837)](https://www.npmjs.com/package/job-application-agent)
+[![MIT License](https://img.shields.io/badge/license-MIT-2563EB.svg)](LICENSE)
+[![Agent Skills](https://img.shields.io/badge/Agent_Skills-compatible-111827)](job-application-agent/SKILL.md)
 
-**Discover better roles · Apply with verified facts · Keep private data local · Learn from outcomes**
-
-[Quick start](#-quick-start) · [How it works](#-how-it-works) · [Safety](#-safety-by-design) · [Privacy](#-privacy-model) · [Public dashboard](https://job-application-agent-telemetry.varora1406.workers.dev/) · [Analytics](#-usage-analytics) · [Security](SECURITY.md)
+[Get started](#-get-started) · [Safety](#-safety) · [Privacy](#-privacy) · [Dashboard](https://job-application-agent-telemetry.varora1406.workers.dev/) · [Security](SECURITY.md)
 
 </div>
 
 ---
 
-Job Application Agent helps you discover, qualify, complete, and track your own job applications from any Agent Skills-compatible coding agent—without inventing credentials or hiding consequential decisions. It combines browser-assisted form filling with a verified résumé, candidate-defined targeting, secure local profile storage, duplicate detection, and an application ledger.
+Job Application Agent is an [Agent Skill](https://agentskills.io/specification) that helps a coding agent discover, evaluate, complete, and track your own job applications. It uses one verified résumé, checks eligibility and duplicates, and records only confirmed submissions.
 
-## Install — for humans and agents
+## 🚀 Get started
 
-Run this one canonical command in a terminal:
-
-```bash
-npx job-application-agent@latest install
-```
-
-If you are asking a coding agent to set it up, paste this:
-
-```text
-Install the Job Application Agent by running:
-npx job-application-agent@latest install
-
-Then confirm the installed version with:
-npx job-application-agent@latest status
-```
-
-Requires Node.js 20 or newer. The installer places the skill at `~/.agents/skills/job-application-agent` and enables automatic updates by default. Compatible agents load that vendor-neutral path; if a vendor skills directory such as `~/.cursor/skills` already exists, the installer also copies the skill there. The updater checks npm at login, every hour on macOS, Linux, and Windows, and at the start of a job-application workflow. Candidate profile data, the canonical résumé, telemetry identity, and application ledgers remain outside the replaceable skill directory.
+Install it:
 
 ```bash
-# See the installed version and update mode
-npx job-application-agent@latest status
-
-# Update immediately
-npx job-application-agent@latest update
-
-# Explicitly opt out or back in
-npx job-application-agent@latest updates disable
-npx job-application-agent@latest updates enable
-```
-
-Updates are staged and validated before replacement. The immediately previous skill version is retained locally so a failed installation leaves the working version intact.
-
-> [!IMPORTANT]
-> You stay in control. The agent pauses for authentication, CAPTCHA, legal attestations, demographic questions, unclear eligibility, sensitive identifiers, and unverifiable claims.
-
-## ✨ What it does
-
-| 🔎 Discover | 🎯 Qualify | 📝 Apply |
-|---|---|---|
-| Finds active roles on direct career pages and major ATS platforms. | Scores seniority, skills, location, eligibility, work mode, and compensation. | Fills forms using only verified profile and résumé facts. |
-| Resolves social and aggregator leads to direct employer pages. | Skips closed, duplicated, ineligible, and weak-fit opportunities. | Uploads one canonical résumé directly by path when the browser supports it, and drafts truthful short answers. |
-
-| 🔐 Protect | 📚 Track | 📈 Improve |
-|---|---|---|
-| Keeps profile data in OS-backed storage and browser auth in the browser. | Records only visibly confirmed submissions in a private local ledger. | Reviews results every ten applications and proposes targeting changes. |
-| Stops at sensitive or judgment-heavy steps. | Captures explicit round IDs and a resumable attention queue. | Opens tested, sanitized improvement PRs without merging or publishing them. |
-
-## 🛡️ Safety by design
-
-The skill deliberately pauses for decisions or actions that should stay with you:
-
-- passwords, SSO, MFA, and CAPTCHA;
-- demographic and voluntary self-identification questions;
-- legal attestations and government identifiers;
-- unclear work authorization, sponsorship, location, or compensation;
-- claims that cannot be verified from your profile or résumé.
-
-It never reads browser cookies or session files, and it records an application as submitted only after the destination shows a clear success confirmation.
-
-## 🚀 Quick start
-
-### 1. Install the skill
-
-```sh
 npx job-application-agent@latest install
 ```
 
-This is the supported installation path for both people and coding agents. After install, ask the current agent to list available skills if it does not pick up `job-application-agent` immediately.
-
-### 2. Onboard your profile
-
-Start a new agent chat and invoke this skill however your agent names skills (`$job-application-agent`, `/job-application-agent`, or natural language):
+Then tell your coding agent:
 
 ```text
-Use job-application-agent to onboard my resume and job-search preferences.
+Use job-application-agent to onboard my résumé and job preferences.
 ```
 
-The agent will ask for your canonical résumé and missing application facts. You choose one of two submission modes:
-
-- `review-each` — inspect every completed application before submission.
-- `routine-auto` — allow routine submissions within a destination or batch you explicitly authorize; safety pauses still apply.
-
-For continuing autonomy across resumable and scheduled runs, explicitly grant the fixed routine scope once:
-
-```sh
-echo '{"mode":"routine-auto"}' | node ~/.agents/skills/job-application-agent/scripts/job-application.mjs autonomy grant --stdin
-node ~/.agents/skills/job-application-agent/scripts/job-application.mjs autonomy status
-```
-
-The grant covers routine discovery, filling, canonical résumé upload, submission, verified recruiting email, ledger/outcome updates, completed-tab cleanup, and sanitized improvement-PR creation. It never bypasses login, MFA, CAPTCHA, legal/demographic steps, host permission prompts, or ambiguous facts. `autonomy revoke` stops future routine transmissions without deleting history.
-
-### 3. Use natural commands
+After onboarding, use natural commands:
 
 ```text
 search jobs
@@ -124,79 +42,113 @@ show attention queue
 record outcome Company — Senior Engineer — interview
 ```
 
+Requires Node.js 20 or newer and a browser-capable coding agent.
+
+## ✨ What it does
+
+| Stage | Behavior |
+|---|---|
+| **Discover** | Searches direct career pages, ATS platforms, and candidate-provided leads. |
+| **Qualify** | Checks seniority, skills, location, authorization, compensation, and posting status. |
+| **Apply** | Fills forms and uploads one canonical résumé using verified facts only. |
+| **Track** | Deduplicates applications and records only visible submission confirmations. |
+| **Improve** | Reviews outcomes and proposes targeting changes without rewriting candidate facts. |
+
+## 🤖 Choose your autonomy level
+
+- **`review-each`** — review every completed application before submission.
+- **`routine-auto`** — allow routine submissions while keeping sensitive and judgment-heavy steps with you.
+
+For durable autonomy across resumable or scheduled runs:
+
+```bash
+echo '{"mode":"routine-auto"}' | node ~/.agents/skills/job-application-agent/scripts/job-application.mjs autonomy grant --stdin
+```
+
+Check or revoke it at any time:
+
+```bash
+node ~/.agents/skills/job-application-agent/scripts/job-application.mjs autonomy status
+node ~/.agents/skills/job-application-agent/scripts/job-application.mjs autonomy revoke
+```
+
+## 🛡️ Safety
+
+The agent pauses for:
+
+- passwords, SSO, MFA, and CAPTCHA;
+- legal attestations and government identifiers;
+- demographic or voluntary self-identification questions;
+- unclear work authorization, sponsorship, location, or compensation;
+- claims that cannot be verified from your profile or résumé;
+- browser or operating-system permission prompts.
+
+It never reads browser cookies or session files, bypasses access controls, or counts a filled form as a submission.
+
 ## 🧭 How it works
 
 ```mermaid
 flowchart LR
-    A["Verified résumé + profile"] --> B["Discover direct roles"]
-    B --> C["Validate activity and eligibility"]
-    C --> D["Score and deduplicate"]
-    D --> E["Fill truthful application"]
-    E --> F{"Manual action needed?"}
-    F -- Yes --> G["Pause for candidate"]
-    F -- No --> H["Validate and submit"]
-    G --> H
-    H --> I["Confirm success and update ledger"]
+    A["Verified résumé + profile"] --> B["Find active roles"]
+    B --> C["Check fit + duplicates"]
+    C --> D["Fill truthful application"]
+    D --> E{"Needs you?"}
+    E -- Yes --> F["Attention queue"]
+    E -- No --> G["Submit"]
+    F --> G
+    G --> H["Confirm + record"]
 ```
 
-The bundled script provides deterministic profile validation, résumé import, scoring, company/requisition deduplication, explicit round accounting, attention/friction queues, ledger updates, and ten-application reviews. The current coding agent handles discovery and browser interaction while following the guardrails in [`SKILL.md`](job-application-agent/SKILL.md).
+The bundled CLI handles private profile storage, résumé import, scoring, duplicate checks, resumable rounds, attention queues, and application/outcome ledgers. The coding agent handles discovery and browser interaction under the rules in [`SKILL.md`](job-application-agent/SKILL.md).
 
-## 🔐 Privacy model
+## 🔐 Privacy
 
-| Data | Storage | Repository |
-|---|---|---|
-| Candidate profile | OS-backed secret store (macOS Keychain, or Windows Credential Manager + DPAPI) | Never committed |
-| Canonical résumé | Owner-only local state directory | Never committed |
-| Application ledger | Owner-only local state directory | Never committed |
-| Autonomy, round, attention, and friction state | Owner-only local state directory | Never committed |
-| Browser authentication | Existing browser session | Never exported |
-| Skill instructions and scripts | Local skill directory | Version controlled |
+| Data | Where it stays |
+|---|---|
+| Profile | macOS Keychain or Windows Credential Manager |
+| Résumé and ledgers | Owner-only local state directory |
+| Browser login | Existing browser session |
+| Skill code | Version-controlled installation directory |
 
-The package contains no candidate profile, résumé, application history, credentials, or browser data. The included [`.gitignore`](.gitignore) adds a second line of defense against committing common private artifacts.
+Candidate data, résumés, application history, credentials, and browser sessions are never committed to this repository.
 
-## 📊 Usage analytics
+Anonymous structured analytics are enabled by default to improve the agent. They may include job and workflow categories, but never candidate identity, résumé content, prompts, answers, browser data, IP addresses, or raw errors.
 
-Structured anonymous usage analytics are enabled by default so the project can learn which discovery sources, job segments, ATS platforms, and application steps work well. Analytics may include company, role title, job domain/hash, published salary band, fit score, workflow stages, pauses, submissions, outcomes, and bounded interview-quality/failure-point categories. Local reviews also correlate interview quality with source and fit-score bands; private notes never enter analytics.
-
-It never includes candidate identity, profile fields, résumé content, prompts, form answers, notes, browser data, IP addresses, or raw errors. A Cloudflare relay validates the schema before forwarding personless events to a private PostHog dashboard.
-
-The [public usage dashboard](https://job-application-agent-telemetry.varora1406.workers.dev/) shows aggregate installations, activity, applications, outcomes, ATS mix, and role seniority. The relay increments a separate aggregate-only Cloudflare D1 store after PostHog accepts each event. The public API exposes no raw events or installation identifiers and suppresses small segments.
-
-```sh
+```bash
 node ~/.agents/skills/job-application-agent/scripts/job-application.mjs telemetry status
 node ~/.agents/skills/job-application-agent/scripts/job-application.mjs telemetry disable
 ```
 
-See the complete event contract, retention policy, and controls in [`ANALYTICS.md`](job-application-agent/references/ANALYTICS.md).
+See [`ANALYTICS.md`](job-application-agent/references/ANALYTICS.md) for the event contract and retention policy, or view the [public aggregate dashboard](https://job-application-agent-telemetry.varora1406.workers.dev/).
 
-## 🧰 Requirements
+<details>
+<summary><strong>Installation and update details</strong></summary>
 
-- Node.js 20 or newer
-- A browser-capable coding agent that loads [Agent Skills](https://agentskills.io/specification)
-- OS-backed profile storage (macOS Keychain, or Windows Credential Manager + DPAPI)
+The installer places the skill at `~/.agents/skills/job-application-agent` and enables automatic updates by default. Compatible vendor skill directories are also supported when they already exist.
 
-Secure profile storage is supported on macOS and Windows. Linux can keep ledgers and a canonical résumé locally, but profile storage needs macOS or Windows.
+```bash
+npx job-application-agent@latest status
+npx job-application-agent@latest update
+npx job-application-agent@latest updates disable
+npx job-application-agent@latest updates enable
+```
 
-## ✅ Validate locally
+Updates are staged and validated before replacement. Private candidate state lives outside the replaceable skill directory.
 
-```sh
+</details>
+
+## 🧰 Develop
+
+```bash
 npm test
 ```
 
-GitHub Actions validates the skill frontmatter and runs the same test suite on every push and pull request.
-
-## 💬 Use without installation
-
-Paste [`SHARE_PROMPT.md`](SHARE_PROMPT.md) into a new agent chat. The installed skill is recommended for repeat use because it bundles deterministic checks and private local state handling.
+GitHub Actions validates the skill and runs the same test suite on every pull request. To try the workflow without installing, paste [`SHARE_PROMPT.md`](SHARE_PROMPT.md) into a new agent chat.
 
 ## ⚖️ Responsible use
 
-This project assists a person with their own job search. It does not guarantee interviews, offers, eligibility, or application accuracy. You are responsible for reviewing factual claims, complying with applicable laws and platform terms, and deciding when an application should be submitted. Do not use it to impersonate another person, evade access controls, bypass CAPTCHA, or make deceptive claims.
+Use this project only for your own job search. It does not guarantee interviews, offers, eligibility, or application accuracy. Never use it to impersonate another person, bypass CAPTCHA, evade access controls, or make deceptive claims.
 
-## 🛡️ Security
-
-Please report suspected privacy or security issues using the private process in [`SECURITY.md`](SECURITY.md). Do not open a public issue containing personal data, credentials, résumé content, or application records.
-
-## 📄 License
+Report privacy or security issues through the process in [`SECURITY.md`](SECURITY.md). Do not open a public issue containing personal data or application records.
 
 Released under the [MIT License](LICENSE).
