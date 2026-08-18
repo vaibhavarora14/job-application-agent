@@ -90,3 +90,12 @@ test('validation exposes a stable quality gate and a six-combination high-risk m
   assert.match(workflow, /classify-paths\.mjs/);
   assert.match(workflow, /check:native-artifacts/);
 });
+
+test('validation commands are portable across Windows and pipefail shells', async () => {
+  const packageJson = JSON.parse(await readFile(new URL('../../package.json', import.meta.url), 'utf8'));
+  const workflow = await readFile(new URL('../../.github/workflows/validate.yml', import.meta.url), 'utf8');
+
+  assert.equal(packageJson.scripts.test, 'node --test', 'the shell must not be responsible for expanding test globs');
+  assert.match(workflow, /tar -tzf "\$package_file" > "\$package_listing"/);
+  assert.doesNotMatch(workflow, /tar -tzf "\$package_file" \| grep/, 'tar must not receive SIGPIPE under pipefail');
+});

@@ -34,7 +34,7 @@
     "provenance": true
   },
   "scripts": {
-    "test": "node --test job-application-agent/tests/*.test.mjs telemetry-worker/tests/*.test.mjs installer/tests/*.test.mjs",
+    "test": "node --test",
     "check:native-artifacts": "node scripts/ci/validate-native-artifacts.mjs",
     "privacy-audit": "node --test job-application-agent/tests/privacy-audit.test.mjs",
     "smoke:package": "node scripts/smoke-package.mjs",

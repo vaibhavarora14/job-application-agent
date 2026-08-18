@@ -82,10 +82,12 @@ jobs:
           npm pack --dry-run --ignore-scripts
           package_file="$(npm pack --silent --ignore-scripts)"
           test -n "$package_file"
-          trap 'rm -f -- "$package_file"' EXIT
-          tar -tzf "$package_file" | grep -q '^package/bin/job-application-agent.mjs$'
-          tar -tzf "$package_file" | grep -q '^package/job-application-agent/SKILL.md$'
-          if tar -tzf "$package_file" | grep -Eq 'applications\.ndjson|resume\.pdf|profile\.json|telemetry-worker/'; then
+          package_listing="$(mktemp)"
+          trap 'rm -f -- "$package_file" "$package_listing"' EXIT
+          tar -tzf "$package_file" > "$package_listing"
+          grep -q '^package/bin/job-application-agent.mjs$' "$package_listing"
+          grep -q '^package/job-application-agent/SKILL.md$' "$package_listing"
+          if grep -Eq 'applications\.ndjson|resume\.pdf|profile\.json|telemetry-worker/' "$package_listing"; then
             echo 'npm package contains private state or server-only code.' >&2
             exit 1
           fi
