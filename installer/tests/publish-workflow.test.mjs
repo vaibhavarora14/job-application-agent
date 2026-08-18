@@ -14,6 +14,11 @@ test('npm publishing requires a published release and skips versions already on 
   assert.match(workflow, /fetch-depth:\s*0/);
   assert.match(workflow, /git fetch --no-tags origin main:refs\/remotes\/origin\/main/);
   assert.match(workflow, /git merge-base --is-ancestor "\$GITHUB_SHA" (?:refs\/remotes\/)?origin\/main/);
+  const checkoutIndex = workflow.indexOf('uses: actions/checkout@');
+  const ancestryGuardIndex = workflow.indexOf('name: Verify release commit belongs to main');
+  const setupNodeIndex = workflow.indexOf('uses: actions/setup-node@');
+  assert.ok(checkoutIndex < ancestryGuardIndex, 'the ancestry guard must run after checkout');
+  assert.ok(ancestryGuardIndex < setupNodeIndex, 'the ancestry guard must run before setup and dependency installation');
   assert.match(workflow, /RELEASE_TAG:\s*\$\{\{ github\.event\.release\.tag_name \}\}/);
   assert.equal(workflow.match(/github\.event\.release\.tag_name/g)?.length, 1, 'release tag expressions belong only in env');
   assert.match(workflow, /"\$RELEASE_TAG"/);
