@@ -138,6 +138,15 @@ export async function syncVendorSkillCopies({ homeDir = os.homedir(), sourceSkil
   return copied;
 }
 
+export async function removeVendorSkillCopies({ homeDir = os.homedir(), sourceSkillDir }) {
+  const canonical = path.resolve(sourceSkillDir);
+  for (const relative of VENDOR_SKILL_DIRS) {
+    const dest = path.join(homeDir, ...relative.split('/'), SKILL_NAME);
+    if (path.resolve(dest) === canonical) continue;
+    await rm(dest, { recursive: true, force: true });
+  }
+}
+
 export async function readInstallStatus({
   homeDir = os.homedir(),
   agentHome,
@@ -154,8 +163,14 @@ export async function readInstallStatus({
   return { installed: false, automaticUpdates: false };
 }
 
-function defaultCommand(agentHome, platform = process.platform) {
-  return path.join(agentHome, SKILL_NAME, platform === 'win32' ? 'update.cmd' : 'update');
+async function reconcilePersistence({ platform, homeDir, agentHome, automaticUpdates, scheduler, checkRunner, packageVersion, userId, runCommand }) {
+  if (scheduler === false) return { enabled: automaticUpdates, touched: false };
+  if (automaticUpdates) {
+    if (!checkRunner) throw new Error('A validated update-check runner is required to enable background update checks.');
+    if (checkRunner.packageVersion !== packageVersion) throw new Error('The update-check runner version does not match the installed package version.');
+    return { enabled: true, touched: await installScheduler({ platform, homeDir, agentHome, nodePath: checkRunner.nodePath, checkScriptPath: checkRunner.checkScriptPath, packageVersion, userId, runCommand }) };
+  }
+  return { enabled: false, touched: await removeScheduler({ platform, homeDir, agentHome, userId, runCommand }) };
 }
 
 export async function installSkill({
@@ -167,12 +182,21 @@ export async function installSkill({
   legacyHome,
   platform = process.platform,
   scheduler = true,
-  command,
+  backgroundUpdates,
+  checkRunner,
+  userId = process.getuid?.(),
+  runCommand,
 } = {}) {
   assertExactVersion(packageVersion, 'package version');
   const home = agentHome || codexHome || resolveAgentHome(homeDir);
   const paths = pathsFor(home);
   const source = path.join(packageRoot, SKILL_NAME);
+  const prior = await readInstallStatus({ homeDir, agentHome: home });
+  const automaticUpdates = backgroundUpdates !== undefined ? !!backgroundUpdates : (prior.installed ? prior.automaticUpdates !== false : false);
+  if (scheduler !== false && automaticUpdates) {
+    if (!checkRunner) throw new Error('A validated update-check runner is required to enable background update checks.');
+    if (checkRunner.packageVersion !== packageVersion) throw new Error('The update-check runner version does not match the installed package version.');
+  }
   await migrateLegacyCodexInstall({ homeDir, agentHome: home, legacyHome: legacyHome || resolveLegacyCodexHome(homeDir) });
   await validatePackagedSkill(source, packageVersion);
   await mkdir(path.dirname(paths.target), { recursive: true });
@@ -194,18 +218,16 @@ export async function installSkill({
     throw error;
   }
 
-  const prior = await readInstallStatus({ homeDir, agentHome: home });
   const config = {
     installed: true,
     installedVersion: packageVersion,
-    automaticUpdates: prior.installed ? prior.automaticUpdates !== false : true,
+    automaticUpdates,
     installedAt: prior.installedAt || new Date().toISOString(),
     updatedAt: new Date().toISOString(),
   };
   await writeConfig(paths.configPath, config);
   await syncVendorSkillCopies({ homeDir, sourceSkillDir: paths.target });
-  const updateCommand = command || defaultCommand(home, platform);
-  if (scheduler && config.automaticUpdates) await installScheduler({ platform, homeDir, agentHome: home, command: updateCommand });
+  await reconcilePersistence({ platform, homeDir, agentHome: home, automaticUpdates, scheduler, checkRunner, packageVersion, userId, runCommand });
   return config;
 }
 
@@ -217,19 +239,42 @@ export async function setAutomaticUpdates(enabled, {
   codexHome,
   platform = process.platform,
   scheduler = true,
-  command,
+  checkRunner,
+  userId = process.getuid?.(),
+  runCommand,
 } = {}) {
   const home = agentHome || codexHome || resolveAgentHome(homeDir);
   await migrateLegacyCodexInstall({ homeDir, agentHome: home });
   const paths = pathsFor(home);
   const current = await readInstallStatus({ homeDir, agentHome: home });
   if (!current.installed) throw new Error('The skill is not installed.');
+  if (enabled && scheduler !== false && !checkRunner) throw new Error('A validated update-check runner is required to enable background update checks.');
   const next = { ...current, automaticUpdates: enabled, updatedAt: new Date().toISOString() };
   await writeConfig(paths.configPath, next);
-  if (scheduler) {
-    const updateCommand = command || defaultCommand(home, platform);
-    if (enabled) await installScheduler({ platform, homeDir, agentHome: home, command: updateCommand });
-    else await removeScheduler({ platform, homeDir, agentHome: home });
+  if (scheduler !== false) {
+    if (enabled) {
+      await installScheduler({ platform, homeDir, agentHome: home, nodePath: checkRunner.nodePath, checkScriptPath: checkRunner.checkScriptPath, packageVersion: checkRunner.packageVersion, userId, runCommand });
+    } else {
+      await removeScheduler({ platform, homeDir, agentHome: home, userId, runCommand });
+    }
   }
   return next;
+}
+
+export async function uninstallSkill({
+  homeDir = os.homedir(),
+  agentHome,
+  codexHome,
+  platform = process.platform,
+  userId = process.getuid?.(),
+  runCommand,
+} = {}) {
+  const home = agentHome || codexHome || resolveAgentHome(homeDir);
+  const paths = pathsFor(home);
+  await removeScheduler({ platform, homeDir, agentHome: home, userId, runCommand });
+  await removeVendorSkillCopies({ homeDir, sourceSkillDir: paths.target });
+  await rm(paths.target, { recursive: true, force: true });
+  await rm(paths.managerDir, { recursive: true, force: true });
+  await rm(path.join(home, 'logs'), { recursive: true, force: true });
+  return { uninstalled: true };
 }

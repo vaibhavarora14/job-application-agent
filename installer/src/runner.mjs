@@ -1,12 +1,16 @@
-import { chmod, mkdir, writeFile } from 'node:fs/promises';
+import { chmod, lstat, mkdir, realpath, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 
-function shellQuote(value) {
-  return `'${value.replaceAll("'", `'"'"'`)}'`;
-}
+const SKILL_NAME = 'job-application-agent';
+const CHECK_RUNNER_FILENAME = 'check-update-runner.mjs';
 
 function assertExactVersion(value) {
   if (typeof value !== 'string' || !/^\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?$/.test(value)) throw new Error('An exact immutable semantic version is required to create the safe update-check runner.');
+  return value;
+}
+
+function assertAbsolute(value, label) {
+  if (typeof value !== 'string' || !path.isAbsolute(value)) throw new Error(`${label} must be an absolute path.`);
   return value;
 }
 
@@ -47,24 +51,32 @@ await rename(temporary, statusPath);
 `;
 }
 
-export async function createUpdateRunner({ platform = process.platform, agentHome, codexHome, nodePath = process.execPath, packageVersion }) {
+export async function createUpdateRunner({ agentHome, codexHome, nodePath = process.execPath, packageVersion }) {
   if (!packageVersion) throw new Error('An exact package version is required to create the safe update-check runner.');
   const home = agentHome || codexHome;
-  const managerDir = path.join(home, 'job-application-agent');
-  const nodeDir = path.dirname(nodePath);
+  if (!home) throw new Error('An agent home directory is required to create the safe update-check runner.');
   const exactVersion = assertExactVersion(packageVersion);
+  assertAbsolute(home, 'The agent home');
+  assertAbsolute(nodePath, 'The Node.js executable');
+
+  const managerDir = path.join(home, SKILL_NAME);
+  const checkScriptPath = path.join(managerDir, CHECK_RUNNER_FILENAME);
   await mkdir(managerDir, { recursive: true });
-  const checkScriptPath = path.join(managerDir, 'check-update-runner.mjs');
+  await rm(checkScriptPath, { force: true });
   await writeFile(checkScriptPath, createCheckScript(), { mode: 0o600 });
-  if (platform === 'win32') {
-    const filePath = path.join(managerDir, 'check-update.cmd');
-    const script = `@echo off\r\nset "JOB_APPLICATION_AGENT_HOME=${home}"\r\nset "PATH=${nodeDir};%PATH%"\r\n"${nodePath}" "${checkScriptPath}" "${home}" "${exactVersion}"\r\n`;
-    await writeFile(filePath, script, { mode: 0o700 });
-    return { path: filePath };
-  }
-  const filePath = path.join(managerDir, 'check-update');
-  const script = `#!/bin/sh\nJOB_APPLICATION_AGENT_HOME=${shellQuote(home)}\nPATH=${shellQuote(nodeDir)}:\${PATH:-/usr/bin:/bin:/usr/sbin:/sbin}\nexport JOB_APPLICATION_AGENT_HOME PATH\nexec ${shellQuote(nodePath)} ${shellQuote(checkScriptPath)} ${shellQuote(home)} ${shellQuote(exactVersion)}\n`;
-  await writeFile(filePath, script, { mode: 0o700 });
-  await chmod(filePath, 0o700);
-  return { path: filePath };
+  await chmod(checkScriptPath, 0o600);
+
+  const scriptStat = await lstat(checkScriptPath);
+  if (scriptStat.isSymbolicLink()) throw new Error('The update-check runner must not be a symbolic link.');
+  if (!scriptStat.isFile()) throw new Error('The update-check runner could not be created as a regular file.');
+
+  const resolvedScript = await realpath(checkScriptPath);
+  const resolvedNode = await realpath(nodePath);
+
+  return {
+    nodePath: resolvedNode,
+    checkScriptPath: resolvedScript,
+    agentHome: home,
+    packageVersion: exactVersion,
+  };
 }
