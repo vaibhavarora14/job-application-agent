@@ -67,7 +67,7 @@ Updates are staged and validated before replacement. The immediately previous sk
 | 🔐 Protect | 📚 Track | 📈 Improve |
 |---|---|---|
 | Keeps profile data in OS-backed storage and browser auth in the browser. | Records only visibly confirmed submissions in a private local ledger. | Reviews results every ten applications and proposes targeting changes. |
-| Stops at sensitive or judgment-heavy steps. | Captures outcomes plus optional interview quality and failure points. | Never changes preferences or instructions without your approval. |
+| Stops at sensitive or judgment-heavy steps. | Captures explicit round IDs and a resumable attention queue. | Opens tested, sanitized improvement PRs without merging or publishing them. |
 
 ## 🛡️ Safety by design
 
@@ -104,6 +104,15 @@ The agent will ask for your canonical résumé and missing application facts. Yo
 - `review-each` — inspect every completed application before submission.
 - `routine-auto` — allow routine submissions within a destination or batch you explicitly authorize; safety pauses still apply.
 
+For continuing autonomy across resumable and scheduled runs, explicitly grant the fixed routine scope once:
+
+```sh
+echo '{"mode":"routine-auto"}' | node ~/.agents/skills/job-application-agent/scripts/job-application.mjs autonomy grant --stdin
+node ~/.agents/skills/job-application-agent/scripts/job-application.mjs autonomy status
+```
+
+The grant covers routine discovery, filling, canonical résumé upload, submission, verified recruiting email, ledger/outcome updates, completed-tab cleanup, and sanitized improvement-PR creation. It never bypasses login, MFA, CAPTCHA, legal/demographic steps, host permission prompts, or ambiguous facts. `autonomy revoke` stops future routine transmissions without deleting history.
+
 ### 3. Use natural commands
 
 ```text
@@ -111,6 +120,7 @@ search jobs
 apply https://company.example/jobs/123
 apply all relevant jobs from this thread: <URL>
 run a round of 10
+show attention queue
 record outcome Company — Senior Engineer — interview
 ```
 
@@ -129,7 +139,7 @@ flowchart LR
     H --> I["Confirm success and update ledger"]
 ```
 
-The bundled script provides deterministic profile validation, résumé import, scoring, deduplication, ledger updates, and ten-application reviews. The current coding agent handles discovery and browser interaction while following the guardrails in [`SKILL.md`](job-application-agent/SKILL.md).
+The bundled script provides deterministic profile validation, résumé import, scoring, company/requisition deduplication, explicit round accounting, attention/friction queues, ledger updates, and ten-application reviews. The current coding agent handles discovery and browser interaction while following the guardrails in [`SKILL.md`](job-application-agent/SKILL.md).
 
 ## 🔐 Privacy model
 
@@ -138,6 +148,7 @@ The bundled script provides deterministic profile validation, résumé import, s
 | Candidate profile | OS-backed secret store (macOS Keychain, or Windows Credential Manager + DPAPI) | Never committed |
 | Canonical résumé | Owner-only local state directory | Never committed |
 | Application ledger | Owner-only local state directory | Never committed |
+| Autonomy, round, attention, and friction state | Owner-only local state directory | Never committed |
 | Browser authentication | Existing browser session | Never exported |
 | Skill instructions and scripts | Local skill directory | Version controlled |
 
