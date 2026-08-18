@@ -7,5 +7,6 @@ declare namespace Cloudflare {
     DODO_PAYMENTS_ENVIRONMENT?: string;
     PUBLIC_SITE_URL?: string;
     RATE_LIMIT_SALT?: string;
+    COMMUNITY_STATS_UPSTREAM?: string;
   }
 }
