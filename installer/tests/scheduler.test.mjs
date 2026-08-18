@@ -16,7 +16,7 @@ test('macOS scheduler runs at login and hourly using the latest npm package', as
   assert.match(plist, /<integer>3600<\/integer>/);
   assert.match(plist, /auto-update/);
   assert.match(plist, new RegExp(SCHEDULER_LABEL));
-  assert.match(plist, /\.agents\/logs/);
+  assert.match(plist.replaceAll('\\', '/'), /\.agents\/logs/);
   assert.doesNotMatch(plist, /codex/);
   assert.equal(result.path, path.join(homeDir, 'Library', 'LaunchAgents', `${SCHEDULER_LABEL}.plist`));
   assert.deepEqual(calls.at(-1), ['launchctl', ['bootstrap', 'gui/501', result.path]]);

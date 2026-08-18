@@ -41,6 +41,25 @@ test('accepts rich structured job and workflow events', () => {
   assert.equal(event.properties.fitScore, 84);
 });
 
+test('accepts bounded discovery sources without exposing application URLs or attention details', () => {
+  for (const source of ['direct-company', 'job-board', 'user-supplied', 'web-search']) {
+    const event = validateEvent({
+      event: 'job_discovered',
+      properties: {
+        ...baseJob,
+        source,
+        jobCountry: 'India',
+        workMode: 'remote',
+        seniority: 'staff',
+        employmentType: 'full-time',
+        roleFamily: 'product-engineering',
+      },
+    });
+    assert.equal(event.properties.source, source);
+    assert.equal('url' in event.properties, false);
+  }
+});
+
 test('rejects direct identity, free-form content, unknown properties, and oversized payloads', () => {
   const valid = { event: 'job_assessed', properties: { ...baseJob, fitScore: 80, eligibility: 'eligible', decision: 'review', matchTags: [], gapTags: [] } };
   assert.throws(() => validateEvent({ ...valid, properties: { ...valid.properties, company: 'candidate@example.com' } }), /identity/i);

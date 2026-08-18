@@ -29,7 +29,9 @@ Telemetry is best effort. It has no offline queue, uses a short network timeout,
 
 Analytics never includes the candidate's name, email, phone, exact address, profile URLs, candidate location, work authorization, personal compensation or compensation floor, target profile or thresholds, resume or attachments, must-have evidence or coverage details, rejection reasons, prompts, responses, job descriptions, form questions, drafted answers, notes, passwords, MFA, CAPTCHA, legal or demographic answers, browser data, IP address, request headers, user agent, or raw error messages.
 
-Structured job context may include company, role title, canonical destination domain, a SHA-256 hash of the job URL after removing query parameters and fragments, ATS, source channel, job country, work mode, employment type, seniority, role family, published salary band, fit score, match/gap categories, workflow stages, field categories, pause reasons, submission result, outcome, bounded interview quality, and bounded interview failure point.
+Structured job context may include company, role title, canonical destination domain, a SHA-256 hash of the job URL after removing query parameters and fragments, bounded discovery source, ATS/application channel, job country, work mode, employment type, seniority, role family, published salary band, fit score, match/gap categories, workflow stages, field categories, pause reasons, submission result, outcome, bounded interview quality, and bounded interview failure point.
+
+Local attention details and friction evidence are never transmitted. Analytics may receive only their already-documented bounded stage, ATS, pause reason, result, and aggregate count fields.
 
 Company and title values are bounded and rejected when they resemble an email, phone number, URL, LinkedIn profile, or GitHub profile.
 
