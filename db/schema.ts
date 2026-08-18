@@ -31,6 +31,30 @@ export const foundingPayments = sqliteTable("founding_payments", {
   index("idx_founding_payments_registration_id").on(table.registrationId),
 ]);
 
+export const foundingPurchases = sqliteTable("founding_purchases", {
+  id: text("id").primaryKey(),
+  checkoutSessionId: text("checkout_session_id").unique(),
+  checkoutUrl: text("checkout_url"),
+  dodoPaymentId: text("dodo_payment_id").unique(),
+  dodoCustomerId: text("dodo_customer_id"),
+  customerEmail: text("customer_email"),
+  productId: text("product_id").notNull(),
+  status: text("status").notNull().default("created"),
+  amount: integer("amount"),
+  currency: text("currency"),
+  paidAt: text("paid_at"),
+  activationDeadlineAt: text("activation_deadline_at"),
+  activatedAt: text("activated_at"),
+  accessExpiresAt: text("access_expires_at"),
+  refundId: text("refund_id").unique(),
+  refundStatus: text("refund_status"),
+  refundRequestedAt: text("refund_requested_at"),
+  createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+  updatedAt: text("updated_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+}, (table) => [
+  index("idx_founding_purchases_refund_due").on(table.status, table.activationDeadlineAt),
+]);
+
 export const paymentWebhookEvents = sqliteTable("payment_webhook_events", {
   id: text("id").primaryKey(),
   eventType: text("event_type").notNull(),

@@ -29,6 +29,13 @@
       "when": 1787085792831,
       "tag": "0003_daily_sasquatch",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "6",
+      "when": 1787088352978,
+      "tag": "0004_lame_butterfly",
+      "breakpoints": true
     }
   ]
 }

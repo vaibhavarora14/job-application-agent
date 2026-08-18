@@ -1,6 +1,6 @@
 import { createDodoClient, getPaymentConfig } from "../../../../lib/dodo";
 import { normalizePaymentWebhook } from "../../../../lib/payment-core.mjs";
-import { applyPaymentWebhook } from "../../../../lib/registration-store";
+import { applyPurchaseWebhook } from "../../../../lib/registration-store";
 import { readTextRequest } from "../../../../lib/public-boundary.mjs";
 
 export async function POST(request: Request) {
@@ -22,7 +22,7 @@ export async function POST(request: Request) {
   const normalized = normalizePaymentWebhook(verified, configured.config.productId);
   if (!normalized.ok || "ignored" in normalized || !normalized.payment) return Response.json({ received: true, ignored: true });
   try {
-    await applyPaymentWebhook(webhookHeaders["webhook-id"], normalized.payment);
+    await applyPurchaseWebhook(webhookHeaders["webhook-id"], normalized.payment);
     return Response.json({ received: true });
   } catch {
     return Response.json({ error: "Webhook could not be persisted." }, { status: 503 });
