@@ -1,4 +1,5 @@
-import { chmod, cp, lstat, mkdir, readFile, rename, rm, stat, writeFile } from 'node:fs/promises';
+import { createHash } from 'node:crypto';
+import { chmod, cp, lstat, mkdir, readdir, readFile, rename, rm, stat, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 
@@ -35,11 +36,52 @@ async function isDirectory(filePath) {
   try { return (await lstat(filePath)).isDirectory(); } catch (error) { if (error.code === 'ENOENT') return false; throw error; }
 }
 
-async function validatePackagedSkill(source) {
+function assertExactVersion(value, label = 'version') {
+  if (typeof value !== 'string' || !/^\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?$/.test(value)) throw new Error(`${label} must be an exact immutable semantic version.`);
+  return value;
+}
+
+async function listedFiles(root, current = root, files = []) {
+  const entries = await readdir(current, { withFileTypes: true });
+  for (const entry of entries) {
+    const absolute = path.join(current, entry.name);
+    if (entry.isDirectory()) await listedFiles(root, absolute, files);
+    else files.push(path.relative(root, absolute).replaceAll(path.sep, '/'));
+  }
+  return files.sort();
+}
+
+async function verifyReleaseManifest(source, expectedVersion) {
+  const manifestPath = path.join(source, 'release-manifest.json');
+  let manifest;
+  try {
+    manifest = JSON.parse(await readFile(manifestPath, 'utf8'));
+  } catch (error) {
+    if (error.code === 'ENOENT') throw new Error('Invalid packaged skill: release-manifest.json is missing.');
+    throw new Error('Invalid packaged skill: release-manifest.json is unreadable.');
+  }
+  if (!manifest || typeof manifest !== 'object' || Array.isArray(manifest)) throw new Error('Invalid packaged skill: release-manifest.json must be an object.');
+  const version = assertExactVersion(manifest.version, 'release manifest version');
+  if (expectedVersion && version !== assertExactVersion(expectedVersion, 'package version')) throw new Error(`Invalid packaged skill: release manifest version ${version} does not match package version ${expectedVersion}.`);
+  const files = manifest.files;
+  if (!files || typeof files !== 'object' || Array.isArray(files)) throw new Error('Invalid packaged skill: release-manifest.json must contain a files map.');
+  const expectedFiles = Object.keys(files).sort();
+  const actualFiles = (await listedFiles(source)).filter((file) => file !== 'release-manifest.json');
+  if (JSON.stringify(actualFiles) !== JSON.stringify(expectedFiles)) throw new Error('Invalid packaged skill: packaged files do not match the release manifest.');
+  for (const file of expectedFiles) {
+    const expectedHash = String(files[file] ?? '');
+    if (!/^[0-9a-f]{64}$/i.test(expectedHash)) throw new Error(`Invalid packaged skill: release manifest hash for ${file} is invalid.`);
+    const actualHash = createHash('sha256').update(await readFile(path.join(source, file))).digest('hex');
+    if (actualHash !== expectedHash) throw new Error(`Invalid packaged skill: checksum verification failed for ${file}.`);
+  }
+}
+
+async function validatePackagedSkill(source, expectedVersion) {
   const skillFile = path.join(source, 'SKILL.md');
   const content = await readFile(skillFile, 'utf8').catch(() => '');
   if (!content.trim()) throw new Error('Invalid packaged skill: SKILL.md is missing or empty.');
   await stat(path.join(source, 'scripts', 'job-application.mjs')).catch(() => { throw new Error('Invalid packaged skill: application CLI is missing.'); });
+  await verifyReleaseManifest(source, expectedVersion);
 }
 
 async function writeConfig(configPath, config) {
@@ -96,6 +138,15 @@ export async function syncVendorSkillCopies({ homeDir = os.homedir(), sourceSkil
   return copied;
 }
 
+export async function removeVendorSkillCopies({ homeDir = os.homedir(), sourceSkillDir }) {
+  const canonical = path.resolve(sourceSkillDir);
+  for (const relative of VENDOR_SKILL_DIRS) {
+    const dest = path.join(homeDir, ...relative.split('/'), SKILL_NAME);
+    if (path.resolve(dest) === canonical) continue;
+    await rm(dest, { recursive: true, force: true });
+  }
+}
+
 export async function readInstallStatus({
   homeDir = os.homedir(),
   agentHome,
@@ -112,8 +163,14 @@ export async function readInstallStatus({
   return { installed: false, automaticUpdates: false };
 }
 
-function defaultCommand(agentHome, platform = process.platform) {
-  return path.join(agentHome, SKILL_NAME, platform === 'win32' ? 'update.cmd' : 'update');
+async function reconcilePersistence({ platform, homeDir, agentHome, automaticUpdates, scheduler, checkRunner, packageVersion, userId, runCommand }) {
+  if (scheduler === false) return { enabled: automaticUpdates, touched: false };
+  if (automaticUpdates) {
+    if (!checkRunner) throw new Error('A validated update-check runner is required to enable background update checks.');
+    if (checkRunner.packageVersion !== packageVersion) throw new Error('The update-check runner version does not match the installed package version.');
+    return { enabled: true, touched: await installScheduler({ platform, homeDir, agentHome, nodePath: checkRunner.nodePath, checkScriptPath: checkRunner.checkScriptPath, packageVersion, userId, runCommand }) };
+  }
+  return { enabled: false, touched: await removeScheduler({ platform, homeDir, agentHome, userId, runCommand }) };
 }
 
 export async function installSkill({
@@ -125,18 +182,28 @@ export async function installSkill({
   legacyHome,
   platform = process.platform,
   scheduler = true,
-  command,
+  backgroundUpdates,
+  checkRunner,
+  userId = process.getuid?.(),
+  runCommand,
 } = {}) {
+  assertExactVersion(packageVersion, 'package version');
   const home = agentHome || codexHome || resolveAgentHome(homeDir);
   const paths = pathsFor(home);
   const source = path.join(packageRoot, SKILL_NAME);
+  const prior = await readInstallStatus({ homeDir, agentHome: home });
+  const automaticUpdates = backgroundUpdates !== undefined ? !!backgroundUpdates : (prior.installed ? prior.automaticUpdates !== false : false);
+  if (scheduler !== false && automaticUpdates) {
+    if (!checkRunner) throw new Error('A validated update-check runner is required to enable background update checks.');
+    if (checkRunner.packageVersion !== packageVersion) throw new Error('The update-check runner version does not match the installed package version.');
+  }
   await migrateLegacyCodexInstall({ homeDir, agentHome: home, legacyHome: legacyHome || resolveLegacyCodexHome(homeDir) });
-  await validatePackagedSkill(source);
+  await validatePackagedSkill(source, packageVersion);
   await mkdir(path.dirname(paths.target), { recursive: true });
   await mkdir(paths.managerDir, { recursive: true });
   const staging = path.join(paths.managerDir, `staging-${Date.now()}-${Math.random().toString(16).slice(2)}`);
   await cp(source, staging, { recursive: true, force: true });
-  await validatePackagedSkill(staging);
+  await validatePackagedSkill(staging, packageVersion);
 
   const hadTarget = await exists(paths.target);
   if (hadTarget) {
@@ -151,18 +218,16 @@ export async function installSkill({
     throw error;
   }
 
-  const prior = await readInstallStatus({ homeDir, agentHome: home });
   const config = {
     installed: true,
     installedVersion: packageVersion,
-    automaticUpdates: prior.installed ? prior.automaticUpdates !== false : true,
+    automaticUpdates,
     installedAt: prior.installedAt || new Date().toISOString(),
     updatedAt: new Date().toISOString(),
   };
   await writeConfig(paths.configPath, config);
   await syncVendorSkillCopies({ homeDir, sourceSkillDir: paths.target });
-  const updateCommand = command || defaultCommand(home, platform);
-  if (scheduler && config.automaticUpdates) await installScheduler({ platform, homeDir, agentHome: home, command: updateCommand });
+  await reconcilePersistence({ platform, homeDir, agentHome: home, automaticUpdates, scheduler, checkRunner, packageVersion, userId, runCommand });
   return config;
 }
 
@@ -174,19 +239,42 @@ export async function setAutomaticUpdates(enabled, {
   codexHome,
   platform = process.platform,
   scheduler = true,
-  command,
+  checkRunner,
+  userId = process.getuid?.(),
+  runCommand,
 } = {}) {
   const home = agentHome || codexHome || resolveAgentHome(homeDir);
   await migrateLegacyCodexInstall({ homeDir, agentHome: home });
   const paths = pathsFor(home);
   const current = await readInstallStatus({ homeDir, agentHome: home });
   if (!current.installed) throw new Error('The skill is not installed.');
+  if (enabled && scheduler !== false && !checkRunner) throw new Error('A validated update-check runner is required to enable background update checks.');
   const next = { ...current, automaticUpdates: enabled, updatedAt: new Date().toISOString() };
   await writeConfig(paths.configPath, next);
-  if (scheduler) {
-    const updateCommand = command || defaultCommand(home, platform);
-    if (enabled) await installScheduler({ platform, homeDir, agentHome: home, command: updateCommand });
-    else await removeScheduler({ platform, homeDir, agentHome: home });
+  if (scheduler !== false) {
+    if (enabled) {
+      await installScheduler({ platform, homeDir, agentHome: home, nodePath: checkRunner.nodePath, checkScriptPath: checkRunner.checkScriptPath, packageVersion: checkRunner.packageVersion, userId, runCommand });
+    } else {
+      await removeScheduler({ platform, homeDir, agentHome: home, userId, runCommand });
+    }
   }
   return next;
+}
+
+export async function uninstallSkill({
+  homeDir = os.homedir(),
+  agentHome,
+  codexHome,
+  platform = process.platform,
+  userId = process.getuid?.(),
+  runCommand,
+} = {}) {
+  const home = agentHome || codexHome || resolveAgentHome(homeDir);
+  const paths = pathsFor(home);
+  await removeScheduler({ platform, homeDir, agentHome: home, userId, runCommand });
+  await removeVendorSkillCopies({ homeDir, sourceSkillDir: paths.target });
+  await rm(paths.target, { recursive: true, force: true });
+  await rm(paths.managerDir, { recursive: true, force: true });
+  await rm(path.join(home, 'logs'), { recursive: true, force: true });
+  return { uninstalled: true };
 }

@@ -29,7 +29,7 @@ try {
   const skill = await readFile(path.join(agentHome, 'skills', 'job-application-agent', 'SKILL.md'), 'utf8');
   const config = JSON.parse(await readFile(path.join(agentHome, 'job-application-agent', 'install.json'), 'utf8'));
   if (!skill.includes('# Job Application Agent')) throw new Error('Packed skill did not install correctly.');
-  if (config.installedVersion !== packageManifest.version || config.automaticUpdates !== true) throw new Error('Packed installer state is incorrect.');
+  if (config.installedVersion !== packageManifest.version || config.automaticUpdates !== false) throw new Error('Packed installer state is incorrect.');
   if (((await stat(path.join(agentHome, 'job-application-agent', 'install.json'))).mode & 0o777) !== 0o600) throw new Error('Install configuration permissions are not private.');
   process.stdout.write('Packed npm installation smoke test passed.\n');
 } finally {

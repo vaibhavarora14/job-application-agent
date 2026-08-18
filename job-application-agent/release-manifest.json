@@ -1,0 +1,24 @@
+{
+  "version": "3.1.1",
+  "files": {
+    "SKILL.md": "a5021cc83cea7c347589922b666a8e40c98c290ad130e547258cec1f6e62bf21",
+    "references/ANALYTICS.md": "8171b594f69340c36e5cb50e98d68b913f8e3af16d466647bb8fdd70284c3a14",
+    "references/APPLICATION_GUIDANCE.md": "d949a7aa832a10143152175fa1cca0f3506bf15ead91a6953d952b10fedee442",
+    "references/AUTONOMY.md": "80e7be91a96b6f6f8a1d132f7fb33807617ed511e8cb3e19b7a33b6764ce0102",
+    "references/BROWSER_UPLOADS.md": "40a3912a8404be142b94570367b38f9ee0f95f41356c3752e9ddf85736472b43",
+    "references/RUNS.md": "48bba54a98d546d3e5aaba8fbcc9c195c21315a14868ffdb6928b10c7bbd8952",
+    "references/SCHEMAS.md": "e32dd3a7b51b530c5588221d5a01459afbcf265d7ebeed24152da8395ec8c62d",
+    "scripts/job-application.mjs": "c30e913393a90fe67f7f27d13b350c8ab2576db3489d11e02dd0baa5f82b6354",
+    "scripts/secret-store.mjs": "112ce785115e574c921c19e7a03a198b88cf9adbe764bad4d627bf2770800ca1",
+    "scripts/telemetry-client.mjs": "bb423a8df7633fbdd136e80d038d649e039e43588ad26d491783996d0ccefb1f",
+    "scripts/telemetry-schema.mjs": "40d15640a269316ed2e0f2aebaec875a651cd6190a9024d711218f1d0797410a",
+    "scripts/windows-profile-store.ps1": "54a8289e6658368f2ada1217e245a599f834a47e26a67ff2ff27e3635b402426",
+    "tests/job-application.test.mjs": "1acaf6739a238595d5a8a57993485965866e285ad5510b21978c8f842ed16d91",
+    "tests/privacy-audit.test.mjs": "8e5d15a3b2787c26d139c2f589ee54d1be66870a46e2757a6db02df944e089c6",
+    "tests/secret-store.test.mjs": "da24ef3bb8dcdbbb1b0581c04c6f10fcbf23f7940c41b0e7a6c82f26cbe968ab",
+    "tests/skill-contract.test.mjs": "c1403f2c95cdef6fbb974978f742dafb832a9480d864396e181d3d91364f5bb3",
+    "tests/telemetry-client.test.mjs": "aa515a04545e3cdd343e4fd5dffb80a6dd1687a3cd323ca8ed0bdf16f4798bdc",
+    "tests/telemetry-schema.test.mjs": "34d0ab15c328e135f8bd3094027bb7eb5243ab018d8ac96af3a2b366abf95a78",
+    "tests/workflow-state.test.mjs": "765234b9aa3006bc85b72cde586f62fe9d148a0b866eef91bfa49b9937583e9d"
+  }
+}

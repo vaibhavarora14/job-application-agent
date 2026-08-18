@@ -159,7 +159,7 @@ function renderOutcomeBar(outcomes, submitted) {
 function setupCopyAction() {
   const button = document.querySelector('#copy-install');
   button?.addEventListener('click', async () => {
-    const command = 'npx job-application-agent@latest';
+    const command = 'npx job-application-agent@3.1.1 install';
     try {
       await navigator.clipboard.writeText(command);
       button.textContent = 'Copied';

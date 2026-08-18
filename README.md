@@ -22,7 +22,7 @@ Job Application Agent is an [Agent Skill](https://agentskills.io/specification) 
 Install it:
 
 ```bash
-npx job-application-agent@latest install
+npx job-application-agent@3.1.1 install
 ```
 
 Then tell your coding agent:
@@ -124,16 +124,35 @@ See [`ANALYTICS.md`](job-application-agent/references/ANALYTICS.md) for the even
 <details>
 <summary><strong>Installation and update details</strong></summary>
 
-The installer places the skill at `~/.agents/skills/job-application-agent` and enables automatic updates by default. Compatible vendor skill directories are also supported when they already exist.
+The installer places the skill at `~/.agents/skills/job-application-agent`. Compatible vendor skill directories are also supported when they already exist.
 
 ```bash
-npx job-application-agent@latest status
-npx job-application-agent@latest update
-npx job-application-agent@latest updates disable
-npx job-application-agent@latest updates enable
+npx job-application-agent@3.1.1 status
+npx job-application-agent@3.1.1 update
+npx job-application-agent@3.1.1 uninstall
 ```
 
-Updates are staged and validated before replacement. Private candidate state lives outside the replaceable skill directory.
+Updates require an explicit exact-version command and are staged and checksum-validated before replacement. Private candidate state lives outside the replaceable skill directory.
+
+### Background update checks (explicit opt-in)
+
+Persistent background checks are **disabled by default**. Nothing runs at login, boot, or on an hourly timer unless you explicitly ask for it:
+
+```bash
+npx job-application-agent@3.1.1 install --enable-background-updates
+npx job-application-agent@3.1.1 updates enable
+npx job-application-agent@3.1.1 updates disable
+```
+
+When enabled, a user-level scheduler (macOS LaunchAgent, Linux user systemd timer, or Windows scheduled task) runs a **local check only**. That check:
+
+- invokes the already-installed Node.js executable directly with a fixed argument list (no shell, no `$PATH` lookup);
+- records a timestamped `update-status.json` notice;
+- never calls npm, npx, or `npm exec`;
+- never resolves a mutable npm tag;
+- never downloads, installs, or executes a newly published package.
+
+If an update is warranted, the notice marks it `manual-review-required`; applying it still requires a user-run `update` command with an exact version. `uninstall` removes the scheduler and every related artifact.
 
 </details>
 
