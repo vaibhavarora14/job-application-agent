@@ -6,5 +6,6 @@ declare namespace Cloudflare {
     DODO_PRODUCT_ID?: string;
     DODO_PAYMENTS_ENVIRONMENT?: string;
     PUBLIC_SITE_URL?: string;
+    RATE_LIMIT_SALT?: string;
   }
 }

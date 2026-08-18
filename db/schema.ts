@@ -37,3 +37,12 @@ export const paymentWebhookEvents = sqliteTable("payment_webhook_events", {
   paymentId: text("payment_id"),
   processedAt: text("processed_at").notNull().default(sql`CURRENT_TIMESTAMP`),
 });
+
+export const publicRateLimits = sqliteTable("public_rate_limits", {
+  key: text("key").primaryKey(),
+  windowStart: integer("window_start").notNull(),
+  count: integer("count").notNull().default(0),
+  updatedAt: integer("updated_at").notNull(),
+}, (table) => [
+  index("idx_public_rate_limits_updated_at").on(table.updatedAt),
+]);

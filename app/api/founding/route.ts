@@ -1,14 +1,14 @@
 import { saveRegistration } from "../../../lib/registration-store";
 import { validateFoundingRegistration } from "../../../lib/founding-validation.mjs";
+import { readJsonRequest } from "../../../lib/public-boundary.mjs";
+import { enforcePublicRateLimit } from "../../../lib/rate-limit";
 
 export async function POST(request: Request) {
-  if (!request.headers.get("content-type")?.includes("application/json"))
-    return Response.json({ error: "Send this form as JSON." }, { status: 415 });
-  if (Number(request.headers.get("content-length") ?? 0) > 8192)
-    return Response.json({ error: "That request is too large." }, { status: 413 });
-  let body: unknown;
-  try { body = await request.json(); } catch { return Response.json({ error: "We could not read that form." }, { status: 400 }); }
-  const result = validateFoundingRegistration(body);
+  const limited = await enforcePublicRateLimit(request, "founding", 10);
+  if (limited) return limited;
+  const parsed = await readJsonRequest(request, 8192);
+  if (!parsed.ok) return Response.json({ error: parsed.error }, { status: parsed.status });
+  const result = validateFoundingRegistration(parsed.data);
   if (!result.ok) return Response.json({ error: "Check the highlighted fields.", fields: result.errors }, { status: 400 });
   if (result.bot || !result.data) return Response.json({ registrationId: crypto.randomUUID(), offer: { priceUsd: 49, accessDays: 90 } }, { status: 201 });
   try {
