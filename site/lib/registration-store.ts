@@ -140,8 +140,9 @@ export async function savePurchaseCheckout(input: { purchaseId: string; checkout
 }
 
 export async function applyPurchaseWebhook(eventId: string, payment: {
-  eventType: string; purchaseId: string; paymentId: string; productId: string; customerId: string | null;
-  customerEmail: string | null; status: string; amount: number | null; currency: string | null;
+  eventType: string; purchaseId: string | null; paymentId: string; productId: string; customerId: string | null;
+  customerEmail: string | null; status: string | null; amount: number | null; currency: string | null;
+  refundId?: string | null; refundStatus?: string | null;
 }) {
   await ensureSchema();
   const paidAt = payment.status === "succeeded" ? new Date().toISOString() : null;
@@ -151,10 +152,16 @@ export async function applyPurchaseWebhook(eventId: string, payment: {
     db.prepare("INSERT INTO payment_webhook_events (id,event_type,payment_id) VALUES (?,?,?) ON CONFLICT(id) DO NOTHING")
       .bind(eventId, payment.eventType, payment.paymentId),
     db.prepare(`UPDATE founding_purchases SET dodo_payment_id=?,dodo_customer_id=COALESCE(?,dodo_customer_id),
-      customer_email=COALESCE(?,customer_email),status=?,amount=COALESCE(?,amount),currency=COALESCE(?,currency),
-      paid_at=COALESCE(?,paid_at),activation_deadline_at=COALESCE(?,activation_deadline_at),updated_at=CURRENT_TIMESTAMP
-      WHERE id=? AND product_id=?`)
-      .bind(payment.paymentId, payment.customerId, payment.customerEmail, payment.status, payment.amount, payment.currency, paidAt, deadline, payment.purchaseId, payment.productId),
+      customer_email=COALESCE(?,customer_email),status=CASE
+        WHEN status='refunded' OR ? IS NULL OR (status LIKE 'dispute_%' AND ? NOT LIKE 'dispute_%') THEN status ELSE ? END,
+      amount=COALESCE(?,amount),currency=COALESCE(?,currency),paid_at=COALESCE(?,paid_at),
+      activation_deadline_at=COALESCE(?,activation_deadline_at),refund_id=COALESCE(?,refund_id),
+      refund_status=CASE WHEN refund_status='succeeded' OR ? IS NULL THEN refund_status ELSE ? END,updated_at=CURRENT_TIMESTAMP
+      WHERE product_id=? AND ((? IS NOT NULL AND id=?) OR dodo_payment_id=?)`)
+      .bind(payment.paymentId, payment.customerId, payment.customerEmail, payment.status, payment.status, payment.status,
+        payment.amount, payment.currency, paidAt, deadline, payment.refundId ?? null,
+        payment.refundStatus ?? null, payment.refundStatus ?? null,
+        payment.productId, payment.purchaseId, payment.purchaseId, payment.paymentId),
   ]);
 }
 
