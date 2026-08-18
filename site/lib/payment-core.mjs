@@ -35,6 +35,19 @@ export function buildCheckoutRequest({ productId, registrationId, email, publicS
   };
 }
 
+export function hasPaidAccess(status) {
+  return status === "succeeded";
+}
+
+export function isAllowedCheckoutUrl(value) {
+  try {
+    const url = new URL(value);
+    return url.protocol === "https:" && (url.hostname === "dodopayments.com" || url.hostname.endsWith(".dodopayments.com"));
+  } catch {
+    return false;
+  }
+}
+
 export function normalizePaymentWebhook(payload, expectedProductId) {
   const eventType = typeof payload?.type === "string" ? payload.type : payload?.event_type;
   if (!paymentEvents.has(eventType)) return { ok: true, ignored: true };

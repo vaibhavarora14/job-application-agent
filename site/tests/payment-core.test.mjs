@@ -2,6 +2,8 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {
   buildCheckoutRequest,
+  hasPaidAccess,
+  isAllowedCheckoutUrl,
   normalizePaymentWebhook,
   validateCheckoutInput,
   validatePaymentConfig,
@@ -70,4 +72,18 @@ test("ignores unrelated events and rejects mismatched products", () => {
     data: { payment_id: "pay_123", metadata: { registration_id: registrationId }, product_cart: [{ product_id: "pdt_other", quantity: 1 }] },
   }, "pdt_founding");
   assert.deepEqual(mismatch, { ok: false, error: "Webhook product does not match the founding offer." });
+});
+
+test("grants access only after a succeeded webhook and revokes it after refund or dispute", () => {
+  assert.equal(hasPaidAccess("succeeded"), true);
+  assert.equal(hasPaidAccess("processing"), false);
+  assert.equal(hasPaidAccess("refunded"), false);
+  assert.equal(hasPaidAccess("dispute_opened"), false);
+});
+
+test("redirects only to an HTTPS Dodo Payments checkout host", () => {
+  assert.equal(isAllowedCheckoutUrl("https://checkout.dodopayments.com/session"), true);
+  assert.equal(isAllowedCheckoutUrl("https://test.checkout.dodopayments.com/session"), true);
+  assert.equal(isAllowedCheckoutUrl("https://dodopayments.com.evil.example/session"), false);
+  assert.equal(isAllowedCheckoutUrl("javascript:alert(1)"), false);
 });

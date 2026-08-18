@@ -30,6 +30,10 @@ yarn-error.log*
 
 # env files (can opt-in for committing if needed)
 .env*
+!.env.example
+
+# TypeScript incremental build state
+*.tsbuildinfo
 
 # vercel
 .vercel
