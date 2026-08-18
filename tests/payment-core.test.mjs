@@ -75,6 +75,42 @@ test("ignores unrelated events and rejects mismatched products", () => {
   assert.deepEqual(mismatch, { ok: false, error: "Webhook product does not match the founding offer." });
 });
 
+test("normalizes refund and dispute webhooks through the stored payment reference", () => {
+  assert.deepEqual(normalizePaymentWebhook({
+    type: "refund.succeeded",
+    data: {
+      refund_id: "ref_123",
+      payment_id: "pay_123",
+      status: "succeeded",
+      metadata: { purchase_id: purchaseId },
+      customer: { customer_id: "cus_123", email: "founder@example.com" },
+      amount: 4900,
+      currency: "USD",
+    },
+  }, "pdt_founding"), {
+    ok: true,
+    payment: {
+      eventType: "refund.succeeded", purchaseId, paymentId: "pay_123",
+      customerId: "cus_123", customerEmail: "founder@example.com",
+      status: "refunded", amount: null, currency: null, productId: "pdt_founding",
+      refundId: "ref_123", refundStatus: "succeeded",
+    },
+  });
+
+  assert.deepEqual(normalizePaymentWebhook({
+    type: "dispute.opened",
+    data: { payment_id: "pay_123", dispute_id: "dp_123", dispute_status: "dispute_opened" },
+  }, "pdt_founding"), {
+    ok: true,
+    payment: {
+      eventType: "dispute.opened", purchaseId: null, paymentId: "pay_123",
+      customerId: null, customerEmail: null,
+      status: "dispute_opened", amount: null, currency: null, productId: "pdt_founding",
+      refundId: null, refundStatus: null,
+    },
+  });
+});
+
 test("grants access only after a succeeded webhook and revokes it after refund or dispute", () => {
   assert.equal(hasPaidAccess("succeeded"), true);
   assert.equal(hasPaidAccess("processing"), false);
