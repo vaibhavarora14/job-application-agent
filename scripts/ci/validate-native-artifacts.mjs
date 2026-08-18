@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 import { execFile } from 'node:child_process';
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { promisify } from 'node:util';
@@ -50,8 +50,15 @@ async function validate() {
         command: process.execPath,
         runCommand,
       });
-      const parser = '$errors = $null; [System.Management.Automation.Language.Parser]::ParseFile($args[0], [ref]$null, [ref]$errors) | Out-Null; if ($errors.Count) { $errors | ForEach-Object { Write-Error $_ }; exit 1 }';
-      await execFileAsync('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', parser, result.scriptPath]);
+      const source = await readFile(result.scriptPath, 'utf8');
+      const escapedCommand = process.execPath.replaceAll("'", "''");
+      if (!source.includes(`-Execute '${escapedCommand}' -Argument 'auto-update'`)) {
+        throw new Error('PowerShell scheduler does not preserve the executable and argument boundary.');
+      }
+      const parser = '$tokens = $null; $errors = $null; [System.Management.Automation.Language.Parser]::ParseFile($env:JOB_AGENT_POWERSHELL_ARTIFACT, [ref]$tokens, [ref]$errors) | Out-Null; if ($errors.Count) { $errors | ForEach-Object { Write-Error $_ }; exit 1 }';
+      await execFileAsync('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', parser], {
+        env: { ...process.env, JOB_AGENT_POWERSHELL_ARTIFACT: result.scriptPath },
+      });
       return;
     }
 
