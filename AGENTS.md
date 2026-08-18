@@ -1,3 +1,3 @@
 # Site contributor guidance
 
-Preserve the Autonomous Runbook design in `DESIGN.md`. Keep the story local-first: the open-source agent is the product foundation and cloud adds continuity. Do not invent customer counts, placement claims, or application success rates. Keep registration and pricing language explicit about what is and is not being purchased.
+Preserve the Autonomous Runbook design in `DESIGN.md`. The open-source agent remains the product foundation, but the public conversion journey should focus on hosted continuity without a competing local-install CTA. Do not invent customer counts, placement claims, or application success rates. Keep payment, activation, access duration, and refund language explicit.
