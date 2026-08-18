@@ -1,8 +1,8 @@
 name: Publish npm package
 
 on:
-  release:
-    types: [published]
+  push:
+    branches: [main]
   workflow_dispatch:
 
 permissions:
@@ -23,8 +23,20 @@ jobs:
           registry-url: https://registry.npmjs.org
           package-manager-cache: false
       - run: npm ci
-      - run: npm run check && npm test && npm run privacy-audit
-      - name: Verify release tag matches package version
-        if: github.event_name == 'release'
-        run: test "v$(node -p "require('./package.json').version")" = "${{ github.event.release.tag_name }}"
-      - run: npm publish --access public
+      - run: npm run check && npm test && npm run privacy-audit && npm run smoke:package
+      - name: Check whether this version is already published
+        id: version-check
+        shell: bash
+        run: |
+          package_name="$(node -p "require('./package.json').name")"
+          package_version="$(node -p "require('./package.json').version")"
+          if npm view "${package_name}@${package_version}" version --json >/dev/null 2>&1; then
+            echo "publish_needed=false" >> "$GITHUB_OUTPUT"
+            echo "${package_name}@${package_version} is already published."
+          else
+            echo "publish_needed=true" >> "$GITHUB_OUTPUT"
+            echo "${package_name}@${package_version} will be published."
+          fi
+      - name: Publish new version
+        if: steps.version-check.outputs.publish_needed == 'true'
+        run: npm publish --access public
