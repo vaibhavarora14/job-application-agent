@@ -143,7 +143,7 @@ Updates are staged and validated before replacement. Private candidate state liv
 npm test
 ```
 
-GitHub Actions validates the skill and runs the same test suite on every pull request. To try the workflow without installing, paste [`SHARE_PROMPT.md`](SHARE_PROMPT.md) into a new agent chat.
+GitHub Actions validates the skill and runs the same test suite on every pull request. See [`CONTRIBUTING.md`](CONTRIBUTING.md) for the full local verification and review contract. To try the workflow without installing, paste [`SHARE_PROMPT.md`](SHARE_PROMPT.md) into a new agent chat.
 
 ## ⚖️ Responsible use
 

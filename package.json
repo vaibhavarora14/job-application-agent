@@ -35,9 +35,10 @@
   },
   "scripts": {
     "test": "node --test job-application-agent/tests/*.test.mjs telemetry-worker/tests/*.test.mjs installer/tests/*.test.mjs",
+    "check:native-artifacts": "node scripts/ci/validate-native-artifacts.mjs",
     "privacy-audit": "node --test job-application-agent/tests/privacy-audit.test.mjs",
     "smoke:package": "node scripts/smoke-package.mjs",
-    "check": "node --check job-application-agent/scripts/job-application.mjs && node --check job-application-agent/scripts/secret-store.mjs && node --check job-application-agent/scripts/telemetry-client.mjs && node --check job-application-agent/scripts/telemetry-schema.mjs && node --check telemetry-worker/src/worker.mjs && node --check telemetry-worker/src/public-stats.mjs && node --check telemetry-worker/public/dashboard.js && node --check installer/src/cli.mjs && node --check installer/src/installer.mjs && node --check installer/src/runner.mjs && node --check installer/src/scheduler.mjs && node --check bin/job-application-agent.mjs",
+    "check": "node --check job-application-agent/scripts/job-application.mjs && node --check job-application-agent/scripts/secret-store.mjs && node --check job-application-agent/scripts/telemetry-client.mjs && node --check job-application-agent/scripts/telemetry-schema.mjs && node --check telemetry-worker/src/worker.mjs && node --check telemetry-worker/src/public-stats.mjs && node --check telemetry-worker/public/dashboard.js && node --check installer/src/cli.mjs && node --check installer/src/installer.mjs && node --check installer/src/runner.mjs && node --check installer/src/scheduler.mjs && node --check scripts/ci/classify-paths.mjs && node --check scripts/ci/validate-native-artifacts.mjs && node --check bin/job-application-agent.mjs",
     "prepack": "npm run check && npm test && npm run privacy-audit"
   },
   "engines": {
