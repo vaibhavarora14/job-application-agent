@@ -42,7 +42,9 @@ test('installs the packaged skill while preserving private state outside the ins
   assert.equal(result.installedVersion, '3.0.0');
   assert.equal(await readFile(path.join(f.agentHome, 'skills', 'job-application-agent', 'SKILL.md'), 'utf8'), '# Version one\n');
   assert.equal(await readFile(path.join(privateState, 'applications.ndjson'), 'utf8'), '{"private":true}\n');
-  assert.equal((await stat(path.join(f.agentHome, 'job-application-agent', CONFIG_FILENAME))).mode & 0o777, 0o600);
+  if (process.platform !== 'win32') {
+    assert.equal((await stat(path.join(f.agentHome, 'job-application-agent', CONFIG_FILENAME))).mode & 0o777, 0o600);
+  }
 });
 
 test('updates atomically and keeps the immediately previous version for rollback', async () => {

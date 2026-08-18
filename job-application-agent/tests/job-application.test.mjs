@@ -4,6 +4,7 @@ import { mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
+import { fileURLToPath } from 'node:url';
 
 import { buildReview, commandCategory, durationBucket, migrateProfile, profileStatus, scoreJob, telemetryJobAssessed, validateLedgerEntry, validateProfile, validateSubmissionTelemetry } from '../scripts/job-application.mjs';
 
@@ -68,7 +69,7 @@ test('validates a candidate-defined target profile', () => {
 test('returns the canonical resume path for direct browser uploads', async (t) => {
   const directory = await mkdtemp(join(tmpdir(), 'public-job-agent-resume-path-'));
   t.after(() => rm(directory, { recursive: true, force: true }));
-  const script = new URL('../scripts/job-application.mjs', import.meta.url).pathname;
+  const script = fileURLToPath(new URL('../scripts/job-application.mjs', import.meta.url));
   const resume = join(directory, 'resume.pdf');
   await writeFile(join(directory, 'telemetry.json'), JSON.stringify({ version: 1, enabled: false, disclosed: true, graceConsumed: true, installationEventPending: false }));
   await writeFile(resume, '%PDF-1.7\ncanonical resume fixture');
@@ -238,7 +239,7 @@ test('requires review at each ten confirmed submissions', () => {
 test('deduplicates ledger entries by normalized URL', async (t) => {
   const directory = await mkdtemp(join(tmpdir(), 'public-job-agent-'));
   t.after(() => rm(directory, { recursive: true, force: true }));
-  const script = new URL('../scripts/job-application.mjs', import.meta.url).pathname;
+  const script = fileURLToPath(new URL('../scripts/job-application.mjs', import.meta.url));
   const entry = {
     id: 'example-role-1', company: 'Example', role: 'Senior Product Engineer', url: 'https://jobs.example.com/123?utm_source=x', source: 'company', score: 80, status: 'submitted', submittedAt: '2026-01-15T10:00:00Z', approval: 'STANDING AUTHORIZATION', answers: {},
     telemetry: { durationBucket: '5-15m', fieldsFilled: 14, shortAnswerCount: 2, resumeUploaded: true },
@@ -253,13 +254,13 @@ test('deduplicates ledger entries by normalized URL', async (t) => {
   }));
   assert.equal(relabelled.duplicate, true);
   assert.equal((await readFile(join(directory, 'applications.ndjson'), 'utf8')).includes('telemetry'), false);
-  assert.equal((await stat(join(directory, 'applications.ndjson'))).mode & 0o777, 0o600);
+  if (process.platform !== 'win32') assert.equal((await stat(join(directory, 'applications.ndjson'))).mode & 0o777, 0o600);
 });
 
 test('warns on same-company role matches and serializes concurrent duplicate submissions', async (t) => {
   const directory = await mkdtemp(join(tmpdir(), 'public-job-agent-dedup-'));
   t.after(() => rm(directory, { recursive: true, force: true }));
-  const script = new URL('../scripts/job-application.mjs', import.meta.url).pathname;
+  const script = fileURLToPath(new URL('../scripts/job-application.mjs', import.meta.url));
   await writeFile(join(directory, 'telemetry.json'), JSON.stringify({ version: 1, enabled: false, disclosed: true, graceConsumed: true, installationEventPending: false }));
   const env = { ...process.env, JOB_APPLICATION_AGENT_STATE_DIR: directory };
   const base = {
@@ -283,7 +284,7 @@ test('warns on same-company role matches and serializes concurrent duplicate sub
 test('records structured outcomes idempotently without duplicate rows', async (t) => {
   const directory = await mkdtemp(join(tmpdir(), 'public-job-agent-outcomes-'));
   t.after(() => rm(directory, { recursive: true, force: true }));
-  const script = new URL('../scripts/job-application.mjs', import.meta.url).pathname;
+  const script = fileURLToPath(new URL('../scripts/job-application.mjs', import.meta.url));
   await writeFile(join(directory, 'telemetry.json'), JSON.stringify({ version: 1, enabled: false, disclosed: true, graceConsumed: true, installationEventPending: false }));
   await writeFile(join(directory, 'applications.ndjson'), `${JSON.stringify({
     id: 'example-role-1', company: 'Example', role: 'Senior Product Engineer', url: 'https://jobs.example.com/123', source: 'company', score: 88,
@@ -306,7 +307,7 @@ test('records structured outcomes idempotently without duplicate rows', async (t
 test('records bounded interview quality and failure-point enrichment idempotently', async (t) => {
   const directory = await mkdtemp(join(tmpdir(), 'public-job-agent-interview-quality-'));
   t.after(() => rm(directory, { recursive: true, force: true }));
-  const script = new URL('../scripts/job-application.mjs', import.meta.url).pathname;
+  const script = fileURLToPath(new URL('../scripts/job-application.mjs', import.meta.url));
   await writeFile(join(directory, 'telemetry.json'), JSON.stringify({ version: 1, enabled: false, disclosed: true, graceConsumed: true, installationEventPending: false }));
   await writeFile(join(directory, 'applications.ndjson'), `${JSON.stringify({
     id: 'example-role-1', company: 'Example', role: 'Staff Product Engineer', url: 'https://jobs.example.com/123', source: 'company', score: 91,
@@ -391,7 +392,7 @@ test('preserves interview quality after a later final outcome', () => {
 test('acknowledges a generated review only through the explicit CLI command', async (t) => {
   const directory = await mkdtemp(join(tmpdir(), 'public-job-agent-review-'));
   t.after(() => rm(directory, { recursive: true, force: true }));
-  const script = new URL('../scripts/job-application.mjs', import.meta.url).pathname;
+  const script = fileURLToPath(new URL('../scripts/job-application.mjs', import.meta.url));
   await writeFile(join(directory, 'telemetry.json'), JSON.stringify({ version: 1, enabled: false, disclosed: true, graceConsumed: true, installationEventPending: false }));
   const entries = Array.from({ length: 10 }, (_, index) => ({
     id: `role-${index}`, company: `Company ${index}`, role: 'Senior Engineer', url: `https://jobs.example.com/${index}`,
@@ -436,11 +437,11 @@ test('builds a structured assessment event without description or candidate prof
 test('telemetry CLI controls are private and reset removes anonymous credentials', async (t) => {
   const directory = await mkdtemp(join(tmpdir(), 'public-job-agent-telemetry-'));
   t.after(() => rm(directory, { recursive: true, force: true }));
-  const script = new URL('../scripts/job-application.mjs', import.meta.url).pathname;
+  const script = fileURLToPath(new URL('../scripts/job-application.mjs', import.meta.url));
   const env = { ...process.env, JOB_APPLICATION_AGENT_STATE_DIR: directory, JOB_APPLICATION_AGENT_TELEMETRY_URL: 'https://relay.invalid' };
   const disabled = JSON.parse(execFileSync(process.execPath, [script, 'telemetry', 'disable'], { env, encoding: 'utf8' }));
   assert.equal(disabled.enabled, false);
   const reset = JSON.parse(execFileSync(process.execPath, [script, 'telemetry', 'reset'], { env, encoding: 'utf8' }));
   assert.equal(reset.hasInstallationId, false);
-  assert.equal((await stat(join(directory, 'telemetry.json'))).mode & 0o777, 0o600);
+  if (process.platform !== 'win32') assert.equal((await stat(join(directory, 'telemetry.json'))).mode & 0o777, 0o600);
 });

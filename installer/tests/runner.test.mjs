@@ -23,10 +23,10 @@ test('creates a durable Unix launcher that always executes the latest npm packag
   assert.doesNotMatch(script, /CODEX_HOME=/);
   assert.match(script, /job-application-agent@latest/);
   assert.match(script, /auto-update/);
-  assert.equal((await stat(result.path)).mode & 0o777, 0o700);
+  if (process.platform !== 'win32') assert.equal((await stat(result.path)).mode & 0o777, 0o700);
 });
 
-test('Unix launcher exposes its Node directory to npm child processes under a minimal scheduler PATH', async () => {
+test('Unix launcher exposes its Node directory to npm child processes under a minimal scheduler PATH', { skip: process.platform === 'win32' }, async () => {
   const agentHome = await mkdtemp(path.join(os.tmpdir(), 'job-agent-runner-path-'));
   const emptyPath = await mkdtemp(path.join(os.tmpdir(), 'job-agent-empty-path-'));
   const fakeNpmCli = path.join(agentHome, 'fake-npm-cli.mjs');
