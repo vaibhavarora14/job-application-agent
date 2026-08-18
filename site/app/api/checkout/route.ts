@@ -1,15 +1,15 @@
 import { buildCheckoutRequest, isAllowedCheckoutUrl, validateCheckoutInput } from "../../../lib/payment-core.mjs";
 import { createDodoClient, getPaymentConfig } from "../../../lib/dodo";
 import { findReusableCheckout, getRegistrationForCheckout, saveCheckoutSession } from "../../../lib/registration-store";
+import { readJsonRequest } from "../../../lib/public-boundary.mjs";
+import { enforcePublicRateLimit } from "../../../lib/rate-limit";
 
 export async function POST(request: Request) {
-  if (!request.headers.get("content-type")?.includes("application/json"))
-    return Response.json({ error: "Send this request as JSON." }, { status: 415 });
-  if (Number(request.headers.get("content-length") ?? 0) > 4096)
-    return Response.json({ error: "That request is too large." }, { status: 413 });
-  let body: unknown;
-  try { body = await request.json(); } catch { return Response.json({ error: "We could not read that request." }, { status: 400 }); }
-  const input = validateCheckoutInput(body);
+  const limited = await enforcePublicRateLimit(request, "checkout", 10);
+  if (limited) return limited;
+  const parsed = await readJsonRequest(request, 4096);
+  if (!parsed.ok) return Response.json({ error: parsed.error }, { status: parsed.status });
+  const input = validateCheckoutInput(parsed.data);
   if (!input.ok) return Response.json({ error: input.error }, { status: 400 });
   const configured = getPaymentConfig();
   if (!configured.ok) return Response.json({ error: "Secure checkout is being prepared. Please try again shortly." }, { status: 503 });

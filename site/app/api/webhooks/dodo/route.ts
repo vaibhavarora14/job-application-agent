@@ -1,13 +1,13 @@
 import { createDodoClient, getPaymentConfig } from "../../../../lib/dodo";
 import { normalizePaymentWebhook } from "../../../../lib/payment-core.mjs";
 import { applyPaymentWebhook } from "../../../../lib/registration-store";
+import { readTextRequest } from "../../../../lib/public-boundary.mjs";
 
 export async function POST(request: Request) {
-  if (Number(request.headers.get("content-length") ?? 0) > 1_048_576)
-    return Response.json({ error: "Payload too large." }, { status: 413 });
+  const body = await readTextRequest(request, 1_048_576);
+  if (!body.ok) return Response.json({ error: body.error }, { status: body.status });
   const configured = getPaymentConfig();
   if (!configured.ok) return Response.json({ error: "Webhook is not configured." }, { status: 503 });
-  const rawBody = await request.text();
   const webhookHeaders = {
     "webhook-id": request.headers.get("webhook-id") ?? "",
     "webhook-signature": request.headers.get("webhook-signature") ?? "",
@@ -15,7 +15,7 @@ export async function POST(request: Request) {
   };
   let verified: unknown;
   try {
-    verified = createDodoClient(configured.config).webhooks.unwrap(rawBody, { headers: webhookHeaders, key: configured.config.webhookKey });
+    verified = createDodoClient(configured.config).webhooks.unwrap(body.data, { headers: webhookHeaders, key: configured.config.webhookKey });
   } catch {
     return Response.json({ error: "Invalid webhook signature." }, { status: 401 });
   }
