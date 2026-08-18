@@ -52,7 +52,7 @@ Do not lower seniority, compensation, location, work mode, or evidence threshold
 4. Keep authentication in the existing browser session. Never inspect cookies, local storage, passwords, or session files.
 5. Fill only explicit profile fields, candidate-provided answers, or facts verified in the canonical resume.
 6. Follow [references/APPLICATION_GUIDANCE.md](references/APPLICATION_GUIDANCE.md) for narrative answers.
-7. Upload only the canonical resume unless the candidate explicitly provides another attachment.
+7. Upload only the canonical resume unless the candidate explicitly provides another attachment. Resolve its absolute path with `resume path`, then follow [references/BROWSER_UPLOADS.md](references/BROWSER_UPLOADS.md). Use the browser's privileged path-based upload capability first; treat a visible native file picker as a fallback.
 8. Do not answer demographic questions. Stop for login/SSO/MFA, CAPTCHA, legal attestations, unclear authorization or compensation, sensitive identifiers, and judgment-only questions.
 9. Verify every required field, answer, attachment, and disclosure. Submit only when the current request and confirmation policy authorize it.
 10. Record `submitted` only after visible success confirmation. Record no submission when confirmation is missing or ambiguous.
@@ -78,6 +78,7 @@ node scripts/job-application.mjs profile migrate --stdin
 node scripts/job-application.mjs profile check
 node scripts/job-application.mjs profile field <allowed-field>
 node scripts/job-application.mjs resume import <google-doc-url-or-local-pdf>
+node scripts/job-application.mjs resume path
 node scripts/job-application.mjs score --stdin
 node scripts/job-application.mjs ledger check --stdin
 node scripts/job-application.mjs ledger add --stdin

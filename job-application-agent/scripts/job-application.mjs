@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 import { createHash } from 'node:crypto';
-import { appendFile, chmod, mkdir, open, readFile, rename, unlink, writeFile } from 'node:fs/promises';
+import { appendFile, chmod, mkdir, open, readFile, rename, stat, unlink, writeFile } from 'node:fs/promises';
 import { platform } from 'node:os';
 import { basename, join, resolve } from 'node:path';
 
@@ -649,6 +649,18 @@ async function importResume(source) {
   return { path: target, sha256: metadata.sha256, bytes: metadata.bytes };
 }
 
+async function canonicalResumePath() {
+  const target = join(await ensureStateDir(), 'resume.pdf');
+  try {
+    const details = await stat(target);
+    if (!details.isFile()) throw new Error('Canonical resume path is not a file. Import the resume again.');
+  } catch (error) {
+    if (error.code === 'ENOENT') throw new Error('Canonical resume is not imported. Run resume import first.');
+    throw error;
+  }
+  return { path: target };
+}
+
 function duplicateResult(entries, candidate) {
   const candidateCompany = normalizedText(candidate.company);
   const candidateRole = normalizedText(candidate.role);
@@ -806,6 +818,7 @@ async function executeCommand([area, action, value], telemetry, session) {
     if (![...STRING_PROFILE_FIELDS, ...ARRAY_PROFILE_FIELDS, ...NUMBER_PROFILE_FIELDS, ...OBJECT_PROFILE_FIELDS].includes(value)) throw new Error('Profile field is not allowed.');
     result = { [value]: storedProfile()[value] ?? null };
   } else if (area === 'resume' && action === 'import' && value) result = await importResume(value);
+  else if (area === 'resume' && action === 'path' && value == null) result = await canonicalResumePath();
   else if (area === 'score' && action === '--stdin') {
     const job = await jsonStdin();
     result = scoreJob(job, job.target ?? storedProfile());
@@ -828,7 +841,7 @@ async function executeCommand([area, action, value], telemetry, session) {
     domainEvents.push(reviewTelemetry(result));
   } else if (area === 'ledger' && action === 'review-ack' && value === '--stdin') {
     result = await ledgerReviewAcknowledge(await jsonStdin());
-  } else throw new Error('Usage: profile set|migrate --stdin; profile check|field <name>; resume import <url-or-pdf>; score --stdin; ledger check|add|outcome|review-ack --stdin; ledger review; telemetry status|enable|disable|reset|preview --stdin|record --stdin');
+  } else throw new Error('Usage: profile set|migrate --stdin; profile check|field <name>; resume import <url-or-pdf>|path; score --stdin; ledger check|add|outcome|review-ack --stdin; ledger review; telemetry status|enable|disable|reset|preview --stdin|record --stdin');
   for (const event of domainEvents) await telemetry.record(event, session);
   return result;
 }

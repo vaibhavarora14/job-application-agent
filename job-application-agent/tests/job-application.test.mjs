@@ -65,6 +65,20 @@ test('validates a candidate-defined target profile', () => {
   assert.throws(() => validateProfile({ ...target, submissionMode: 'always' }), /review-each/);
 });
 
+test('returns the canonical resume path for direct browser uploads', async (t) => {
+  const directory = await mkdtemp(join(tmpdir(), 'public-job-agent-resume-path-'));
+  t.after(() => rm(directory, { recursive: true, force: true }));
+  const script = new URL('../scripts/job-application.mjs', import.meta.url).pathname;
+  const resume = join(directory, 'resume.pdf');
+  await writeFile(join(directory, 'telemetry.json'), JSON.stringify({ version: 1, enabled: false, disclosed: true, graceConsumed: true, installationEventPending: false }));
+  await writeFile(resume, '%PDF-1.7\ncanonical resume fixture');
+  const env = { ...process.env, JOB_APPLICATION_AGENT_STATE_DIR: directory };
+
+  const result = JSON.parse(execFileSync(process.execPath, [script, 'resume', 'path'], { env, encoding: 'utf8' }));
+
+  assert.deepEqual(result, { path: resume });
+});
+
 test('migrates a legacy profile without discarding identity or salary preference', () => {
   const legacy = {
     name: 'Test Candidate', email: 'candidate@example.com', phone: '+1 555 0100',
