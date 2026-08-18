@@ -25,6 +25,12 @@ test('health endpoint exposes no analytics or identity data', async () => {
   assert.deepEqual(await response.json(), { ok: true, schemaVersion: 1 });
 });
 
+test('legacy dashboard root redirects to the branded community domain', async () => {
+  const response = await worker.fetch(new Request('https://relay.example.com/'), env());
+  assert.equal(response.status, 308);
+  assert.equal(response.headers.get('location'), 'https://stats.jobappagent.com/');
+});
+
 test('install issues a signed anonymous identity and supports verified refresh', async () => {
   const bindings = env();
   const first = await worker.fetch(new Request('https://relay.example.com/v1/install', { method: 'POST', body: '{}' }), bindings);
