@@ -7,6 +7,12 @@ import {
   parseNameStatusZ,
 } from '../../scripts/ci/classify-paths.mjs';
 
+const WORKFLOW_USES_PATTERN = /^\s*(?:-\s+)?uses:\s+([^\s#]+)(?:\s+#.*)?$/gm;
+
+function workflowUses(source) {
+  return [...source.matchAll(WORKFLOW_USES_PATTERN)].map(match => match[1]);
+}
+
 test('classifies documentation-only changes as low risk', () => {
   assert.deepEqual(classifyChangedPaths(['README.md', 'job-application-agent/references/RUNS.md']), {
     codeChanged: false,
@@ -25,6 +31,8 @@ test('classifies installer, state, workflow, package, and security changes as hi
     'bin/job-application-agent.mjs',
     'scripts/smoke-package.mjs',
     'scripts/ci/classify-paths.mjs',
+    'telemetry-worker/migrations/0002_add_index.sql',
+    'telemetry-worker/wrangler.jsonc',
     'SECURITY.md',
   ]) {
     assert.equal(classifyChangedPaths([changedPath]).highRisk, true, changedPath);
@@ -72,12 +80,33 @@ test('all workflows use immutable action SHAs, explicit permissions, and safe pu
     const source = await readFile(new URL(workflow, workflowDirectory), 'utf8');
     assert.match(source, /^permissions:/m, `${workflow} must declare permissions`);
     assert.doesNotMatch(source, /pull_request_target\s*:/, `${workflow} must not run privileged code from pull_request_target`);
-    for (const match of source.matchAll(/^\s*-\s+uses:\s+([^\s#]+)(?:\s+#.*)?$/gm)) {
-      const reference = match[1];
+    for (const reference of workflowUses(source)) {
       if (reference.startsWith('./')) continue;
       assert.match(reference, /^[^@\s]+@[0-9a-f]{40}$/, `${workflow} must pin ${reference} to a full commit SHA`);
     }
   }
+});
+
+test('workflow pinning scans both step actions and job-level reusable workflows', () => {
+  const workflow = `jobs:
+  reusable:
+    uses: owner/automation/.github/workflows/check.yml@v1
+  steps:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@0123456789012345678901234567890123456789
+`;
+
+  assert.deepEqual(workflowUses(workflow), [
+    'owner/automation/.github/workflows/check.yml@v1',
+    'actions/checkout@0123456789012345678901234567890123456789',
+  ]);
+});
+
+test('telemetry persistence and deployment paths require code-owner review', async () => {
+  const codeowners = await readFile(new URL('../../.github/CODEOWNERS', import.meta.url), 'utf8');
+  assert.match(codeowners, /^\/telemetry-worker\/migrations\/\s+@vaibhavarora14$/m);
+  assert.match(codeowners, /^\/telemetry-worker\/wrangler\.jsonc\s+@vaibhavarora14$/m);
 });
 
 test('validation exposes a stable quality gate and a six-combination high-risk matrix', async () => {
