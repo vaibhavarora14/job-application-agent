@@ -4,8 +4,9 @@ import { mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
+import { fileURLToPath } from 'node:url';
 
-const script = new URL('../scripts/job-application.mjs', import.meta.url).pathname;
+const script = fileURLToPath(new URL('../scripts/job-application.mjs', import.meta.url));
 
 async function fixture(t, label) {
   const directory = await mkdtemp(join(tmpdir(), `public-job-agent-${label}-`));
@@ -69,7 +70,7 @@ test('persists a scoped autonomy grant and revokes future routine transmissions'
   const status = cli(env, ['autonomy', 'status']);
   assert.equal(status.enabled, true);
   assert.equal(status.mode, 'routine-auto');
-  assert.equal((await stat(join(directory, 'autonomy.json'))).mode & 0o777, 0o600);
+  if (process.platform !== 'win32') assert.equal((await stat(join(directory, 'autonomy.json'))).mode & 0o777, 0o600);
 
   const preview = cli(env, ['autonomy', 'preview']);
   assert.equal(preview.maySubmitRoutineApplications, true);
@@ -112,7 +113,7 @@ test('counts only unique confirmed ledger submissions for an explicit round', as
   const roundEvents = (await readFile(join(directory, 'rounds.ndjson'), 'utf8')).trim().split('\n').map(JSON.parse);
   assert.equal(roundEvents.filter((event) => event.type === 'submission-confirmed').length, 30);
   assert.equal(roundEvents.length, 32);
-  assert.equal((await stat(join(directory, 'rounds.ndjson'))).mode & 0o777, 0o600);
+  if (process.platform !== 'win32') assert.equal((await stat(join(directory, 'rounds.ndjson'))).mode & 0o777, 0o600);
 });
 
 test('does not complete a round from blocked or partially filled applications', async (t) => {
@@ -156,7 +157,7 @@ test('replays and prioritizes an owner-only attention queue', async (t) => {
 
   const before = cli(env, ['attention', 'list']);
   assert.deepEqual(before.items.map((item) => item.id), [captcha.id, judgment.id]);
-  assert.equal((await stat(join(directory, 'attention.ndjson'))).mode & 0o777, 0o600);
+  if (process.platform !== 'win32') assert.equal((await stat(join(directory, 'attention.ndjson'))).mode & 0o777, 0o600);
 
   cli(env, ['attention', 'resolve', '--stdin'], { id: captcha.id });
   const after = cli(env, ['attention', 'list']);
@@ -185,7 +186,7 @@ test('qualifies only reproducible general-purpose friction for a public PR', asy
   const listed = cli(env, ['friction', 'list']);
   assert.equal(listed.items.length, 2);
   assert.deepEqual(listed.prCandidates.map((item) => item.id), [general.id]);
-  assert.equal((await stat(join(directory, 'friction.ndjson'))).mode & 0o777, 0o600);
+  if (process.platform !== 'win32') assert.equal((await stat(join(directory, 'friction.ndjson'))).mode & 0o777, 0o600);
   assert.equal((await readFile(join(directory, 'friction.ndjson'), 'utf8')).includes('candidate@example.com'), false);
 });
 

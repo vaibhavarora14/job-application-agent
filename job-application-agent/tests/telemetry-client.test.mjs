@@ -30,7 +30,7 @@ test('new installations disclose and send the first event immediately', async (t
   assert.equal(result.sent, true);
   assert.equal(relay.requests.length, 3);
   assert.equal((await client.beginCommand('search')).installationEventPending, false);
-  assert.equal((await stat(join(directory, 'telemetry.json'))).mode & 0o777, 0o600);
+  if (process.platform !== 'win32') assert.equal((await stat(join(directory, 'telemetry.json'))).mode & 0o777, 0o600);
 });
 
 test('existing installations receive a one-command grace period without backfill', async (t) => {
