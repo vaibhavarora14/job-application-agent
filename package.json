@@ -1,6 +1,6 @@
 {
   "name": "job-application-agent",
-  "version": "3.0.0",
+  "version": "3.0.1",
   "description": "A privacy-first Agent Skill and CLI for evidence-based job discovery, application completion, and outcome tracking.",
   "license": "MIT",
   "type": "module",

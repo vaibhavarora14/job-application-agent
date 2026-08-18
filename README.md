@@ -62,7 +62,7 @@ Updates are staged and validated before replacement. The immediately previous sk
 | 🔎 Discover | 🎯 Qualify | 📝 Apply |
 |---|---|---|
 | Finds active roles on direct career pages and major ATS platforms. | Scores seniority, skills, location, eligibility, work mode, and compensation. | Fills forms using only verified profile and résumé facts. |
-| Resolves social and aggregator leads to direct employer pages. | Skips closed, duplicated, ineligible, and weak-fit opportunities. | Uploads one canonical résumé and drafts truthful short answers. |
+| Resolves social and aggregator leads to direct employer pages. | Skips closed, duplicated, ineligible, and weak-fit opportunities. | Uploads one canonical résumé directly by path when the browser supports it, and drafts truthful short answers. |
 
 | 🔐 Protect | 📚 Track | 📈 Improve |
 |---|---|---|
