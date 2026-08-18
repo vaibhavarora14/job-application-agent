@@ -10,7 +10,7 @@ export async function POST(request: Request) {
   try { body = await request.json(); } catch { return Response.json({ error: "We could not read that form." }, { status: 400 }); }
   const result = validateFoundingRegistration(body);
   if (!result.ok) return Response.json({ error: "Check the highlighted fields.", fields: result.errors }, { status: 400 });
-  if (result.bot) return Response.json({ registrationId: crypto.randomUUID(), offer: { priceUsd: 49, accessDays: 90 } }, { status: 201 });
+  if (result.bot || !result.data) return Response.json({ registrationId: crypto.randomUUID(), offer: { priceUsd: 49, accessDays: 90 } }, { status: 201 });
   try {
     const registrationId = await saveRegistration(result.data);
     return Response.json({ registrationId, offer: { priceUsd: 49, accessDays: 90 } }, { status: 201 });
