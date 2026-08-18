@@ -1,16 +1,28 @@
 import assert from 'node:assert/strict';
 import { readdir, readFile } from 'node:fs/promises';
 import test from 'node:test';
+import { parse } from 'yaml';
 
 import {
   classifyChangedPaths,
   parseNameStatusZ,
 } from '../../scripts/ci/classify-paths.mjs';
 
-const WORKFLOW_USES_PATTERN = /^\s*(?:-\s+)?uses:\s+([^\s#]+)(?:\s+#.*)?$/gm;
-
 function workflowUses(source) {
-  return [...source.matchAll(WORKFLOW_USES_PATTERN)].map(match => match[1]);
+  const workflow = parse(source);
+  const references = [];
+
+  for (const job of Object.values(workflow?.jobs ?? {})) {
+    if (!job || typeof job !== 'object' || Array.isArray(job)) continue;
+    if (typeof job.uses === 'string') references.push(job.uses);
+    for (const step of job.steps ?? []) {
+      if (step && typeof step === 'object' && typeof step.uses === 'string') {
+        references.push(step.uses);
+      }
+    }
+  }
+
+  return references;
 }
 
 test('classifies documentation-only changes as low risk', () => {
@@ -91,7 +103,12 @@ test('workflow pinning scans both step actions and job-level reusable workflows'
   const workflow = `jobs:
   reusable:
     uses: owner/automation/.github/workflows/check.yml@v1
-  steps:
+  spaced:
+    uses : owner/automation/.github/workflows/spaced.yml@v2
+  quoted:
+    "uses": owner/automation/.github/workflows/quoted.yml@v3
+  flow: { uses: owner/automation/.github/workflows/flow.yml@v4 }
+  action:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@0123456789012345678901234567890123456789
@@ -99,6 +116,9 @@ test('workflow pinning scans both step actions and job-level reusable workflows'
 
   assert.deepEqual(workflowUses(workflow), [
     'owner/automation/.github/workflows/check.yml@v1',
+    'owner/automation/.github/workflows/spaced.yml@v2',
+    'owner/automation/.github/workflows/quoted.yml@v3',
+    'owner/automation/.github/workflows/flow.yml@v4',
     'actions/checkout@0123456789012345678901234567890123456789',
   ]);
 });
