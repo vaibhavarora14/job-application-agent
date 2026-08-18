@@ -22,8 +22,9 @@ Use `scripts/job-application.mjs` for private state and deterministic checks. Re
 3. Preserve identity fields during migration. Map legacy `salaryPreference` to `targetCompensation`. Add `compensationFloor` only when the candidate provides an amount, currency, and annual comparison basis.
 4. Store the profile in OS-backed profile storage (macOS Keychain, or Windows Credential Manager with a DPAPI-protected local file). Store the canonical resume and append-only ledgers in the owner-only state directory.
 5. Use `review-each` for per-application approval. Use `routine-auto` only when the current request authorizes the destination or batch and every automatic-eligibility condition passes.
-6. Obey browser and tool confirmation requirements regardless of the stored mode.
-7. Disclose default-enabled structured anonymous analytics and the `telemetry disable` control. The CLI also displays this disclosure.
+6. When the candidate explicitly grants continuing autonomy, read [references/AUTONOMY.md](references/AUTONOMY.md) and persist it with `autonomy grant --stdin`. Do not repeat skill-level upload or submission approval prompts while the active grant and profile both use `routine-auto`.
+7. Obey browser and tool confirmation requirements regardless of the stored mode or autonomy grant.
+8. Disclose default-enabled structured anonymous analytics and the `telemetry disable` control. The CLI also displays this disclosure.
 
 Never store passwords, MFA codes, government IDs, demographic data, CAPTCHA answers, browser session data, or inferred candidate facts.
 
@@ -46,17 +47,20 @@ Do not lower seniority, compensation, location, work mode, or evidence threshold
 
 ## Apply
 
+For batches, scheduled work, or resumable handoffs, read [references/RUNS.md](references/RUNS.md), create a round ID, and use the attention and friction queues.
+
 1. Recheck employer, title, direct domain, posting status, eligibility, and `autoEligible` immediately before submission.
-2. Run `ledger check --stdin` with the internal ledger ID, canonical URL, employer job ID, company, and role when available.
+2. Run `ledger check --stdin` with the internal ledger ID, canonical URL, employer job ID, company, and role when available. Review both requisition duplicate status and same-company history.
 3. Stop on a hard duplicate. Treat a same-company/same-role match without a shared job ID as a possible duplicate. Use `duplicateOverride: "NEW REQUISITION CONFIRMED"` only after verifying it is a distinct requisition.
 4. Keep authentication in the existing browser session. Never inspect cookies, local storage, passwords, or session files.
 5. Fill only explicit profile fields, candidate-provided answers, or facts verified in the canonical resume.
 6. Follow [references/APPLICATION_GUIDANCE.md](references/APPLICATION_GUIDANCE.md) for narrative answers.
 7. Upload only the canonical resume unless the candidate explicitly provides another attachment. Resolve its absolute path with `resume path`, then follow [references/BROWSER_UPLOADS.md](references/BROWSER_UPLOADS.md). Use the browser's privileged path-based upload capability first; treat a visible native file picker as a fallback.
 8. Do not answer demographic questions. Stop for login/SSO/MFA, CAPTCHA, legal attestations, unclear authorization or compensation, sensitive identifiers, and judgment-only questions.
-9. Verify every required field, answer, attachment, and disclosure. Submit only when the current request and confirmation policy authorize it.
-10. Record `submitted` only after visible success confirmation. Record no submission when confirmation is missing or ambiguous.
+9. Verify every required field, answer, attachment, and disclosure. Submit when the current request or active autonomy grant authorizes it.
+10. Record `submitted` only after visible success confirmation, using independent `discoverySource`, `applicationChannel`, and `roundId` values. Record no submission when confirmation is missing or ambiguous.
 11. Record workflow telemetry with `telemetry record --stdin`. Let `ledger add` emit `application_submitted`; do not emit it twice. Pass job URLs and structured metrics only through documented transient fields.
+12. Queue hard stops with `attention add --stdin` and continue elsewhere. Record reproducible general-purpose failures with `friction record --stdin`; improvement work must never delay application work.
 
 ## Outcomes and reviews
 
@@ -85,6 +89,14 @@ node scripts/job-application.mjs ledger add --stdin
 node scripts/job-application.mjs ledger outcome --stdin
 node scripts/job-application.mjs ledger review
 node scripts/job-application.mjs ledger review-ack --stdin
+node scripts/job-application.mjs autonomy grant --stdin
+node scripts/job-application.mjs autonomy status|preview|revoke
+node scripts/job-application.mjs round start|complete --stdin
+node scripts/job-application.mjs round status [round-id]
+node scripts/job-application.mjs attention add|resolve --stdin
+node scripts/job-application.mjs attention list
+node scripts/job-application.mjs friction record --stdin
+node scripts/job-application.mjs friction list
 node scripts/job-application.mjs telemetry status|enable|disable|reset
 node scripts/job-application.mjs telemetry preview --stdin
 node scripts/job-application.mjs telemetry record --stdin

@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
-import { createHash } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { appendFile, chmod, mkdir, open, readFile, rename, stat, unlink, writeFile } from 'node:fs/promises';
 import { platform } from 'node:os';
 import { basename, join, resolve } from 'node:path';
@@ -10,6 +10,7 @@ import { TelemetryClient } from './telemetry-client.mjs';
 import { jobIdentity } from './telemetry-schema.mjs';
 
 const SOURCES = new Set(['linkedin', 'greenhouse', 'lever', 'ashby', 'workable', 'comeet', 'workday', 'rippling', 'smartrecruiters', 'google-form', 'company', 'email', 'other']);
+const DISCOVERY_SOURCES = new Set(['direct-company', 'linkedin', 'x', 'yc', 'hacker-news', 'job-board', 'email', 'user-supplied', 'web-search', 'other']);
 const ELIGIBILITY = new Set(['eligible', 'unclear', 'ineligible']);
 const POSTING_STATUS = new Set(['active', 'closed', 'unclear']);
 const WORK_MODES = new Set(['remote', 'hybrid', 'onsite', 'unspecified']);
@@ -21,6 +22,11 @@ const FAILURE_POINTS = new Set(['role-scope', 'company-problem', 'constraints', 
 const APPROVALS = new Set(['APPROVE SUBMIT', 'STANDING AUTHORIZATION']);
 const MODES = new Set(['review-each', 'routine-auto']);
 const TELEMETRY_DURATIONS = new Set(['under-1s', '1-5s', '5-30s', '30-60s', '1-2m', '2-5m', '5-15m', '15m-plus']);
+const AUTONOMY_SCOPES = Object.freeze(['discover', 'assess', 'fill', 'upload-resume', 'submit', 'send-recruiting-email', 'record-ledger', 'record-outcomes', 'cleanup-tabs', 'open-improvement-pr']);
+const AUTONOMY_HARD_STOPS = Object.freeze(['authentication', 'mfa', 'captcha', 'legal-attestation', 'demographic', 'government-id', 'unverifiable-claim', 'ambiguous-authorization', 'ambiguous-compensation']);
+const ATTENTION_STAGES = new Set(['discovery', 'assessment', 'application', 'contact', 'resume', 'questions', 'legal', 'demographic', 'review', 'submission', 'confirmation', 'outcome', 'answers', 'upload']);
+const ATTENTION_BLOCKERS = new Set(['authentication', 'mfa', 'captcha', 'legal-attestation', 'demographic', 'government-id', 'ambiguous-authorization', 'ambiguous-compensation', 'unverifiable-claim', 'judgment', 'video', 'upload', 'site-error', 'other']);
+const REQUIRED_ACTIONS = new Set(['sign-in', 'complete-mfa', 'complete-captcha', 'review-legal', 'choose-demographic', 'provide-government-id', 'provide-authorization', 'provide-compensation', 'verify-claim', 'provide-judgment', 'record-video', 'enable-upload', 'retry-site']);
 const REQUIRED_PROFILE = ['name', 'email', 'phone', 'location', 'workAuthorization', 'roleFamilies', 'seniority', 'targetLocations', 'workModes', 'submissionMode', 'yearsExperience', 'autoSubmitMinScore', 'manualReviewMinScore', 'minMustHaveCoverage'];
 const STRING_PROFILE_FIELDS = new Set(['name', 'email', 'phone', 'location', 'workAuthorization', 'linkedin', 'github', 'portfolio', 'availability', 'currentCompensation', 'targetCompensation', 'submissionMode']);
 const ARRAY_PROFILE_FIELDS = new Set(['roleFamilies', 'seniority', 'skills', 'targetLocations', 'excludedLocations', 'workModes', 'industries', 'excludedCompanies']);
@@ -70,6 +76,9 @@ export function commandCategory([area, action]) {
   if (area === 'ledger' && action === 'review-ack') return 'review';
   if (area === 'ledger') return 'apply';
   if (area === 'telemetry') return 'telemetry';
+  if (area === 'autonomy') return 'profile';
+  if (area === 'round') return 'round';
+  if (area === 'attention' || area === 'friction') return 'batch';
   return 'other';
 }
 
@@ -120,7 +129,7 @@ export async function telemetryJobAssessed(job, result) {
       ...identity,
       company: job.company,
       title: job.title,
-      ats: sourceToAts(String(job.source).toLowerCase()),
+      ats: sourceToAts(String(job.applicationChannel ?? job.source).toLowerCase()),
       fitScore: result.score,
       eligibility: String(job.eligibility).toLowerCase(),
       decision: result.decision,
@@ -138,7 +147,7 @@ async function telemetryApplicationSubmitted(entry, details = {}) {
       ...identity,
       company: entry.company,
       title: entry.role,
-      ats: sourceToAts(entry.source),
+      ats: sourceToAts(entry.applicationChannel ?? entry.source),
       durationBucket: details.durationBucket ?? 'under-1s',
       fieldsFilled: details.fieldsFilled ?? answers.length,
       shortAnswerCount: details.shortAnswerCount ?? answers.filter((key) => !/resume|attachment/i.test(key)).length,
@@ -240,12 +249,16 @@ export function scoreJob(input, target) {
   const company = string(job.company, 'job.company', 300);
   const description = string(job.description, 'job.description', 40000);
   const source = string(job.source, 'job.source', 40).toLowerCase();
+  const discoverySource = job.discoverySource == null ? null : string(job.discoverySource, 'job.discoverySource', 40).toLowerCase();
+  const applicationChannel = job.applicationChannel == null ? null : string(job.applicationChannel, 'job.applicationChannel', 40).toLowerCase();
   const eligibility = string(job.eligibility, 'job.eligibility', 40).toLowerCase();
   const postingStatus = string(job.postingStatus ?? 'unclear', 'job.postingStatus', 40).toLowerCase();
   const seniority = string(job.seniority ?? 'unspecified', 'job.seniority', 40).toLowerCase();
   const roleFamily = string(job.roleFamily ?? 'other', 'job.roleFamily', 80).toLowerCase();
   const workMode = string(job.workMode ?? (job.remote === true ? 'remote' : 'unspecified'), 'job.workMode', 40).toLowerCase();
   if (!SOURCES.has(source)) throw new Error('job.source is invalid.');
+  if (discoverySource != null && !DISCOVERY_SOURCES.has(discoverySource)) throw new Error('job.discoverySource is invalid.');
+  if (applicationChannel != null && !SOURCES.has(applicationChannel)) throw new Error('job.applicationChannel is invalid.');
   if (!ELIGIBILITY.has(eligibility)) throw new Error('job.eligibility must be eligible, unclear, or ineligible.');
   if (!POSTING_STATUS.has(postingStatus)) throw new Error('job.postingStatus must be active, closed, or unclear.');
   if (!JOB_SENIORITIES.has(seniority)) throw new Error('job.seniority is invalid.');
@@ -393,7 +406,12 @@ export function validateLedgerEntry(input) {
     answers: entry.answers ?? {},
   };
   if (entry.employerJobId != null) normalized.employerJobId = string(entry.employerJobId, 'entry.employerJobId', 300);
+  if (entry.discoverySource != null) normalized.discoverySource = string(entry.discoverySource, 'entry.discoverySource', 40).toLowerCase();
+  if (entry.applicationChannel != null) normalized.applicationChannel = string(entry.applicationChannel, 'entry.applicationChannel', 40).toLowerCase();
+  if (entry.roundId != null) normalized.roundId = string(entry.roundId, 'entry.roundId', 180);
   if (!SOURCES.has(normalized.source)) throw new Error('entry.source is invalid.');
+  if (normalized.discoverySource != null && !DISCOVERY_SOURCES.has(normalized.discoverySource)) throw new Error('entry.discoverySource is invalid.');
+  if (normalized.applicationChannel != null && !SOURCES.has(normalized.applicationChannel)) throw new Error('entry.applicationChannel is invalid.');
   if (!Number.isInteger(normalized.score) || normalized.score < 0 || normalized.score > 100) throw new Error('entry.score must be an integer from 0 to 100.');
   if (normalized.status !== 'submitted') throw new Error('New ledger entries must have status submitted.');
   if (!APPROVALS.has(normalized.approval)) throw new Error('entry.approval is invalid.');
@@ -596,6 +614,63 @@ async function withStateLock(name, action) {
   }
 }
 
+async function writePrivateJson(file, value) {
+  const temporary = `${file}.${process.pid}.${randomUUID()}.tmp`;
+  await writeFile(temporary, `${JSON.stringify(value, null, 2)}\n`, { mode: 0o600 });
+  await rename(temporary, file);
+  await chmod(file, 0o600);
+}
+
+async function readPrivateJson(file, fallback) {
+  try { return JSON.parse(await readFile(file, 'utf8')); }
+  catch (error) {
+    if (error.code === 'ENOENT') return fallback;
+    throw new Error(`${basename(file)} is missing or unreadable.`);
+  }
+}
+
+function autonomyView(value) {
+  const enabled = value?.enabled === true && value?.mode === 'routine-auto';
+  return {
+    version: 1,
+    enabled,
+    mode: enabled ? 'routine-auto' : null,
+    scopes: enabled ? [...AUTONOMY_SCOPES] : [],
+    hardStops: [...AUTONOMY_HARD_STOPS],
+    maySubmitRoutineApplications: enabled,
+    maySendVerifiedRecruitingEmail: enabled,
+    mayCreateImprovementPr: enabled,
+    mayMergeReleaseOrPublish: false,
+    mayBypassHostPermissionPrompts: false,
+    ...(value?.grantedAt ? { grantedAt: value.grantedAt } : {}),
+    ...(value?.revokedAt ? { revokedAt: value.revokedAt } : {}),
+  };
+}
+
+async function autonomyStatus() {
+  const file = join(await ensureStateDir(), 'autonomy.json');
+  return autonomyView(await readPrivateJson(file, { version: 1, enabled: false }));
+}
+
+async function autonomyGrant(input) {
+  const value = object(input, 'autonomy grant');
+  const allowed = new Set(['mode']);
+  for (const key of Object.keys(value)) if (!allowed.has(key)) throw new Error(`Unknown autonomy grant property: ${key}.`);
+  if (value.mode !== 'routine-auto') throw new Error('autonomy grant mode must be routine-auto.');
+  const grant = { version: 1, enabled: true, mode: 'routine-auto', scopes: [...AUTONOMY_SCOPES], grantedAt: new Date().toISOString() };
+  const file = join(await ensureStateDir(), 'autonomy.json');
+  await writePrivateJson(file, grant);
+  return autonomyView(grant);
+}
+
+async function autonomyRevoke() {
+  const file = join(await ensureStateDir(), 'autonomy.json');
+  const current = await readPrivateJson(file, { version: 1, enabled: false });
+  const revoked = { version: 1, enabled: false, revokedAt: new Date().toISOString(), ...(current.grantedAt ? { grantedAt: current.grantedAt } : {}) };
+  await writePrivateJson(file, revoked);
+  return autonomyView(revoked);
+}
+
 async function storeProfile(profileInput) {
   const profile = validateProfile(profileInput);
   if (process.platform === 'win32') await ensureStateDir();
@@ -671,11 +746,22 @@ function duplicateResult(entries, candidate) {
     || normalizeUrl(entry.url) === candidateUrl);
   const possible = hard ? null : entries.find(sameCompanyRole);
   const match = hard ?? possible;
+  const companyApplications = candidateCompany
+    ? entries.filter((entry) => normalizedText(entry.company) === candidateCompany).slice(-20).map((entry) => ({
+      id: entry.id,
+      company: entry.company,
+      role: entry.role,
+      submittedAt: entry.submittedAt,
+      ...(entry.employerJobId ? { employerJobId: entry.employerJobId } : {}),
+    }))
+    : [];
   return {
     duplicate: Boolean(hard),
     possibleDuplicate: Boolean(possible),
     reason: hard ? (hard.id === candidate.id ? 'id' : candidate.employerJobId && hard.employerJobId ? 'employer-job-id' : 'url') : possible ? 'company-role' : null,
     match: match ? { id: match.id, company: match.company, role: match.role, submittedAt: match.submittedAt } : null,
+    sameCompany: companyApplications.length > 0,
+    companyApplications,
   };
 }
 
@@ -691,13 +777,178 @@ async function ledgerAdd(entryInput, duplicateOverride) {
   return withStateLock('applications', async (dir) => {
     const file = join(dir, 'applications.ndjson');
     const entries = await jsonLines(file);
+    if (entry.roundId) {
+      const roundEvents = await jsonLines(join(dir, 'rounds.ndjson'));
+      if (!roundEvents.some((event) => event.type === 'started' && event.roundId === entry.roundId)) throw new Error('entry.roundId does not identify a started round.');
+      if (roundEvents.some((event) => event.type === 'completed' && event.roundId === entry.roundId)) throw new Error('entry.roundId identifies a completed round.');
+    }
     const duplicate = duplicateResult(entries, entry);
     if (duplicate.duplicate) throw new Error('This application is already recorded.');
     if (duplicate.possibleDuplicate && duplicateOverride !== 'NEW REQUISITION CONFIRMED') throw new Error('A possible same-company role duplicate requires NEW REQUISITION CONFIRMED.');
     await appendFile(file, `${JSON.stringify(entry)}\n`, { mode: 0o600 });
     await chmod(file, 0o600);
+    if (entry.roundId) {
+      const roundsFile = join(dir, 'rounds.ndjson');
+      await appendFile(roundsFile, `${JSON.stringify({ type: 'submission-confirmed', roundId: entry.roundId, applicationId: entry.id, occurredAt: entry.submittedAt })}\n`, { mode: 0o600 });
+      await chmod(roundsFile, 0o600);
+    }
     return { recorded: entry.id, review: buildReview([...entries, entry]) };
   });
+}
+
+async function appendPrivateEvent(name, event) {
+  return withStateLock(name, async (dir) => {
+    const file = join(dir, `${name}.ndjson`);
+    await appendFile(file, `${JSON.stringify(event)}\n`, { mode: 0o600 });
+    await chmod(file, 0o600);
+    return event;
+  });
+}
+
+function isoDate(value, label) {
+  const result = string(value ?? new Date().toISOString(), label, 80);
+  if (Number.isNaN(Date.parse(result))) throw new Error(`${label} must be an ISO date.`);
+  return result;
+}
+
+async function roundStart(input) {
+  const value = object(input, 'round');
+  const allowed = new Set(['requestedCount', 'startedAt']);
+  for (const key of Object.keys(value)) if (!allowed.has(key)) throw new Error(`Unknown round property: ${key}.`);
+  const event = {
+    type: 'started',
+    roundId: `round-${new Date().toISOString().slice(0, 10)}-${randomUUID()}`,
+    requestedCount: integer(value.requestedCount, 'round.requestedCount', 1, 1000),
+    occurredAt: isoDate(value.startedAt, 'round.startedAt'),
+  };
+  await appendPrivateEvent('rounds', event);
+  return { roundId: event.roundId, requestedCount: event.requestedCount, startedAt: event.occurredAt, completed: false };
+}
+
+function replayAttention(events, roundId = null) {
+  const active = new Map();
+  for (const event of events) {
+    if (event.type === 'opened') active.set(event.id, event);
+    else if (event.type === 'resolved') active.delete(event.id);
+  }
+  const priority = (blocker) => {
+    if (['authentication', 'mfa', 'captcha'].includes(blocker)) return 0;
+    if (['legal-attestation', 'ambiguous-authorization', 'ambiguous-compensation'].includes(blocker)) return 1;
+    return 2;
+  };
+  return [...active.values()]
+    .filter((item) => roundId == null || item.roundId === roundId)
+    .sort((a, b) => priority(a.blocker) - priority(b.blocker) || Date.parse(a.createdAt) - Date.parse(b.createdAt));
+}
+
+async function attentionList(roundId = null) {
+  const events = await jsonLines(join(await ensureStateDir(), 'attention.ndjson'));
+  const items = replayAttention(events, roundId);
+  return { count: items.length, items };
+}
+
+async function attentionAdd(input) {
+  const value = object(input, 'attention item');
+  const allowed = new Set(['roundId', 'applicationId', 'url', 'stage', 'blocker', 'requiredActions', 'createdAt']);
+  for (const key of Object.keys(value)) if (!allowed.has(key)) throw new Error(`Unknown attention property: ${key}.`);
+  const stage = string(value.stage, 'attention.stage', 40).toLowerCase();
+  const blocker = string(value.blocker, 'attention.blocker', 60).toLowerCase();
+  if (!ATTENTION_STAGES.has(stage)) throw new Error('attention.stage is invalid.');
+  if (!ATTENTION_BLOCKERS.has(blocker)) throw new Error('attention.blocker is invalid.');
+  const requiredActions = stringArray(value.requiredActions, 'attention.requiredActions', true).map((item) => item.toLowerCase());
+  if (requiredActions.length > 8 || requiredActions.some((item) => !REQUIRED_ACTIONS.has(item))) throw new Error('attention.requiredActions must contain only documented actions.');
+  const event = {
+    type: 'opened',
+    id: `attention-${randomUUID()}`,
+    roundId: string(value.roundId, 'attention.roundId', 180),
+    applicationId: string(value.applicationId, 'attention.applicationId', 180),
+    url: string(value.url, 'attention.url', 2048),
+    stage,
+    blocker,
+    requiredActions: [...new Set(requiredActions)],
+    createdAt: isoDate(value.createdAt, 'attention.createdAt'),
+  };
+  await appendPrivateEvent('attention', event);
+  return event;
+}
+
+async function attentionResolve(input) {
+  const value = object(input, 'attention resolution');
+  const allowed = new Set(['id', 'resolvedAt']);
+  for (const key of Object.keys(value)) if (!allowed.has(key)) throw new Error(`Unknown attention resolution property: ${key}.`);
+  const id = string(value.id, 'attention.id', 180);
+  const current = await attentionList();
+  if (!current.items.some((item) => item.id === id)) throw new Error('Attention item is not active.');
+  const event = { type: 'resolved', id, resolvedAt: isoDate(value.resolvedAt, 'attention.resolvedAt') };
+  await appendPrivateEvent('attention', event);
+  return { resolved: id };
+}
+
+async function roundStatus(roundId = null) {
+  const dir = await ensureStateDir();
+  const events = await jsonLines(join(dir, 'rounds.ndjson'));
+  const starts = events.filter((event) => event.type === 'started');
+  const id = roundId ?? starts.at(-1)?.roundId;
+  if (!id) throw new Error('No application round has been started.');
+  const started = starts.find((event) => event.roundId === id);
+  if (!started) throw new Error('Application round was not found.');
+  const applications = (await jsonLines(join(dir, 'applications.ndjson'))).filter((entry) => entry.roundId === id && entry.status === 'submitted');
+  const confirmedCount = new Set(applications.map((entry, index) => canonicalApplicationKey(entry, String(index)))).size;
+  const attention = await attentionList(id);
+  const completion = events.find((event) => event.type === 'completed' && event.roundId === id);
+  return {
+    roundId: id,
+    requestedCount: started.requestedCount,
+    confirmedCount,
+    remainingCount: Math.max(0, started.requestedCount - confirmedCount),
+    blockedCount: attention.count,
+    completed: Boolean(completion),
+    startedAt: started.occurredAt,
+    ...(completion ? { completedAt: completion.occurredAt } : {}),
+  };
+}
+
+async function roundComplete(input) {
+  const value = object(input, 'round completion');
+  const allowed = new Set(['roundId', 'completedAt']);
+  for (const key of Object.keys(value)) if (!allowed.has(key)) throw new Error(`Unknown round completion property: ${key}.`);
+  const status = await roundStatus(string(value.roundId, 'round.roundId', 180));
+  if (status.completed) return status;
+  if (status.confirmedCount < status.requestedCount) throw new Error(`Round requires ${status.requestedCount} confirmed submissions before completion.`);
+  const event = { type: 'completed', roundId: status.roundId, occurredAt: isoDate(value.completedAt, 'round.completedAt') };
+  await appendPrivateEvent('rounds', event);
+  return { ...status, completed: true, completedAt: event.occurredAt };
+}
+
+async function frictionRecord(input) {
+  const value = object(input, 'friction event');
+  const allowed = new Set(['stage', 'ats', 'errorCode', 'reproducible', 'general', 'observedAt']);
+  for (const key of Object.keys(value)) if (!allowed.has(key)) throw new Error(`Unknown friction property: ${key}.`);
+  const stage = string(value.stage, 'friction.stage', 40).toLowerCase();
+  const ats = string(value.ats, 'friction.ats', 40).toLowerCase();
+  const errorCode = string(value.errorCode, 'friction.errorCode', 100).toLowerCase();
+  if (!ATTENTION_STAGES.has(stage)) throw new Error('friction.stage is invalid.');
+  if (!SOURCES.has(ats)) throw new Error('friction.ats is invalid.');
+  if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(errorCode)) throw new Error('friction.errorCode must be a stable kebab-case code.');
+  if (typeof value.reproducible !== 'boolean' || typeof value.general !== 'boolean') throw new Error('friction.reproducible and friction.general must be Booleans.');
+  const event = {
+    id: `friction-${randomUUID()}`,
+    type: 'observed',
+    stage,
+    ats,
+    errorCode,
+    reproducible: value.reproducible,
+    general: value.general,
+    qualifiesForPr: value.reproducible && value.general,
+    observedAt: isoDate(value.observedAt, 'friction.observedAt'),
+  };
+  await appendPrivateEvent('friction', event);
+  return event;
+}
+
+async function frictionList() {
+  const items = (await jsonLines(join(await ensureStateDir(), 'friction.ndjson'))).filter((event) => event.type === 'observed');
+  return { count: items.length, items, prCandidates: items.filter((item) => item.qualifiesForPr) };
 }
 
 async function ledgerOutcome(outcomeInput) {
@@ -781,7 +1032,7 @@ async function outcomeTelemetry(application, outcome) {
       ...identity,
       company: application.company,
       title: application.role,
-      ats: sourceToAts(application.source),
+      ats: sourceToAts(application.applicationChannel ?? application.source),
       outcome: outcome.status,
       daysSinceSubmission: Math.max(0, Math.min(3650, Math.floor((Date.parse(outcome.occurredAt) - Date.parse(application.submittedAt)) / 86_400_000))),
       ...(outcome.interviewQuality ? { interviewQuality: outcome.interviewQuality } : {}),
@@ -800,6 +1051,21 @@ function reviewTelemetry(review) {
       offerCount: review.outcomeCounts.offer,
       withdrawalCount: review.outcomeCounts.withdrawn,
       reviewDue: review.reviewDue,
+    },
+  };
+}
+
+function roundCompletedTelemetry(round) {
+  return {
+    event: 'round_completed',
+    properties: {
+      requestedCount: round.requestedCount,
+      submittedCount: round.confirmedCount,
+      assessedCount: round.confirmedCount,
+      skippedCount: 0,
+      pausedCount: round.blockedCount,
+      errorCount: 0,
+      durationBucket: durationBucket(Math.max(0, Date.parse(round.completedAt) - Date.parse(round.startedAt))),
     },
   };
 }
@@ -841,7 +1107,21 @@ async function executeCommand([area, action, value], telemetry, session) {
     domainEvents.push(reviewTelemetry(result));
   } else if (area === 'ledger' && action === 'review-ack' && value === '--stdin') {
     result = await ledgerReviewAcknowledge(await jsonStdin());
-  } else throw new Error('Usage: profile set|migrate --stdin; profile check|field <name>; resume import <url-or-pdf>|path; score --stdin; ledger check|add|outcome|review-ack --stdin; ledger review; telemetry status|enable|disable|reset|preview --stdin|record --stdin');
+  } else if (area === 'autonomy' && action === 'grant' && value === '--stdin') result = await autonomyGrant(await jsonStdin());
+  else if (area === 'autonomy' && action === 'status' && value == null) result = await autonomyStatus();
+  else if (area === 'autonomy' && action === 'preview' && value == null) result = await autonomyStatus();
+  else if (area === 'autonomy' && action === 'revoke' && value == null) result = await autonomyRevoke();
+  else if (area === 'round' && action === 'start' && value === '--stdin') result = await roundStart(await jsonStdin());
+  else if (area === 'round' && action === 'status') result = await roundStatus(value ?? null);
+  else if (area === 'round' && action === 'complete' && value === '--stdin') {
+    result = await roundComplete(await jsonStdin());
+    domainEvents.push(roundCompletedTelemetry(result));
+  } else if (area === 'attention' && action === 'add' && value === '--stdin') result = await attentionAdd(await jsonStdin());
+  else if (area === 'attention' && action === 'list' && value == null) result = await attentionList();
+  else if (area === 'attention' && action === 'resolve' && value === '--stdin') result = await attentionResolve(await jsonStdin());
+  else if (area === 'friction' && action === 'record' && value === '--stdin') result = await frictionRecord(await jsonStdin());
+  else if (area === 'friction' && action === 'list' && value == null) result = await frictionList();
+  else throw new Error('Usage: profile set|migrate --stdin; profile check|field <name>; resume import <url-or-pdf>|path; score --stdin; ledger check|add|outcome|review-ack --stdin; ledger review; autonomy grant --stdin|status|preview|revoke; round start|complete --stdin|status [round-id]; attention add|resolve --stdin|list; friction record --stdin|list; telemetry status|enable|disable|reset|preview --stdin|record --stdin');
   for (const event of domainEvents) await telemetry.record(event, session);
   return result;
 }

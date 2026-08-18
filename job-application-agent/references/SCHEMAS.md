@@ -48,6 +48,8 @@ Treat `mustHaves[].evidence` as private resume analysis. It is used locally and 
   "company": "Example",
   "description": "Posting text",
   "source": "greenhouse",
+  "discoverySource": "linkedin",
+  "applicationChannel": "greenhouse",
   "url": "https://job-boards.greenhouse.io/example/jobs/123",
   "postingStatus": "active",
   "eligibility": "eligible",
@@ -69,6 +71,8 @@ Treat `mustHaves[].evidence` as private resume analysis. It is used locally and 
 ```
 
 Allowed sources: `linkedin`, `greenhouse`, `lever`, `ashby`, `workable`, `comeet`, `workday`, `rippling`, `smartrecruiters`, `google-form`, `company`, `email`, and `other`.
+
+`source` remains the backward-compatible application channel. New workflows should also supply `discoverySource` (`direct-company`, `linkedin`, `x`, `yc`, `hacker-news`, `job-board`, `email`, `user-supplied`, `web-search`, or `other`) and `applicationChannel` using the allowed `source` values.
 
 Allowed posting statuses: `active`, `closed`, `unclear`. Allowed eligibility: `eligible`, `unclear`, `ineligible`. Allowed seniority: `junior`, `mid`, `senior`, `staff`, `principal`, `lead`, `manager`, `director`, `founding`, `unspecified`. Allowed work modes: `remote`, `hybrid`, `onsite`, `unspecified`. Must-have statuses: `met`, `partial`, `missing`, `unclear`.
 
@@ -102,6 +106,9 @@ Add only after visible success confirmation.
   "url": "https://jobs.example.com/roles/123",
   "employerJobId": "greenhouse:123",
   "source": "company",
+  "discoverySource": "x",
+  "applicationChannel": "company",
+  "roundId": "round-2026-01-15-00000000-0000-4000-8000-000000000000",
   "score": 84,
   "status": "submitted",
   "submittedAt": "2026-01-15T10:00:00.000Z",
@@ -118,6 +125,55 @@ Add only after visible success confirmation.
 ```
 
 Use `duplicateOverride` only for a verified distinct requisition after a possible-duplicate warning. It and `telemetry` are transient and are not written to the application ledger. Use approval `APPROVE SUBMIT` for per-application approval or `STANDING AUTHORIZATION` when the current request authorizes routine batch submission.
+
+`discoverySource`, `applicationChannel`, and `roundId` are optional for backward compatibility and should be supplied for new resumable rounds. `ledger check` returns hard requisition/URL duplicate status plus bounded same-company history so a distinct role can be reviewed without conflating it with a duplicate.
+
+## Autonomy grant input
+
+Create a grant only from an explicit candidate instruction. Do not store the instruction text.
+
+```json
+{ "mode": "routine-auto" }
+```
+
+The owner-only `autonomy.json` stores the fixed routine scopes, grant time, and enabled state. Revocation preserves ledgers and stops future routine transmissions. Hard stops and host permission prompts remain mandatory.
+
+## Round input
+
+```json
+{ "requestedCount": 30 }
+```
+
+`round start --stdin` appends a `started` event to owner-only `rounds.ndjson` and returns a generated `roundId`. Add that ID to every confirmed ledger entry. `round complete --stdin` accepts `{ "roundId": "round-..." }` and appends a completion event only after the target count is present in the ledger.
+
+## Attention input
+
+```json
+{
+  "roundId": "round-...",
+  "applicationId": "example-role",
+  "url": "https://jobs.example.com/role",
+  "stage": "submission",
+  "blocker": "captcha",
+  "requiredActions": ["complete-captcha"]
+}
+```
+
+Allowed blockers: `authentication`, `mfa`, `captcha`, `legal-attestation`, `demographic`, `government-id`, `ambiguous-authorization`, `ambiguous-compensation`, `unverifiable-claim`, `judgment`, `video`, `upload`, `site-error`, and `other`. Resolve with `{ "id": "attention-..." }`. The queue never stores the candidate's response.
+
+## Friction input
+
+```json
+{
+  "stage": "upload",
+  "ats": "ashby",
+  "errorCode": "direct-upload-fallback-opened",
+  "reproducible": true,
+  "general": true
+}
+```
+
+Use only documented stage/ATS values and a stable kebab-case code. Never include URLs, identity, résumé metadata, answers, form text, or raw errors. Only reproducible general events qualify for a tested public-agent PR.
 
 ## Outcome input
 
