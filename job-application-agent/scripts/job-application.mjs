@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 import { createHash, randomUUID } from 'node:crypto';
-import { appendFile, chmod, mkdir, open, readFile, rename, stat, unlink, writeFile } from 'node:fs/promises';
+import { appendFile, chmod, lstat, mkdir, open, readFile, rename, stat, unlink, writeFile } from 'node:fs/promises';
 import { platform } from 'node:os';
 import { basename, join, resolve } from 'node:path';
 
@@ -593,6 +593,28 @@ async function jsonLines(file) {
   }
 }
 
+const STALE_LOCK_MS = 30_000;
+
+function processAlive(pid) {
+  if (!Number.isInteger(pid) || pid <= 0) return false;
+  try { process.kill(pid, 0); return true; }
+  catch (error) { return error.code === 'EPERM'; }
+}
+
+async function reclaimIfStale(lockPath) {
+  let stats;
+  try { stats = await lstat(lockPath); }
+  catch (error) { if (error.code === 'ENOENT') return true; throw error; }
+  let deadPid = false;
+  try {
+    const holder = JSON.parse(await readFile(lockPath, 'utf8'));
+    if (Number.isInteger(holder?.pid) && !processAlive(holder.pid)) deadPid = true;
+  } catch { /* empty or mid-write; fall back to age below */ }
+  if (!deadPid && Date.now() - stats.mtimeMs < STALE_LOCK_MS) return false;
+  await unlink(lockPath).catch((error) => { if (error.code !== 'ENOENT') throw error; });
+  return true;
+}
+
 async function withStateLock(name, action) {
   const dir = await ensureStateDir();
   const lockPath = join(dir, `.${name}.lock`);
@@ -600,16 +622,18 @@ async function withStateLock(name, action) {
   for (let attempt = 0; attempt < 100; attempt += 1) {
     try {
       handle = await open(lockPath, 'wx', 0o600);
+      await handle.writeFile(JSON.stringify({ pid: process.pid, createdAt: new Date().toISOString() }));
       break;
     } catch (error) {
       if (error.code !== 'EEXIST') throw error;
+      await reclaimIfStale(lockPath);
       await new Promise((resolveDelay) => setTimeout(resolveDelay, 10));
     }
   }
   if (!handle) throw new Error(`Could not acquire ${name} ledger lock.`);
   try { return await action(dir); }
   finally {
-    await handle.close();
+    await handle.close().catch(() => {});
     await unlink(lockPath).catch((error) => { if (error.code !== 'ENOENT') throw error; });
   }
 }
@@ -1129,7 +1153,7 @@ async function executeCommand([area, action, value], telemetry, session) {
 async function recordInstallationStart(telemetry, session) {
   if (!session.installationEventPending) return;
   let submissionMode = 'unconfigured';
-  try { submissionMode = storedProfile().submissionMode; } catch {}
+  try { submissionMode = storedProfile().submissionMode; } catch { }
   await telemetry.record({
     event: 'installation_started',
     properties: {
