@@ -9,7 +9,7 @@ async function render(path = "/", bindings = {}) {
   return worker.fetch(new Request(`http://localhost${path}`, { headers: { accept: "text/html" } }), { ASSETS: { fetch: async () => new Response("Not found", { status: 404 }) }, ...bindings }, { waitUntil() {}, passThroughOnException() {} });
 }
 
-test("server-renders the launch story and founding offer", async () => {
+test("server-renders the focused cloud offer and honest community proof", async () => {
   const response = await render();
   assert.equal(response.status, 200);
   assert.match(response.headers.get("content-security-policy") ?? "", /frame-ancestors 'none'/);
@@ -17,11 +17,13 @@ test("server-renders the launch story and founding offer", async () => {
   assert.equal(response.headers.get("x-frame-options"), "DENY");
   const html = await response.text();
   assert.match(html, /Set the goal/);
-  assert.match(html, /Not “spray and pray/);
-  assert.match(html, /Start local/);
-  assert.match(html, /Join early access/);
+  assert.match(html, /Active installations · last 30 days/);
+  assert.match(html, /Verified applications submitted/);
+  assert.match(html, /Jobs assessed/);
+  assert.match(html, /Reserve 90-day access · \$49/);
   assert.match(html, /Verified facts only/);
   assert.match(html, /Secure checkout by Dodo Payments/);
+  assert.doesNotMatch(html, /Run it locally|Install from GitHub|Join early access|first 50/i);
   assert.doesNotMatch(html, /codex-preview|react-loading-skeleton|Your site is taking shape/i);
 });
 
@@ -33,11 +35,21 @@ test("server-renders human-readable privacy and terms pages", async () => {
 });
 
 test("server-renders a payment return page that waits for verified status", async () => {
-  const response = await render("/checkout/return?registration_id=11111111-1111-4111-8111-111111111111");
+  const response = await render("/checkout/return?purchase_id=11111111-1111-4111-8111-111111111111");
   assert.equal(response.status, 200);
   const html = await response.text();
   assert.match(html, /Checking your payment/);
   assert.match(html, /verified webhook/);
+});
+
+test("server-renders the branded community dashboard", async () => {
+  const response = await render("/community-view");
+  assert.equal(response.status, 200);
+  const html = await response.text();
+  assert.match(html, /Community momentum/);
+  assert.match(html, /Reported activity by day/);
+  assert.match(html, /Anonymous aggregate telemetry/);
+  assert.doesNotMatch(html, /Install agent|Open source on GitHub/i);
 });
 
 test("publishes crawler guidance and a canonical sitemap", async () => {
@@ -45,7 +57,9 @@ test("publishes crawler guidance and a canonical sitemap", async () => {
   assert.equal(robots.status, 200);
   assert.equal(sitemap.status, 200);
   assert.match(await robots.text(), /Disallow: \/api\//);
-  assert.match(await sitemap.text(), /https:\/\/jobappagent\.com\/privacy/);
+  const sitemapXml = await sitemap.text();
+  assert.match(sitemapXml, /https:\/\/jobappagent\.com\/privacy/);
+  assert.match(sitemapXml, /https:\/\/stats\.jobappagent\.com/);
 });
 
 test("reports storage healthy only when the database probe responds", async () => {

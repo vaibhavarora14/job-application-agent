@@ -8,9 +8,9 @@ const plexMono = IBM_Plex_Mono({ variable: "--font-plex-mono", subsets: ["latin"
 export const metadata: Metadata = {
   metadataBase: new URL("https://jobappagent.com"),
   title: { default: "Job Application Agent", template: "%s · Job Application Agent" },
-  description: "Set the goal. Let the open job-search agent discover, qualify, apply, pause, and learn — locally today and continuously in the cloud.",
-  openGraph: { title: "Set the goal. Let the agent run the search.", description: "The open-source job application agent, extended to the cloud.", type: "website", images: [{ url: "/og.png", width: 1200, height: 630, alt: "Set the goal. Let the agent run the search." }] },
-  twitter: { card: "summary_large_image", title: "Set the goal. Let the agent run the search.", description: "The open-source job application agent, extended to the cloud.", images: ["/og.png"] },
+  description: "Set the goal. Let a disciplined job-search agent discover, qualify, apply, pause, and learn continuously in the cloud.",
+  openGraph: { title: "Set the goal. Keep the search moving.", description: "A disciplined job-search agent with verified facts and clear boundaries.", type: "website", images: [{ url: "/og.png", width: 1200, height: 630, alt: "Set the goal. Keep the search moving." }] },
+  twitter: { card: "summary_large_image", title: "Set the goal. Keep the search moving.", description: "A disciplined job-search agent with verified facts and clear boundaries.", images: ["/og.png"] },
   icons: { icon: "/favicon.svg", shortcut: "/favicon.svg" },
 };
 

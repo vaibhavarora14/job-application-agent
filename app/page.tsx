@@ -1,21 +1,62 @@
 import type { Metadata } from "next";
-import { FoundingSignup } from "./components/FoundingSignup";
+import { CommunityProof } from "./components/CommunityProof";
+import { FoundingCheckout } from "./components/FoundingCheckout";
+import { SiteFooter, SiteHeader } from "./components/SiteChrome";
 
-export const metadata: Metadata = { title: "Set the goal. Let the agent run the search.", description: "The viral open-source job application agent, extended to the cloud without losing its disciplined process." };
-const events = [["✓","Discovering direct roles","Employer pages and supported ATS sources","1,284 checked","done"],["✓","Verifying activity and eligibility","Closed, stale, ineligible, and wrong-level roles removed","63 active","done"],["✓","Scoring evidence-backed fit","Must-haves, seniority, location, work mode, compensation","11 qualify","done"],["→","Applying to auto-eligible roles","Duplicate check, verified facts, canonical résumé","4 submitted","active"],["!","Waiting for one decision","Sponsorship is not explicit in the candidate profile","Needs you","pause"]] as const;
-const steps = [["01","Discover","Search direct employer pages and supported ATS sources."],["02","Verify","Remove stale, closed, ineligible, duplicate, or wrong-level roles."],["03","Score","Match must-have evidence, seniority, location, work mode, and compensation."],["04","Decide","Auto-eligible only at 80+ fit, 70%+ evidence, and exact seniority."],["05","Apply","Use verified profile facts and the canonical résumé. Never invent an answer."],["06","Record","Write every result to an append-only ledger and learn from outcomes."]] as const;
+export const metadata: Metadata = {
+  title: "Set the goal. Keep the search moving.",
+  description: "A disciplined job-search agent that discovers, qualifies, applies, pauses for judgment, and keeps a verified record while you are away.",
+};
 
-export default function Home() { return <>
-  <div className="topbar"><strong>FOUNDING CLOUD BETA</strong><span>50 early access places after the first verified production run.</span></div>
-  <nav className="site-nav" aria-label="Primary navigation"><div className="nav-inner page-width"><a className="brand" href="#top"><span className="brand-mark">JA</span><span>Job Application Agent</span></a><div className="nav-links"><a href="#process">Process</a><a href="#autonomy">Boundaries</a><a href="#runtimes">Local + cloud</a><a className="button button-small" href="#founding">Join early access</a></div></div></nav>
-  <main id="top"><header className="hero page-width"><div className="hero-copy"><p className="eyebrow">The open job-search agent, now moving to the cloud</p><h1>Set the goal.<span>Let the agent run the search.</span></h1><p className="hero-summary">It finds direct roles, filters weak fits, submits truthful applications, pauses for decisions, and learns from outcomes. Cloud keeps the same disciplined process running while you&apos;re away.</p><div className="hero-actions"><a className="button" href="#founding">Join the cloud beta →</a><a className="button button-secondary" href="https://github.com/vaibhavarora14/job-application-agent">Run it locally free</a></div><ul className="hero-proof"><li>Open-source engine</li><li>Verified facts only</li><li>You set the boundaries</li></ul></div>
-    <section className="cloud-run" aria-label="Illustrative cloud agent run"><div className="run-header"><div className="run-title"><span className="live-dot"/>Example cloud run</div><span className="run-id">RUN / 0184 · ACTIVE</span></div><div className="run-goal"><div><span className="run-label">YOUR GOAL</span><strong>Senior or Staff Product Engineer</strong><small>Remote · India / UK · compensation floor set</small></div><span className="run-mode">ROUTINE AUTO</span></div><ol className="run-timeline">{events.map(([icon,title,detail,result,status])=><li className={`run-event run-event-${status}`} key={title}><span className="event-dot">{icon}</span><div><strong>{title}</strong><small>{detail}</small></div><span className="event-result">{result}</span></li>)}</ol><div className="run-footer"><span>Routine work continues</span><span>Next scan in 14m</span></div></section></header>
-    <section className="trust-strip"><div className="page-width trust-items"><span>MIT licensed</span><span>Agent Skills compatible</span><span>Privacy-first local profile</span><span>Append-only application ledger</span></div></section>
-    <section className="section page-width" id="process"><div className="section-heading"><p className="eyebrow">The runbook</p><h2>Not “spray and pray.” A process you can inspect.</h2><p>The cloud product does not replace the local agent&apos;s judgment model. It runs that same model on a schedule.</p></div><ol className="process-grid">{steps.map(([n,title,body])=><li key={n}><span>{n}</span><h3>{title}</h3><p>{body}</p></li>)}</ol></section>
-    <section className="split-section" id="autonomy"><div className="page-width split-grid"><div><p className="eyebrow">Clear boundaries</p><h2>Autonomous where repetition helps. Human where judgment matters.</h2></div><div className="boundary-grid"><article className="routine"><span>AGENT HANDLES</span><h3>Routine work</h3><ul><li>Find and validate postings</li><li>Score against your evidence</li><li>Deduplicate applications</li><li>Fill known, verified facts</li><li>Keep the ledger current</li></ul></article><article className="human"><span>YOU HANDLE</span><h3>Real decisions</h3><ul><li>Authentication and CAPTCHA</li><li>Sponsorship ambiguity</li><li>Legal or demographic answers</li><li>Sensitive information</li><li>Anything outside your rules</li></ul></article></div></div></section>
-    <section className="section page-width" id="runtimes"><div className="section-heading"><p className="eyebrow">One agent, two runtimes</p><h2>Start local. Continue in the cloud.</h2><p>Your free local agent proves the process on your machine. Cloud adds continuity—not a different, black-box product.</p></div><div className="runtime-line"><article><span>AVAILABLE NOW</span><h3>Local agent</h3><p>Your profile stays on your machine. Run it when you want, inspect every decision, and contribute to the open project.</p><a href="https://github.com/vaibhavarora14/job-application-agent">Install from GitHub →</a></article><div className="runtime-arrow">same runbook →</div><article className="cloud-card"><span>FOUNDING BETA</span><h3>Cloud agent</h3><p>Scheduled discovery, persistent state, resumable sessions, and notifications when a decision genuinely needs you.</p><a href="#founding">Join the first cloud run →</a></article></div></section>
-    <section className="record-wrap"><div className="page-width record-grid"><div><p className="eyebrow">Application receipt</p><h2>No mystery counter. A record for every action.</h2><p>Each application keeps the source, fit decision, facts used, outcome, and reason for any pause.</p></div><div className="receipt"><div><span>SUBMITTED</span><strong>Product Engineer · Example Co.</strong></div><dl><dt>Source</dt><dd>Direct employer page</dd><dt>Fit</dt><dd>87 / 100 · evidence verified</dd><dt>Résumé</dt><dd>Canonical version · unchanged</dd><dt>Answers</dt><dd>11 verified · 0 invented</dd><dt>Ledger</dt><dd>Recorded · 10:42 UTC</dd></dl></div></div></section>
-    <div className="section page-width" id="founding"><FoundingSignup /></div>
-    <section className="section faq page-width"><div className="section-heading"><p className="eyebrow">Straight answers</p><h2>Before you register.</h2></div><details><summary>Is this another mass-application bot?</summary><p>No. It filters aggressively and applies only inside rules you set. Unclear or sensitive decisions pause for you.</p></details><details><summary>What changes when it moves to the cloud?</summary><p>Continuity: scheduled searches, persistent state, resumable runs, and notifications. The decision process stays the same.</p></details><details><summary>What does founding access cost?</summary><p>Registration is free. If you are ready, $49 reserves your first 90 days as a one-time purchase through Dodo Payments. You can also ask to try it first.</p></details><details><summary>Does it guarantee a job?</summary><p>No. It reduces repetitive search and application work. Employers still make every hiring decision.</p></details></section>
-  </main><footer><div className="page-width"><span>Job Application Agent · local first, cloud next.</span><div><a href="/privacy">Privacy</a><a href="/terms">Terms</a><a href="https://github.com/vaibhavarora14/job-application-agent">GitHub</a></div></div></footer>
-</>; }
+const steps = [
+  ["01", "Set the boundaries", "Choose roles, locations, compensation, work mode, and the decisions that always come back to you."],
+  ["02", "Let the agent run", "It discovers direct roles, removes weak fits, checks duplicates, and applies with verified facts only."],
+  ["03", "Review the record", "Every decision, application, pause, and outcome stays visible so the search improves instead of becoming noise."],
+] as const;
+
+export default function Home() {
+  return <>
+    <SiteHeader />
+    <main id="top">
+      <header className="hero page-width">
+        <div className="hero-copy">
+          <p className="eyebrow">The disciplined job-search agent, now moving to the cloud</p>
+          <h1>Set the goal.<span>Keep the search moving.</span></h1>
+          <p className="hero-summary">Job Application Agent finds direct roles, filters weak fits, submits truthful applications, pauses for real decisions, and keeps learning from outcomes—even while you are away.</p>
+          <div className="hero-actions"><FoundingCheckout /><a className="button button-secondary" href="https://stats.jobappagent.com">See community momentum</a></div>
+          <ul className="hero-proof"><li>Verified facts only</li><li>You set the boundaries</li><li>Every action recorded</li></ul>
+        </div>
+        <CommunityProof />
+      </header>
+
+      <section className="section page-width" id="process">
+        <div className="section-heading"><p className="eyebrow">How it works</p><h2>One clear loop. No application theatre.</h2><p>The agent handles repetition without turning your career into a volume game.</p></div>
+        <ol className="process-grid">{steps.map(([number, title, body]) => <li key={number}><span>{number}</span><h3>{title}</h3><p>{body}</p></li>)}</ol>
+      </section>
+
+      <section className="boundary-section" id="boundaries"><div className="page-width boundary-layout">
+        <div><p className="eyebrow">Clear autonomy</p><h2>Routine work keeps moving. Judgment stays yours.</h2><p>The agent is useful because it knows where to stop.</p></div>
+        <div className="boundary-columns">
+          <article><span>AGENT HANDLES</span><h3>Repeatable work</h3><ul><li>Discover and verify openings</li><li>Score evidence-backed fit</li><li>Deduplicate applications</li><li>Fill known profile facts</li><li>Maintain the application ledger</li></ul></article>
+          <article className="human-card"><span>YOU HANDLE</span><h3>Real decisions</h3><ul><li>Authentication and CAPTCHA</li><li>Sponsorship ambiguity</li><li>Legal or demographic answers</li><li>Sensitive personal information</li><li>Anything outside your rules</li></ul></article>
+        </div>
+      </div></section>
+
+      <section className="section page-width" id="founding">
+        <div className="founding-card">
+          <div><p className="eyebrow">Founding cloud access</p><h2>Reserve the agent that keeps running.</h2><p>Pay $49 now. Your 90 days begin only when cloud access is activated. If we have not activated you within 60 days of payment, you will be automatically refunded.</p></div>
+          <div className="offer-panel"><div><span>ONE-TIME</span><strong>$49</strong><small>90 days from activation</small></div><ul><li>Scheduled job discovery</li><li>Persistent, resumable runs</li><li>Decision notifications</li><li>Secure checkout by Dodo Payments</li></ul><FoundingCheckout /></div>
+        </div>
+      </section>
+
+      <section className="section faq page-width">
+        <div className="section-heading"><p className="eyebrow">Straight answers</p><h2>Before you reserve.</h2></div>
+        <details><summary>Is this a mass-application bot?</summary><p>No. It filters aggressively and applies only inside rules you set. Unclear or sensitive decisions pause for you.</p></details>
+        <details><summary>When do my 90 days begin?</summary><p>On the day your cloud access is activated—not on the payment date.</p></details>
+        <details><summary>What if access is not ready?</summary><p>If we have not activated your access within 60 days of payment, the full $49 payment is automatically refunded.</p></details>
+        <details><summary>Does it guarantee a job?</summary><p>No. It reduces repetitive search and application work. Employers make every hiring decision.</p></details>
+      </section>
+    </main>
+    <SiteFooter />
+  </>;
+}
