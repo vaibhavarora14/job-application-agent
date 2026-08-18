@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
 import { mkdtemp, mkdir, readFile, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
@@ -6,13 +7,24 @@ import test from 'node:test';
 
 import { runCli } from '../src/cli.mjs';
 
+async function writeReleaseManifest(skillSource, version) {
+  const files = ['SKILL.md', 'scripts/job-application.mjs'];
+  const entries = {};
+  for (const file of files) {
+    entries[file] = createHash('sha256').update(await readFile(path.join(skillSource, file))).digest('hex');
+  }
+  await writeFile(path.join(skillSource, 'release-manifest.json'), `${JSON.stringify({ version, files: entries }, null, 2)}\n`);
+}
+
 async function setup() {
   const root = await mkdtemp(path.join(os.tmpdir(), 'job-agent-cli-'));
   const packageRoot = path.join(root, 'package');
   const agentHome = path.join(root, '.agents');
-  await mkdir(path.join(packageRoot, 'job-application-agent', 'scripts'), { recursive: true });
-  await writeFile(path.join(packageRoot, 'job-application-agent', 'SKILL.md'), '# Skill\n');
-  await writeFile(path.join(packageRoot, 'job-application-agent', 'scripts', 'job-application.mjs'), 'export {};\n');
+  const skillSource = path.join(packageRoot, 'job-application-agent');
+  await mkdir(path.join(skillSource, 'scripts'), { recursive: true });
+  await writeFile(path.join(skillSource, 'SKILL.md'), '# Skill\n');
+  await writeFile(path.join(skillSource, 'scripts', 'job-application.mjs'), 'export {};\n');
+  await writeReleaseManifest(skillSource, '3.0.0');
   return { root, packageRoot, agentHome };
 }
 
@@ -25,33 +37,25 @@ test('install is automatic-update enabled by default and status reports the inst
   assert.match(output.join('\n'), /automatic updates: enabled/i);
 });
 
-test('auto-update is a no-op when updates are disabled', async () => {
+test('legacy background update command is rejected', async () => {
   const f = await setup();
-  await runCli(['install'], { packageRoot: f.packageRoot, packageVersion: '3.0.0', agentHome: f.agentHome, homeDir: f.root, platform: 'test', scheduler: false, output: () => {} });
-  await runCli(['updates', 'disable'], { agentHome: f.agentHome, homeDir: f.root, platform: 'test', scheduler: false, output: () => {} });
-  await writeFile(path.join(f.packageRoot, 'job-application-agent', 'SKILL.md'), '# New skill\n');
-  const output = [];
-  await runCli(['auto-update'], { packageRoot: f.packageRoot, packageVersion: '3.1.0', agentHome: f.agentHome, homeDir: f.root, platform: 'test', scheduler: false, output: value => output.push(value) });
-  assert.match(output.join('\n'), /disabled/i);
-  assert.equal(await readFile(path.join(f.agentHome, 'skills', 'job-application-agent', 'SKILL.md'), 'utf8'), '# Skill\n');
+  await assert.rejects(() => runCli(['background-update'], { packageRoot: f.packageRoot, packageVersion: '3.1.0', agentHome: f.agentHome, homeDir: f.root, platform: 'test', scheduler: false, output: () => {} }), /usage/i);
 });
 
-test('auto-update does not replace an already-current installation or reload its scheduler', async () => {
+test('install wires a safe check runner instead of a package manager execution path', async () => {
   const f = await setup();
-  await runCli(['install'], { packageRoot: f.packageRoot, packageVersion: '3.0.0', agentHome: f.agentHome, homeDir: f.root, platform: 'test', scheduler: false, output: () => {} });
-  const marker = path.join(f.agentHome, 'skills', 'job-application-agent', 'local-marker');
-  await writeFile(marker, 'preserve');
-  const output = [];
-  await runCli(['auto-update'], { packageRoot: f.packageRoot, packageVersion: '3.0.0', agentHome: f.agentHome, homeDir: f.root, platform: 'darwin', output: value => output.push(value) });
-  assert.equal(await readFile(marker, 'utf8'), 'preserve');
-  assert.match(output.join('\n'), /already current/i);
+  await runCli(['install'], { packageRoot: f.packageRoot, packageVersion: '3.0.0', agentHome: f.agentHome, homeDir: f.root, platform: 'test', output: () => {} });
+  const runner = await readFile(path.join(f.agentHome, 'job-application-agent', 'check-update'), 'utf8');
+  assert.doesNotMatch(runner, /@latest|npm exec|npm install|npm update/);
+  assert.match(runner, /check-update-runner\.mjs/);
 });
 
-test('auto-update replaces an older skill without reloading the running scheduler', async () => {
+test('explicit update still replaces an older skill after local verification', async () => {
   const f = await setup();
   await runCli(['install'], { packageRoot: f.packageRoot, packageVersion: '3.0.0', agentHome: f.agentHome, homeDir: f.root, platform: 'test', scheduler: false, output: () => {} });
   await writeFile(path.join(f.packageRoot, 'job-application-agent', 'SKILL.md'), '# New skill\n');
-  await runCli(['auto-update'], { packageRoot: f.packageRoot, packageVersion: '3.1.0', agentHome: f.agentHome, homeDir: f.root, platform: 'darwin', output: () => {} });
+  await writeReleaseManifest(path.join(f.packageRoot, 'job-application-agent'), '3.1.0');
+  await runCli(['update'], { packageRoot: f.packageRoot, packageVersion: '3.1.0', agentHome: f.agentHome, homeDir: f.root, platform: 'test', output: () => {} });
   assert.equal(await readFile(path.join(f.agentHome, 'skills', 'job-application-agent', 'SKILL.md'), 'utf8'), '# New skill\n');
 });
 

@@ -22,7 +22,7 @@ Job Application Agent is an [Agent Skill](https://agentskills.io/specification) 
 Install it:
 
 ```bash
-npx job-application-agent@latest install
+npx job-application-agent@3.1.1 install
 ```
 
 Then tell your coding agent:
@@ -124,16 +124,16 @@ See [`ANALYTICS.md`](job-application-agent/references/ANALYTICS.md) for the even
 <details>
 <summary><strong>Installation and update details</strong></summary>
 
-The installer places the skill at `~/.agents/skills/job-application-agent` and enables automatic updates by default. Compatible vendor skill directories are also supported when they already exist.
+The installer places the skill at `~/.agents/skills/job-application-agent` and enables scheduled background update checks by default. Those checks never download or execute a newly published package. Compatible vendor skill directories are also supported when they already exist.
 
 ```bash
-npx job-application-agent@latest status
-npx job-application-agent@latest update
-npx job-application-agent@latest updates disable
-npx job-application-agent@latest updates enable
+npx job-application-agent@3.1.1 status
+npx job-application-agent@3.1.1 update
+npx job-application-agent@3.1.1 updates disable
+npx job-application-agent@3.1.1 updates enable
 ```
 
-Updates are staged and validated before replacement. Private candidate state lives outside the replaceable skill directory.
+Updates require an explicit exact-version command and are staged and checksum-validated before replacement. Private candidate state lives outside the replaceable skill directory.
 
 </details>
 

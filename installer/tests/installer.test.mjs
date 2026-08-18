@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
 import { mkdtemp, mkdir, readFile, stat, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
@@ -12,6 +13,15 @@ import {
   updateSkill,
 } from '../src/installer.mjs';
 
+async function writeReleaseManifest(skillSource, version) {
+  const files = ['SKILL.md', 'scripts/job-application.mjs'];
+  const entries = {};
+  for (const file of files) {
+    entries[file] = createHash('sha256').update(await readFile(path.join(skillSource, file))).digest('hex');
+  }
+  await writeFile(path.join(skillSource, 'release-manifest.json'), `${JSON.stringify({ version, files: entries }, null, 2)}\n`);
+}
+
 async function fixture() {
   const root = await mkdtemp(path.join(os.tmpdir(), 'job-agent-installer-'));
   const packageRoot = path.join(root, 'package');
@@ -21,6 +31,7 @@ async function fixture() {
   await mkdir(path.join(skillSource, 'scripts'), { recursive: true });
   await writeFile(path.join(skillSource, 'SKILL.md'), '# Version one\n');
   await writeFile(path.join(skillSource, 'scripts', 'job-application.mjs'), 'export {};\n');
+  await writeReleaseManifest(skillSource, '3.0.0');
   return { root, packageRoot, homeDir, agentHome, skillSource };
 }
 
@@ -49,6 +60,7 @@ test('updates atomically and keeps the immediately previous version for rollback
   const f = await fixture();
   await installSkill({ packageRoot: f.packageRoot, packageVersion: '3.0.0', homeDir: f.homeDir, agentHome: f.agentHome, platform: 'test', scheduler: false });
   await writeFile(path.join(f.skillSource, 'SKILL.md'), '# Version two\n');
+  await writeReleaseManifest(f.skillSource, '3.1.0');
 
   const result = await updateSkill({
     packageRoot: f.packageRoot,
@@ -85,6 +97,36 @@ test('a failed staged install leaves the current skill untouched', async () => {
     /invalid packaged skill/i,
   );
   assert.equal(await readFile(path.join(f.agentHome, 'skills', 'job-application-agent', 'SKILL.md'), 'utf8'), '# Version one\n');
+});
+
+test('missing release manifest is rejected before activation', async () => {
+  const f = await fixture();
+  await writeFile(path.join(f.skillSource, 'release-manifest.json'), '');
+  await assert.rejects(
+    installSkill({ packageRoot: f.packageRoot, packageVersion: '3.0.0', homeDir: f.homeDir, agentHome: f.agentHome, platform: 'test', scheduler: false }),
+    /release-manifest\.json/i,
+  );
+});
+
+test('checksum verification failure prevents installation and preserves the current skill', async () => {
+  const f = await fixture();
+  await installSkill({ packageRoot: f.packageRoot, packageVersion: '3.0.0', homeDir: f.homeDir, agentHome: f.agentHome, platform: 'test', scheduler: false });
+  await writeFile(path.join(f.skillSource, 'SKILL.md'), '# Tampered version\n');
+  await writeReleaseManifest(f.skillSource, '3.1.0');
+  await writeFile(path.join(f.skillSource, 'SKILL.md'), '# Tampered after manifest\n');
+  await assert.rejects(
+    updateSkill({ packageRoot: f.packageRoot, packageVersion: '3.1.0', homeDir: f.homeDir, agentHome: f.agentHome, platform: 'test', scheduler: false }),
+    /checksum verification failed/i,
+  );
+  assert.equal(await readFile(path.join(f.agentHome, 'skills', 'job-application-agent', 'SKILL.md'), 'utf8'), '# Version one\n');
+});
+
+test('mutable package versions are rejected', async () => {
+  const f = await fixture();
+  await assert.rejects(
+    installSkill({ packageRoot: f.packageRoot, packageVersion: 'latest', homeDir: f.homeDir, agentHome: f.agentHome, platform: 'test', scheduler: false }),
+    /exact immutable semantic version/i,
+  );
 });
 
 test('copies the skill into an existing vendor skills directory and skips missing vendor homes', async () => {

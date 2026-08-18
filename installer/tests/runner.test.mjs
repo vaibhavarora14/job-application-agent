@@ -10,48 +10,66 @@ import { createUpdateRunner } from '../src/runner.mjs';
 
 const execFileAsync = promisify(execFile);
 
-test('creates a durable Unix launcher that always executes the latest npm package', async () => {
+test('creates a durable Unix launcher that performs only a safe local update check', async () => {
   const agentHome = await mkdtemp(path.join(os.tmpdir(), 'job-agent-runner-'));
   const result = await createUpdateRunner({
     platform: 'darwin',
     agentHome,
     nodePath: '/opt/node/bin/node',
-    npmCliPath: '/opt/node/lib/node_modules/npm/bin/npm-cli.js',
+    packageVersion: '3.1.1',
   });
   const script = await readFile(result.path, 'utf8');
   assert.match(script, /JOB_APPLICATION_AGENT_HOME=/);
   assert.doesNotMatch(script, /CODEX_HOME=/);
-  assert.match(script, /job-application-agent@latest/);
-  assert.match(script, /auto-update/);
+  assert.match(script, /check-update-runner\.mjs/);
+  assert.match(script, /3\.1\.1/);
+  assert.doesNotMatch(script, /@latest|npm exec|npm install|npm update/);
   assert.equal((await stat(result.path)).mode & 0o777, 0o700);
 });
 
-test('Unix launcher exposes its Node directory to npm child processes under a minimal scheduler PATH', async () => {
+test('Unix launcher writes safe check state without needing npm under a minimal scheduler PATH', async () => {
   const agentHome = await mkdtemp(path.join(os.tmpdir(), 'job-agent-runner-path-'));
   const emptyPath = await mkdtemp(path.join(os.tmpdir(), 'job-agent-empty-path-'));
-  const fakeNpmCli = path.join(agentHome, 'fake-npm-cli.mjs');
-  await writeFile(fakeNpmCli, `import { spawnSync } from 'node:child_process';\nconst child = spawnSync('node', ['--version']);\nprocess.exit(child.status ?? 1);\n`);
   const result = await createUpdateRunner({
     platform: 'darwin',
     agentHome,
     nodePath: process.execPath,
-    npmCliPath: fakeNpmCli,
+    packageVersion: '3.1.1',
   });
 
-  await execFileAsync(result.path, ['auto-update'], { env: { PATH: emptyPath } });
+  await execFileAsync(result.path, { env: { PATH: emptyPath } });
+  const status = JSON.parse(await readFile(path.join(agentHome, 'job-application-agent', 'update-status.json'), 'utf8'));
+  assert.equal(status.installedVersion, '3.1.1');
+  assert.equal(status.automaticUpdateExecution, false);
+  assert.equal(status.status, 'manual-review-required');
 });
 
-test('creates a durable Windows launcher that always executes the latest npm package', async () => {
+test('rejects mutable or missing versions for the safe runner', async () => {
+  const agentHome = await mkdtemp(path.join(os.tmpdir(), 'job-agent-runner-version-'));
+  await assert.rejects(() => createUpdateRunner({
+    platform: 'darwin',
+    agentHome,
+    nodePath: process.execPath,
+    packageVersion: 'latest',
+  }), /exact immutable semantic version/i);
+  await assert.rejects(() => createUpdateRunner({
+    platform: 'darwin',
+    agentHome,
+    nodePath: process.execPath,
+  }), /exact package version is required/i);
+});
+
+test('creates a durable Windows launcher that performs only a safe local update check', async () => {
   const agentHome = await mkdtemp(path.join(os.tmpdir(), 'job-agent-runner-win-'));
   const result = await createUpdateRunner({
     platform: 'win32',
     agentHome,
     nodePath: 'C:\\Node\\node.exe',
-    npmCliPath: 'C:\\Node\\node_modules\\npm\\bin\\npm-cli.js',
+    packageVersion: '3.1.1',
   });
   const script = await readFile(result.path, 'utf8');
   assert.match(script, /JOB_APPLICATION_AGENT_HOME/);
   assert.doesNotMatch(script, /CODEX_HOME/);
-  assert.match(script, /job-application-agent@latest/);
-  assert.match(script, /auto-update/);
+  assert.match(script, /check-update-runner\.mjs/);
+  assert.doesNotMatch(script, /@latest|npm exec|npm install|npm update/);
 });

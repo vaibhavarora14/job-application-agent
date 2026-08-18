@@ -1,4 +1,5 @@
-import { chmod, cp, lstat, mkdir, readFile, rename, rm, stat, writeFile } from 'node:fs/promises';
+import { createHash } from 'node:crypto';
+import { chmod, cp, lstat, mkdir, readdir, readFile, rename, rm, stat, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 
@@ -35,11 +36,52 @@ async function isDirectory(filePath) {
   try { return (await lstat(filePath)).isDirectory(); } catch (error) { if (error.code === 'ENOENT') return false; throw error; }
 }
 
-async function validatePackagedSkill(source) {
+function assertExactVersion(value, label = 'version') {
+  if (typeof value !== 'string' || !/^\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?$/.test(value)) throw new Error(`${label} must be an exact immutable semantic version.`);
+  return value;
+}
+
+async function listedFiles(root, current = root, files = []) {
+  const entries = await readdir(current, { withFileTypes: true });
+  for (const entry of entries) {
+    const absolute = path.join(current, entry.name);
+    if (entry.isDirectory()) await listedFiles(root, absolute, files);
+    else files.push(path.relative(root, absolute).replaceAll(path.sep, '/'));
+  }
+  return files.sort();
+}
+
+async function verifyReleaseManifest(source, expectedVersion) {
+  const manifestPath = path.join(source, 'release-manifest.json');
+  let manifest;
+  try {
+    manifest = JSON.parse(await readFile(manifestPath, 'utf8'));
+  } catch (error) {
+    if (error.code === 'ENOENT') throw new Error('Invalid packaged skill: release-manifest.json is missing.');
+    throw new Error('Invalid packaged skill: release-manifest.json is unreadable.');
+  }
+  if (!manifest || typeof manifest !== 'object' || Array.isArray(manifest)) throw new Error('Invalid packaged skill: release-manifest.json must be an object.');
+  const version = assertExactVersion(manifest.version, 'release manifest version');
+  if (expectedVersion && version !== assertExactVersion(expectedVersion, 'package version')) throw new Error(`Invalid packaged skill: release manifest version ${version} does not match package version ${expectedVersion}.`);
+  const files = manifest.files;
+  if (!files || typeof files !== 'object' || Array.isArray(files)) throw new Error('Invalid packaged skill: release-manifest.json must contain a files map.');
+  const expectedFiles = Object.keys(files).sort();
+  const actualFiles = (await listedFiles(source)).filter((file) => file !== 'release-manifest.json');
+  if (JSON.stringify(actualFiles) !== JSON.stringify(expectedFiles)) throw new Error('Invalid packaged skill: packaged files do not match the release manifest.');
+  for (const file of expectedFiles) {
+    const expectedHash = String(files[file] ?? '');
+    if (!/^[0-9a-f]{64}$/i.test(expectedHash)) throw new Error(`Invalid packaged skill: release manifest hash for ${file} is invalid.`);
+    const actualHash = createHash('sha256').update(await readFile(path.join(source, file))).digest('hex');
+    if (actualHash !== expectedHash) throw new Error(`Invalid packaged skill: checksum verification failed for ${file}.`);
+  }
+}
+
+async function validatePackagedSkill(source, expectedVersion) {
   const skillFile = path.join(source, 'SKILL.md');
   const content = await readFile(skillFile, 'utf8').catch(() => '');
   if (!content.trim()) throw new Error('Invalid packaged skill: SKILL.md is missing or empty.');
   await stat(path.join(source, 'scripts', 'job-application.mjs')).catch(() => { throw new Error('Invalid packaged skill: application CLI is missing.'); });
+  await verifyReleaseManifest(source, expectedVersion);
 }
 
 async function writeConfig(configPath, config) {
@@ -127,16 +169,17 @@ export async function installSkill({
   scheduler = true,
   command,
 } = {}) {
+  assertExactVersion(packageVersion, 'package version');
   const home = agentHome || codexHome || resolveAgentHome(homeDir);
   const paths = pathsFor(home);
   const source = path.join(packageRoot, SKILL_NAME);
   await migrateLegacyCodexInstall({ homeDir, agentHome: home, legacyHome: legacyHome || resolveLegacyCodexHome(homeDir) });
-  await validatePackagedSkill(source);
+  await validatePackagedSkill(source, packageVersion);
   await mkdir(path.dirname(paths.target), { recursive: true });
   await mkdir(paths.managerDir, { recursive: true });
   const staging = path.join(paths.managerDir, `staging-${Date.now()}-${Math.random().toString(16).slice(2)}`);
   await cp(source, staging, { recursive: true, force: true });
-  await validatePackagedSkill(staging);
+  await validatePackagedSkill(staging, packageVersion);
 
   const hadTarget = await exists(paths.target);
   if (hadTarget) {
