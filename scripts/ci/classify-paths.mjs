@@ -10,6 +10,8 @@ const HIGH_RISK_PATHS = [
   /^bin\//,
   /^scripts\/ci\//,
   /^scripts\/smoke-package\.mjs$/,
+  /^telemetry-worker\/migrations\//,
+  /^telemetry-worker\/wrangler\.jsonc$/,
   /^package(?:-lock)?\.json$/,
   /^SECURITY\.md$/,
 ];
