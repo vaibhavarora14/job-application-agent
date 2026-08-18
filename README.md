@@ -1,100 +1,55 @@
-# vinext-starter
+# Job Application Agent — Cloud landing site
 
-A clean full-stack starter running on
-[vinext](https://github.com/cloudflare/vinext), with optional Cloudflare D1 and
-Drizzle support.
+The public landing, founding-access registration, and Dodo Payments checkout
+surface for [jobappagent.com](https://jobappagent.com). It runs on Sites using
+vinext, Cloudflare Workers, and D1.
 
-## Prerequisites
+## Local development
 
-- Node.js `>=22.13.0`
-
-## Quick Start
+Requires Node.js `>=22.13.0`.
 
 ```bash
-npm install
+cp .env.example .env.local
+npm ci
 npm run dev
-npm run build
 ```
 
-This starter does not use `wrangler.jsonc`.
+Payment settings are server-only. Never prefix them with `NEXT_PUBLIC_` or
+commit populated environment files.
 
-## Included Shape
+## Required production environment
 
-- edit site code under `app/`
-- `.openai/hosting.json` declares optional Sites D1 and R2 bindings
-- `vite.config.ts` simulates declared bindings for local development
-- `db/schema.ts` starts intentionally empty
-- `examples/d1/` contains an optional D1 example surface
-- `drizzle.config.ts` supports local migration generation when needed
+- `PUBLIC_SITE_URL`: canonical HTTPS origin, currently `https://jobappagent.com`
+- `RATE_LIMIT_SALT`: unique random secret used to pseudonymize rate-limit keys
+- `DODO_PAYMENTS_API_KEY`: Dodo server API key for checkout-session creation
+- `DODO_PAYMENTS_WEBHOOK_KEY`: signing secret for the configured endpoint
+- `DODO_PRODUCT_ID`: one-time founding-access product
+- `DODO_PAYMENTS_ENVIRONMENT`: `test_mode` during verification, then `live_mode`
 
-## Workspace Auth Headers
+The Dodo webhook endpoint is `https://jobappagent.com/api/webhooks/dodo`.
+Subscribe it to payment, successful refund, and dispute events. Keep the Site
+in test mode until a checkout and signed `payment.succeeded` delivery have both
+been verified.
 
-Signed-in visitors receive both `oai-authenticated-user-id` and `oai-authenticated-user-email`. Private Sites require every visitor to sign in; public Sites may also have anonymous visitors, for whom neither header is present.
+## Release checks
 
-The user ID is stable for the same user on the same Site and different across Sites. Email and name are intended for display or contact purposes.
-
-SIWC-authenticated workspace sites may also receive
-`oai-authenticated-user-full-name` when the user's SIWC profile has a non-empty
-`name` claim. The full-name value is percent-encoded UTF-8 and is accompanied by
-`oai-authenticated-user-full-name-encoding: percent-encoded-utf-8`.
-
-Treat the full name as optional and fall back to email when it is absent:
-
-```tsx
-import { headers } from "next/headers";
-
-export default async function Home() {
-  const requestHeaders = await headers();
-  const userId = requestHeaders.get("oai-authenticated-user-id");
-  const email = requestHeaders.get("oai-authenticated-user-email");
-  const encodedFullName = requestHeaders.get("oai-authenticated-user-full-name");
-  const fullName =
-    encodedFullName &&
-    requestHeaders.get("oai-authenticated-user-full-name-encoding") ===
-      "percent-encoded-utf-8"
-      ? decodeURIComponent(encodedFullName)
-      : null;
-
-  const displayName = fullName ?? email;
-  // ...
-}
+```bash
+npm test
+npm run lint
+npx tsc --noEmit
+npm audit --omit=dev
 ```
 
-## Optional Dispatch-Owned ChatGPT Sign-In
+`npm test` builds the worker and covers registration validation, checkout and
+webhook normalization, public request bounds, security headers, rate limiting,
+legal pages, crawler metadata, and the D1 health probe.
 
-Import the ready-to-use helpers from `app/chatgpt-auth.ts` when the site needs
-optional or required ChatGPT sign-in:
+## Data and deployment
 
-- Use `getChatGPTUser()` for optional signed-in UI.
-- Use `requireChatGPTUser(returnTo)` for server-rendered pages that should send
-  anonymous visitors through Sign in with ChatGPT.
-- Use `chatGPTSignInPath(returnTo)` and `chatGPTSignOutPath(returnTo)` for
-  browser links or actions.
-- Pass a same-origin relative `returnTo` path for the destination after sign-in
-  or sign-out. The helper validates and safely encodes it.
-- Mark protected pages with `export const dynamic = "force-dynamic"` because
-  they depend on per-request identity headers.
-
-Dispatch owns `/signin-with-chatgpt`, `/signout-with-chatgpt`, `/callback`, the
-OAuth cookies, and identity header injection. Do not implement app routes for
-those reserved paths. Routes that do not import and call the helper remain
-anonymous-compatible.
-
-SIWC establishes identity only; it does not prove workspace membership. Use the
-Sites hosting platform's access policy controls for workspace-wide restrictions,
-or enforce explicit server-side membership or allowlist checks.
-
-Use SIWC for account pages, user-specific dashboards, saved records, and write
-actions tied to the current ChatGPT user. Leave public content anonymous.
-
-## Useful Commands
-
-- `npm run dev`: start local development
-- `npm run build`: verify the vinext build output
-- `npm test`: build the starter and verify its rendered loading skeleton
-- `npm run db:generate`: generate Drizzle migrations after schema changes
-
-## Learn More
-
-- [vinext Documentation](https://github.com/cloudflare/vinext)
-- [Drizzle D1 Guide](https://orm.drizzle.team/docs/get-started/d1-new)
+- `.openai/hosting.json` binds D1 as `DB`.
+- Drizzle migrations live in `drizzle/`.
+- The worker also creates the rate-limit table defensively before the first
+  public write, so a missing migration cannot leave anonymous endpoints open.
+- Runtime secrets belong in Sites environment variables, never in this repo.
+- Deploy privately, verify registration and payment in Dodo test mode, then
+  change access to public and repeat anonymous production smoke tests.
