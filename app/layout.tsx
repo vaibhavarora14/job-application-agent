@@ -7,9 +7,10 @@ const plexMono = IBM_Plex_Mono({ variable: "--font-plex-mono", subsets: ["latin"
 
 export const metadata: Metadata = {
   metadataBase: new URL("https://jobappagent.com"),
+  manifest: "/manifest.webmanifest",
   title: { default: "JobAppAgent", template: "%s · JobAppAgent" },
   description: "Set the goal. Let a disciplined job-search agent discover, qualify, apply, pause, and learn continuously in the cloud.",
-  openGraph: { title: "JobAppAgent — Set the goal. Keep the search moving.", description: "A disciplined job-search agent with verified facts and clear boundaries.", type: "website", images: [{ url: "/og.png", width: 1200, height: 630, alt: "JobAppAgent — Set the goal. Keep the search moving." }] },
+  openGraph: { title: "JobAppAgent — Set the goal. Keep the search moving.", description: "A disciplined job-search agent with verified facts and clear boundaries.", type: "website", images: [{ url: "/og.png", width: 1200, height: 630, alt: "JobAppAgent application inbox and verified outcome" }] },
   twitter: { card: "summary_large_image", title: "JobAppAgent — Set the goal. Keep the search moving.", description: "A disciplined job-search agent with verified facts and clear boundaries.", images: ["/og.png"] },
   icons: {
     icon: [{ url: "/favicon.png", sizes: "64x64", type: "image/png" }],

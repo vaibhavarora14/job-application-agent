@@ -1,6 +1,13 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import test from "node:test";
 import { isStorageHealthy } from "../lib/health.mjs";
+
+function pngDimensions(path) {
+  const image = readFileSync(new URL(path, import.meta.url));
+  assert.equal(image.subarray(1, 4).toString("ascii"), "PNG");
+  return { width: image.readUInt32BE(16), height: image.readUInt32BE(20) };
+}
 
 async function render(path = "/", bindings = {}) {
   const workerUrl = new URL("../dist/server/index.js", import.meta.url);
@@ -21,6 +28,7 @@ test("server-renders the focused cloud offer and honest community proof", async 
   assert.match(html, /Autonomous job search/);
   assert.match(html, /href="\/favicon\.png"/);
   assert.match(html, /href="\/apple-touch-icon\.png"/);
+  assert.match(html, /href="\/manifest\.webmanifest"/);
   assert.doesNotMatch(html, />JA</);
   assert.match(html, /Active installations · last 30 days/);
   assert.match(html, /Verified applications submitted/);
@@ -32,6 +40,18 @@ test("server-renders the focused cloud offer and honest community proof", async 
   assert.match(html, /Secure checkout by Dodo Payments/);
   assert.doesNotMatch(html, /Run it locally|Install from GitHub|Join early access|first 50/i);
   assert.doesNotMatch(html, /codex-preview|react-loading-skeleton|Your site is taking shape/i);
+});
+
+test("publishes the approved inbox identity at every product-icon size", () => {
+  assert.deepEqual(pngDimensions("../public/brand-mark.png"), { width: 256, height: 256 });
+  assert.deepEqual(pngDimensions("../public/favicon.png"), { width: 64, height: 64 });
+  assert.deepEqual(pngDimensions("../public/apple-touch-icon.png"), { width: 180, height: 180 });
+  assert.deepEqual(pngDimensions("../public/icon-192.png"), { width: 192, height: 192 });
+  assert.deepEqual(pngDimensions("../public/icon-512.png"), { width: 512, height: 512 });
+  assert.deepEqual(pngDimensions("../public/og.png"), { width: 1200, height: 630 });
+
+  const designSystem = readFileSync(new URL("../DESIGN.md", import.meta.url), "utf8");
+  assert.match(designSystem, /application inbox.*verified outcome/i);
 });
 
 test("server-renders human-readable privacy and terms pages", async () => {
