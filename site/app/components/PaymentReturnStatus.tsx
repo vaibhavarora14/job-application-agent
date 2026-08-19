@@ -32,7 +32,7 @@ export function PaymentReturnStatus() {
 
   return <div className="payment-return-card" aria-live="polite">
     {view === "checking" && <><span className="live-dot"/><p className="eyebrow">Checking your payment</p><h1>Waiting for Dodo&apos;s verified webhook.</h1><p>Keep this page open. This normally takes only a few seconds.</p></>}
-    {view === "paid" && <><span className="success-mark">✓</span><p className="eyebrow">Payment verified</p><h1>Your founding access is reserved.</h1><p>Your 90 days begin when access is activated. If activation has not happened within 60 days, the payment is automatically refunded.</p></>}
+    {view === "paid" && <><span className="success-mark">✓</span><p className="eyebrow">Payment verified</p><h1>Your pre-launch access is reserved.</h1><p>JobAppAgent launches September 18, 2026. Your 90 days begin when access is activated. If activation has not happened within 60 days of payment, the payment is automatically refunded.</p></>}
     {view === "processing" && <><p className="eyebrow">Still processing</p><h1>Your payment is still being confirmed.</h1><p>It is safe to close this page. Dodo will send a receipt when confirmation arrives.</p></>}
     {view === "failed" && <><p className="eyebrow">Not confirmed</p><h1>We could not verify this payment.</h1><p>No access has been granted. Return to the offer or contact Dodo Payments if you were charged.</p></>}
     <Link className="button button-secondary" href="/">Return to Job Application Agent</Link>
