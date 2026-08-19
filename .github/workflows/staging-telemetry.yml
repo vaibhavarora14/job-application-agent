@@ -17,6 +17,7 @@ jobs:
       - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
         with:
           node-version: 24
+      - run: npm ci
       - run: npm run check && npm test && npm run privacy-audit
       - name: Apply aggregate database migrations
         run: npx --yes wrangler@4.122.0 d1 migrations apply job-application-agent-public-stats-staging --remote --config telemetry-worker/wrangler.jsonc --env staging

@@ -123,6 +123,28 @@ test('workflow pinning scans both step actions and job-level reusable workflows'
   ]);
 });
 
+test('workflows install lockfile dependencies before running repository tests', async () => {
+  const workflowDirectory = new URL('../../.github/workflows/', import.meta.url);
+  const workflows = (await readdir(workflowDirectory)).filter(name => /\.ya?ml$/.test(name));
+
+  for (const workflow of workflows) {
+    const source = await readFile(new URL(workflow, workflowDirectory), 'utf8');
+    const document = parse(source);
+    for (const [jobName, job] of Object.entries(document?.jobs ?? {})) {
+      const commands = (job?.steps ?? [])
+        .map(step => step?.run)
+        .filter(command => typeof command === 'string');
+      const testIndex = commands.findIndex(command => /\bnpm test\b/.test(command));
+      if (testIndex === -1) continue;
+      const installIndex = commands.findIndex(command => /\bnpm ci\b/.test(command));
+      assert.ok(
+        installIndex !== -1 && installIndex < testIndex,
+        `${workflow}:${jobName} must run npm ci before npm test`,
+      );
+    }
+  }
+});
+
 test('telemetry persistence and deployment paths require code-owner review', async () => {
   const codeowners = await readFile(new URL('../../.github/CODEOWNERS', import.meta.url), 'utf8');
   assert.match(codeowners, /^\/telemetry-worker\/migrations\/\s+@vaibhavarora14$/m);
