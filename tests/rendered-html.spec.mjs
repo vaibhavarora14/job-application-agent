@@ -38,6 +38,7 @@ test("server-renders the focused cloud offer and honest community proof", async 
   assert.match(html, /\$49 globally/);
   assert.match(html, /Verified facts only/);
   assert.match(html, /Secure checkout by Dodo Payments/);
+  assert.doesNotMatch(html, /FOUNDING CLOUD ACCESS/);
   assert.doesNotMatch(html, /Run it locally|Install from GitHub|Join early access|first 50/i);
   assert.doesNotMatch(html, /codex-preview|react-loading-skeleton|Your site is taking shape/i);
 });

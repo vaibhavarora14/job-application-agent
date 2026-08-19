@@ -24,8 +24,6 @@ button, input { font: inherit; }
 .page-width { width: min(73.75rem, calc(100% - 3rem)); margin-inline: auto; }
 .eyebrow { margin: 0; color: var(--green); font: 600 .75rem/1.4 var(--font-mono), monospace; letter-spacing: .1em; text-transform: uppercase; }
 
-.topbar { min-height: 2.5rem; padding: .6rem 1rem; display: flex; align-items: center; justify-content: center; gap: .6rem; background: var(--ink); color: #ecf3ee; font: 400 .75rem/1.4 var(--font-mono), monospace; text-align: center; }
-.topbar strong { color: #8fd0b3; font-weight: 600; }
 .site-nav { position: sticky; top: 0; z-index: 20; height: 4.75rem; border-bottom: 1px solid var(--line); background: rgb(242 233 216 / 94%); backdrop-filter: blur(.875rem); }
 .nav-inner { height: 100%; display: flex; align-items: center; justify-content: space-between; gap: 1.5rem; }
 .brand { display: flex; align-items: center; gap: .7rem; text-decoration: none; }
@@ -196,7 +194,6 @@ footer a { margin-left: 1.25rem; color: var(--text); }
 
 @media (max-width: 48rem) {
   .page-width { width: min(100% - 2rem, 73.75rem); }
-  .topbar { align-items: flex-start; flex-direction: column; gap: .1rem; text-align: left; }
   .brand-tagline { display: none; }
   .hero { padding-block: 3.75rem 5rem; }
   .hero h1 { font-size: clamp(3.1rem, 13vw, 4.2rem); }
