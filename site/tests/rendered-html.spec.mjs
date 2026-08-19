@@ -17,6 +17,11 @@ test("server-renders the focused cloud offer and honest community proof", async 
   assert.equal(response.headers.get("x-frame-options"), "DENY");
   const html = await response.text();
   assert.match(html, /Set the goal/);
+  assert.match(html, /JobAppAgent/);
+  assert.match(html, /Autonomous job search/);
+  assert.match(html, /href="\/favicon\.png"/);
+  assert.match(html, /href="\/apple-touch-icon\.png"/);
+  assert.doesNotMatch(html, />JA</);
   assert.match(html, /Active installations · last 30 days/);
   assert.match(html, /Verified applications submitted/);
   assert.match(html, /Jobs assessed/);

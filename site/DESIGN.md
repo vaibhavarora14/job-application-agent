@@ -9,4 +9,5 @@ The product should feel calm, inspectable, and operational—not like a gamified
 - Lead cloud conversion with verified aggregate community proof. Label installations as installations, never as people.
 - Keep the public journey focused on the hosted product; open-source provenance may remain in supporting copy without competing CTAs.
 - Use the same type, color, radius, and spacing system on `jobappagent.com` and `stats.jobappagent.com`.
+- Present the product name as **JobAppAgent**. The route-and-check mark represents an autonomous path ending in a verified result; use the same mark for the favicon, header, and social identity.
 - Motion is subtle and respects reduced-motion preferences.

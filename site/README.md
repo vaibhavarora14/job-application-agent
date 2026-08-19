@@ -1,4 +1,4 @@
-# Job Application Agent — Cloud landing site
+# JobAppAgent — Cloud landing site
 
 The public landing, community dashboard, and Dodo Payments checkout
 surface for [jobappagent.com](https://jobappagent.com). It runs on Sites using
