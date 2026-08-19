@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 
 import { createHash, randomUUID } from 'node:crypto';
+import { readFileSync } from 'node:fs';
 import { appendFile, chmod, mkdir, open, readFile, rename, stat, unlink, writeFile } from 'node:fs/promises';
 import { platform } from 'node:os';
 import { basename, join, resolve } from 'node:path';
@@ -31,6 +32,9 @@ const REQUIRED_ACTIONS = new Set(['sign-in', 'complete-mfa', 'complete-captcha',
 const COMPANY_REAPPLY_COOLDOWN_DAYS = 15;
 const SOURCE_KINDS = new Set(['direct-employer', 'professional-network', 'social-feed', 'startup-network', 'community-thread', 'job-board', 'curated-board', 'inbound', 'user-supplied']);
 const SOURCE_CATALOG_URL = new URL('../references/SOURCES.json', import.meta.url);
+const SOURCE_CATALOG = JSON.parse(readFileSync(SOURCE_CATALOG_URL, 'utf8'));
+if (!Array.isArray(SOURCE_CATALOG)) throw new Error('The packaged source catalog is invalid.');
+const SOURCE_CATALOG_IDS = new Set(SOURCE_CATALOG.map((source) => sourceId(source.id, 'source catalog id')));
 const REQUIRED_PROFILE = ['name', 'email', 'phone', 'location', 'workAuthorization', 'roleFamilies', 'seniority', 'targetLocations', 'workModes', 'submissionMode', 'yearsExperience', 'autoSubmitMinScore', 'manualReviewMinScore', 'minMustHaveCoverage'];
 const STRING_PROFILE_FIELDS = new Set(['name', 'email', 'phone', 'location', 'workAuthorization', 'linkedin', 'github', 'portfolio', 'availability', 'currentCompensation', 'targetCompensation', 'submissionMode']);
 const ARRAY_PROFILE_FIELDS = new Set(['roleFamilies', 'seniority', 'skills', 'targetLocations', 'excludedLocations', 'workModes', 'industries', 'excludedCompanies']);
@@ -82,7 +86,7 @@ export function commandCategory([area, action]) {
   if (area === 'telemetry') return 'telemetry';
   if (area === 'autonomy') return 'profile';
   if (area === 'round') return 'round';
-  if (area === 'sources') return 'discovery';
+  if (area === 'sources') return 'search';
   if (area === 'attention' || area === 'friction') return 'batch';
   return 'other';
 }
@@ -261,7 +265,9 @@ export function scoreJob(input, target) {
   const description = string(job.description, 'job.description', 40000);
   const source = string(job.source, 'job.source', 40).toLowerCase();
   const discoverySource = job.discoverySource == null ? null : string(job.discoverySource, 'job.discoverySource', 40).toLowerCase();
-  if (job.discoverySourceId != null) sourceId(job.discoverySourceId, 'job.discoverySourceId');
+  if (job.discoverySourceId != null && !SOURCE_CATALOG_IDS.has(sourceId(job.discoverySourceId, 'job.discoverySourceId'))) {
+    throw new Error('job.discoverySourceId must match an ID in the packaged source catalog.');
+  }
   const applicationChannel = job.applicationChannel == null ? null : string(job.applicationChannel, 'job.applicationChannel', 40).toLowerCase();
   const eligibility = string(job.eligibility, 'job.eligibility', 40).toLowerCase();
   const postingStatus = string(job.postingStatus ?? 'unclear', 'job.postingStatus', 40).toLowerCase();
@@ -419,7 +425,10 @@ export function validateLedgerEntry(input) {
   };
   if (entry.employerJobId != null) normalized.employerJobId = string(entry.employerJobId, 'entry.employerJobId', 300);
   if (entry.discoverySource != null) normalized.discoverySource = string(entry.discoverySource, 'entry.discoverySource', 40).toLowerCase();
-  if (entry.discoverySourceId != null) normalized.discoverySourceId = sourceId(entry.discoverySourceId, 'entry.discoverySourceId');
+  if (entry.discoverySourceId != null) {
+    normalized.discoverySourceId = sourceId(entry.discoverySourceId, 'entry.discoverySourceId');
+    if (!SOURCE_CATALOG_IDS.has(normalized.discoverySourceId)) throw new Error('entry.discoverySourceId must match an ID in the packaged source catalog.');
+  }
   if (entry.applicationChannel != null) normalized.applicationChannel = string(entry.applicationChannel, 'entry.applicationChannel', 40).toLowerCase();
   if (entry.roundId != null) normalized.roundId = string(entry.roundId, 'entry.roundId', 180);
   if (!SOURCES.has(normalized.source)) throw new Error('entry.source is invalid.');
@@ -452,6 +461,27 @@ export function validateSubmissionTelemetry(input) {
 
 function normalizedText(value) {
   return String(value ?? '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+}
+
+function comparableRoleTokens(value) {
+  const normalized = normalizedText(value)
+    .replace(/\bsr\b/g, 'senior')
+    .replace(/\bjr\b/g, 'junior')
+    .replace(/\bfull stack\b/g, 'fullstack')
+    .replace(/\bfront end\b/g, 'frontend')
+    .replace(/\bback end\b/g, 'backend');
+  const ignored = new Set(['software', 'junior', 'mid', 'senior', 'staff', 'principal', 'lead', 'manager', 'director', 'founding']);
+  return new Set(normalized.split(' ')
+    .map((token) => token === 'developer' ? 'engineer' : token)
+    .filter((token) => token && !ignored.has(token)));
+}
+
+function rolesLikelySame(left, right) {
+  const leftTokens = comparableRoleTokens(left);
+  const rightTokens = comparableRoleTokens(right);
+  if (leftTokens.size === 0 || rightTokens.size === 0) return normalizedText(left) === normalizedText(right);
+  const shared = [...leftTokens].filter((token) => rightTokens.has(token)).length;
+  return shared / Math.min(leftTokens.size, rightTokens.size) >= 0.75;
 }
 
 function canonicalApplicationKey(entry, fallback = '') {
@@ -607,9 +637,7 @@ async function jsonLines(file) {
 }
 
 async function sourceCatalog() {
-  const value = JSON.parse(await readFile(SOURCE_CATALOG_URL, 'utf8'));
-  if (!Array.isArray(value)) throw new Error('The packaged source catalog is invalid.');
-  return value;
+  return SOURCE_CATALOG;
 }
 
 async function sourcesList(filtersInput = {}) {
@@ -643,6 +671,7 @@ function sourceSuggestion(input) {
     || (/(^|\.)x\.com$/i.test(url.hostname) && /^\/(?!home|jobs|search|i\/)[^/]+\/?$/i.test(url.pathname))) {
     throw new Error('source suggestion.baseUrl must not be a profile or personal URL.');
   }
+  url.search = '';
   url.hash = '';
   const kind = string(value.kind, 'source suggestion.kind', 40).toLowerCase();
   if (!SOURCE_KINDS.has(kind)) throw new Error('source suggestion.kind is invalid.');
@@ -818,7 +847,12 @@ function duplicateResult(entries, candidate, outcomes = [], now = new Date()) {
   const candidateCompany = normalizedText(candidate.company);
   const candidateRole = normalizedText(candidate.role);
   const candidateUrl = normalizeUrl(candidate.url);
-  const sameCompanyRole = (entry) => candidateCompany && candidateRole && normalizedText(entry.company) === candidateCompany && normalizedText(entry.role) === candidateRole;
+  const sameCompanyRole = (entry) => {
+    const distinctJobIds = candidate.employerJobId && entry.employerJobId
+      && String(candidate.employerJobId).toLowerCase() !== String(entry.employerJobId).toLowerCase();
+    return candidateCompany && candidateRole && normalizedText(entry.company) === candidateCompany
+      && !distinctJobIds && rolesLikelySame(entry.role, candidate.role);
+  };
   const hard = entries.find((entry) => entry.id === candidate.id
     || (candidate.employerJobId && entry.employerJobId && normalizedText(entry.company) === candidateCompany && entry.employerJobId.toLowerCase() === String(candidate.employerJobId).toLowerCase())
     || normalizeUrl(entry.url) === candidateUrl);

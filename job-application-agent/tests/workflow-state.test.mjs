@@ -150,6 +150,36 @@ test('allows a distinct same-company role after 15 quiet days', async (t) => {
   assert.equal(check.companyReapply.hasFollowUp, false);
 });
 
+test('keeps ambiguous same-company title variants in review after the cooldown', async (t) => {
+  const { env } = await fixture(t, 'company-title-variant');
+  const submittedAt = new Date(Date.now() - (16 * 86_400_000)).toISOString();
+
+  cli(env, ['ledger', 'add', '--stdin'], {
+    id: 'example-senior-backend-role',
+    company: 'Example',
+    role: 'Senior Backend Engineer',
+    url: 'https://jobs.example.com/backend-original',
+    source: 'company',
+    score: 88,
+    status: 'submitted',
+    submittedAt,
+    approval: 'STANDING AUTHORIZATION',
+    answers: {},
+  });
+
+  const check = cli(env, ['ledger', 'check', '--stdin'], {
+    id: 'example-sr-backend-role',
+    company: 'Example',
+    role: 'Sr Backend Engineer',
+    url: 'https://jobs.example.com/backend-renamed',
+  });
+
+  assert.equal(check.duplicate, false);
+  assert.equal(check.possibleDuplicate, true);
+  assert.equal(check.companyReapply.eligible, false);
+  assert.equal(check.companyReapply.decision, 'same-role-review');
+});
+
 test('keeps same-company roles in review during cooldown or after follow-up', async (t) => {
   const { env } = await fixture(t, 'company-follow-up');
   const recentSubmittedAt = new Date(Date.now() - (5 * 86_400_000)).toISOString();
@@ -241,13 +271,31 @@ test('ships a filterable global discovery source catalog and tracks source attri
   });
   const [stored] = (await readFile(join(directory, 'applications.ndjson'), 'utf8')).trim().split('\n').map(JSON.parse);
   assert.equal(stored.discoverySourceId, 'yc-work-at-a-startup');
+
+  const invalidSource = cliFailure(env, ['ledger', 'add', '--stdin'], {
+    id: 'catalog-mistyped-source-role',
+    company: 'Catalog Example Two',
+    role: 'Senior Product Engineer',
+    url: 'https://jobs.catalog.example/senior-product-engineer',
+    source: 'company',
+    discoverySource: 'job-board',
+    discoverySourceId: 'employable-al',
+    applicationChannel: 'company',
+    score: 85,
+    status: 'submitted',
+    submittedAt: new Date().toISOString(),
+    approval: 'STANDING AUTHORIZATION',
+    answers: {},
+  });
+  assert.equal(invalidSource.status, 1);
+  assert.match(invalidSource.stderr, /packaged source catalog/i);
 });
 
 test('queues sanitized repeatable source suggestions locally for public-registry review', async (t) => {
   const { directory, env } = await fixture(t, 'source-suggestions');
   const suggestion = cli(env, ['sources', 'suggest', '--stdin'], {
     name: 'Example Engineering Board',
-    baseUrl: 'https://jobs.example.org/engineering',
+    baseUrl: 'https://jobs.example.org/engineering?term=software&ref=candidate@example.com&token=private#apply',
     kind: 'job-board',
     regions: ['global'],
     roleFamilies: ['engineering'],
@@ -256,7 +304,7 @@ test('queues sanitized repeatable source suggestions locally for public-registry
 
   assert.equal(suggestion.queued, true);
   assert.equal(suggestion.suggestion.baseUrl, 'https://jobs.example.org/engineering');
-  assert.equal((await stat(join(directory, 'source-suggestions.ndjson'))).mode & 0o777, 0o600);
+  if (process.platform !== 'win32') assert.equal((await stat(join(directory, 'source-suggestions.ndjson'))).mode & 0o777, 0o600);
 
   const pending = cli(env, ['sources', 'pending']);
   assert.equal(pending.count, 1);

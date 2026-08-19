@@ -415,6 +415,7 @@ test('maps commands and durations to bounded telemetry categories', () => {
   assert.equal(commandCategory(['ledger', 'add', '--stdin']), 'apply');
   assert.equal(commandCategory(['ledger', 'outcome', '--stdin']), 'outcome');
   assert.equal(commandCategory(['score', '--stdin']), 'assess');
+  assert.equal(commandCategory(['sources', 'list']), 'search');
   assert.equal(durationBucket(700), 'under-1s');
   assert.equal(durationBucket(70_000), '1-2m');
   assert.equal(durationBucket(2_000_000), '15m-plus');
