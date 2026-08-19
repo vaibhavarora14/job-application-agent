@@ -12,7 +12,7 @@ export function CommunityProof() {
   const { data, error, loading } = useCommunityStats();
   return <section className="community-proof" aria-labelledby="community-proof-title">
     <div className="proof-heading">
-      <div><p className="eyebrow">Community momentum</p><h2 id="community-proof-title">Real work, counted honestly.</h2></div>
+      <div><p className="eyebrow">Community activity</p><h2 id="community-proof-title">Real work, counted honestly.</h2></div>
       <a className="text-link" href="https://stats.jobappagent.com">Explore community stats <span aria-hidden="true">→</span></a>
     </div>
     <div className="metric-grid" aria-busy={loading}>
