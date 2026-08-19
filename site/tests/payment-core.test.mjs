@@ -49,7 +49,7 @@ test("builds a hosted checkout that collects customer details at Dodo", () => {
         font_secondary_url: "https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&display=swap",
         font_size: "md",
         font_weight: "medium",
-        pay_button_text: "Reserve 90-day access — $49",
+        pay_button_text: "Reserve 90-day access",
         radius: "0.6rem",
         light: {
           bg_primary: "#f7f9fc",
