@@ -18,7 +18,7 @@ async function fixture(t, label) {
     graceConsumed: true,
     installationEventPending: false,
   }));
-  return { directory, env: { ...process.env, JOB_APPLICATION_AGENT_STATE_DIR: directory } };
+  return { directory, env: { ...process.env, JOB_APPLICATION_AGENT_STATE_DIR: directory, JOB_APPLICATION_AGENT_SOURCE_COMMUNITY_URL: 'http://127.0.0.1:9' } };
 }
 
 function cli(env, args, input) {
@@ -320,6 +320,29 @@ test('queues sanitized repeatable source suggestions locally for public-registry
   });
   assert.equal(rejected.status, 1);
   assert.match(rejected.stderr, /profile or personal URL/i);
+});
+
+test('exposes independent opt-out controls for default community source sharing', async (t) => {
+  const { directory, env } = await fixture(t, 'source-sharing-controls');
+  const initial = cli(env, ['sources', 'sharing', 'status']);
+  assert.equal(initial.enabled, true);
+
+  const disabled = cli(env, ['sources', 'sharing', 'disable']);
+  assert.equal(disabled.enabled, false);
+  assert.equal(disabled.hasInstallationId, false);
+
+  const suggestion = cli(env, ['sources', 'suggest', '--stdin'], {
+    name: 'Example Engineering Board',
+    baseUrl: 'https://jobs.example.org/engineering',
+    kind: 'job-board',
+    regions: ['global'],
+    roleFamilies: ['engineering'],
+    requiresSession: false,
+  });
+  assert.equal(suggestion.queued, true);
+  assert.deepEqual(suggestion.community, { shared: false, reason: 'disabled' });
+  assert.equal(cli(env, ['sources', 'pending']).count, 1);
+  if (process.platform !== 'win32') assert.equal((await stat(join(directory, 'source-sharing.json'))).mode & 0o777, 0o600);
 });
 
 test('does not complete a round from blocked or partially filled applications', async (t) => {

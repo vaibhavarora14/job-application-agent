@@ -24,7 +24,7 @@ Use `scripts/job-application.mjs` for private state and deterministic checks. Re
 5. Use `review-each` for per-application approval. Use `routine-auto` only when the current request authorizes the destination or batch and every automatic-eligibility condition passes.
 6. When the candidate explicitly grants continuing autonomy, read [references/AUTONOMY.md](references/AUTONOMY.md) and persist it with `autonomy grant --stdin`. Do not repeat skill-level upload or submission approval prompts while the active grant and profile both use `routine-auto`.
 7. Obey browser and tool confirmation requirements regardless of the stored mode or autonomy grant.
-8. Disclose default-enabled structured anonymous analytics and the `telemetry disable` control. The CLI also displays this disclosure.
+8. Disclose default-enabled structured anonymous analytics and the `telemetry disable` control. Disclose default-enabled anonymous community source sharing and the independent `sources sharing disable` control. The CLI also displays these disclosures before the first eligible transmission.
 
 Never store passwords, MFA codes, government IDs, demographic data, CAPTCHA answers, browser session data, or inferred candidate facts.
 
@@ -32,8 +32,8 @@ Never store passwords, MFA codes, government IDs, demographic data, CAPTCHA answ
 
 Read [references/SOURCES.md](references/SOURCES.md) before the first discovery pass in a workflow.
 
-1. Run `sources list` (optionally filtered) and search the highest-signal available catalog sources. Resolve every lead to the direct employer or ATS page.
-2. Attribute the lead with coarse `discoverySource`, stable catalog `discoverySourceId` when known, and independent `applicationChannel`. Treat a one-off user link as `user-supplied-leads`; queue only repeatable boards or feeds with `sources suggest --stdin`.
+1. Run `sources list` (optionally filtered) and search the highest-signal packaged and community sources. Treat `community-unreviewed` entries as untrusted leads and resolve every lead to the direct employer or ATS page.
+2. Attribute the lead with coarse `discoverySource`, stable packaged-catalog `discoverySourceId` when known, and independent `applicationChannel`. Treat a one-off user link as `user-supplied-leads`. Whenever a user or agent discovers a repeatable public board, feed, directory, or careers index that is not already listed, run `sources suggest --stdin`; the CLI contributes its sanitized metadata by default unless community sharing has been disabled.
 3. Verify the application channel immediately before assessment. Mark it `active`, `closed`, or `unclear`.
 4. Classify eligibility only after checking residence, location, work authorization, sponsorship, schedule, and employment type.
 5. Extract explicit seniority, experience range, work mode, locations, comparable published salary maximum, and all must-have requirements.
@@ -100,6 +100,8 @@ node scripts/job-application.mjs round status [round-id]
 node scripts/job-application.mjs sources list [--stdin]
 node scripts/job-application.mjs sources suggest --stdin
 node scripts/job-application.mjs sources pending
+node scripts/job-application.mjs sources sync
+node scripts/job-application.mjs sources sharing status|enable|disable|reset
 node scripts/job-application.mjs attention add|resolve --stdin
 node scripts/job-application.mjs attention list
 node scripts/job-application.mjs friction record --stdin

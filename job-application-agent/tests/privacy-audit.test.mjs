@@ -3,6 +3,7 @@ import test from 'node:test';
 
 import { prepareTelemetryInput } from '../scripts/telemetry-client.mjs';
 import { validateEvent } from '../scripts/telemetry-schema.mjs';
+import { normalizeCommunitySource } from '../scripts/source-community-schema.mjs';
 
 const forbiddenProperties = [
   'name', 'email', 'phone', 'exactAddress', 'linkedin', 'github', 'portfolio', 'candidateLocation',
@@ -39,4 +40,19 @@ test('privacy audit strips the full query and fragment before job URL hashing', 
   assert.equal(serialized.includes('candidate@example.com'), false);
   assert.equal(serialized.includes('secret'), false);
   assert.equal(serialized.includes('jobs.example.com/role/123'), false);
+});
+
+test('privacy audit strips identity-bearing source parameters and rejects personal source metadata', () => {
+  const source = normalizeCommunitySource({
+    name: 'Example Engineering Board',
+    baseUrl: 'https://jobs.example.org/engineering?email=candidate@example.com&token=secret#private',
+    kind: 'job-board',
+    regions: ['global'],
+    roleFamilies: ['engineering'],
+    requiresSession: false,
+  });
+  assert.equal(source.baseUrl, 'https://jobs.example.org/engineering');
+  assert.equal(JSON.stringify(source).includes('candidate@example.com'), false);
+  assert.throws(() => normalizeCommunitySource({ ...source, name: 'candidate@example.com' }), /identity/i);
+  assert.throws(() => normalizeCommunitySource({ ...source, baseUrl: 'https://linkedin.com/in/candidate' }), /profile or personal/i);
 });

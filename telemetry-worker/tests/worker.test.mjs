@@ -5,12 +5,21 @@ import worker, { createToken, verifyToken } from '../src/worker.mjs';
 
 function env() {
   const captured = [];
+  const communitySources = new Map();
   return {
     SIGNING_SECRET: 'test-signing-secret-with-sufficient-length',
     POSTHOG_PROJECT_TOKEN: 'phc_test',
     POSTHOG_HOST: 'https://us.i.posthog.com',
     INSTALL_RATE_LIMITER: { limit: async () => ({ success: true }) },
     EVENT_RATE_LIMITER: { limit: async () => ({ success: true }) },
+    SOURCE_RATE_LIMITER: { limit: async () => ({ success: true }) },
+    SOURCE_STORE: {
+      async upsert(source) {
+        const current = communitySources.get(source.sourceId);
+        communitySources.set(source.sourceId, { ...source, contributionCount: (current?.contributionCount ?? 0) + 1 });
+      },
+      async list() { return [...communitySources.values()]; },
+    },
     POSTHOG_FETCH: async (url, options) => {
       captured.push({ url, options, body: JSON.parse(options.body) });
       return new Response('{}', { status: 200 });
@@ -18,6 +27,63 @@ function env() {
     captured,
   };
 }
+
+test('authenticated source contributions are sanitized, deduplicated, and publicly reusable without contributor identity', async () => {
+  const bindings = env();
+  const installationId = '11111111-1111-4111-8111-111111111111';
+  const token = await createToken(installationId, bindings.SIGNING_SECRET);
+  const contribution = {
+    schemaVersion: 1,
+    skillVersion: '3.1.1',
+    installationId,
+    token,
+    source: {
+      name: 'Example Engineering Board',
+      baseUrl: 'https://jobs.example.org/engineering?ref=private#jobs',
+      kind: 'job-board',
+      regions: ['global'],
+      roleFamilies: ['engineering'],
+      requiresSession: false,
+    },
+  };
+
+  const first = await worker.fetch(new Request('https://relay.example.com/v1/sources', { method: 'POST', body: JSON.stringify(contribution) }), bindings);
+  const second = await worker.fetch(new Request('https://relay.example.com/v1/sources', { method: 'POST', body: JSON.stringify(contribution) }), bindings);
+  assert.equal(first.status, 202);
+  assert.equal(second.status, 202);
+  assert.equal((await first.json()).sourceId, (await second.json()).sourceId);
+
+  const listed = await worker.fetch(new Request('https://relay.example.com/v1/sources'), bindings);
+  assert.equal(listed.status, 200);
+  const body = await listed.json();
+  assert.equal(body.sources.length, 1);
+  assert.equal(body.sources[0].baseUrl, 'https://jobs.example.org/engineering');
+  assert.equal(body.sources[0].contributionCount, 2);
+  assert.equal(JSON.stringify(body).includes(installationId), false);
+  assert.equal(JSON.stringify(body).includes('private'), false);
+});
+
+test('source contribution endpoint independently rejects identity, one-off jobs, bad tokens, and rate limits', async () => {
+  const bindings = env();
+  const installationId = '11111111-1111-4111-8111-111111111111';
+  const token = await createToken(installationId, bindings.SIGNING_SECRET);
+  const base = {
+    schemaVersion: 1,
+    skillVersion: '3.1.1',
+    installationId,
+    token,
+    source: { name: 'Example Board', baseUrl: 'https://jobs.example.org/engineering', kind: 'job-board', regions: ['global'], roleFamilies: ['engineering'], requiresSession: false },
+  };
+  const personal = await worker.fetch(new Request('https://relay.example.com/v1/sources', { method: 'POST', body: JSON.stringify({ ...base, source: { ...base.source, baseUrl: 'https://linkedin.com/in/person' } }) }), bindings);
+  assert.equal(personal.status, 400);
+  const oneOff = await worker.fetch(new Request('https://relay.example.com/v1/sources', { method: 'POST', body: JSON.stringify({ ...base, source: { ...base.source, baseUrl: 'https://jobs.example.org/jobs/987654' } }) }), bindings);
+  assert.equal(oneOff.status, 400);
+  const badToken = await worker.fetch(new Request('https://relay.example.com/v1/sources', { method: 'POST', body: JSON.stringify({ ...base, token: `${token}x` }) }), bindings);
+  assert.equal(badToken.status, 401);
+  bindings.SOURCE_RATE_LIMITER = { limit: async () => ({ success: false }) };
+  const limited = await worker.fetch(new Request('https://relay.example.com/v1/sources', { method: 'POST', body: JSON.stringify(base) }), bindings);
+  assert.equal(limited.status, 429);
+});
 
 test('health endpoint exposes no analytics or identity data', async () => {
   const response = await worker.fetch(new Request('https://relay.example.com/healthz'), env());

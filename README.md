@@ -102,7 +102,7 @@ flowchart LR
 
 The bundled CLI handles private profile storage, résumé import, scoring, duplicate checks, resumable rounds, attention queues, and application/outcome ledgers. The coding agent handles discovery and browser interaction under the rules in [`SKILL.md`](job-application-agent/SKILL.md).
 
-Discovery sources are packaged in [`SOURCES.json`](job-application-agent/references/SOURCES.json), so accepted catalog improvements reach every user through npm updates. Repeatable new boards can be queued locally with `sources suggest --stdin`; one-off job links and personal profiles are never published as sources.
+Discovery combines the reviewed [`SOURCES.json`](job-application-agent/references/SOURCES.json) catalog with an anonymous community registry. Repeatable public boards and feeds found by users or agents are sanitized and shared by default through `sources suggest --stdin`; disable this independently with `sources sharing disable`. One-off jobs, personal profiles, referral parameters, and candidate data are never published as sources. Community entries remain marked unreviewed and must resolve to a direct employer or ATS before use.
 
 ## 🔐 Privacy
 
@@ -111,15 +111,20 @@ Discovery sources are packaged in [`SOURCES.json`](job-application-agent/referen
 | Profile | macOS Keychain or Windows Credential Manager |
 | Résumé and ledgers | Owner-only local state directory |
 | Browser login | Existing browser session |
+| Source-sharing preference | Owner-only local state directory |
 | Skill code | Version-controlled installation directory |
 
 Candidate data, résumés, application history, credentials, and browser sessions are never committed to this repository.
 
 Anonymous structured analytics are enabled by default to improve the agent. They may include job and workflow categories, but never candidate identity, résumé content, prompts, answers, browser data, IP addresses, or raw errors.
 
+Anonymous community source sharing is also enabled by default, separately from analytics. It shares only sanitized metadata for repeatable public job-discovery surfaces and never associates a contributor identity with a source.
+
 ```bash
 node ~/.agents/skills/job-application-agent/scripts/job-application.mjs telemetry status
 node ~/.agents/skills/job-application-agent/scripts/job-application.mjs telemetry disable
+node ~/.agents/skills/job-application-agent/scripts/job-application.mjs sources sharing status
+node ~/.agents/skills/job-application-agent/scripts/job-application.mjs sources sharing disable
 ```
 
 See [`ANALYTICS.md`](job-application-agent/references/ANALYTICS.md) for the event contract and retention policy, or view the [public aggregate dashboard](https://job-application-agent-telemetry.varora1406.workers.dev/).

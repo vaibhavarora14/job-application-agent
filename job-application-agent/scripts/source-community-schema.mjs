@@ -1,0 +1,115 @@
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const SOURCE_ID = /^community-[0-9a-f]{16}$/;
+export const SOURCE_KINDS = new Set(['direct-employer', 'professional-network', 'social-feed', 'startup-network', 'community-thread', 'job-board', 'curated-board', 'inbound', 'user-supplied']);
+
+function record(value, label) {
+  if (!value || Array.isArray(value) || typeof value !== 'object') throw new Error(`${label} must be an object.`);
+  return value;
+}
+
+function boundedString(value, label, max) {
+  if (typeof value !== 'string' || !value.trim() || value.length > max) throw new Error(`${label} must be a non-empty string no longer than ${max} characters.`);
+  return value.trim();
+}
+
+function containsIdentityLike(value) {
+  return /[\w.+-]+@[\w.-]+\.[a-z]{2,}|\+?\d[\d\s().-]{7,}/i.test(value);
+}
+
+function terms(value, label) {
+  if (!Array.isArray(value) || value.length === 0 || value.length > 12) throw new Error(`${label} must be a non-empty array with at most 12 values.`);
+  return [...new Set(value.map((item, index) => boundedString(item, `${label}[${index}]`, 40).toLowerCase()))].sort();
+}
+
+function looksPersonal(url) {
+  return (/(^|\.)linkedin\.com$/i.test(url.hostname) && /^\/in\//i.test(url.pathname))
+    || (/(^|\.)github\.com$/i.test(url.hostname) && /^\/[^/]+\/?$/i.test(url.pathname))
+    || (/(^|\.)x\.com$/i.test(url.hostname) && /^\/(?!home|jobs|search|i\/)[^/]+\/?$/i.test(url.pathname));
+}
+
+function isPublicHostname(hostname) {
+  const value = hostname.toLowerCase();
+  if (value === 'localhost' || value.endsWith('.localhost') || value.endsWith('.local') || value.endsWith('.internal')) return false;
+  if (/^\d{1,3}(?:\.\d{1,3}){3}$/.test(value) || value.startsWith('[')) return false;
+  return value.includes('.');
+}
+
+function looksLikeOneOffJob(url) {
+  const segments = url.pathname.split('/').filter(Boolean);
+  const last = segments.at(-1) ?? '';
+  return /[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}/i.test(url.pathname)
+    || /^\d{4,}$/.test(last)
+    || /^(apply|application)$/i.test(last)
+    || /\/jobs?\/[^/]+\/(apply|application)\/?$/i.test(url.pathname);
+}
+
+export function normalizeCommunitySource(input) {
+  const value = record(input, 'community source');
+  const allowed = new Set(['name', 'baseUrl', 'kind', 'regions', 'roleFamilies', 'requiresSession']);
+  for (const key of Object.keys(value)) if (!allowed.has(key)) throw new Error(`Unknown community source property: ${key}.`);
+  const name = boundedString(value.name, 'community source.name', 120);
+  if (containsIdentityLike(name) || /https?:\/\//i.test(name)) throw new Error('community source.name must not contain identity-like content.');
+  const url = new URL(boundedString(value.baseUrl, 'community source.baseUrl', 1000));
+  if (url.protocol !== 'https:' || url.username || url.password) throw new Error('community source.baseUrl must be a public HTTPS URL.');
+  if (!isPublicHostname(url.hostname)) throw new Error('community source.baseUrl must use a public internet hostname.');
+  let decodedPath = url.pathname;
+  try { decodedPath = decodeURIComponent(decodedPath); } catch { /* Preserve the encoded path for validation. */ }
+  if (containsIdentityLike(decodedPath)) throw new Error('community source.baseUrl must not contain identity-like content.');
+  if (looksPersonal(url)) throw new Error('community source.baseUrl must not be a profile or personal URL.');
+  if (looksLikeOneOffJob(url)) throw new Error('community source.baseUrl must identify a repeatable discovery surface, not a one-off job.');
+  url.search = '';
+  url.hash = '';
+  const kind = boundedString(value.kind, 'community source.kind', 40).toLowerCase();
+  if (!SOURCE_KINDS.has(kind)) throw new Error('community source.kind is invalid.');
+  if (typeof value.requiresSession !== 'boolean') throw new Error('community source.requiresSession must be a Boolean.');
+  return {
+    name,
+    baseUrl: url.toString().replace(/\/$/, ''),
+    kind,
+    regions: terms(value.regions, 'community source.regions'),
+    roleFamilies: terms(value.roleFamilies, 'community source.roleFamilies'),
+    requiresSession: value.requiresSession,
+  };
+}
+
+export function createSourceContributionEnvelope({ installationId, token, source, skillVersion }) {
+  return validateSourceContributionEnvelope({ schemaVersion: 1, skillVersion, installationId, token, source });
+}
+
+export function validateSourceContributionEnvelope(input) {
+  const value = record(input, 'source contribution');
+  const allowed = new Set(['schemaVersion', 'skillVersion', 'installationId', 'token', 'source']);
+  for (const key of Object.keys(value)) if (!allowed.has(key)) throw new Error(`Unknown source contribution property: ${key}.`);
+  if (value.schemaVersion !== 1) throw new Error('Unsupported source contribution schema version.');
+  const installationId = boundedString(value.installationId, 'source contribution.installationId', 36);
+  if (!UUID.test(installationId)) throw new Error('source contribution.installationId is invalid.');
+  return {
+    schemaVersion: 1,
+    skillVersion: boundedString(value.skillVersion, 'source contribution.skillVersion', 40),
+    installationId,
+    token: boundedString(value.token, 'source contribution.token', 2048),
+    source: normalizeCommunitySource(value.source),
+  };
+}
+
+export async function communitySourceId(source) {
+  const normalized = normalizeCommunitySource(source);
+  const bytes = new TextEncoder().encode(normalized.baseUrl.toLowerCase());
+  const digest = new Uint8Array(await crypto.subtle.digest('SHA-256', bytes));
+  return `community-${[...digest].map((value) => value.toString(16).padStart(2, '0')).join('').slice(0, 16)}`;
+}
+
+export function validateCommunitySourceList(input) {
+  const value = record(input, 'community source list');
+  for (const key of Object.keys(value)) if (!['version', 'sources'].includes(key)) throw new Error(`Unknown community source list property: ${key}.`);
+  if (value.version !== 1 || !Array.isArray(value.sources) || value.sources.length > 500) throw new Error('Invalid community source list.');
+  return value.sources.map((entry) => {
+    const source = record(entry, 'community source entry');
+    const allowed = new Set(['sourceId', 'name', 'baseUrl', 'kind', 'regions', 'roleFamilies', 'requiresSession', 'contributionCount']);
+    for (const key of Object.keys(source)) if (!allowed.has(key)) throw new Error(`Unknown community source entry property: ${key}.`);
+    if (!SOURCE_ID.test(source.sourceId)) throw new Error('community source entry.sourceId is invalid.');
+    if (!Number.isInteger(source.contributionCount) || source.contributionCount < 1) throw new Error('community source entry.contributionCount is invalid.');
+    const normalized = normalizeCommunitySource(Object.fromEntries(['name', 'baseUrl', 'kind', 'regions', 'roleFamilies', 'requiresSession'].map((key) => [key, source[key]])));
+    return { sourceId: source.sourceId, ...normalized, contributionCount: source.contributionCount };
+  });
+}

@@ -25,6 +25,8 @@ node scripts/job-application.mjs telemetry record --stdin
 
 Telemetry is best effort. It has no offline queue, uses a short network timeout, and never changes the result of a job-application command.
 
+Community source sharing is a separate default-enabled feature with independent `sources sharing status|enable|disable|reset` controls. It does not send analytics events or store contributor identity with a source. See [`SOURCES.md`](SOURCES.md) for its exact public metadata contract.
+
 ## Identity boundary
 
 Analytics never includes the candidate's name, email, phone, exact address, profile URLs, candidate location, work authorization, personal compensation or compensation floor, target profile or thresholds, resume or attachments, must-have evidence or coverage details, rejection reasons, prompts, responses, job descriptions, form questions, drafted answers, notes, passwords, MFA, CAPTCHA, legal or demographic answers, browser data, IP address, request headers, user agent, or raw error messages.

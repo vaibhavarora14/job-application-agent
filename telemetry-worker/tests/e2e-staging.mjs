@@ -69,4 +69,29 @@ const rejected = await fetch(`${endpoint}/v1/events`, {
 });
 assert.equal(rejected.status, 400);
 
+const contributed = await fetch(`${endpoint}/v1/sources`, {
+  method: 'POST',
+  headers: { 'content-type': 'application/json' },
+  body: JSON.stringify({
+    schemaVersion: 1,
+    skillVersion: '3.1.1-staging',
+    installationId: identity.installationId,
+    token: identity.token,
+    source: {
+      name: 'Staging Engineering Board',
+      baseUrl: 'https://jobs-staging.example.com/engineering?private=removed#jobs',
+      kind: 'job-board',
+      regions: ['global'],
+      roleFamilies: ['engineering'],
+      requiresSession: false,
+    },
+  }),
+});
+assert.equal(contributed.status, 202);
+const community = await fetch(`${endpoint}/v1/sources`);
+assert.equal(community.status, 200);
+const communityBody = await community.json();
+assert.ok(communityBody.sources.some((source) => source.baseUrl === 'https://jobs-staging.example.com/engineering'));
+assert.equal(JSON.stringify(communityBody).includes('private=removed'), false);
+
 process.stdout.write('Staging relay contract passed.\n');

@@ -1,10 +1,12 @@
 import { TELEMETRY_SCHEMA_VERSION, TELEMETRY_MAX_BYTES, validateTelemetryEnvelope } from '../../job-application-agent/scripts/telemetry-schema.mjs';
+import { communitySourceId, validateSourceContributionEnvelope } from '../../job-application-agent/scripts/source-community-schema.mjs';
 import { publicStatsResponse, recordPublicAggregate } from './public-stats.mjs';
 
 const encoder = new TextEncoder();
 const decoder = new TextDecoder();
 const TOKEN_TTL_SECONDS = 30 * 24 * 60 * 60;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const SOURCE_MAX_BYTES = 4096;
 
 function base64url(bytes) {
   return btoa(String.fromCharCode(...bytes)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
@@ -105,6 +107,79 @@ async function events(request, env) {
   return response({ accepted: true, eventId }, 202);
 }
 
+function sourceStore(env) {
+  if (env.SOURCE_STORE) return env.SOURCE_STORE;
+  const database = env.PUBLIC_STATS_DB;
+  if (!database?.prepare) throw Object.assign(new Error('Source store unavailable.'), { status: 503 });
+  return {
+    async upsert(source) {
+      await database.prepare(`
+        INSERT INTO community_sources (
+          source_id, name, base_url, kind, regions_json, role_families_json,
+          requires_session, contribution_count, first_seen_at, last_seen_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?, ?)
+        ON CONFLICT(source_id) DO UPDATE SET
+          name = excluded.name,
+          base_url = excluded.base_url,
+          kind = excluded.kind,
+          regions_json = excluded.regions_json,
+          role_families_json = excluded.role_families_json,
+          requires_session = excluded.requires_session,
+          contribution_count = community_sources.contribution_count + 1,
+          last_seen_at = excluded.last_seen_at
+      `).bind(
+        source.sourceId,
+        source.name,
+        source.baseUrl,
+        source.kind,
+        JSON.stringify(source.regions),
+        JSON.stringify(source.roleFamilies),
+        source.requiresSession ? 1 : 0,
+        source.seenAt,
+        source.seenAt,
+      ).run();
+    },
+    async list() {
+      const result = await database.prepare(`
+        SELECT source_id, name, base_url, kind, regions_json, role_families_json,
+               requires_session, contribution_count
+        FROM community_sources
+        ORDER BY contribution_count DESC, last_seen_at DESC
+        LIMIT 500
+      `).all();
+      return (result.results ?? []).map((row) => ({
+        sourceId: row.source_id,
+        name: row.name,
+        baseUrl: row.base_url,
+        kind: row.kind,
+        regions: JSON.parse(row.regions_json),
+        roleFamilies: JSON.parse(row.role_families_json),
+        requiresSession: row.requires_session === 1,
+        contributionCount: row.contribution_count,
+      }));
+    },
+  };
+}
+
+async function contributeSource(request, env) {
+  const input = await readJson(request, SOURCE_MAX_BYTES);
+  let envelope;
+  try { envelope = validateSourceContributionEnvelope(input); } catch { return response({ error: 'invalid_source' }, 400); }
+  let identity;
+  try { identity = await verifyToken(envelope.token, env.SIGNING_SECRET); } catch (error) { return response({ error: /expired/i.test(error.message) ? 'token_expired' : 'invalid_token' }, 401); }
+  if (identity.installationId !== envelope.installationId) return response({ error: 'invalid_token' }, 401);
+  if (!await allowed(env.SOURCE_RATE_LIMITER, envelope.installationId)) return response({ error: 'rate_limited' }, 429);
+
+  const sourceId = await communitySourceId(envelope.source);
+  await sourceStore(env).upsert({ sourceId, ...envelope.source, seenAt: new Date().toISOString() });
+  return response({ accepted: true, sourceId }, 202);
+}
+
+async function listSources(env) {
+  const sources = await sourceStore(env).list();
+  return response({ version: 1, sources });
+}
+
 export async function handleRequest(request, env) {
   const { pathname } = new URL(request.url);
   if (request.method === 'GET' && pathname === '/') return Response.redirect('https://stats.jobappagent.com/', 308);
@@ -112,6 +187,8 @@ export async function handleRequest(request, env) {
   if (pathname === '/api/public-stats') return publicStatsResponse(request, env);
   if (request.method === 'POST' && pathname === '/v1/install') return install(request, env);
   if (request.method === 'POST' && pathname === '/v1/events') return events(request, env);
+  if (request.method === 'POST' && pathname === '/v1/sources') return contributeSource(request, env);
+  if (request.method === 'GET' && pathname === '/v1/sources') return listSources(env);
   return response({ error: 'not_found' }, 404);
 }
 
