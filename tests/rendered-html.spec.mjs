@@ -30,7 +30,7 @@ test("server-renders the focused cloud offer and honest community proof", async 
   assert.match(html, /href="\/apple-touch-icon\.png"/);
   assert.match(html, /href="\/manifest\.webmanifest"/);
   assert.doesNotMatch(html, />JA</);
-  assert.match(html, /Active installations · last 30 days/);
+  assert.match(html, /Systems that have used JobAppAgent · overall/);
   assert.match(html, /Verified applications submitted/);
   assert.match(html, /Jobs assessed/);
   assert.match(html, /Reserve 90-day access/);

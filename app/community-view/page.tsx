@@ -4,7 +4,7 @@ import { SiteFooter, SiteHeader } from "../components/SiteChrome";
 
 export const metadata: Metadata = {
   title: "Community stats",
-  description: "Anonymous community activity from Job Application Agent: active installations, jobs assessed, and verified applications.",
+  description: "Anonymous community activity from JobAppAgent: systems recorded overall, jobs assessed, and verified applications.",
   alternates: { canonical: "https://stats.jobappagent.com/" },
 };
 

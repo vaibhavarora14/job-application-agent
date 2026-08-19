@@ -30,7 +30,7 @@ export function CommunityDashboard() {
     </section>
 
     <section className="dashboard-metrics" aria-label="Community totals" aria-busy={loading}>
-      <article><strong>{data ? compactNumber.format(data.metrics.activeInstallations30d) : "—"}</strong><span>Active installations · last 30 days</span></article>
+      <article><strong>{data ? compactNumber.format(data.metrics.installations) : "—"}</strong><span>Systems that have used JobAppAgent · overall</span></article>
       <article><strong>{data ? compactNumber.format(data.metrics.applicationsSubmitted) : "—"}</strong><span>Verified applications submitted</span></article>
       <article><strong>{data ? compactNumber.format(data.metrics.jobsAssessed) : "—"}</strong><span>Jobs assessed</span></article>
     </section>
@@ -57,7 +57,7 @@ export function CommunityDashboard() {
 
     <section id="methodology" className="methodology">
       <div><p className="eyebrow">Methodology</p><h2>Proof without profiles.</h2></div>
-      <div><p><strong>Active installation</strong> means an anonymous installation assessed a job or submitted an application during the last 30 days. It is not a verified individual-person count.</p><p><strong>Verified application</strong> means the employer or ATS showed a confirmed submission success state.</p><p>Segments with fewer than {data?.privacy.minimumSegmentCount ?? 3} observations are grouped into “other.”</p></div>
+      <div><p><strong>System</strong> means one anonymous local JobAppAgent installation identity recorded by telemetry. The overall count is cumulative and is not limited to a recent activity window. Resetting or reinstalling can create a new identity, so this is a systems count—not a verified individual-person count.</p><p><strong>Verified application</strong> means the employer or ATS showed a confirmed submission success state.</p><p>Segments with fewer than {data?.privacy.minimumSegmentCount ?? 3} observations are grouped into “other.”</p></div>
     </section>
     <p className="dashboard-updated">{data ? `Updated ${new Intl.DateTimeFormat("en", { dateStyle: "long", timeStyle: "short" }).format(new Date(data.generatedAt))}` : "Anonymous aggregate telemetry"}</p>
   </main>;
