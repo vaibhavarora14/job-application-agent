@@ -49,6 +49,7 @@ Treat `mustHaves[].evidence` as private resume analysis. It is used locally and 
   "description": "Posting text",
   "source": "greenhouse",
   "discoverySource": "linkedin",
+  "discoverySourceId": "linkedin-jobs-feed",
   "applicationChannel": "greenhouse",
   "url": "https://job-boards.greenhouse.io/example/jobs/123",
   "postingStatus": "active",
@@ -72,7 +73,7 @@ Treat `mustHaves[].evidence` as private resume analysis. It is used locally and 
 
 Allowed sources: `linkedin`, `greenhouse`, `lever`, `ashby`, `workable`, `comeet`, `workday`, `rippling`, `smartrecruiters`, `google-form`, `company`, `email`, and `other`.
 
-`source` remains the backward-compatible application channel. New workflows should also supply `discoverySource` (`direct-company`, `linkedin`, `x`, `yc`, `hacker-news`, `job-board`, `email`, `user-supplied`, `web-search`, or `other`) and `applicationChannel` using the allowed `source` values.
+`source` remains the backward-compatible application channel. New workflows should also supply `discoverySource` (`direct-company`, `linkedin`, `x`, `yc`, `hacker-news`, `job-board`, `email`, `user-supplied`, `web-search`, or `other`), the kebab-case `discoverySourceId` from [`SOURCES.json`](SOURCES.json) when known, and `applicationChannel` using the allowed `source` values.
 
 Allowed posting statuses: `active`, `closed`, `unclear`. Allowed eligibility: `eligible`, `unclear`, `ineligible`. Allowed seniority: `junior`, `mid`, `senior`, `staff`, `principal`, `lead`, `manager`, `director`, `founding`, `unspecified`. Allowed work modes: `remote`, `hybrid`, `onsite`, `unspecified`. Must-have statuses: `met`, `partial`, `missing`, `unclear`.
 
@@ -94,6 +95,8 @@ Include as many identifiers as are known.
 
 The check removes fragments and non-job query parameters while retaining recognized job or requisition identifiers. Matching ledger ID, canonical URL, or same-company employer job ID is a hard duplicate. Same company and role without a shared job ID is a possible duplicate.
 
+`ledger check` also returns `companyReapply`. A genuinely different role is `eligible-after-cooldown` only when at least 15 calendar days have passed since the latest application to that company and that application has no recorded outcome. A hard duplicate is never made eligible. Same-role matches, an active cooldown, and recorded follow-up remain review states unless the candidate explicitly overrides them.
+
 ## Confirmed submission input
 
 Add only after visible success confirmation.
@@ -107,6 +110,7 @@ Add only after visible success confirmation.
   "employerJobId": "greenhouse:123",
   "source": "company",
   "discoverySource": "x",
+  "discoverySourceId": "x-hiring-feed",
   "applicationChannel": "company",
   "roundId": "round-2026-01-15-00000000-0000-4000-8000-000000000000",
   "score": 84,
@@ -126,7 +130,7 @@ Add only after visible success confirmation.
 
 Use `duplicateOverride` only for a verified distinct requisition after a possible-duplicate warning. It and `telemetry` are transient and are not written to the application ledger. Use approval `APPROVE SUBMIT` for per-application approval or `STANDING AUTHORIZATION` when the current request authorizes routine batch submission.
 
-`discoverySource`, `applicationChannel`, and `roundId` are optional for backward compatibility and should be supplied for new resumable rounds. `ledger check` returns hard requisition/URL duplicate status plus bounded same-company history so a distinct role can be reviewed without conflating it with a duplicate.
+`discoverySource`, `discoverySourceId`, `applicationChannel`, and `roundId` are optional for backward compatibility and should be supplied for new resumable rounds. `discoverySourceId` remains local and is not included in telemetry. `ledger check` returns hard requisition/URL duplicate status, bounded same-company history, and the 15-day no-follow-up reapplication decision.
 
 ## Autonomy grant input
 

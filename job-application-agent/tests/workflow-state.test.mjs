@@ -116,6 +116,164 @@ test('counts only unique confirmed ledger submissions for an explicit round', as
   if (process.platform !== 'win32') assert.equal((await stat(join(directory, 'rounds.ndjson'))).mode & 0o777, 0o600);
 });
 
+test('allows a distinct same-company role after 15 quiet days', async (t) => {
+  const { env } = await fixture(t, 'company-cooldown');
+  const submittedAt = new Date(Date.now() - (16 * 86_400_000)).toISOString();
+
+  cli(env, ['ledger', 'add', '--stdin'], {
+    id: 'example-backend-role',
+    company: 'Example',
+    role: 'Senior Backend Engineer',
+    url: 'https://jobs.example.com/backend-123',
+    employerJobId: 'example:backend-123',
+    source: 'company',
+    score: 88,
+    status: 'submitted',
+    submittedAt,
+    approval: 'STANDING AUTHORIZATION',
+    answers: {},
+  });
+
+  const check = cli(env, ['ledger', 'check', '--stdin'], {
+    id: 'example-fullstack-role',
+    company: 'Example',
+    role: 'Staff Full Stack Engineer',
+    url: 'https://jobs.example.com/fullstack-456',
+    employerJobId: 'example:fullstack-456',
+  });
+
+  assert.equal(check.duplicate, false);
+  assert.equal(check.sameCompany, true);
+  assert.equal(check.companyReapply.eligible, true);
+  assert.equal(check.companyReapply.decision, 'eligible-after-cooldown');
+  assert.equal(check.companyReapply.cooldownDays, 15);
+  assert.equal(check.companyReapply.hasFollowUp, false);
+});
+
+test('keeps same-company roles in review during cooldown or after follow-up', async (t) => {
+  const { env } = await fixture(t, 'company-follow-up');
+  const recentSubmittedAt = new Date(Date.now() - (5 * 86_400_000)).toISOString();
+
+  cli(env, ['ledger', 'add', '--stdin'], {
+    id: 'recent-role',
+    company: 'Recent Co',
+    role: 'Senior Backend Engineer',
+    url: 'https://jobs.recent.example/backend-123',
+    employerJobId: 'recent:backend-123',
+    source: 'company',
+    score: 88,
+    status: 'submitted',
+    submittedAt: recentSubmittedAt,
+    approval: 'STANDING AUTHORIZATION',
+    answers: {},
+  });
+
+  const recent = cli(env, ['ledger', 'check', '--stdin'], {
+    id: 'recent-fullstack-role',
+    company: 'Recent Co',
+    role: 'Staff Full Stack Engineer',
+    url: 'https://jobs.recent.example/fullstack-456',
+  });
+  assert.equal(recent.companyReapply.eligible, false);
+  assert.equal(recent.companyReapply.decision, 'cooldown-active');
+
+  const oldSubmittedAt = new Date(Date.now() - (20 * 86_400_000)).toISOString();
+  cli(env, ['ledger', 'add', '--stdin'], {
+    id: 'followed-role',
+    company: 'Followed Co',
+    role: 'Senior Backend Engineer',
+    url: 'https://jobs.followed.example/backend-123',
+    employerJobId: 'followed:backend-123',
+    source: 'company',
+    score: 88,
+    status: 'submitted',
+    submittedAt: oldSubmittedAt,
+    approval: 'STANDING AUTHORIZATION',
+    answers: {},
+  });
+  cli(env, ['ledger', 'outcome', '--stdin'], {
+    id: 'followed-role',
+    status: 'rejected',
+    occurredAt: new Date(Date.now() - (18 * 86_400_000)).toISOString(),
+  });
+
+  const followed = cli(env, ['ledger', 'check', '--stdin'], {
+    id: 'followed-fullstack-role',
+    company: 'Followed Co',
+    role: 'Staff Full Stack Engineer',
+    url: 'https://jobs.followed.example/fullstack-456',
+  });
+  assert.equal(followed.companyReapply.eligible, false);
+  assert.equal(followed.companyReapply.decision, 'follow-up-present');
+  assert.equal(followed.companyReapply.hasFollowUp, true);
+});
+
+test('ships a filterable global discovery source catalog with Employable', async (t) => {
+  const { directory, env } = await fixture(t, 'source-catalog');
+  const catalog = cli(env, ['sources', 'list']);
+  const employable = catalog.sources.find((source) => source.id === 'employable-ai');
+
+  assert.ok(employable);
+  assert.equal(employable.kind, 'job-board');
+  assert.equal(employable.requiresSession, true);
+  assert.equal(employable.verification, 'direct-employer-or-ats');
+
+  const filtered = cli(env, ['sources', 'list', '--stdin'], {
+    regions: ['global'],
+    roleFamilies: ['engineering'],
+  });
+  assert.ok(filtered.sources.some((source) => source.id === 'employable-ai'));
+
+  cli(env, ['ledger', 'add', '--stdin'], {
+    id: 'employable-sourced-role',
+    company: 'Catalog Example',
+    role: 'Staff Product Engineer',
+    url: 'https://jobs.catalog.example/staff-product-engineer',
+    source: 'company',
+    discoverySource: 'job-board',
+    discoverySourceId: 'employable-ai',
+    applicationChannel: 'company',
+    score: 90,
+    status: 'submitted',
+    submittedAt: new Date().toISOString(),
+    approval: 'STANDING AUTHORIZATION',
+    answers: {},
+  });
+  const [stored] = (await readFile(join(directory, 'applications.ndjson'), 'utf8')).trim().split('\n').map(JSON.parse);
+  assert.equal(stored.discoverySourceId, 'employable-ai');
+});
+
+test('queues sanitized repeatable source suggestions locally for public-registry review', async (t) => {
+  const { directory, env } = await fixture(t, 'source-suggestions');
+  const suggestion = cli(env, ['sources', 'suggest', '--stdin'], {
+    name: 'Example Engineering Board',
+    baseUrl: 'https://jobs.example.org/engineering',
+    kind: 'job-board',
+    regions: ['global'],
+    roleFamilies: ['engineering'],
+    requiresSession: false,
+  });
+
+  assert.equal(suggestion.queued, true);
+  assert.equal(suggestion.suggestion.baseUrl, 'https://jobs.example.org/engineering');
+  assert.equal((await stat(join(directory, 'source-suggestions.ndjson'))).mode & 0o777, 0o600);
+
+  const pending = cli(env, ['sources', 'pending']);
+  assert.equal(pending.count, 1);
+  assert.equal(pending.suggestions[0].name, 'Example Engineering Board');
+
+  const rejected = cliFailure(env, ['sources', 'suggest', '--stdin'], {
+    name: 'Personal referral',
+    baseUrl: 'https://linkedin.com/in/some-person',
+    kind: 'user-supplied',
+    regions: ['global'],
+    roleFamilies: ['engineering'],
+    requiresSession: true,
+  });
+  assert.equal(rejected.status, 1);
+  assert.match(rejected.stderr, /profile or personal URL/i);
+});
+
 test('does not complete a round from blocked or partially filled applications', async (t) => {
   const { env } = await fixture(t, 'incomplete-round');
   const { roundId } = cli(env, ['round', 'start', '--stdin'], { requestedCount: 2 });

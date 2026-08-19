@@ -31,6 +31,8 @@ Analytics never includes the candidate's name, email, phone, exact address, prof
 
 Structured job context may include company, role title, canonical destination domain, a SHA-256 hash of the job URL after removing query parameters and fragments, bounded discovery source, ATS/application channel, job country, work mode, employment type, seniority, role family, published salary band, fit score, match/gap categories, workflow stages, field categories, pause reasons, submission result, outcome, bounded interview quality, and bounded interview failure point.
 
+The more specific local `discoverySourceId` catalog attribution is not transmitted in v1.
+
 Local attention details and friction evidence are never transmitted. Analytics may receive only their already-documented bounded stage, ATS, pause reason, result, and aggregate count fields.
 
 Company and title values are bounded and rejected when they resemble an email, phone number, URL, LinkedIn profile, or GitHub profile.

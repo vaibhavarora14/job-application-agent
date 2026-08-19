@@ -28,6 +28,9 @@ const AUTONOMY_HARD_STOPS = Object.freeze(['authentication', 'mfa', 'captcha', '
 const ATTENTION_STAGES = new Set(['discovery', 'assessment', 'application', 'contact', 'resume', 'questions', 'legal', 'demographic', 'review', 'submission', 'confirmation', 'outcome', 'answers', 'upload']);
 const ATTENTION_BLOCKERS = new Set(['authentication', 'mfa', 'captcha', 'legal-attestation', 'demographic', 'government-id', 'ambiguous-authorization', 'ambiguous-compensation', 'unverifiable-claim', 'judgment', 'video', 'upload', 'site-error', 'other']);
 const REQUIRED_ACTIONS = new Set(['sign-in', 'complete-mfa', 'complete-captcha', 'review-legal', 'choose-demographic', 'provide-government-id', 'provide-authorization', 'provide-compensation', 'verify-claim', 'provide-judgment', 'record-video', 'enable-upload', 'retry-site']);
+const COMPANY_REAPPLY_COOLDOWN_DAYS = 15;
+const SOURCE_KINDS = new Set(['direct-employer', 'professional-network', 'social-feed', 'startup-network', 'community-thread', 'job-board', 'curated-board', 'inbound', 'user-supplied']);
+const SOURCE_CATALOG_URL = new URL('../references/SOURCES.json', import.meta.url);
 const REQUIRED_PROFILE = ['name', 'email', 'phone', 'location', 'workAuthorization', 'roleFamilies', 'seniority', 'targetLocations', 'workModes', 'submissionMode', 'yearsExperience', 'autoSubmitMinScore', 'manualReviewMinScore', 'minMustHaveCoverage'];
 const STRING_PROFILE_FIELDS = new Set(['name', 'email', 'phone', 'location', 'workAuthorization', 'linkedin', 'github', 'portfolio', 'availability', 'currentCompensation', 'targetCompensation', 'submissionMode']);
 const ARRAY_PROFILE_FIELDS = new Set(['roleFamilies', 'seniority', 'skills', 'targetLocations', 'excludedLocations', 'workModes', 'industries', 'excludedCompanies']);
@@ -79,6 +82,7 @@ export function commandCategory([area, action]) {
   if (area === 'telemetry') return 'telemetry';
   if (area === 'autonomy') return 'profile';
   if (area === 'round') return 'round';
+  if (area === 'sources') return 'discovery';
   if (area === 'attention' || area === 'friction') return 'batch';
   return 'other';
 }
@@ -173,6 +177,12 @@ function stringArray(value, label, required = false) {
   return value.map((item, index) => string(item, `${label}[${index}]`, 300));
 }
 
+function sourceId(value, label) {
+  const id = string(value, label, 80).toLowerCase();
+  if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(id)) throw new Error(`${label} must be a kebab-case public source ID.`);
+  return id;
+}
+
 function integer(value, label, min, max) {
   if (!Number.isInteger(value) || value < min || value > max) throw new Error(`${label} must be an integer from ${min} to ${max}.`);
   return value;
@@ -251,6 +261,7 @@ export function scoreJob(input, target) {
   const description = string(job.description, 'job.description', 40000);
   const source = string(job.source, 'job.source', 40).toLowerCase();
   const discoverySource = job.discoverySource == null ? null : string(job.discoverySource, 'job.discoverySource', 40).toLowerCase();
+  if (job.discoverySourceId != null) sourceId(job.discoverySourceId, 'job.discoverySourceId');
   const applicationChannel = job.applicationChannel == null ? null : string(job.applicationChannel, 'job.applicationChannel', 40).toLowerCase();
   const eligibility = string(job.eligibility, 'job.eligibility', 40).toLowerCase();
   const postingStatus = string(job.postingStatus ?? 'unclear', 'job.postingStatus', 40).toLowerCase();
@@ -408,6 +419,7 @@ export function validateLedgerEntry(input) {
   };
   if (entry.employerJobId != null) normalized.employerJobId = string(entry.employerJobId, 'entry.employerJobId', 300);
   if (entry.discoverySource != null) normalized.discoverySource = string(entry.discoverySource, 'entry.discoverySource', 40).toLowerCase();
+  if (entry.discoverySourceId != null) normalized.discoverySourceId = sourceId(entry.discoverySourceId, 'entry.discoverySourceId');
   if (entry.applicationChannel != null) normalized.applicationChannel = string(entry.applicationChannel, 'entry.applicationChannel', 40).toLowerCase();
   if (entry.roundId != null) normalized.roundId = string(entry.roundId, 'entry.roundId', 180);
   if (!SOURCES.has(normalized.source)) throw new Error('entry.source is invalid.');
@@ -594,6 +606,71 @@ async function jsonLines(file) {
   }
 }
 
+async function sourceCatalog() {
+  const value = JSON.parse(await readFile(SOURCE_CATALOG_URL, 'utf8'));
+  if (!Array.isArray(value)) throw new Error('The packaged source catalog is invalid.');
+  return value;
+}
+
+async function sourcesList(filtersInput = {}) {
+  const filters = object(filtersInput, 'source filters');
+  const allowed = new Set(['regions', 'roleFamilies', 'kinds', 'requiresSession']);
+  for (const key of Object.keys(filters)) if (!allowed.has(key)) throw new Error(`Unknown source filter: ${key}.`);
+  const regions = filters.regions == null ? [] : terms(stringArray(filters.regions, 'source filters.regions'));
+  const roleFamilies = filters.roleFamilies == null ? [] : terms(stringArray(filters.roleFamilies, 'source filters.roleFamilies'));
+  const kinds = filters.kinds == null ? [] : terms(stringArray(filters.kinds, 'source filters.kinds'));
+  if (filters.requiresSession != null && typeof filters.requiresSession !== 'boolean') throw new Error('source filters.requiresSession must be a Boolean.');
+  const sources = (await sourceCatalog()).filter((source) => {
+    if (regions.length && !source.regions.some((value) => regions.includes(value))) return false;
+    if (roleFamilies.length && !source.roleFamilies.some((value) => roleFamilies.includes(value))) return false;
+    if (kinds.length && !kinds.includes(source.kind)) return false;
+    if (filters.requiresSession != null && source.requiresSession !== filters.requiresSession) return false;
+    return true;
+  });
+  return { version: 1, count: sources.length, sources };
+}
+
+function sourceSuggestion(input) {
+  const value = object(input, 'source suggestion');
+  const allowed = new Set(['name', 'baseUrl', 'kind', 'regions', 'roleFamilies', 'requiresSession']);
+  for (const key of Object.keys(value)) if (!allowed.has(key)) throw new Error(`Unknown source suggestion property: ${key}.`);
+  const name = string(value.name, 'source suggestion.name', 120);
+  if (/@|https?:\/\/|\+?\d[\d\s().-]{7,}/i.test(name)) throw new Error('source suggestion.name must not contain identity-like content.');
+  const url = new URL(string(value.baseUrl, 'source suggestion.baseUrl', 1000));
+  if (url.protocol !== 'https:' || url.username || url.password) throw new Error('source suggestion.baseUrl must be a public HTTPS URL.');
+  if ((/(^|\.)linkedin\.com$/i.test(url.hostname) && /^\/in\//i.test(url.pathname))
+    || (/(^|\.)github\.com$/i.test(url.hostname) && /^\/[^/]+\/?$/i.test(url.pathname))
+    || (/(^|\.)x\.com$/i.test(url.hostname) && /^\/(?!home|jobs|search|i\/)[^/]+\/?$/i.test(url.pathname))) {
+    throw new Error('source suggestion.baseUrl must not be a profile or personal URL.');
+  }
+  url.hash = '';
+  const kind = string(value.kind, 'source suggestion.kind', 40).toLowerCase();
+  if (!SOURCE_KINDS.has(kind)) throw new Error('source suggestion.kind is invalid.');
+  if (typeof value.requiresSession !== 'boolean') throw new Error('source suggestion.requiresSession must be a Boolean.');
+  return {
+    type: 'suggested',
+    id: `source-suggestion-${randomUUID()}`,
+    name,
+    baseUrl: url.toString().replace(/\/$/, ''),
+    kind,
+    regions: terms(stringArray(value.regions, 'source suggestion.regions', true)),
+    roleFamilies: terms(stringArray(value.roleFamilies, 'source suggestion.roleFamilies', true)),
+    requiresSession: value.requiresSession,
+    createdAt: new Date().toISOString(),
+  };
+}
+
+async function sourcesSuggest(input) {
+  const suggestion = sourceSuggestion(input);
+  await appendPrivateEvent('source-suggestions', suggestion);
+  return { queued: true, suggestion };
+}
+
+async function sourcesPending() {
+  const suggestions = await jsonLines(join(await ensureStateDir(), 'source-suggestions.ndjson'));
+  return { count: suggestions.length, suggestions };
+}
+
 async function withStateLock(name, action) {
   const dir = await ensureStateDir();
   const lockPath = join(dir, `.${name}.lock`);
@@ -737,7 +814,7 @@ async function canonicalResumePath() {
   return { path: target };
 }
 
-function duplicateResult(entries, candidate) {
+function duplicateResult(entries, candidate, outcomes = [], now = new Date()) {
   const candidateCompany = normalizedText(candidate.company);
   const candidateRole = normalizedText(candidate.role);
   const candidateUrl = normalizeUrl(candidate.url);
@@ -747,15 +824,33 @@ function duplicateResult(entries, candidate) {
     || normalizeUrl(entry.url) === candidateUrl);
   const possible = hard ? null : entries.find(sameCompanyRole);
   const match = hard ?? possible;
-  const companyApplications = candidateCompany
-    ? entries.filter((entry) => normalizedText(entry.company) === candidateCompany).slice(-20).map((entry) => ({
+  const sameCompanyEntries = candidateCompany
+    ? entries.filter((entry) => normalizedText(entry.company) === candidateCompany)
+    : [];
+  const companyApplications = sameCompanyEntries
+    .slice(-20)
+    .map((entry) => ({
       id: entry.id,
       company: entry.company,
       role: entry.role,
       submittedAt: entry.submittedAt,
       ...(entry.employerJobId ? { employerJobId: entry.employerJobId } : {}),
-    }))
-    : [];
+    }));
+  const latestCompanyApplication = [...sameCompanyEntries]
+    .filter((entry) => !Number.isNaN(Date.parse(entry.submittedAt)))
+    .sort((a, b) => Date.parse(b.submittedAt) - Date.parse(a.submittedAt))[0] ?? null;
+  const daysSinceLatest = latestCompanyApplication
+    ? Math.max(0, Math.floor((now.getTime() - Date.parse(latestCompanyApplication.submittedAt)) / 86_400_000))
+    : null;
+  const hasFollowUp = latestCompanyApplication
+    ? outcomes.some((outcome) => outcome.id === latestCompanyApplication.id && Date.parse(outcome.occurredAt) >= Date.parse(latestCompanyApplication.submittedAt))
+    : false;
+  let companyReapplyDecision = 'fresh-company';
+  if (hard) companyReapplyDecision = 'hard-duplicate';
+  else if (possible) companyReapplyDecision = 'same-role-review';
+  else if (latestCompanyApplication && hasFollowUp) companyReapplyDecision = 'follow-up-present';
+  else if (latestCompanyApplication && daysSinceLatest < COMPANY_REAPPLY_COOLDOWN_DAYS) companyReapplyDecision = 'cooldown-active';
+  else if (latestCompanyApplication) companyReapplyDecision = 'eligible-after-cooldown';
   return {
     duplicate: Boolean(hard),
     possibleDuplicate: Boolean(possible),
@@ -763,14 +858,24 @@ function duplicateResult(entries, candidate) {
     match: match ? { id: match.id, company: match.company, role: match.role, submittedAt: match.submittedAt } : null,
     sameCompany: companyApplications.length > 0,
     companyApplications,
+    companyReapply: {
+      eligible: companyReapplyDecision === 'eligible-after-cooldown',
+      decision: companyReapplyDecision,
+      cooldownDays: COMPANY_REAPPLY_COOLDOWN_DAYS,
+      latestSubmittedAt: latestCompanyApplication?.submittedAt ?? null,
+      daysSinceLatest,
+      hasFollowUp,
+    },
   };
 }
 
 async function ledgerCheck(candidate) {
   object(candidate, 'candidate');
-  const entries = await jsonLines(join(await ensureStateDir(), 'applications.ndjson'));
+  const dir = await ensureStateDir();
+  const entries = await jsonLines(join(dir, 'applications.ndjson'));
+  const outcomes = await jsonLines(join(dir, 'outcomes.ndjson'));
   string(candidate.url, 'candidate.url', 2048);
-  return duplicateResult(entries, candidate);
+  return duplicateResult(entries, candidate, outcomes);
 }
 
 async function ledgerAdd(entryInput, duplicateOverride) {
@@ -1117,12 +1222,16 @@ async function executeCommand([area, action, value], telemetry, session) {
   else if (area === 'round' && action === 'complete' && value === '--stdin') {
     result = await roundComplete(await jsonStdin());
     domainEvents.push(roundCompletedTelemetry(result));
-  } else if (area === 'attention' && action === 'add' && value === '--stdin') result = await attentionAdd(await jsonStdin());
+  } else if (area === 'sources' && action === 'list' && value == null) result = await sourcesList();
+  else if (area === 'sources' && action === 'list' && value === '--stdin') result = await sourcesList(await jsonStdin());
+  else if (area === 'sources' && action === 'suggest' && value === '--stdin') result = await sourcesSuggest(await jsonStdin());
+  else if (area === 'sources' && action === 'pending' && value == null) result = await sourcesPending();
+  else if (area === 'attention' && action === 'add' && value === '--stdin') result = await attentionAdd(await jsonStdin());
   else if (area === 'attention' && action === 'list' && value == null) result = await attentionList();
   else if (area === 'attention' && action === 'resolve' && value === '--stdin') result = await attentionResolve(await jsonStdin());
   else if (area === 'friction' && action === 'record' && value === '--stdin') result = await frictionRecord(await jsonStdin());
   else if (area === 'friction' && action === 'list' && value == null) result = await frictionList();
-  else throw new Error('Usage: profile set|migrate --stdin; profile check|field <name>; resume import <url-or-pdf>|path; score --stdin; ledger check|add|outcome|review-ack --stdin; ledger review; autonomy grant --stdin|status|preview|revoke; round start|complete --stdin|status [round-id]; attention add|resolve --stdin|list; friction record --stdin|list; telemetry status|enable|disable|reset|preview --stdin|record --stdin');
+  else throw new Error('Usage: profile set|migrate --stdin; profile check|field <name>; resume import <url-or-pdf>|path; score --stdin; ledger check|add|outcome|review-ack --stdin; ledger review; autonomy grant --stdin|status|preview|revoke; round start|complete --stdin|status [round-id]; sources list [--stdin]|suggest --stdin|pending; attention add|resolve --stdin|list; friction record --stdin|list; telemetry status|enable|disable|reset|preview --stdin|record --stdin');
   for (const event of domainEvents) await telemetry.record(event, session);
   return result;
 }

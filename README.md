@@ -35,6 +35,7 @@ After onboarding, use natural commands:
 
 ```text
 search jobs
+list discovery sources for India and global remote engineering
 apply https://company.example/jobs/123
 apply all relevant jobs from this thread: <URL>
 run a round of 10
@@ -48,7 +49,7 @@ Requires Node.js 20 or newer and a browser-capable coding agent.
 
 | Stage | Behavior |
 |---|---|
-| **Discover** | Searches direct career pages, ATS platforms, and candidate-provided leads. |
+| **Discover** | Searches a shared, versioned catalog of direct careers, ATS platforms, networks, feeds, and job boards—including Employable—and verifies every lead at the employer. |
 | **Qualify** | Checks seniority, skills, location, authorization, compensation, and posting status. |
 | **Apply** | Fills forms and uploads one canonical résumé using verified facts only. |
 | **Track** | Deduplicates applications and records only visible submission confirmations. |
@@ -100,6 +101,8 @@ flowchart LR
 ```
 
 The bundled CLI handles private profile storage, résumé import, scoring, duplicate checks, resumable rounds, attention queues, and application/outcome ledgers. The coding agent handles discovery and browser interaction under the rules in [`SKILL.md`](job-application-agent/SKILL.md).
+
+Discovery sources are packaged in [`SOURCES.json`](job-application-agent/references/SOURCES.json), so accepted catalog improvements reach every user through npm updates. Repeatable new boards can be queued locally with `sources suggest --stdin`; one-off job links and personal profiles are never published as sources.
 
 ## 🔐 Privacy
 

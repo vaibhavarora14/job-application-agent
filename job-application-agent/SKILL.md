@@ -30,18 +30,21 @@ Never store passwords, MFA codes, government IDs, demographic data, CAPTCHA answ
 
 ## Discover and assess
 
-1. Resolve discovery leads to the direct employer or ATS page.
-2. Verify the application channel immediately before assessment. Mark it `active`, `closed`, or `unclear`.
-3. Classify eligibility only after checking residence, location, work authorization, sponsorship, schedule, and employment type.
-4. Extract explicit seniority, experience range, work mode, locations, comparable published salary maximum, and all must-have requirements.
-5. Classify each must-have as `met`, `partial`, `missing`, or `unclear`. Attach private, resume-backed evidence for `met` and `partial`; never invent evidence.
-6. Run `score --stdin`. Apply the returned gate decision before considering the score:
+Read [references/SOURCES.md](references/SOURCES.md) before the first discovery pass in a workflow.
+
+1. Run `sources list` (optionally filtered) and search the highest-signal available catalog sources. Resolve every lead to the direct employer or ATS page.
+2. Attribute the lead with coarse `discoverySource`, stable catalog `discoverySourceId` when known, and independent `applicationChannel`. Treat a one-off user link as `user-supplied-leads`; queue only repeatable boards or feeds with `sources suggest --stdin`.
+3. Verify the application channel immediately before assessment. Mark it `active`, `closed`, or `unclear`.
+4. Classify eligibility only after checking residence, location, work authorization, sponsorship, schedule, and employment type.
+5. Extract explicit seniority, experience range, work mode, locations, comparable published salary maximum, and all must-have requirements.
+6. Classify each must-have as `met`, `partial`, `missing`, or `unclear`. Attach private, resume-backed evidence for `met` and `partial`; never invent evidence.
+7. Run `score --stdin`. Apply the returned gate decision before considering the score:
    - `exclude`: closed or stale channel, explicit ineligibility, excluded company/location, or incompatible work mode.
    - `ask`: unclear posting status, eligibility, authorization, location/work mode, seniority, or requirement evidence.
    - `skip`: explicit non-target seniority, comparable compensation below the configured floor, insufficient must-have coverage, or score below the manual-review floor.
    - `review`: a candidate for manual review or routine auto-submission.
-7. Treat `autoEligible: true` as necessary but not sufficient to submit. It requires all gates to pass, exact Senior/Staff alignment, score at least 80, at least 70% evidenced must-have coverage, and no material experience-range mismatch.
-8. Keep scores from 70 through 79 in manual review. Do not auto-submit when must-have analysis is absent or uncertain.
+8. Treat `autoEligible: true` as necessary but not sufficient to submit. It requires all gates to pass, exact Senior/Staff alignment, score at least 80, at least 70% evidenced must-have coverage, and no material experience-range mismatch.
+9. Keep scores from 70 through 79 in manual review. Do not auto-submit when must-have analysis is absent or uncertain.
 
 Do not lower seniority, compensation, location, work mode, or evidence thresholds to increase volume. Unknown compensation does not exclude a role; pause if the application asks the candidate to state or accept compensation.
 
@@ -51,16 +54,17 @@ For batches, scheduled work, or resumable handoffs, read [references/RUNS.md](re
 
 1. Recheck employer, title, direct domain, posting status, eligibility, and `autoEligible` immediately before submission.
 2. Run `ledger check --stdin` with the internal ledger ID, canonical URL, employer job ID, company, and role when available. Review both requisition duplicate status and same-company history.
-3. Stop on a hard duplicate. Treat a same-company/same-role match without a shared job ID as a possible duplicate. Use `duplicateOverride: "NEW REQUISITION CONFIRMED"` only after verifying it is a distinct requisition.
-4. Keep authentication in the existing browser session. Never inspect cookies, local storage, passwords, or session files.
-5. Fill only explicit profile fields, candidate-provided answers, or facts verified in the canonical resume.
-6. Follow [references/APPLICATION_GUIDANCE.md](references/APPLICATION_GUIDANCE.md) for narrative answers.
-7. Upload only the canonical resume unless the candidate explicitly provides another attachment. Resolve its absolute path with `resume path`, then follow [references/BROWSER_UPLOADS.md](references/BROWSER_UPLOADS.md). Use the browser's privileged path-based upload capability first; treat a visible native file picker as a fallback.
-8. Do not answer demographic questions. Stop for login/SSO/MFA, CAPTCHA, legal attestations, unclear authorization or compensation, sensitive identifiers, and judgment-only questions.
-9. Verify every required field, answer, attachment, and disclosure. Submit when the current request or active autonomy grant authorizes it.
-10. Record `submitted` only after visible success confirmation, using independent `discoverySource`, `applicationChannel`, and `roundId` values. Record no submission when confirmation is missing or ambiguous.
-11. Record workflow telemetry with `telemetry record --stdin`. Let `ledger add` emit `application_submitted`; do not emit it twice. Pass job URLs and structured metrics only through documented transient fields.
-12. Queue hard stops with `attention add --stdin` and continue elsewhere. Record reproducible general-purpose failures with `friction record --stdin`; improvement work must never delay application work.
+3. Stop on a hard requisition, employer-job-ID, canonical-URL, or ledger-ID duplicate. Treat a same-company/same-role match without a shared job ID as a possible duplicate and use `duplicateOverride: "NEW REQUISITION CONFIRMED"` only after verifying a distinct requisition.
+4. For a genuinely different role at a previously applied company, follow `companyReapply`: proceed automatically only when it returns `eligible-after-cooldown` (15 days since the latest company application and no recorded follow-up). Otherwise keep the company match in review unless the candidate explicitly overrides it.
+5. Keep authentication in the existing browser session. Never inspect cookies, local storage, passwords, or session files.
+6. Fill only explicit profile fields, candidate-provided answers, or facts verified in the canonical resume.
+7. Follow [references/APPLICATION_GUIDANCE.md](references/APPLICATION_GUIDANCE.md) for narrative answers.
+8. Upload only the canonical resume unless the candidate explicitly provides another attachment. Resolve its absolute path with `resume path`, then follow [references/BROWSER_UPLOADS.md](references/BROWSER_UPLOADS.md). Use the browser's privileged path-based upload capability first; treat a visible native file picker as a fallback.
+9. Do not answer demographic questions. Stop for login/SSO/MFA, CAPTCHA, legal attestations, unclear authorization or compensation, sensitive identifiers, and judgment-only questions.
+10. Verify every required field, answer, attachment, and disclosure. Submit when the current request or active autonomy grant authorizes it.
+11. Record `submitted` only after visible success confirmation, using independent `discoverySource`, `discoverySourceId`, `applicationChannel`, and `roundId` values. Record no submission when confirmation is missing or ambiguous.
+12. Record workflow telemetry with `telemetry record --stdin`. Let `ledger add` emit `application_submitted`; do not emit it twice. Pass job URLs and structured metrics only through documented transient fields.
+13. Queue hard stops with `attention add --stdin` and continue elsewhere. Record reproducible general-purpose failures with `friction record --stdin`; improvement work must never delay application work.
 
 ## Outcomes and reviews
 
@@ -93,6 +97,9 @@ node scripts/job-application.mjs autonomy grant --stdin
 node scripts/job-application.mjs autonomy status|preview|revoke
 node scripts/job-application.mjs round start|complete --stdin
 node scripts/job-application.mjs round status [round-id]
+node scripts/job-application.mjs sources list [--stdin]
+node scripts/job-application.mjs sources suggest --stdin
+node scripts/job-application.mjs sources pending
 node scripts/job-application.mjs attention add|resolve --stdin
 node scripts/job-application.mjs attention list
 node scripts/job-application.mjs friction record --stdin
