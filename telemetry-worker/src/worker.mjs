@@ -107,6 +107,7 @@ async function events(request, env) {
 
 export async function handleRequest(request, env) {
   const { pathname } = new URL(request.url);
+  if (request.method === 'GET' && pathname === '/') return Response.redirect('https://stats.jobappagent.com/', 308);
   if (request.method === 'GET' && pathname === '/healthz') return response({ ok: true, schemaVersion: TELEMETRY_SCHEMA_VERSION });
   if (pathname === '/api/public-stats') return publicStatsResponse(request, env);
   if (request.method === 'POST' && pathname === '/v1/install') return install(request, env);
