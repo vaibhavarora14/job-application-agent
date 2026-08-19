@@ -23,9 +23,9 @@ test("server-renders the focused cloud offer and honest community proof", async 
   assert.equal(response.headers.get("x-content-type-options"), "nosniff");
   assert.equal(response.headers.get("x-frame-options"), "DENY");
   const html = await response.text();
-  assert.match(html, /Set the goal/);
+  assert.match(html, /Set the boundaries/);
   assert.match(html, /JobAppAgent/);
-  assert.match(html, /Autonomous job search/);
+  assert.match(html, /A calmer way to job hunt/);
   assert.match(html, /href="\/favicon\.png"/);
   assert.match(html, /href="\/apple-touch-icon\.png"/);
   assert.match(html, /href="\/manifest\.webmanifest"/);
@@ -42,7 +42,7 @@ test("server-renders the focused cloud offer and honest community proof", async 
   assert.doesNotMatch(html, /codex-preview|react-loading-skeleton|Your site is taking shape/i);
 });
 
-test("publishes the approved inbox identity at every product-icon size", () => {
+test("publishes the approved Quiet Trust identity at every product-icon size", () => {
   assert.deepEqual(pngDimensions("../public/brand-mark.png"), { width: 256, height: 256 });
   assert.deepEqual(pngDimensions("../public/favicon.png"), { width: 64, height: 64 });
   assert.deepEqual(pngDimensions("../public/apple-touch-icon.png"), { width: 180, height: 180 });
@@ -51,7 +51,7 @@ test("publishes the approved inbox identity at every product-icon size", () => {
   assert.deepEqual(pngDimensions("../public/og.png"), { width: 1200, height: 630 });
 
   const designSystem = readFileSync(new URL("../DESIGN.md", import.meta.url), "utf8");
-  assert.match(designSystem, /application inbox.*verified outcome/i);
+  assert.match(designSystem, /boundary-run mark.*three shapes/i);
 });
 
 test("server-renders human-readable privacy and terms pages", async () => {
@@ -75,7 +75,7 @@ test("server-renders the branded community dashboard", async () => {
   const response = await render("/community-view");
   assert.equal(response.status, 200);
   const html = await response.text();
-  assert.match(html, /Community momentum/);
+  assert.match(html, /Community activity/);
   assert.match(html, /Reported activity by day/);
   assert.match(html, /Anonymous aggregate telemetry/);
   assert.doesNotMatch(html, /Install agent|Open source on GitHub/i);

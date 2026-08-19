@@ -25,7 +25,7 @@ export function CommunityDashboard() {
 
   return <main id="main" className="dashboard page-width">
     <section className="dashboard-hero">
-      <div><p className="eyebrow">Community momentum</p><h1>The job search is moving.</h1><p>Anonymous, verified activity from Job Application Agent installations. No names, profiles, résumés, or raw identifiers.</p></div>
+      <div><p className="eyebrow">Community activity</p><h1>A quieter search is still moving.</h1><p>Anonymous, verified activity from JobAppAgent installations. No names, profiles, résumés, or raw identifiers.</p></div>
       <div className={`live-status${error ? " live-status-error" : ""}`} role="status"><span />{error ? "Live feed unavailable" : loading ? "Connecting to live aggregate data" : "Live anonymous community data"}</div>
     </section>
 
