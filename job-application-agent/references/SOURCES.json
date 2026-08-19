@@ -66,17 +66,6 @@
     "verification": "direct-employer-or-ats"
   },
   {
-    "id": "employable-ai",
-    "name": "Employable",
-    "kind": "job-board",
-    "jobsUrl": "https://tryemployable.ai/jobs?location=remote&role=Engineering",
-    "regions": ["global", "remote"],
-    "roleFamilies": ["engineering"],
-    "requiresSession": true,
-    "access": "profile-gated-session",
-    "verification": "direct-employer-or-ats"
-  },
-  {
     "id": "we-work-remotely",
     "name": "We Work Remotely",
     "kind": "job-board",

@@ -208,30 +208,30 @@ test('keeps same-company roles in review during cooldown or after follow-up', as
   assert.equal(followed.companyReapply.hasFollowUp, true);
 });
 
-test('ships a filterable global discovery source catalog with Employable', async (t) => {
+test('ships a filterable global discovery source catalog and tracks source attribution', async (t) => {
   const { directory, env } = await fixture(t, 'source-catalog');
   const catalog = cli(env, ['sources', 'list']);
-  const employable = catalog.sources.find((source) => source.id === 'employable-ai');
+  const yc = catalog.sources.find((source) => source.id === 'yc-work-at-a-startup');
 
-  assert.ok(employable);
-  assert.equal(employable.kind, 'job-board');
-  assert.equal(employable.requiresSession, true);
-  assert.equal(employable.verification, 'direct-employer-or-ats');
+  assert.ok(yc);
+  assert.equal(yc.kind, 'startup-network');
+  assert.equal(yc.requiresSession, true);
+  assert.equal(yc.verification, 'direct-employer-or-ats');
 
   const filtered = cli(env, ['sources', 'list', '--stdin'], {
     regions: ['global'],
     roleFamilies: ['engineering'],
   });
-  assert.ok(filtered.sources.some((source) => source.id === 'employable-ai'));
+  assert.ok(filtered.sources.some((source) => source.id === 'yc-work-at-a-startup'));
 
   cli(env, ['ledger', 'add', '--stdin'], {
-    id: 'employable-sourced-role',
+    id: 'catalog-sourced-role',
     company: 'Catalog Example',
     role: 'Staff Product Engineer',
     url: 'https://jobs.catalog.example/staff-product-engineer',
     source: 'company',
-    discoverySource: 'job-board',
-    discoverySourceId: 'employable-ai',
+    discoverySource: 'yc',
+    discoverySourceId: 'yc-work-at-a-startup',
     applicationChannel: 'company',
     score: 90,
     status: 'submitted',
@@ -240,7 +240,7 @@ test('ships a filterable global discovery source catalog with Employable', async
     answers: {},
   });
   const [stored] = (await readFile(join(directory, 'applications.ndjson'), 'utf8')).trim().split('\n').map(JSON.parse);
-  assert.equal(stored.discoverySourceId, 'employable-ai');
+  assert.equal(stored.discoverySourceId, 'yc-work-at-a-startup');
 });
 
 test('queues sanitized repeatable source suggestions locally for public-registry review', async (t) => {

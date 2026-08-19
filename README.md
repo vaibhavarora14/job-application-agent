@@ -49,7 +49,7 @@ Requires Node.js 20 or newer and a browser-capable coding agent.
 
 | Stage | Behavior |
 |---|---|
-| **Discover** | Searches a shared, versioned catalog of direct careers, ATS platforms, networks, feeds, and job boards—including Employable—and verifies every lead at the employer. |
+| **Discover** | Searches a shared, versioned catalog of direct careers, ATS platforms, networks, feeds, and job boards, then verifies every lead at the employer. |
 | **Qualify** | Checks seniority, skills, location, authorization, compensation, and posting status. |
 | **Apply** | Fills forms and uploads one canonical résumé using verified facts only. |
 | **Track** | Deduplicates applications and records only visible submission confirmations. |

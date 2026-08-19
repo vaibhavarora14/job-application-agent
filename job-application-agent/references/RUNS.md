@@ -21,7 +21,7 @@ Resolve the canonical résumé with `resume path`, upload its absolute path thro
 Store independent attribution on every new ledger row:
 
 - `discoverySource`: where the lead was found (`linkedin`, `x`, `yc`, `hacker-news`, `job-board`, `direct-company`, `email`, `user-supplied`, `web-search`, or `other`).
-- `discoverySourceId`: stable packaged catalog ID such as `employable-ai` or `yc-work-at-a-startup`, when known.
+- `discoverySourceId`: stable packaged catalog ID such as `yc-work-at-a-startup` or `hacker-news-who-is-hiring`, when known.
 - `applicationChannel`: where it was submitted (`ashby`, `greenhouse`, `lever`, `workday`, `company`, `email`, and the other documented ATS values).
 - `source`: the legacy-compatible application channel.
 

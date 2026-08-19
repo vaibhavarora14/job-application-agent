@@ -25,7 +25,7 @@ Treat each catalog entry as a lead source, not an eligibility claim. Resolve eve
 Store three independent attribution fields when available:
 
 - `discoverySource`: coarse compatible channel such as `linkedin`, `x`, `yc`, `job-board`, or `user-supplied`.
-- `discoverySourceId`: stable catalog ID such as `employable-ai` or `yc-work-at-a-startup`.
+- `discoverySourceId`: stable catalog ID such as `yc-work-at-a-startup` or `hacker-news-who-is-hiring`.
 - `applicationChannel`: actual submission channel such as `greenhouse`, `ashby`, `lever`, `company`, or `email`.
 
 `discoverySourceId` remains local in v1 and is not transmitted by telemetry.
