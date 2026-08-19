@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {
   buildCheckoutRequest,
+  canonicalCheckoutReturnUrl,
   hasPaidAccess,
   isAllowedCheckoutUrl,
   normalizePaymentWebhook,
@@ -40,7 +41,48 @@ test("builds a hosted checkout that collects customer details at Dodo", () => {
     return_url: `https://agent.example/checkout/return?purchase_id=${purchaseId}`,
     cancel_url: "https://agent.example/#founding",
     metadata: { purchase_id: purchaseId, offer: "founding_90_days" },
+    customization: {
+      force_language: "en",
+      theme: "light",
+      theme_config: {
+        font_primary_url: "https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700&display=swap",
+        font_secondary_url: "https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&display=swap",
+        font_size: "md",
+        font_weight: "medium",
+        pay_button_text: "Reserve 90-day access — $49",
+        radius: "0.6rem",
+        light: {
+          bg_primary: "#f7f9fc",
+          bg_secondary: "#ffffff",
+          border_primary: "#dfe5ee",
+          border_secondary: "#dfe5ee",
+          button_primary: "#2457d6",
+          button_primary_hover: "#194bc6",
+          button_secondary: "#ffffff",
+          button_secondary_hover: "#eaf0ff",
+          button_text_primary: "#ffffff",
+          button_text_secondary: "#12213b",
+          input_focus_border: "#2457d6",
+          text_error: "#c84a31",
+          text_placeholder: "#748198",
+          text_primary: "#12213b",
+          text_secondary: "#46556d",
+          text_success: "#087a55",
+        },
+      },
+    },
   });
+});
+
+test("removes Dodo buyer details from the checkout return URL", () => {
+  assert.equal(canonicalCheckoutReturnUrl({
+    purchase_id: purchaseId,
+    payment_id: "pay_123",
+    status: "succeeded",
+    email: "founder@example.com",
+  }), `/checkout/return?purchase_id=${purchaseId}`);
+  assert.equal(canonicalCheckoutReturnUrl({ purchase_id: purchaseId }), null);
+  assert.equal(canonicalCheckoutReturnUrl({ email: "founder@example.com" }), "/checkout/return");
 });
 
 test("normalizes a verified payment webhook for the configured product", () => {
