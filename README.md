@@ -25,7 +25,9 @@ commit populated environment files.
 - `REFUND_CRON_SECRET`: bearer secret shared with the daily refund workflow
 - `DODO_PAYMENTS_API_KEY`: Dodo server API key for checkout-session creation
 - `DODO_PAYMENTS_WEBHOOK_KEY`: signing secret for the configured endpoint
-- `DODO_PRODUCT_ID`: one-time founding-access product
+- `DODO_PRODUCT_ID`: one-time founding-access product. The live product uses
+  Dodo `by_country` localized pricing: USD $49 by default and INR ₹3,388.98
+  before 18% GST for India, producing a ₹3,999 tax-inclusive checkout total.
 - `DODO_PAYMENTS_ENVIRONMENT`: `test_mode` during verification, then `live_mode`
 
 The Dodo webhook endpoint is `https://jobappagent.com/api/webhooks/dodo`.

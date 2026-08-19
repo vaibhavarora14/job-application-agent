@@ -20,7 +20,9 @@ test("server-renders the focused cloud offer and honest community proof", async 
   assert.match(html, /Active installations · last 30 days/);
   assert.match(html, /Verified applications submitted/);
   assert.match(html, /Jobs assessed/);
-  assert.match(html, /Reserve 90-day access · \$49/);
+  assert.match(html, /Reserve 90-day access/);
+  assert.match(html, /₹3,999 including GST in India/);
+  assert.match(html, /\$49 globally/);
   assert.match(html, /Verified facts only/);
   assert.match(html, /Secure checkout by Dodo Payments/);
   assert.doesNotMatch(html, /Run it locally|Install from GitHub|Join early access|first 50/i);
@@ -31,7 +33,9 @@ test("server-renders human-readable privacy and terms pages", async () => {
   const [privacy, terms] = await Promise.all([render("/privacy"), render("/terms")]);
   assert.equal(privacy.status, 200); assert.equal(terms.status, 200);
   assert.match(await privacy.text(), /Privacy, in plain language/);
-  assert.match(await terms.text(), /one-time \$49 purchase/);
+  const termsHtml = await terms.text();
+  assert.match(termsHtml, /one-time \$49 globally/);
+  assert.match(termsHtml, /₹3,999 including GST for purchases localized to India/);
 });
 
 test("server-renders a payment return page that waits for verified status", async () => {

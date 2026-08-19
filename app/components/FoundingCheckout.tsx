@@ -23,7 +23,7 @@ export function FoundingCheckout({ compact = false }: { compact?: boolean }) {
 
   return <div className={`checkout-action${compact ? " checkout-action-compact" : ""}`}>
     <button className={`button${compact ? " button-small" : ""}`} type="button" onClick={startCheckout} disabled={opening}>
-      {opening ? "Opening secure checkout…" : "Reserve 90-day access · $49"}
+      {opening ? "Opening secure checkout…" : "Reserve 90-day access"}
     </button>
     {error && <p className="action-error" role="alert">{error}</p>}
   </div>;
