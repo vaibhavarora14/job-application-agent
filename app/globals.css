@@ -28,8 +28,12 @@ button, input { font: inherit; }
 .topbar strong { color: #9bb5ff; font-weight: 600; }
 .site-nav { position: sticky; top: 0; z-index: 20; height: 4.75rem; border-bottom: 1px solid var(--line); background: rgb(247 249 252 / 94%); backdrop-filter: blur(.875rem); }
 .nav-inner { height: 100%; display: flex; align-items: center; justify-content: space-between; gap: 1.5rem; }
-.brand { display: flex; align-items: center; gap: .7rem; font-size: .9rem; font-weight: 750; text-decoration: none; }
-.brand-mark { width: 2rem; height: 2rem; border-radius: .55rem; display: grid; place-items: center; background: var(--blue); color: #fff; font: 600 .65rem var(--font-plex-mono), monospace; }
+.brand { display: flex; align-items: center; gap: .7rem; text-decoration: none; }
+.brand-mark { width: 2.25rem; height: 2.25rem; flex: 0 0 auto; border-radius: .65rem; background: url("/brand-mark.png") center / contain no-repeat; box-shadow: 0 .35rem 1rem rgb(18 33 59 / 14%); }
+.brand-lockup { display: grid; gap: .05rem; line-height: 1; }
+.brand-name { font-size: .98rem; font-weight: 780; letter-spacing: -.025em; }
+.brand-name > span { color: var(--blue); }
+.brand-tagline { color: var(--muted); font: 500 .55rem/1.2 var(--font-plex-mono), monospace; letter-spacing: .11em; text-transform: uppercase; }
 .nav-links { display: flex; align-items: center; gap: 1.7rem; font-size: .875rem; }
 .nav-links > a { color: var(--text); text-decoration: none; }
 .nav-links > a:hover { color: var(--blue); }
@@ -193,7 +197,7 @@ footer a { margin-left: 1.25rem; color: var(--text); }
 @media (max-width: 48rem) {
   .page-width { width: min(100% - 2rem, 73.75rem); }
   .topbar { align-items: flex-start; flex-direction: column; gap: .1rem; text-align: left; }
-  .brand > span:last-child { max-width: 9rem; line-height: 1.1; }
+  .brand-tagline { display: none; }
   .hero { padding-block: 3.75rem 5rem; }
   .hero h1 { font-size: clamp(3.1rem, 13vw, 4.2rem); }
   .hero-actions { display: grid; }
@@ -220,6 +224,7 @@ footer a { margin-left: 1.25rem; color: var(--text); }
 }
 
 @media (max-width: 34rem) {
+  .brand-lockup { display: none; }
   .nav-links .button { max-width: 11rem; padding-inline: .65rem; font-size: .72rem; }
   .community-proof { padding: 1.2rem; }
   .hero h1 { font-size: clamp(2.8rem, 13vw, 3.6rem); }

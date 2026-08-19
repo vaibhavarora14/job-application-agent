@@ -7,11 +7,15 @@ const plexMono = IBM_Plex_Mono({ variable: "--font-plex-mono", subsets: ["latin"
 
 export const metadata: Metadata = {
   metadataBase: new URL("https://jobappagent.com"),
-  title: { default: "Job Application Agent", template: "%s · Job Application Agent" },
+  title: { default: "JobAppAgent", template: "%s · JobAppAgent" },
   description: "Set the goal. Let a disciplined job-search agent discover, qualify, apply, pause, and learn continuously in the cloud.",
-  openGraph: { title: "Set the goal. Keep the search moving.", description: "A disciplined job-search agent with verified facts and clear boundaries.", type: "website", images: [{ url: "/og.png", width: 1200, height: 630, alt: "Set the goal. Keep the search moving." }] },
-  twitter: { card: "summary_large_image", title: "Set the goal. Keep the search moving.", description: "A disciplined job-search agent with verified facts and clear boundaries.", images: ["/og.png"] },
-  icons: { icon: "/favicon.svg", shortcut: "/favicon.svg" },
+  openGraph: { title: "JobAppAgent — Set the goal. Keep the search moving.", description: "A disciplined job-search agent with verified facts and clear boundaries.", type: "website", images: [{ url: "/og.png", width: 1200, height: 630, alt: "JobAppAgent — Set the goal. Keep the search moving." }] },
+  twitter: { card: "summary_large_image", title: "JobAppAgent — Set the goal. Keep the search moving.", description: "A disciplined job-search agent with verified facts and clear boundaries.", images: ["/og.png"] },
+  icons: {
+    icon: [{ url: "/favicon.png", sizes: "64x64", type: "image/png" }],
+    shortcut: "/favicon.png",
+    apple: [{ url: "/apple-touch-icon.png", sizes: "180x180", type: "image/png" }],
+  },
 };
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
