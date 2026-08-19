@@ -33,7 +33,8 @@ test("server-renders the focused cloud offer and honest community proof", async 
   assert.match(html, /Systems that have used JobAppAgent · overall/);
   assert.match(html, /Verified applications submitted/);
   assert.match(html, /Jobs assessed/);
-  assert.match(html, /Reserve 90-day access/);
+  assert.match(html, /Reserve at pre-launch price/);
+  assert.match(html, /launches September 18, 2026/);
   assert.match(html, /₹3,999 including GST in India/);
   assert.match(html, /\$49 globally/);
   assert.match(html, /Verified facts only/);

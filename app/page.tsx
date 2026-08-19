@@ -20,11 +20,11 @@ export default function Home() {
     <main id="top">
       <header className="hero page-width">
         <div className="hero-copy">
-          <p className="eyebrow">A disciplined agent for a less exhausting search</p>
+          <p className="eyebrow">Launching September 18 · Pre-launch reservations open</p>
           <h1>A calmer way<span>to job hunt.</span></h1>
           <p className="hero-summary">JobAppAgent finds direct roles, filters weak fits, submits truthful applications, and pauses for the decisions only you should make. The routine keeps moving, without turning your search into noise.</p>
           <div className="hero-actions"><FoundingCheckout /><a className="button button-secondary" href="https://stats.jobappagent.com">See community activity</a></div>
-          <ul className="hero-proof"><li>Verified facts only</li><li>You set the boundaries</li><li>Every action recorded</li></ul>
+          <ul className="hero-proof"><li>Verified facts only</li><li>You set the boundaries</li><li>90 days from activation</li></ul>
         </div>
         <CommunityProof />
       </header>
@@ -44,14 +44,15 @@ export default function Home() {
 
       <section className="section page-width" id="founding">
         <div className="founding-card">
-          <div><p className="eyebrow">Founding cloud access</p><h2>Give your search a steadier rhythm.</h2><p>Pay $49 globally or ₹3,999 including GST in India. Your 90 days begin only when cloud access is activated. If we have not activated you within 60 days of payment, you will be automatically refunded.</p></div>
-          <div className="offer-panel"><div><span>ONE-TIME</span><strong>$49</strong><small>₹3,999 incl. GST in India · 90 days from activation</small></div><ul><li>Scheduled job discovery</li><li>Persistent, resumable runs</li><li>Decision notifications</li><li>Secure checkout by Dodo Payments</li></ul><FoundingCheckout /></div>
+          <div><p className="eyebrow">Pre-launch offer</p><h2>Reserve the launch price.</h2><p>JobAppAgent launches September 18, 2026. Pay $49 globally or ₹3,999 including GST in India now. Your 90 days begin only when access is activated. If we have not activated you within 60 days of payment, you will be automatically refunded.</p></div>
+          <div className="offer-panel"><div><span>PRE-LAUNCH PRICE</span><strong>$49</strong><small>₹3,999 incl. GST in India · launches September 18</small></div><ul><li>90 days from activation</li><li>Scheduled job discovery</li><li>Persistent, resumable runs</li><li>Decision notifications</li><li>Secure checkout by Dodo Payments</li></ul><FoundingCheckout /></div>
         </div>
       </section>
 
       <section className="section faq page-width">
         <div className="section-heading"><p className="eyebrow">Straight answers</p><h2>Before you reserve.</h2></div>
         <details><summary>Is this a mass-application bot?</summary><p>No. It filters aggressively and applies only inside rules you set. Unclear or sensitive decisions pause for you.</p></details>
+        <details><summary>When does JobAppAgent launch?</summary><p>The cloud product is scheduled to launch on September 18, 2026. This offer reserves access at the pre-launch price.</p></details>
         <details><summary>When do my 90 days begin?</summary><p>On the day your cloud access is activated—not on the payment date.</p></details>
         <details><summary>What if access is not ready?</summary><p>If we have not activated your access within 60 days of payment, your full payment is automatically refunded.</p></details>
         <details><summary>Does it guarantee a job?</summary><p>No. It reduces repetitive search and application work. Employers make every hiring decision.</p></details>
