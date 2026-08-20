@@ -42,6 +42,8 @@ test("server-renders the focused cloud offer and honest community proof", async 
   assert.doesNotMatch(html, /₹3,999/);
   assert.match(html, /Verified facts only/);
   assert.match(html, /Secure checkout by Dodo Payments/);
+  assert.match(html, /30 days from activation/);
+  assert.doesNotMatch(html, /90 days from activation|90-day access/i);
   assert.doesNotMatch(html, /FOUNDING CLOUD ACCESS/);
   assert.doesNotMatch(html, /Run it locally|Install from GitHub|Join early access|first 50/i);
   assert.doesNotMatch(html, /codex-preview|react-loading-skeleton|Your site is taking shape/i);
@@ -102,6 +104,8 @@ test("server-renders human-readable privacy and terms pages", async () => {
   const termsHtml = await terms.text();
   assert.match(termsHtml, /one-time \$49 globally/);
   assert.match(termsHtml, /₹3,999 including GST for purchases localized to India/);
+  assert.match(termsHtml, /30 days of cloud access from activation/);
+  assert.match(termsHtml, /Purchases completed before this update retain the 90-day access term offered at checkout/);
 });
 
 test("server-renders a payment return page that waits for verified status", async () => {
@@ -110,6 +114,9 @@ test("server-renders a payment return page that waits for verified status", asyn
   const html = await response.text();
   assert.match(html, /Checking your payment/);
   assert.match(html, /verified webhook/);
+  const statusComponent = readFileSync(new URL("../app/components/PaymentReturnStatus.tsx", import.meta.url), "utf8");
+  assert.match(statusComponent, /30 days begin when access is activated/);
+  assert.doesNotMatch(statusComponent, /90 days begin when access is activated/);
 });
 
 test("server-renders the branded community dashboard", async () => {

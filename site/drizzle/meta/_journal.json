@@ -36,6 +36,13 @@
       "when": 1787088352978,
       "tag": "0004_lame_butterfly",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "6",
+      "when": 1787208880611,
+      "tag": "0005_talented_star_brand",
+      "breakpoints": true
     }
   ]
 }

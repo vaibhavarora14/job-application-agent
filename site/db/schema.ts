@@ -39,6 +39,7 @@ export const foundingPurchases = sqliteTable("founding_purchases", {
   dodoCustomerId: text("dodo_customer_id"),
   customerEmail: text("customer_email"),
   productId: text("product_id").notNull(),
+  accessDays: integer("access_days").notNull().default(90),
   status: text("status").notNull().default("created"),
   amount: integer("amount"),
   currency: text("currency"),

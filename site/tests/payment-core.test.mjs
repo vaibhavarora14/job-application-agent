@@ -40,7 +40,7 @@ test("builds a hosted checkout that collects customer details at Dodo", () => {
     product_cart: [{ product_id: "pdt_founding", quantity: 1 }],
     return_url: `https://agent.example/checkout/return?purchase_id=${purchaseId}`,
     cancel_url: "https://agent.example/#founding",
-    metadata: { purchase_id: purchaseId, offer: "founding_90_days" },
+    metadata: { purchase_id: purchaseId, offer: "founding_30_days" },
     customization: {
       force_language: "en",
       theme: "light",
