@@ -76,8 +76,14 @@ export class SourceCommunityClient {
 
   async credentials(config) {
     if (config.installationId && config.token && config.tokenExpiresAt && Date.parse(config.tokenExpiresAt) > this.now().getTime() + 60_000) return config;
-    const body = config.installationId && config.token ? { installationId: config.installationId, token: config.token } : {};
-    const response = await this.fetch(`${this.endpoint}/v1/install`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body), signal: AbortSignal.timeout(this.timeoutMs) });
+    let body = config.installationId && config.token ? { installationId: config.installationId, token: config.token } : {};
+    let response = await this.fetch(`${this.endpoint}/v1/install`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body), signal: AbortSignal.timeout(this.timeoutMs) });
+    if (response.status === 401 && body.installationId) {
+      Object.assign(config, { installationId: null, token: null, tokenExpiresAt: null });
+      await this.saveConfig(config);
+      body = {};
+      response = await this.fetch(`${this.endpoint}/v1/install`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body), signal: AbortSignal.timeout(this.timeoutMs) });
+    }
     if (!response.ok) throw new Error('community relay unavailable');
     const identity = await response.json();
     const next = { ...config, installationId: identity.installationId, token: identity.token, tokenExpiresAt: identity.expiresAt };

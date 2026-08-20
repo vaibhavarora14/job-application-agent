@@ -18,7 +18,9 @@ function containsIdentityLike(value) {
 
 function terms(value, label) {
   if (!Array.isArray(value) || value.length === 0 || value.length > 12) throw new Error(`${label} must be a non-empty array with at most 12 values.`);
-  return [...new Set(value.map((item, index) => boundedString(item, `${label}[${index}]`, 40).toLowerCase()))].sort();
+  const normalized = value.map((item, index) => boundedString(item, `${label}[${index}]`, 40).toLowerCase());
+  if (normalized.some((item) => containsIdentityLike(item) || /https?:\/\//i.test(item))) throw new Error(`${label} must not contain identity-like content.`);
+  return [...new Set(normalized)].sort();
 }
 
 function looksPersonal(url) {
@@ -31,6 +33,17 @@ function looksIdentityPath(pathname) {
   const segments = pathname.split('/').filter(Boolean).map((segment) => segment.toLowerCase());
   const namespaces = new Set(['user', 'users', 'profile', 'profiles', 'member', 'members', 'author', 'authors', 'person', 'people']);
   return segments.some((segment, index) => namespaces.has(segment) && index < segments.length - 1);
+}
+
+function decodedPathname(pathname) {
+  let current = pathname;
+  for (let pass = 0; pass < 5; pass += 1) {
+    let decoded;
+    try { decoded = decodeURIComponent(current); } catch { throw new Error('community source.baseUrl path encoding is invalid.'); }
+    if (decoded === current) return decoded;
+    current = decoded;
+  }
+  throw new Error('community source.baseUrl path encoding is too deeply nested.');
 }
 
 function isPublicHostname(hostname) {
@@ -84,11 +97,12 @@ export function normalizeCommunitySource(input) {
   if (containsIdentityLike(name) || /https?:\/\//i.test(name)) throw new Error('community source.name must not contain identity-like content.');
   const url = new URL(boundedString(value.baseUrl, 'community source.baseUrl', 1000));
   if (url.protocol !== 'https:' || url.username || url.password) throw new Error('community source.baseUrl must be a public HTTPS URL.');
+  url.hostname = url.hostname.replace(/\.+$/, '');
   if (!isPublicHostname(url.hostname)) throw new Error('community source.baseUrl must use a public internet hostname.');
-  let decodedPath = url.pathname;
-  try { decodedPath = decodeURIComponent(decodedPath); } catch { /* Preserve the encoded path for validation. */ }
+  const decodedPath = decodedPathname(url.pathname);
   if (containsIdentityLike(decodedPath)) throw new Error('community source.baseUrl must not contain identity-like content.');
   if (looksIdentityPath(decodedPath)) throw new Error('community source.baseUrl must not contain an identity-like path.');
+  url.pathname = decodedPath;
   if (looksPersonal(url)) throw new Error('community source.baseUrl must not be a profile or personal URL.');
   if (!isRepeatableCommunitySourceRoute(url)) throw new Error('community source.baseUrl must identify a repeatable discovery surface, not a one-off job.');
   url.search = '';

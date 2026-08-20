@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { mkdtemp, readFile, rm, stat } from 'node:fs/promises';
+import { mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
@@ -102,4 +102,38 @@ test('network failures are best effort and return an unavailable result', async 
   t.after(() => rm(directory, { recursive: true, force: true }));
   const client = new SourceCommunityClient({ stateDir: directory, endpoint: 'https://relay.example.com', fetch: async () => { throw new Error('offline'); }, stderr: () => {} });
   assert.deepEqual(await client.contribute(source), { shared: false, reason: 'unavailable' });
+});
+
+test('invalid stored relay credentials are replaced once and persisted', async (t) => {
+  const directory = await mkdtemp(join(tmpdir(), 'source-community-credential-recovery-'));
+  t.after(() => rm(directory, { recursive: true, force: true }));
+  const oldInstallationId = '11111111-1111-4111-8111-111111111111';
+  const newInstallationId = '22222222-2222-4222-8222-222222222222';
+  await writeFile(join(directory, 'source-sharing.json'), JSON.stringify({
+    version: 1,
+    enabled: true,
+    disclosed: true,
+    installationId: oldInstallationId,
+    token: 'invalid-old-token',
+    tokenExpiresAt: '2099-01-01T00:00:00.000Z',
+  }));
+  const requests = [];
+  const fetch = async (url, options = {}) => {
+    const body = options.body ? JSON.parse(options.body) : null;
+    requests.push({ url, body });
+    if (url.endsWith('/v1/sources') && body.installationId === oldInstallationId) return Response.json({ error: 'invalid_token' }, { status: 401 });
+    if (url.endsWith('/v1/install') && body.installationId === oldInstallationId) return Response.json({ error: 'invalid_token' }, { status: 401 });
+    if (url.endsWith('/v1/install')) return Response.json({ installationId: newInstallationId, token: 'new-token', expiresAt: '2099-01-01T00:00:00.000Z' }, { status: 201 });
+    return Response.json({ accepted: true, sourceId: 'community-abcdef1234567890', publicationStatus: 'pending', uniqueContributors: 1 }, { status: 202 });
+  };
+  const client = new SourceCommunityClient({ stateDir: directory, endpoint: 'https://relay.example.com', fetch, stderr: () => {} });
+
+  const result = await client.contribute(source);
+
+  assert.equal(result.shared, true);
+  assert.ok(requests.some((request) => request.url.endsWith('/v1/install') && request.body.installationId === oldInstallationId));
+  assert.ok(requests.some((request) => request.url.endsWith('/v1/install') && Object.keys(request.body).length === 0));
+  const stored = JSON.parse(await readFile(join(directory, 'source-sharing.json'), 'utf8'));
+  assert.equal(stored.installationId, newInstallationId);
+  assert.equal(stored.token, 'new-token');
 });

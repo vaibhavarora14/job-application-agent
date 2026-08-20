@@ -76,3 +76,18 @@ test('rejects identity-like path namespaces even when they contain a collection 
     assert.throws(() => normalizeCommunitySource({ ...source, baseUrl }), /profile or personal|identity-like/i, baseUrl);
   }
 });
+
+test('rejects repeatedly encoded identity paths and identity-bearing taxonomy fields', () => {
+  assert.throws(
+    () => normalizeCommunitySource({ ...source, baseUrl: 'https://example.com/candidate%2540example.com/openings' }),
+    /identity-like/i,
+  );
+  assert.throws(() => normalizeCommunitySource({ ...source, regions: ['candidate@example.com'] }), /identity-like/i);
+  assert.throws(() => normalizeCommunitySource({ ...source, roleFamilies: ['+1 415 555 0100'] }), /identity-like/i);
+});
+
+test('normalizes trailing DNS root dots before rejecting private hosts', () => {
+  for (const baseUrl of ['https://localhost./jobs', 'https://service.local./careers', 'https://service.internal./openings']) {
+    assert.throws(() => normalizeCommunitySource({ ...source, baseUrl }), /public internet hostname/i, baseUrl);
+  }
+});
