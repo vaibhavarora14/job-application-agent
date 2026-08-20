@@ -136,7 +136,7 @@ export function validateCommunitySourceList(input) {
     for (const key of Object.keys(source)) if (!allowed.has(key)) throw new Error(`Unknown community source entry property: ${key}.`);
     if (!SOURCE_ID.test(source.sourceId)) throw new Error('community source entry.sourceId is invalid.');
     if (!['community-unreviewed', 'community-reviewed'].includes(source.registryStatus)) throw new Error('community source entry.registryStatus is invalid.');
-    if (!Number.isInteger(source.contributionCount) || source.contributionCount < 1) throw new Error('community source entry.contributionCount is invalid.');
+    if (!Number.isSafeInteger(source.contributionCount) || source.contributionCount < 1 || source.contributionCount > 1_000_000_000) throw new Error('community source entry.contributionCount is invalid.');
     const normalized = normalizeCommunitySource(Object.fromEntries(['name', 'baseUrl', 'kind', 'regions', 'roleFamilies', 'requiresSession'].map((key) => [key, source[key]])));
     return { sourceId: source.sourceId, ...normalized, registryStatus: source.registryStatus, contributionCount: source.contributionCount };
   });

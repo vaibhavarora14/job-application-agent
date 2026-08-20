@@ -25,7 +25,7 @@ node scripts/job-application.mjs telemetry record --stdin
 
 Telemetry is best effort. It has no offline queue, uses a short network timeout, and never changes the result of a job-application command.
 
-Community source sharing is a separate default-enabled feature with independent `sources sharing status|enable|disable|reset` controls. It does not send analytics events or store contributor identity with a source. See [`SOURCES.md`](SOURCES.md) for its exact public metadata contract.
+Community source sharing is a separate default-enabled feature with independent `sources sharing status|enable|disable|reset` controls. It does not send analytics events or store a raw contributor identity with a source; a source-scoped HMAC is used only for unique-system counting. See [`SOURCES.md`](SOURCES.md) for its exact public metadata contract.
 
 ## Identity boundary
 

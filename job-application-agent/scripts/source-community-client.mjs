@@ -116,7 +116,7 @@ export class SourceCommunityClient {
       if (!result || typeof result !== 'object' || Array.isArray(result) || Object.keys(result).some((key) => !allowed.has(key))) return { shared: false, reason: 'unavailable' };
       if (result.accepted !== true || !/^community-[0-9a-f]{16}$/.test(result.sourceId)) return { shared: false, reason: 'unavailable' };
       if (!['pending', 'published', 'rejected'].includes(result.publicationStatus)) return { shared: false, reason: 'unavailable' };
-      if (!Number.isInteger(result.uniqueContributors) || result.uniqueContributors < 1) return { shared: false, reason: 'unavailable' };
+      if (!Number.isSafeInteger(result.uniqueContributors) || result.uniqueContributors < 1 || result.uniqueContributors > 1_000_000_000) return { shared: false, reason: 'unavailable' };
       return { shared: true, sourceId: result.sourceId, publicationStatus: result.publicationStatus, uniqueContributors: result.uniqueContributors };
     } catch {
       this.unavailable = true;
