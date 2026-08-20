@@ -6,6 +6,7 @@ CREATE TABLE `founding_purchases` (
 	`dodo_customer_id` text,
 	`customer_email` text,
 	`product_id` text NOT NULL,
+	`access_days` integer DEFAULT 90 NOT NULL,
 	`status` text DEFAULT 'created' NOT NULL,
 	`amount` integer,
 	`currency` text,

@@ -13,5 +13,4 @@ CREATE TABLE `customer_email_deliveries` (
 );
 --> statement-breakpoint
 CREATE UNIQUE INDEX `idx_customer_email_deliveries_purchase_kind` ON `customer_email_deliveries` (`purchase_id`,`message_kind`);--> statement-breakpoint
-CREATE INDEX `idx_customer_email_deliveries_retry` ON `customer_email_deliveries` (`status`,`last_attempt_at`);--> statement-breakpoint
-ALTER TABLE `founding_purchases` ADD `access_days` integer DEFAULT 90 NOT NULL;
+CREATE INDEX `idx_customer_email_deliveries_retry` ON `customer_email_deliveries` (`status`,`last_attempt_at`);
