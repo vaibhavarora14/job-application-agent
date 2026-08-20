@@ -34,13 +34,40 @@ function isPublicHostname(hostname) {
   return value.includes('.');
 }
 
-function looksLikeOneOffJob(url) {
-  const segments = url.pathname.split('/').filter(Boolean);
+function hostnameMatches(hostname, suffix) {
+  return hostname === suffix || hostname.endsWith(`.${suffix}`);
+}
+
+export function isRepeatableCommunitySourceRoute(url) {
+  const hostname = url.hostname.toLowerCase();
+  const segments = url.pathname.split('/').filter(Boolean).map((segment) => segment.toLowerCase());
+  if (segments.length === 0) return true;
+
+  const path = `/${segments.join('/')}`;
   const last = segments.at(-1) ?? '';
-  return /[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}/i.test(url.pathname)
-    || /^\d{4,}$/.test(last)
-    || /^(apply|application)$/i.test(last)
-    || /\/jobs?\/[^/]+\/(apply|application)\/?$/i.test(url.pathname);
+  const uuid = /[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}/i;
+  if (uuid.test(path) || /^\d{4,}(?:[-_].*)?$/.test(last) || segments.some((segment) => /^(apply|application)$/.test(segment))) return false;
+
+  if (hostnameMatches(hostname, 'myworkdayjobs.com') && segments.some((segment, index) => segment === 'job' && index < segments.length - 1)) return false;
+  if (hostnameMatches(hostname, 'linkedin.com') && segments[0] === 'jobs' && segments[1] === 'view') return false;
+  if (hostnameMatches(hostname, 'greenhouse.io') && segments.some((segment, index) => segment === 'jobs' && index < segments.length - 1)) return false;
+  if (hostname === 'jobs.lever.co' && segments.length >= 2) return false;
+  if (hostname === 'jobs.ashbyhq.com' && segments.length >= 2) return false;
+  if (hostname === 'apply.workable.com' && segments.some((segment, index) => segment === 'j' && index < segments.length - 1)) return false;
+  if (hostname === 'jobs.smartrecruiters.com' && segments.length >= 2) return false;
+  if (segments.some((segment, index) => segment === 'job' && index < segments.length - 1)) return false;
+
+  if (hostnameMatches(hostname, 'myworkdayjobs.com')) return segments.includes('jobs') || ['external', 'internal', 'careers'].includes(last);
+  if (hostnameMatches(hostname, 'linkedin.com')) return segments[0] === 'jobs' && (segments.length === 1 || ['search', 'collections'].includes(segments[1]));
+  if (hostnameMatches(hostname, 'greenhouse.io')) return segments.length === 1 || last === 'jobs';
+  if (hostname === 'jobs.lever.co' || hostname === 'jobs.ashbyhq.com' || hostname === 'jobs.smartrecruiters.com') return segments.length === 1;
+  if (hostname === 'apply.workable.com') return segments.length === 1 || last === 'jobs';
+
+  if (/\.(?:rss|atom|xml|json)$/i.test(last)) return /(?:feed|jobs?|openings|careers)/i.test(path);
+  const collectionCues = new Set(['careers', 'openings', 'positions', 'vacancies', 'opportunities', 'jobs', 'job-search', 'job-listings', 'job-index', 'directory', 'feed', 'rss', 'atom', 'open-roles', 'available-jobs']);
+  const collectionQualifiers = new Set(['search', 'list', 'index', 'directory', 'feed', 'openings', 'engineering', 'product', 'design', 'sales', 'marketing', 'operations', 'finance', 'legal', 'people', 'remote']);
+  return segments.some((segment, index) => collectionCues.has(segment)
+    && (index === segments.length - 1 || (index === segments.length - 2 && collectionQualifiers.has(segments[index + 1]))));
 }
 
 export function normalizeCommunitySource(input) {
@@ -56,7 +83,7 @@ export function normalizeCommunitySource(input) {
   try { decodedPath = decodeURIComponent(decodedPath); } catch { /* Preserve the encoded path for validation. */ }
   if (containsIdentityLike(decodedPath)) throw new Error('community source.baseUrl must not contain identity-like content.');
   if (looksPersonal(url)) throw new Error('community source.baseUrl must not be a profile or personal URL.');
-  if (looksLikeOneOffJob(url)) throw new Error('community source.baseUrl must identify a repeatable discovery surface, not a one-off job.');
+  if (!isRepeatableCommunitySourceRoute(url)) throw new Error('community source.baseUrl must identify a repeatable discovery surface, not a one-off job.');
   url.search = '';
   url.hash = '';
   const kind = boundedString(value.kind, 'community source.kind', 40).toLowerCase();
@@ -105,11 +132,12 @@ export function validateCommunitySourceList(input) {
   if (value.version !== 1 || !Array.isArray(value.sources) || value.sources.length > 500) throw new Error('Invalid community source list.');
   return value.sources.map((entry) => {
     const source = record(entry, 'community source entry');
-    const allowed = new Set(['sourceId', 'name', 'baseUrl', 'kind', 'regions', 'roleFamilies', 'requiresSession', 'contributionCount']);
+    const allowed = new Set(['sourceId', 'name', 'baseUrl', 'kind', 'regions', 'roleFamilies', 'requiresSession', 'registryStatus', 'contributionCount']);
     for (const key of Object.keys(source)) if (!allowed.has(key)) throw new Error(`Unknown community source entry property: ${key}.`);
     if (!SOURCE_ID.test(source.sourceId)) throw new Error('community source entry.sourceId is invalid.');
+    if (!['community-unreviewed', 'community-reviewed'].includes(source.registryStatus)) throw new Error('community source entry.registryStatus is invalid.');
     if (!Number.isInteger(source.contributionCount) || source.contributionCount < 1) throw new Error('community source entry.contributionCount is invalid.');
     const normalized = normalizeCommunitySource(Object.fromEntries(['name', 'baseUrl', 'kind', 'regions', 'roleFamilies', 'requiresSession'].map((key) => [key, source[key]])));
-    return { sourceId: source.sourceId, ...normalized, contributionCount: source.contributionCount };
+    return { sourceId: source.sourceId, ...normalized, registryStatus: source.registryStatus, contributionCount: source.contributionCount };
   });
 }

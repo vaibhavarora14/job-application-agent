@@ -112,8 +112,12 @@ export class SourceCommunityClient {
         return { shared: false, reason: 'unavailable' };
       }
       const result = await response.json();
-      if (!/^community-[0-9a-f]{16}$/.test(result.sourceId)) return { shared: false, reason: 'unavailable' };
-      return { shared: true, sourceId: result.sourceId };
+      const allowed = new Set(['accepted', 'sourceId', 'publicationStatus', 'uniqueContributors']);
+      if (!result || typeof result !== 'object' || Array.isArray(result) || Object.keys(result).some((key) => !allowed.has(key))) return { shared: false, reason: 'unavailable' };
+      if (result.accepted !== true || !/^community-[0-9a-f]{16}$/.test(result.sourceId)) return { shared: false, reason: 'unavailable' };
+      if (!['pending', 'published', 'rejected'].includes(result.publicationStatus)) return { shared: false, reason: 'unavailable' };
+      if (!Number.isInteger(result.uniqueContributors) || result.uniqueContributors < 1) return { shared: false, reason: 'unavailable' };
+      return { shared: true, sourceId: result.sourceId, publicationStatus: result.publicationStatus, uniqueContributors: result.uniqueContributors };
     } catch {
       this.unavailable = true;
       return { shared: false, reason: 'unavailable' };

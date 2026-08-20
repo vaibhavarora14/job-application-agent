@@ -69,6 +69,14 @@ const rejected = await fetch(`${endpoint}/v1/events`, {
 });
 assert.equal(rejected.status, 400);
 
+const stagingSource = {
+  name: 'Staging Engineering Board',
+  baseUrl: `https://staging-${Date.now()}.example.com/openings/engineering?private=removed#jobs`,
+  kind: 'job-board',
+  regions: ['global'],
+  roleFamilies: ['engineering'],
+  requiresSession: false,
+};
 const contributed = await fetch(`${endpoint}/v1/sources`, {
   method: 'POST',
   headers: { 'content-type': 'application/json' },
@@ -77,21 +85,64 @@ const contributed = await fetch(`${endpoint}/v1/sources`, {
     skillVersion: '3.1.1-staging',
     installationId: identity.installationId,
     token: identity.token,
-    source: {
-      name: 'Staging Engineering Board',
-      baseUrl: 'https://jobs-staging.example.com/engineering?private=removed#jobs',
-      kind: 'job-board',
-      regions: ['global'],
-      roleFamilies: ['engineering'],
-      requiresSession: false,
-    },
+    source: stagingSource,
   }),
 });
 assert.equal(contributed.status, 202);
+const contributedBody = await contributed.json();
+assert.equal(contributedBody.publicationStatus, 'pending');
+assert.equal(contributedBody.uniqueContributors, 1);
+
+const repeated = await fetch(`${endpoint}/v1/sources`, {
+  method: 'POST',
+  headers: { 'content-type': 'application/json' },
+  body: JSON.stringify({
+    schemaVersion: 1,
+    skillVersion: '3.1.1-staging',
+    installationId: identity.installationId,
+    token: identity.token,
+    source: stagingSource,
+  }),
+});
+assert.equal((await repeated.json()).uniqueContributors, 1);
+
+const pendingCommunity = await (await fetch(`${endpoint}/v1/sources`)).json();
+const canonicalSourceUrl = stagingSource.baseUrl.split('?')[0];
+assert.equal(pendingCommunity.sources.some((source) => source.baseUrl === canonicalSourceUrl), false);
+
+const secondInstall = await fetch(`${endpoint}/v1/install`, {
+  method: 'POST',
+  headers: { 'content-type': 'application/json' },
+  body: '{}',
+});
+const secondIdentity = await secondInstall.json();
+const published = await fetch(`${endpoint}/v1/sources`, {
+  method: 'POST',
+  headers: { 'content-type': 'application/json' },
+  body: JSON.stringify({
+    schemaVersion: 1,
+    skillVersion: '3.1.1-staging',
+    installationId: secondIdentity.installationId,
+    token: secondIdentity.token,
+    source: { ...stagingSource, name: 'Untrusted staging rewrite', regions: ['private-region'], requiresSession: true },
+  }),
+});
+const publishedBody = await published.json();
+assert.equal(publishedBody.publicationStatus, 'published');
+assert.equal(publishedBody.uniqueContributors, 2);
+
 const community = await fetch(`${endpoint}/v1/sources`);
 assert.equal(community.status, 200);
 const communityBody = await community.json();
-assert.ok(communityBody.sources.some((source) => source.baseUrl === 'https://jobs-staging.example.com/engineering'));
+assert.ok(communityBody.sources.some((source) => source.baseUrl === canonicalSourceUrl));
+const publishedSource = communityBody.sources.find((source) => source.baseUrl === canonicalSourceUrl);
+assert.equal(publishedSource.name, stagingSource.name);
+assert.deepEqual(publishedSource.regions, stagingSource.regions);
+assert.equal(publishedSource.requiresSession, stagingSource.requiresSession);
+assert.equal(publishedSource.registryStatus, 'community-unreviewed');
+assert.equal(publishedSource.contributionCount, 2);
 assert.equal(JSON.stringify(communityBody).includes('private=removed'), false);
+assert.equal(JSON.stringify(communityBody).includes(identity.installationId), false);
+assert.equal(JSON.stringify(communityBody).includes(secondIdentity.installationId), false);
 
 process.stdout.write('Staging relay contract passed.\n');

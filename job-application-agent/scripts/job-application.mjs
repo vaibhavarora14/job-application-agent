@@ -660,7 +660,7 @@ async function sourcesList(filtersInput = {}, communitySources = []) {
     requiresSession: source.requiresSession,
     access: 'community',
     verification: 'direct-employer-or-ats',
-    registryStatus: 'community-unreviewed',
+    registryStatus: source.registryStatus,
     contributionCount: source.contributionCount,
   }));
   const sources = [...await sourceCatalog(), ...community].filter((source) => {
@@ -705,7 +705,7 @@ async function sourcesPending() {
   const receipts = await jsonLines(join(await ensureStateDir(), 'source-contribution-receipts.ndjson'));
   const shared = new Set(receipts.map((receipt) => receipt.suggestionId));
   const pending = suggestions.filter((suggestion) => !shared.has(suggestion.id));
-  return { count: pending.length, suggestions: pending };
+  return { scope: 'local-unsent', count: pending.length, suggestions: pending };
 }
 
 async function sourcesSync(community, limit = 10) {

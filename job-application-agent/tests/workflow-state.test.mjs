@@ -295,7 +295,7 @@ test('queues sanitized repeatable source suggestions locally for public-registry
   const { directory, env } = await fixture(t, 'source-suggestions');
   const suggestion = cli(env, ['sources', 'suggest', '--stdin'], {
     name: 'Example Engineering Board',
-    baseUrl: 'https://jobs.example.org/engineering?term=software&ref=candidate@example.com&token=private#apply',
+    baseUrl: 'https://jobs.example.org/openings/engineering?term=software&ref=candidate@example.com&token=private#apply',
     kind: 'job-board',
     regions: ['global'],
     roleFamilies: ['engineering'],
@@ -303,10 +303,11 @@ test('queues sanitized repeatable source suggestions locally for public-registry
   });
 
   assert.equal(suggestion.queued, true);
-  assert.equal(suggestion.suggestion.baseUrl, 'https://jobs.example.org/engineering');
+  assert.equal(suggestion.suggestion.baseUrl, 'https://jobs.example.org/openings/engineering');
   if (process.platform !== 'win32') assert.equal((await stat(join(directory, 'source-suggestions.ndjson'))).mode & 0o777, 0o600);
 
   const pending = cli(env, ['sources', 'pending']);
+  assert.equal(pending.scope, 'local-unsent');
   assert.equal(pending.count, 1);
   assert.equal(pending.suggestions[0].name, 'Example Engineering Board');
 
@@ -333,7 +334,7 @@ test('exposes independent opt-out controls for default community source sharing'
 
   const suggestion = cli(env, ['sources', 'suggest', '--stdin'], {
     name: 'Example Engineering Board',
-    baseUrl: 'https://jobs.example.org/engineering',
+    baseUrl: 'https://jobs.example.org/openings/engineering',
     kind: 'job-board',
     regions: ['global'],
     roleFamilies: ['engineering'],

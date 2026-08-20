@@ -42,8 +42,8 @@ export async function verifyToken(token, secret, now = new Date(), { allowExpire
   return decoded;
 }
 
-function response(body, status = 200) {
-  return Response.json(body, { status, headers: { 'cache-control': 'no-store', 'x-content-type-options': 'nosniff', 'referrer-policy': 'no-referrer' } });
+function response(body, status = 200, cacheControl = 'no-store') {
+  return Response.json(body, { status, headers: { 'cache-control': cacheControl, 'x-content-type-options': 'nosniff', 'referrer-policy': 'no-referrer' } });
 }
 
 async function readJson(request, maxBytes) {
@@ -112,39 +112,65 @@ function sourceStore(env) {
   const database = env.PUBLIC_STATS_DB;
   if (!database?.prepare) throw Object.assign(new Error('Source store unavailable.'), { status: 503 });
   return {
-    async upsert(source) {
-      await database.prepare(`
+    async contribute(source, contributorHash) {
+      await database.batch([
+        database.prepare(`
         INSERT INTO community_sources (
           source_id, name, base_url, kind, regions_json, role_families_json,
-          requires_session, contribution_count, first_seen_at, last_seen_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?, ?)
+          requires_session, publication_status, review_status,
+          created_at, updated_at, first_contributed_at, last_contributed_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, 'pending', 'unreviewed', ?, ?, ?, ?)
         ON CONFLICT(source_id) DO UPDATE SET
-          name = excluded.name,
-          base_url = excluded.base_url,
-          kind = excluded.kind,
-          regions_json = excluded.regions_json,
-          role_families_json = excluded.role_families_json,
-          requires_session = excluded.requires_session,
-          contribution_count = community_sources.contribution_count + 1,
-          last_seen_at = excluded.last_seen_at
+          updated_at = excluded.updated_at,
+          last_contributed_at = excluded.last_contributed_at
       `).bind(
-        source.sourceId,
-        source.name,
-        source.baseUrl,
-        source.kind,
-        JSON.stringify(source.regions),
-        JSON.stringify(source.roleFamilies),
-        source.requiresSession ? 1 : 0,
-        source.seenAt,
-        source.seenAt,
-      ).run();
-    },
-    async list() {
-      const result = await database.prepare(`
-        SELECT source_id, name, base_url, kind, regions_json, role_families_json,
-               requires_session, contribution_count
+          source.sourceId,
+          source.name,
+          source.baseUrl,
+          source.kind,
+          JSON.stringify(source.regions),
+          JSON.stringify(source.roleFamilies),
+          source.requiresSession ? 1 : 0,
+          source.seenAt,
+          source.seenAt,
+          source.seenAt,
+          source.seenAt,
+        ),
+        database.prepare(`
+          INSERT INTO community_source_contributions (
+            source_id, contributor_hash, first_contributed_at, last_contributed_at
+          ) VALUES (?, ?, ?, ?)
+          ON CONFLICT(source_id, contributor_hash) DO UPDATE SET
+            last_contributed_at = excluded.last_contributed_at
+        `).bind(source.sourceId, contributorHash, source.seenAt, source.seenAt),
+        database.prepare(`
+          UPDATE community_sources
+          SET publication_status = 'published',
+              published_at = COALESCE(published_at, ?),
+              updated_at = ?
+          WHERE source_id = ?
+            AND publication_status = 'pending'
+            AND (SELECT COUNT(*) FROM community_source_contributions WHERE source_id = ?) >= 2
+        `).bind(source.seenAt, source.seenAt, source.sourceId, source.sourceId),
+      ]);
+      const state = await database.prepare(`
+        SELECT publication_status,
+               (SELECT COUNT(*) FROM community_source_contributions WHERE source_id = ?) AS unique_contributors
         FROM community_sources
-        ORDER BY contribution_count DESC, last_seen_at DESC
+        WHERE source_id = ?
+      `).bind(source.sourceId, source.sourceId).first();
+      return { publicationStatus: state.publication_status, uniqueContributors: Number(state.unique_contributors) };
+    },
+    async listPublished() {
+      const result = await database.prepare(`
+        SELECT sources.source_id, sources.name, sources.base_url, sources.kind,
+               sources.regions_json, sources.role_families_json, sources.requires_session,
+               sources.review_status, COUNT(contributions.contributor_hash) AS contribution_count
+        FROM community_sources AS sources
+        JOIN community_source_contributions AS contributions ON contributions.source_id = sources.source_id
+        WHERE sources.publication_status = 'published'
+        GROUP BY sources.source_id
+        ORDER BY contribution_count DESC, sources.last_contributed_at DESC
         LIMIT 500
       `).all();
       return (result.results ?? []).map((row) => ({
@@ -155,10 +181,20 @@ function sourceStore(env) {
         regions: JSON.parse(row.regions_json),
         roleFamilies: JSON.parse(row.role_families_json),
         requiresSession: row.requires_session === 1,
-        contributionCount: row.contribution_count,
+        registryStatus: row.review_status === 'maintainer-reviewed' ? 'community-reviewed' : 'community-unreviewed',
+        contributionCount: Number(row.contribution_count),
       }));
     },
   };
+}
+
+async function sourceContributorHash(sourceId, installationId, secret) {
+  const signature = await crypto.subtle.sign('HMAC', await signingKey(secret), encoder.encode(`${sourceId}\0${installationId}`));
+  return [...new Uint8Array(signature)].map((value) => value.toString(16).padStart(2, '0')).join('');
+}
+
+function sourceCache(env) {
+  return env.SOURCE_LIST_CACHE ?? globalThis.caches?.default ?? null;
 }
 
 async function contributeSource(request, env) {
@@ -171,13 +207,21 @@ async function contributeSource(request, env) {
   if (!await allowed(env.SOURCE_RATE_LIMITER, envelope.installationId)) return response({ error: 'rate_limited' }, 429);
 
   const sourceId = await communitySourceId(envelope.source);
-  await sourceStore(env).upsert({ sourceId, ...envelope.source, seenAt: new Date().toISOString() });
-  return response({ accepted: true, sourceId }, 202);
+  const contributorHash = await sourceContributorHash(sourceId, envelope.installationId, env.SIGNING_SECRET);
+  const state = await sourceStore(env).contribute({ sourceId, ...envelope.source, seenAt: new Date().toISOString() }, contributorHash);
+  if (state.publicationStatus === 'published') await sourceCache(env)?.delete(new Request(new URL('/v1/sources', request.url)));
+  return response({ accepted: true, sourceId, ...state }, 202);
 }
 
-async function listSources(env) {
-  const sources = await sourceStore(env).list();
-  return response({ version: 1, sources });
+async function listSources(request, env) {
+  const cache = sourceCache(env);
+  const cacheKey = new Request(new URL('/v1/sources', request.url));
+  const cached = await cache?.match(cacheKey);
+  if (cached) return cached;
+  const sources = await sourceStore(env).listPublished();
+  const result = response({ version: 1, sources }, 200, 'public, max-age=900');
+  await cache?.put(cacheKey, result.clone());
+  return result;
 }
 
 export async function handleRequest(request, env) {
@@ -188,7 +232,7 @@ export async function handleRequest(request, env) {
   if (request.method === 'POST' && pathname === '/v1/install') return install(request, env);
   if (request.method === 'POST' && pathname === '/v1/events') return events(request, env);
   if (request.method === 'POST' && pathname === '/v1/sources') return contributeSource(request, env);
-  if (request.method === 'GET' && pathname === '/v1/sources') return listSources(env);
+  if (request.method === 'GET' && pathname === '/v1/sources') return listSources(request, env);
   return response({ error: 'not_found' }, 404);
 }
 

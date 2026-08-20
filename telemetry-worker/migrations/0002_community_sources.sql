@@ -6,10 +6,27 @@ CREATE TABLE IF NOT EXISTS community_sources (
   regions_json TEXT NOT NULL,
   role_families_json TEXT NOT NULL,
   requires_session INTEGER NOT NULL CHECK(requires_session IN (0, 1)),
-  contribution_count INTEGER NOT NULL DEFAULT 1 CHECK(contribution_count >= 1),
-  first_seen_at TEXT NOT NULL,
-  last_seen_at TEXT NOT NULL
+  publication_status TEXT NOT NULL DEFAULT 'pending' CHECK(publication_status IN ('pending', 'published', 'rejected')),
+  review_status TEXT NOT NULL DEFAULT 'unreviewed' CHECK(review_status IN ('unreviewed', 'maintainer-reviewed')),
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  first_contributed_at TEXT NOT NULL,
+  last_contributed_at TEXT NOT NULL,
+  published_at TEXT,
+  reviewed_at TEXT,
+  rejected_at TEXT
 );
 
-CREATE INDEX IF NOT EXISTS idx_community_sources_popular
-  ON community_sources(contribution_count DESC, last_seen_at DESC);
+CREATE TABLE IF NOT EXISTS community_source_contributions (
+  source_id TEXT NOT NULL REFERENCES community_sources(source_id) ON DELETE CASCADE,
+  contributor_hash TEXT NOT NULL,
+  first_contributed_at TEXT NOT NULL,
+  last_contributed_at TEXT NOT NULL,
+  PRIMARY KEY (source_id, contributor_hash)
+);
+
+CREATE INDEX IF NOT EXISTS idx_community_sources_publication
+  ON community_sources(publication_status, last_contributed_at DESC);
+
+CREATE INDEX IF NOT EXISTS idx_community_source_contributions_source
+  ON community_source_contributions(source_id, last_contributed_at DESC);

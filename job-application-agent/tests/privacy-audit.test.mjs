@@ -45,13 +45,13 @@ test('privacy audit strips the full query and fragment before job URL hashing', 
 test('privacy audit strips identity-bearing source parameters and rejects personal source metadata', () => {
   const source = normalizeCommunitySource({
     name: 'Example Engineering Board',
-    baseUrl: 'https://jobs.example.org/engineering?email=candidate@example.com&token=secret#private',
+    baseUrl: 'https://jobs.example.org/openings/engineering?email=candidate@example.com&token=secret#private',
     kind: 'job-board',
     regions: ['global'],
     roleFamilies: ['engineering'],
     requiresSession: false,
   });
-  assert.equal(source.baseUrl, 'https://jobs.example.org/engineering');
+  assert.equal(source.baseUrl, 'https://jobs.example.org/openings/engineering');
   assert.equal(JSON.stringify(source).includes('candidate@example.com'), false);
   assert.throws(() => normalizeCommunitySource({ ...source, name: 'candidate@example.com' }), /identity/i);
   assert.throws(() => normalizeCommunitySource({ ...source, baseUrl: 'https://linkedin.com/in/candidate' }), /profile or personal/i);

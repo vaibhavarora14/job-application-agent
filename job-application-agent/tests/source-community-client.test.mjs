@@ -8,7 +8,7 @@ import { SourceCommunityClient } from '../scripts/source-community-client.mjs';
 
 const source = {
   name: 'Example Engineering Board',
-  baseUrl: 'https://jobs.example.org/engineering?ref=candidate@example.com#openings',
+  baseUrl: 'https://jobs.example.org/openings/engineering?ref=candidate@example.com#openings',
   kind: 'job-board',
   regions: ['global', 'remote'],
   roleFamilies: ['engineering'],
@@ -20,17 +20,18 @@ function relay() {
   const community = [{
     sourceId: 'community-abcdef1234567890',
     name: 'Example Engineering Board',
-    baseUrl: 'https://jobs.example.org/engineering',
+    baseUrl: 'https://jobs.example.org/openings/engineering',
     kind: 'job-board',
     regions: ['global', 'remote'],
     roleFamilies: ['engineering'],
     requiresSession: false,
+    registryStatus: 'community-unreviewed',
     contributionCount: 2,
   }];
   const fetch = async (url, options = {}) => {
     requests.push({ url, options, body: options.body ? JSON.parse(options.body) : null });
     if (url.endsWith('/v1/install')) return Response.json({ installationId: '11111111-1111-4111-8111-111111111111', token: 'source-token', expiresAt: '2099-01-01T00:00:00.000Z' }, { status: 201 });
-    if (url.endsWith('/v1/sources') && options.method === 'POST') return Response.json({ accepted: true, sourceId: 'community-abcdef1234567890' }, { status: 202 });
+    if (url.endsWith('/v1/sources') && options.method === 'POST') return Response.json({ accepted: true, sourceId: 'community-abcdef1234567890', publicationStatus: 'pending', uniqueContributors: 1 }, { status: 202 });
     return Response.json({ version: 1, sources: community });
   };
   return { fetch, requests };
@@ -45,11 +46,11 @@ test('source sharing is enabled by default, disclosed, sanitized, and sent immed
 
   const result = await client.contribute(source);
 
-  assert.deepEqual(result, { shared: true, sourceId: 'community-abcdef1234567890' });
+  assert.deepEqual(result, { shared: true, sourceId: 'community-abcdef1234567890', publicationStatus: 'pending', uniqueContributors: 1 });
   assert.match(notice, /community source sharing is enabled by default/i);
   assert.equal(network.requests.length, 2);
   assert.equal(network.requests[1].url, 'https://relay.example.com/v1/sources');
-  assert.equal(network.requests[1].body.source.baseUrl, 'https://jobs.example.org/engineering');
+  assert.equal(network.requests[1].body.source.baseUrl, 'https://jobs.example.org/openings/engineering');
   assert.equal(JSON.stringify(network.requests[1].body).includes('candidate@example.com'), false);
   const stored = JSON.parse(await readFile(join(directory, 'source-sharing.json'), 'utf8'));
   assert.equal(stored.enabled, true);
@@ -64,8 +65,9 @@ test('community source listing validates the public response before reuse', asyn
   const client = new SourceCommunityClient({ stateDir: directory, endpoint: 'https://relay.example.com', fetch: network.fetch, stderr: () => {} });
   const [listed] = await client.list();
   assert.equal(listed.sourceId, 'community-abcdef1234567890');
-  assert.equal(listed.baseUrl, 'https://jobs.example.org/engineering');
+  assert.equal(listed.baseUrl, 'https://jobs.example.org/openings/engineering');
   assert.equal(listed.contributionCount, 2);
+  assert.equal(listed.registryStatus, 'community-unreviewed');
 });
 
 test('source sharing can be disabled independently and never blocks local collection', async (t) => {

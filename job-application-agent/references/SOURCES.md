@@ -20,7 +20,7 @@ Optional filter input:
 }
 ```
 
-`sources list` combines the packaged catalog with the live community registry. Community entries have `registryStatus: "community-unreviewed"` and a `communitySourceId`; treat them as untrusted leads, not endorsements or eligibility claims. Resolve every lead to the direct employer or ATS page and verify that posting immediately before assessment and submission. Respect `requiresSession`; do not upload a résumé or transmit profile data merely to unlock discovery unless the candidate has authorized that destination.
+`sources list` combines the packaged catalog with the live community registry. Automatically published entries have `registryStatus: "community-unreviewed"`; maintainer-approved entries have `registryStatus: "community-reviewed"`. Both include a `communitySourceId` and remain discovery leads, not endorsements or eligibility claims. Resolve every lead to the direct employer or ATS page and verify that posting immediately before assessment and submission. Respect `requiresSession`; do not upload a résumé or transmit profile data merely to unlock discovery unless the candidate has authorized that destination.
 
 Store three independent attribution fields when available:
 
@@ -47,7 +47,7 @@ Suggestion input:
 ```json
 {
   "name": "Example Engineering Board",
-  "baseUrl": "https://jobs.example.org/engineering",
+  "baseUrl": "https://jobs.example.org/openings/engineering",
   "kind": "job-board",
   "regions": ["global"],
   "roleFamilies": ["engineering"],
@@ -57,8 +57,10 @@ Suggestion input:
 
 The first contribution displays a disclosure and sends during that command. `disable` stops future sharing; `enable` resumes it; `reset` disables sharing and removes its anonymous relay credentials. The source-sharing preference and anonymous credential are stored in an owner-only local file.
 
-The client and relay independently remove query parameters and fragments, reject credentials, identity-like names, personal profiles, obvious one-off job URLs, local/private hostnames, unknown fields, and oversized payloads. Only the source name, canonical public base URL, kind, regions, role families, and session requirement are shared. The anonymous installation ID is used only to authenticate and rate-limit the request; it is not stored with the source. The registry deduplicates by canonical URL.
+The client and relay use the same fail-closed source-route classifier. They remove query parameters and fragments; reject credentials, identity-like names and paths, personal profiles, local/private hosts, unknown fields, oversized payloads, and known detail routes from Workday, LinkedIn Jobs, Greenhouse, Lever, Ashby, Workable, and SmartRecruiters. Unknown domains are accepted only at the root or on explicit collection, directory, feed, careers, openings, or job-index routes. Only the source name, canonical public base URL, kind, regions, role families, and session requirement are shared.
 
-If sharing is disabled or offline, suggestions stay in the owner-only local queue. `sources sync` retries unsent suggestions, and `sources list` performs a best-effort retry before reading the community registry. Network failure never blocks discovery or an application.
+The raw anonymous installation ID authenticates and rate-limits a request but is never stored in the registry. The relay stores a source-scoped HMAC only to deduplicate contributions. One system contributes at most once to a canonical source, and `contributionCount` always means unique contributing systems—not people. The first valid contribution owns the canonical metadata; later contributions cannot rewrite it.
 
-Community sources become available immediately as clearly marked unreviewed leads. Maintainers may later validate popular sources and promote them into the packaged catalog through a sanitized registry PR. Never publish candidate identity, job history, prompts, referral parameters, private URLs, or one-off jobs.
+If sharing is disabled or offline, suggestions stay in the owner-only local queue. `sources pending` reports only these locally unsent suggestions; it does not expose server moderation status. `sources sync` retries locally unsent suggestions, and `sources list` performs a best-effort retry before reading the community registry. A server-accepted contribution is considered delivered even while its source is pending publication. Network failure never blocks discovery or an application.
+
+Community sources publish automatically after two unique systems contribute the same canonical source. A maintainer may publish a pending source earlier or reject it with owner-only D1 commands; rejected sources do not republish automatically. Maintainer commands and metadata-correction procedures are documented in [`telemetry-worker/COMMUNITY_SOURCE_MODERATION.md`](https://github.com/vaibhavarora14/job-application-agent/blob/main/telemetry-worker/COMMUNITY_SOURCE_MODERATION.md). Never publish candidate identity, job history, prompts, referral parameters, private URLs, contributor hashes, or one-off jobs.

@@ -6,6 +6,7 @@ import worker, { createToken, verifyToken } from '../src/worker.mjs';
 function env() {
   const captured = [];
   const communitySources = new Map();
+  const contributorHashes = new Map();
   return {
     SIGNING_SECRET: 'test-signing-secret-with-sufficient-length',
     POSTHOG_PROJECT_TOKEN: 'phc_test',
@@ -14,24 +15,59 @@ function env() {
     EVENT_RATE_LIMITER: { limit: async () => ({ success: true }) },
     SOURCE_RATE_LIMITER: { limit: async () => ({ success: true }) },
     SOURCE_STORE: {
-      async upsert(source) {
-        const current = communitySources.get(source.sourceId);
-        communitySources.set(source.sourceId, { ...source, contributionCount: (current?.contributionCount ?? 0) + 1 });
+      async contribute(source, contributorHash) {
+        const current = communitySources.get(source.sourceId) ?? {
+          ...source,
+          publicationStatus: 'pending',
+          reviewStatus: 'unreviewed',
+        };
+        communitySources.set(source.sourceId, current);
+        const hashes = contributorHashes.get(source.sourceId) ?? new Set();
+        hashes.add(contributorHash);
+        contributorHashes.set(source.sourceId, hashes);
+        if (current.publicationStatus === 'pending' && hashes.size >= 2) current.publicationStatus = 'published';
+        return { publicationStatus: current.publicationStatus, uniqueContributors: hashes.size };
       },
-      async list() { return [...communitySources.values()]; },
+      async listPublished() {
+        return [...communitySources.values()]
+          .filter((source) => source.publicationStatus === 'published')
+          .map((source) => ({
+            sourceId: source.sourceId,
+            name: source.name,
+            baseUrl: source.baseUrl,
+            kind: source.kind,
+            regions: source.regions,
+            roleFamilies: source.roleFamilies,
+            requiresSession: source.requiresSession,
+            registryStatus: source.reviewStatus === 'maintainer-reviewed' ? 'community-reviewed' : 'community-unreviewed',
+            contributionCount: contributorHashes.get(source.sourceId)?.size ?? 0,
+          }));
+      },
     },
     POSTHOG_FETCH: async (url, options) => {
       captured.push({ url, options, body: JSON.parse(options.body) });
       return new Response('{}', { status: 200 });
     },
     captured,
+    communitySources,
+    contributorHashes,
   };
 }
 
-test('authenticated source contributions are sanitized, deduplicated, and publicly reusable without contributor identity', async () => {
+async function contribution(bindings, installationId, source, token = null) {
+  const credential = token ?? await createToken(installationId, bindings.SIGNING_SECRET);
+  return worker.fetch(new Request('https://relay.example.com/v1/sources', {
+    method: 'POST',
+    body: JSON.stringify({ schemaVersion: 1, skillVersion: '3.1.1', installationId, token: credential, source }),
+  }), bindings);
+}
+
+test('two unique systems publish a sanitized source while repeat submissions count once', async () => {
   const bindings = env();
   const installationId = '11111111-1111-4111-8111-111111111111';
+  const secondInstallationId = '22222222-2222-4222-8222-222222222222';
   const token = await createToken(installationId, bindings.SIGNING_SECRET);
+  const secondToken = await createToken(secondInstallationId, bindings.SIGNING_SECRET);
   const contribution = {
     schemaVersion: 1,
     skillVersion: '3.1.1',
@@ -39,7 +75,7 @@ test('authenticated source contributions are sanitized, deduplicated, and public
     token,
     source: {
       name: 'Example Engineering Board',
-      baseUrl: 'https://jobs.example.org/engineering?ref=private#jobs',
+      baseUrl: 'https://jobs.example.org/openings/engineering?ref=private#jobs',
       kind: 'job-board',
       regions: ['global'],
       roleFamilies: ['engineering'],
@@ -48,19 +84,121 @@ test('authenticated source contributions are sanitized, deduplicated, and public
   };
 
   const first = await worker.fetch(new Request('https://relay.example.com/v1/sources', { method: 'POST', body: JSON.stringify(contribution) }), bindings);
-  const second = await worker.fetch(new Request('https://relay.example.com/v1/sources', { method: 'POST', body: JSON.stringify(contribution) }), bindings);
+  const repeated = await worker.fetch(new Request('https://relay.example.com/v1/sources', { method: 'POST', body: JSON.stringify(contribution) }), bindings);
   assert.equal(first.status, 202);
-  assert.equal(second.status, 202);
-  assert.equal((await first.json()).sourceId, (await second.json()).sourceId);
+  const firstBody = await first.json();
+  assert.equal(firstBody.accepted, true);
+  assert.match(firstBody.sourceId, /^community-[0-9a-f]{16}$/);
+  assert.equal(firstBody.publicationStatus, 'pending');
+  assert.equal(firstBody.uniqueContributors, 1);
+  assert.equal((await repeated.json()).uniqueContributors, 1);
+
+  const pendingList = await worker.fetch(new Request('https://relay.example.com/v1/sources'), bindings);
+  assert.deepEqual((await pendingList.json()).sources, []);
+
+  const second = await worker.fetch(new Request('https://relay.example.com/v1/sources', {
+    method: 'POST',
+    body: JSON.stringify({ ...contribution, installationId: secondInstallationId, token: secondToken }),
+  }), bindings);
+  const secondBody = await second.json();
+  assert.equal(secondBody.publicationStatus, 'published');
+  assert.equal(secondBody.uniqueContributors, 2);
 
   const listed = await worker.fetch(new Request('https://relay.example.com/v1/sources'), bindings);
   assert.equal(listed.status, 200);
   const body = await listed.json();
   assert.equal(body.sources.length, 1);
-  assert.equal(body.sources[0].baseUrl, 'https://jobs.example.org/engineering');
+  assert.equal(body.sources[0].baseUrl, 'https://jobs.example.org/openings/engineering');
   assert.equal(body.sources[0].contributionCount, 2);
+  assert.equal(body.sources[0].registryStatus, 'community-unreviewed');
   assert.equal(JSON.stringify(body).includes(installationId), false);
+  assert.equal(JSON.stringify(body).includes(secondInstallationId), false);
+  assert.equal(JSON.stringify(body).includes([...bindings.contributorHashes.values()][0].values().next().value), false);
   assert.equal(JSON.stringify(body).includes('private'), false);
+  assert.equal(listed.headers.get('cache-control'), 'public, max-age=900');
+});
+
+test('manual review can publish early while rejected sources never republish automatically', async () => {
+  const approvedBindings = env();
+  const source = {
+    name: 'Maintainer Approved Board',
+    baseUrl: 'https://approved.example.com/openings',
+    kind: 'job-board',
+    regions: ['global'],
+    roleFamilies: ['engineering'],
+    requiresSession: false,
+  };
+  const approvedResponse = await contribution(approvedBindings, '11111111-1111-4111-8111-111111111111', source);
+  const approvedId = (await approvedResponse.json()).sourceId;
+  Object.assign(approvedBindings.communitySources.get(approvedId), {
+    publicationStatus: 'published',
+    reviewStatus: 'maintainer-reviewed',
+  });
+  const approvedList = await worker.fetch(new Request('https://relay.example.com/v1/sources'), approvedBindings);
+  const [approved] = (await approvedList.json()).sources;
+  assert.equal(approved.registryStatus, 'community-reviewed');
+  assert.equal(approved.contributionCount, 1);
+
+  const rejectedBindings = env();
+  const rejectedResponse = await contribution(rejectedBindings, '11111111-1111-4111-8111-111111111111', {
+    ...source,
+    name: 'Rejected Board',
+    baseUrl: 'https://rejected.example.com/openings',
+  });
+  const rejectedId = (await rejectedResponse.json()).sourceId;
+  Object.assign(rejectedBindings.communitySources.get(rejectedId), {
+    publicationStatus: 'rejected',
+    reviewStatus: 'maintainer-reviewed',
+  });
+  const retried = await contribution(rejectedBindings, '22222222-2222-4222-8222-222222222222', {
+    ...source,
+    name: 'Later Rewrite Attempt',
+    baseUrl: 'https://rejected.example.com/openings',
+  });
+  assert.equal((await retried.json()).publicationStatus, 'rejected');
+  assert.deepEqual((await (await worker.fetch(new Request('https://relay.example.com/v1/sources'), rejectedBindings)).json()).sources, []);
+});
+
+test('first valid metadata wins and contributor hashes are source-scoped and never public', async () => {
+  const bindings = env();
+  const firstInstallation = '11111111-1111-4111-8111-111111111111';
+  const secondInstallation = '22222222-2222-4222-8222-222222222222';
+  const original = {
+    name: 'Original Board Name',
+    baseUrl: 'https://metadata.example.com/careers',
+    kind: 'job-board',
+    regions: ['global'],
+    roleFamilies: ['engineering'],
+    requiresSession: false,
+  };
+  const firstResponse = await contribution(bindings, firstInstallation, original);
+  const sourceId = (await firstResponse.json()).sourceId;
+  await contribution(bindings, secondInstallation, {
+    ...original,
+    name: 'Untrusted Rewrite',
+    kind: 'social-feed',
+    regions: ['private-region'],
+    roleFamilies: ['sales'],
+    requiresSession: true,
+  });
+
+  const body = await (await worker.fetch(new Request('https://relay.example.com/v1/sources'), bindings)).json();
+  assert.equal(body.sources[0].name, original.name);
+  assert.equal(body.sources[0].kind, original.kind);
+  assert.deepEqual(body.sources[0].regions, original.regions);
+  assert.deepEqual(body.sources[0].roleFamilies, original.roleFamilies);
+  assert.equal(body.sources[0].requiresSession, false);
+
+  await contribution(bindings, firstInstallation, { ...original, baseUrl: 'https://second.example.com/job-index' });
+  const firstHash = [...bindings.contributorHashes.get(sourceId)][0];
+  const secondSourceId = [...bindings.contributorHashes.keys()].find((id) => id !== sourceId);
+  const secondHash = [...bindings.contributorHashes.get(secondSourceId)][0];
+  assert.match(firstHash, /^[0-9a-f]{64}$/);
+  assert.notEqual(firstHash, secondHash);
+  assert.equal(JSON.stringify(body).includes(firstHash), false);
+  assert.equal(JSON.stringify(body).includes(firstInstallation), false);
+  assert.equal(JSON.stringify(body).includes('publicationStatus'), false);
+  assert.equal(JSON.stringify(body).includes('reviewStatus'), false);
 });
 
 test('source contribution endpoint independently rejects identity, one-off jobs, bad tokens, and rate limits', async () => {
@@ -72,7 +210,7 @@ test('source contribution endpoint independently rejects identity, one-off jobs,
     skillVersion: '3.1.1',
     installationId,
     token,
-    source: { name: 'Example Board', baseUrl: 'https://jobs.example.org/engineering', kind: 'job-board', regions: ['global'], roleFamilies: ['engineering'], requiresSession: false },
+    source: { name: 'Example Board', baseUrl: 'https://jobs.example.org/openings/engineering', kind: 'job-board', regions: ['global'], roleFamilies: ['engineering'], requiresSession: false },
   };
   const personal = await worker.fetch(new Request('https://relay.example.com/v1/sources', { method: 'POST', body: JSON.stringify({ ...base, source: { ...base.source, baseUrl: 'https://linkedin.com/in/person' } }) }), bindings);
   assert.equal(personal.status, 400);
