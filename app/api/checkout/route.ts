@@ -28,7 +28,7 @@ export async function POST(request: Request) {
     if (reusable && isAllowedCheckoutUrl(reusable.checkoutUrl)) {
       return Response.json({ purchaseId: reusable.id, checkoutUrl: reusable.checkoutUrl }, { headers: { "set-cookie": cookieHeader(reusable.id) } });
     }
-    const purchaseId = await createPurchase(configured.config.productId);
+    const purchaseId = await createPurchase(configured.config.productId, 30);
     const client = createDodoClient(configured.config);
     const session = await client.checkoutSessions.create(buildCheckoutRequest({
       productId: configured.config.productId,
