@@ -42,7 +42,6 @@ async function ensureSchema() {
     dodo_customer_id TEXT,
     customer_email TEXT,
     product_id TEXT NOT NULL,
-    access_days INTEGER NOT NULL DEFAULT 90,
     status TEXT NOT NULL DEFAULT 'created',
     amount INTEGER,
     currency TEXT,
@@ -117,10 +116,10 @@ export async function savePaidIntent(id: string, intent: string) {
   return (result.meta?.changes ?? 0) > 0;
 }
 
-export async function createPurchase(productId: string, accessDays = 30) {
+export async function createPurchase(productId: string) {
   await ensureSchema();
   const id = crypto.randomUUID();
-  await env.DB.prepare("INSERT INTO founding_purchases (id,product_id,access_days) VALUES (?,?,?)").bind(id, productId, accessDays).run();
+  await env.DB.prepare("INSERT INTO founding_purchases (id,product_id) VALUES (?,?)").bind(id, productId).run();
   return id;
 }
 
@@ -178,10 +177,7 @@ export async function getPurchaseStatus(purchaseId: string) {
 
 export async function activatePurchase(purchaseId: string, at = new Date()) {
   await ensureSchema();
-  const purchase = await env.DB.prepare("SELECT access_days AS accessDays FROM founding_purchases WHERE id=?")
-    .bind(purchaseId).first<{ accessDays: number }>();
-  if (!purchase) return null;
-  const window = activationWindow(at.toISOString(), purchase.accessDays);
+  const window = activationWindow(at.toISOString());
   const result = await env.DB.prepare(`UPDATE founding_purchases SET activated_at=?,access_expires_at=?,updated_at=CURRENT_TIMESTAMP
     WHERE id=? AND status='succeeded' AND activated_at IS NULL AND refund_status IS NULL`)
     .bind(window.activatedAt, window.accessExpiresAt, purchaseId).run();

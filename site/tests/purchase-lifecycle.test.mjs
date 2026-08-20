@@ -3,15 +3,8 @@ import test from "node:test";
 
 import { activationWindow, isRefundDue } from "../lib/purchase-lifecycle.mjs";
 
-test("starts the 30-day entitlement only when access is activated", () => {
+test("starts the 90-day entitlement only when access is activated", () => {
   assert.deepEqual(activationWindow("2026-10-01T12:00:00.000Z"), {
-    activatedAt: "2026-10-01T12:00:00.000Z",
-    accessExpiresAt: "2026-10-31T12:00:00.000Z",
-  });
-});
-
-test("preserves the 90-day entitlement promised to earlier purchases", () => {
-  assert.deepEqual(activationWindow("2026-10-01T12:00:00.000Z", 90), {
     activatedAt: "2026-10-01T12:00:00.000Z",
     accessExpiresAt: "2026-12-30T12:00:00.000Z",
   });

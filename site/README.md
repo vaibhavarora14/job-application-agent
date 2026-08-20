@@ -36,9 +36,8 @@ collects the customer email; the landing page does not require a lead form.
 Keep the Site in test mode until a checkout and signed `payment.succeeded`
 delivery have both been verified.
 
-Paid access is activated separately from payment. New purchases receive 30 days
-from activation; earlier 90-day purchases keep their original entitlement.
-`.github/workflows/refund-unactivated-purchases.yml` calls the
+Paid access is activated separately from payment. The 90-day entitlement starts
+at activation. `.github/workflows/refund-unactivated-purchases.yml` calls the
 protected refund endpoint daily and requests full, idempotent refunds for paid
 purchases that remain unactivated after 60 days.
 

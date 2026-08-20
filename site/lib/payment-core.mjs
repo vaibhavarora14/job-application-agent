@@ -34,7 +34,7 @@ export function buildCheckoutRequest({ productId, purchaseId, publicSiteUrl }) {
     product_cart: [{ product_id: productId, quantity: 1 }],
     return_url: `${base}/checkout/return?purchase_id=${purchaseId}`,
     cancel_url: `${base}/#founding`,
-    metadata: { purchase_id: purchaseId, offer: "founding_30_days" },
+    metadata: { purchase_id: purchaseId, offer: "founding_90_days" },
     customization: {
       force_language: "en",
       theme: "light",

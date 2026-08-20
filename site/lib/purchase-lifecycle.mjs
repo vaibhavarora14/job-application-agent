@@ -1,12 +1,11 @@
 const DAY_MS = 24 * 60 * 60 * 1000;
 
-export function activationWindow(activatedAt, accessDays = 30) {
+export function activationWindow(activatedAt) {
   const start = new Date(activatedAt);
   if (!Number.isFinite(start.getTime())) throw new Error("Activation time is invalid.");
-  if (!Number.isInteger(accessDays) || accessDays < 1 || accessDays > 365) throw new Error("Access duration is invalid.");
   return {
     activatedAt: start.toISOString(),
-    accessExpiresAt: new Date(start.getTime() + accessDays * DAY_MS).toISOString(),
+    accessExpiresAt: new Date(start.getTime() + 90 * DAY_MS).toISOString(),
   };
 }
 
