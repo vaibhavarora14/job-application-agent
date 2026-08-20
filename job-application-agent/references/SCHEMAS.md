@@ -95,7 +95,7 @@ Include as many identifiers as are known.
 
 The check removes fragments and non-job query parameters while retaining recognized job or requisition identifiers. Matching ledger ID, canonical URL, or same-company employer job ID is a hard duplicate. Same company and role without a shared job ID is a possible duplicate.
 
-`ledger check` also returns `companyReapply`. A genuinely different role is `eligible-after-cooldown` only when at least 15 calendar days have passed since the latest application to that company and that application has no recorded outcome. A hard duplicate is never made eligible. Same-role matches, an active cooldown, and recorded follow-up remain review states unless the candidate explicitly overrides them.
+`ledger check` also returns `companyReapply`. A genuinely different role is `eligible-after-cooldown` only when at least 15 full days have passed since the latest application to that company and no outcome has been recorded for that application. Hard duplicates are never eligible. Same-role matches, `cooldown-active`, and `follow-up-present` remain blocked at `ledger add` unless their exact documented override is present.
 
 ## Confirmed submission input
 
@@ -118,6 +118,7 @@ Add only after visible success confirmation.
   "submittedAt": "2026-01-15T10:00:00.000Z",
   "approval": "STANDING AUTHORIZATION",
   "duplicateOverride": "NEW REQUISITION CONFIRMED",
+  "companyReapplyOverride": "CANDIDATE APPROVED EARLY REAPPLICATION",
   "answers": { "Resume": "Canonical resume.pdf" },
   "telemetry": {
     "durationBucket": "5-15m",
@@ -128,9 +129,9 @@ Add only after visible success confirmation.
 }
 ```
 
-Use `duplicateOverride` only for a verified distinct requisition after a possible-duplicate warning. It and `telemetry` are transient and are not written to the application ledger. Use approval `APPROVE SUBMIT` for per-application approval or `STANDING AUTHORIZATION` when the current request authorizes routine batch submission.
+Use `duplicateOverride` only for a verified distinct requisition after a possible-duplicate warning. Use `companyReapplyOverride` only when the candidate explicitly approves a different-role reapplication during the cooldown or after a recorded outcome. Both override phrases and `telemetry` are transient. An accepted company reapplication override stores only `reapplicationApproval: "candidate-explicit"` in the private ledger. Use approval `APPROVE SUBMIT` for per-application approval or `STANDING AUTHORIZATION` when the current request authorizes routine batch submission.
 
-`discoverySource`, `discoverySourceId`, `applicationChannel`, and `roundId` are optional for backward compatibility and should be supplied for new resumable rounds. `discoverySourceId` remains local and is not included in telemetry. `ledger check` returns hard requisition/URL duplicate status, bounded same-company history, and the 15-day no-follow-up reapplication decision.
+`discoverySource`, `discoverySourceId`, `applicationChannel`, and `roundId` are optional for backward compatibility and should be supplied for new resumable rounds. `discoverySourceId` remains local and is not included in telemetry. `ledger check` returns hard duplicate status, bounded same-company history, and the same `companyReapply` decision enforced by `ledger add` while holding the application lock.
 
 ## Autonomy grant input
 

@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { execFileSync, spawnSync } from 'node:child_process';
+import { execFileSync, spawn, spawnSync } from 'node:child_process';
 import { mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -34,6 +34,18 @@ function cliFailure(env, args, input) {
     env,
     encoding: 'utf8',
     ...(input === undefined ? {} : { input: JSON.stringify(input) }),
+  });
+}
+
+function cliConcurrent(env, args, input) {
+  return new Promise((resolve) => {
+    const child = spawn(process.execPath, [script, ...args], { env });
+    let stdout = '';
+    let stderr = '';
+    child.stdout.setEncoding('utf8').on('data', (chunk) => { stdout += chunk; });
+    child.stderr.setEncoding('utf8').on('data', (chunk) => { stderr += chunk; });
+    child.on('close', (status) => resolve({ status, stdout, stderr }));
+    child.stdin.end(JSON.stringify(input));
   });
 }
 
@@ -114,128 +126,6 @@ test('counts only unique confirmed ledger submissions for an explicit round', as
   assert.equal(roundEvents.filter((event) => event.type === 'submission-confirmed').length, 30);
   assert.equal(roundEvents.length, 32);
   if (process.platform !== 'win32') assert.equal((await stat(join(directory, 'rounds.ndjson'))).mode & 0o777, 0o600);
-});
-
-test('allows a distinct same-company role after 15 quiet days', async (t) => {
-  const { env } = await fixture(t, 'company-cooldown');
-  const submittedAt = new Date(Date.now() - (16 * 86_400_000)).toISOString();
-
-  cli(env, ['ledger', 'add', '--stdin'], {
-    id: 'example-backend-role',
-    company: 'Example',
-    role: 'Senior Backend Engineer',
-    url: 'https://jobs.example.com/backend-123',
-    employerJobId: 'example:backend-123',
-    source: 'company',
-    score: 88,
-    status: 'submitted',
-    submittedAt,
-    approval: 'STANDING AUTHORIZATION',
-    answers: {},
-  });
-
-  const check = cli(env, ['ledger', 'check', '--stdin'], {
-    id: 'example-fullstack-role',
-    company: 'Example',
-    role: 'Staff Full Stack Engineer',
-    url: 'https://jobs.example.com/fullstack-456',
-    employerJobId: 'example:fullstack-456',
-  });
-
-  assert.equal(check.duplicate, false);
-  assert.equal(check.sameCompany, true);
-  assert.equal(check.companyReapply.eligible, true);
-  assert.equal(check.companyReapply.decision, 'eligible-after-cooldown');
-  assert.equal(check.companyReapply.cooldownDays, 15);
-  assert.equal(check.companyReapply.hasFollowUp, false);
-});
-
-test('keeps ambiguous same-company title variants in review after the cooldown', async (t) => {
-  const { env } = await fixture(t, 'company-title-variant');
-  const submittedAt = new Date(Date.now() - (16 * 86_400_000)).toISOString();
-
-  cli(env, ['ledger', 'add', '--stdin'], {
-    id: 'example-senior-backend-role',
-    company: 'Example',
-    role: 'Senior Backend Engineer',
-    url: 'https://jobs.example.com/backend-original',
-    source: 'company',
-    score: 88,
-    status: 'submitted',
-    submittedAt,
-    approval: 'STANDING AUTHORIZATION',
-    answers: {},
-  });
-
-  const check = cli(env, ['ledger', 'check', '--stdin'], {
-    id: 'example-sr-backend-role',
-    company: 'Example',
-    role: 'Sr Backend Engineer',
-    url: 'https://jobs.example.com/backend-renamed',
-  });
-
-  assert.equal(check.duplicate, false);
-  assert.equal(check.possibleDuplicate, true);
-  assert.equal(check.companyReapply.eligible, false);
-  assert.equal(check.companyReapply.decision, 'same-role-review');
-});
-
-test('keeps same-company roles in review during cooldown or after follow-up', async (t) => {
-  const { env } = await fixture(t, 'company-follow-up');
-  const recentSubmittedAt = new Date(Date.now() - (5 * 86_400_000)).toISOString();
-
-  cli(env, ['ledger', 'add', '--stdin'], {
-    id: 'recent-role',
-    company: 'Recent Co',
-    role: 'Senior Backend Engineer',
-    url: 'https://jobs.recent.example/backend-123',
-    employerJobId: 'recent:backend-123',
-    source: 'company',
-    score: 88,
-    status: 'submitted',
-    submittedAt: recentSubmittedAt,
-    approval: 'STANDING AUTHORIZATION',
-    answers: {},
-  });
-
-  const recent = cli(env, ['ledger', 'check', '--stdin'], {
-    id: 'recent-fullstack-role',
-    company: 'Recent Co',
-    role: 'Staff Full Stack Engineer',
-    url: 'https://jobs.recent.example/fullstack-456',
-  });
-  assert.equal(recent.companyReapply.eligible, false);
-  assert.equal(recent.companyReapply.decision, 'cooldown-active');
-
-  const oldSubmittedAt = new Date(Date.now() - (20 * 86_400_000)).toISOString();
-  cli(env, ['ledger', 'add', '--stdin'], {
-    id: 'followed-role',
-    company: 'Followed Co',
-    role: 'Senior Backend Engineer',
-    url: 'https://jobs.followed.example/backend-123',
-    employerJobId: 'followed:backend-123',
-    source: 'company',
-    score: 88,
-    status: 'submitted',
-    submittedAt: oldSubmittedAt,
-    approval: 'STANDING AUTHORIZATION',
-    answers: {},
-  });
-  cli(env, ['ledger', 'outcome', '--stdin'], {
-    id: 'followed-role',
-    status: 'rejected',
-    occurredAt: new Date(Date.now() - (18 * 86_400_000)).toISOString(),
-  });
-
-  const followed = cli(env, ['ledger', 'check', '--stdin'], {
-    id: 'followed-fullstack-role',
-    company: 'Followed Co',
-    role: 'Staff Full Stack Engineer',
-    url: 'https://jobs.followed.example/fullstack-456',
-  });
-  assert.equal(followed.companyReapply.eligible, false);
-  assert.equal(followed.companyReapply.decision, 'follow-up-present');
-  assert.equal(followed.companyReapply.hasFollowUp, true);
 });
 
 test('ships a filterable global discovery source catalog and tracks source attribution', async (t) => {
@@ -344,6 +234,240 @@ test('exposes independent opt-out controls for default community source sharing'
   assert.deepEqual(suggestion.community, { shared: false, reason: 'disabled' });
   assert.equal(cli(env, ['sources', 'pending']).count, 1);
   if (process.platform !== 'win32') assert.equal((await stat(join(directory, 'source-sharing.json'))).mode & 0o777, 0o600);
+});
+
+test('blocks a different role at the same company during the 15-day cooldown', async (t) => {
+  const { env } = await fixture(t, 'company-cooldown-enforced');
+  const recent = new Date(Date.now() - (5 * 86_400_000)).toISOString();
+  const now = new Date().toISOString();
+  cli(env, ['ledger', 'add', '--stdin'], submission(100, undefined, {
+    id: 'example-backend-role',
+    company: 'Example',
+    role: 'Senior Backend Engineer',
+    url: 'https://jobs.example.com/backend-100',
+    employerJobId: 'example:backend-100',
+    submittedAt: recent,
+  }));
+
+  const check = cli(env, ['ledger', 'check', '--stdin'], {
+    id: 'example-product-role',
+    company: 'Example',
+    role: 'Staff Product Engineer',
+    url: 'https://jobs.example.com/product-101',
+    employerJobId: 'example:product-101',
+  });
+  assert.equal(check.companyReapply.decision, 'cooldown-active');
+  assert.equal(check.companyReapply.eligible, false);
+
+  const blocked = cliFailure(env, ['ledger', 'add', '--stdin'], submission(101, undefined, {
+    id: 'example-product-role',
+    company: 'Example',
+    role: 'Staff Product Engineer',
+    url: 'https://jobs.example.com/product-101',
+    employerJobId: 'example:product-101',
+    submittedAt: now,
+  }));
+
+  assert.equal(blocked.status, 1);
+  assert.match(blocked.stderr, /reapplication cooldown is active/i);
+  assert.match(blocked.stderr, /CANDIDATE APPROVED EARLY REAPPLICATION/);
+});
+
+test('records bounded evidence for an explicitly approved early reapplication', async (t) => {
+  const { directory, env } = await fixture(t, 'company-cooldown-override');
+  const recent = new Date(Date.now() - (5 * 86_400_000)).toISOString();
+  const now = new Date().toISOString();
+  cli(env, ['ledger', 'add', '--stdin'], submission(110, undefined, {
+    id: 'override-backend-role',
+    company: 'Override Co',
+    role: 'Senior Backend Engineer',
+    url: 'https://jobs.example.com/override-backend-110',
+    submittedAt: recent,
+  }));
+
+  const result = cli(env, ['ledger', 'add', '--stdin'], {
+    ...submission(111, undefined, {
+      id: 'override-product-role',
+      company: 'Override Co',
+      role: 'Staff Product Engineer',
+      url: 'https://jobs.example.com/override-product-111',
+      submittedAt: now,
+    }),
+    companyReapplyOverride: 'CANDIDATE APPROVED EARLY REAPPLICATION',
+  });
+
+  assert.equal(result.recorded, 'override-product-role');
+  const stored = (await readFile(join(directory, 'applications.ndjson'), 'utf8')).trim().split('\n').map(JSON.parse);
+  assert.equal(stored[1].reapplicationApproval, 'candidate-explicit');
+  assert.equal(JSON.stringify(stored).includes('CANDIDATE APPROVED EARLY REAPPLICATION'), false);
+  assert.equal('companyReapplyOverride' in stored[1], false);
+});
+
+test('requires explicit approval when the latest company application has a follow-up', async (t) => {
+  const { directory, env } = await fixture(t, 'company-follow-up-override');
+  const old = new Date(Date.now() - (30 * 86_400_000)).toISOString();
+  const followUp = new Date(Date.now() - (20 * 86_400_000)).toISOString();
+  const now = new Date().toISOString();
+  cli(env, ['ledger', 'add', '--stdin'], submission(120, undefined, {
+    id: 'follow-up-backend-role',
+    company: 'Follow Up Co',
+    role: 'Senior Backend Engineer',
+    url: 'https://jobs.example.com/follow-up-backend-120',
+    submittedAt: old,
+  }));
+  cli(env, ['ledger', 'outcome', '--stdin'], {
+    id: 'follow-up-backend-role',
+    status: 'rejected',
+    occurredAt: followUp,
+  });
+
+  const candidate = submission(121, undefined, {
+    id: 'follow-up-product-role',
+    company: 'Follow Up Co',
+    role: 'Staff Product Engineer',
+    url: 'https://jobs.example.com/follow-up-product-121',
+    submittedAt: now,
+  });
+  const blocked = cliFailure(env, ['ledger', 'add', '--stdin'], candidate);
+  assert.equal(blocked.status, 1);
+  assert.match(blocked.stderr, /recorded follow-up/i);
+
+  const result = cli(env, ['ledger', 'add', '--stdin'], {
+    ...candidate,
+    companyReapplyOverride: 'CANDIDATE APPROVED EARLY REAPPLICATION',
+  });
+  assert.equal(result.recorded, 'follow-up-product-role');
+  const stored = (await readFile(join(directory, 'applications.ndjson'), 'utf8')).trim().split('\n').map(JSON.parse);
+  assert.equal(stored[1].reapplicationApproval, 'candidate-explicit');
+});
+
+test('allows a genuinely different role after 15 full quiet days', async (t) => {
+  const { env } = await fixture(t, 'company-cooldown-complete');
+  const old = new Date(Date.now() - (16 * 86_400_000)).toISOString();
+  cli(env, ['ledger', 'add', '--stdin'], submission(130, undefined, {
+    id: 'quiet-backend-role',
+    company: 'Quiet Co',
+    role: 'Senior Backend Engineer',
+    url: 'https://jobs.example.com/quiet-backend-130',
+    submittedAt: old,
+  }));
+
+  const check = cli(env, ['ledger', 'check', '--stdin'], {
+    id: 'quiet-product-role',
+    company: 'Quiet Co',
+    role: 'Staff Product Engineer',
+    url: 'https://jobs.example.com/quiet-product-131',
+    employerJobId: 'example:quiet-product-131',
+  });
+  assert.equal(check.companyReapply.decision, 'eligible-after-cooldown');
+  assert.equal(check.companyReapply.eligible, true);
+
+  const result = cli(env, ['ledger', 'add', '--stdin'], submission(131, undefined, {
+    id: 'quiet-product-role',
+    company: 'Quiet Co',
+    role: 'Staff Product Engineer',
+    url: 'https://jobs.example.com/quiet-product-131',
+    employerJobId: 'example:quiet-product-131',
+    submittedAt: new Date().toISOString(),
+  }));
+  assert.equal(result.recorded, 'quiet-product-role');
+});
+
+test('requires the requisition override for same-role aliases', async (t) => {
+  const { directory, env } = await fixture(t, 'same-role-alias');
+  const recent = new Date(Date.now() - (2 * 86_400_000)).toISOString();
+  cli(env, ['ledger', 'add', '--stdin'], submission(140, undefined, {
+    id: 'alias-backend-original',
+    company: 'Alias Co',
+    role: 'Senior Backend Developer',
+    url: 'https://jobs.example.com/alias-backend-140',
+    employerJobId: 'alias:140',
+    submittedAt: recent,
+  }));
+  const candidate = submission(141, undefined, {
+    id: 'alias-backend-new',
+    company: 'Alias Co',
+    role: 'Sr Backend Engineer',
+    url: 'https://jobs.example.com/alias-backend-141',
+    employerJobId: 'alias:141',
+    submittedAt: new Date().toISOString(),
+  });
+
+  const blocked = cliFailure(env, ['ledger', 'add', '--stdin'], candidate);
+  assert.equal(blocked.status, 1);
+  assert.match(blocked.stderr, /NEW REQUISITION CONFIRMED/);
+  const result = cli(env, ['ledger', 'add', '--stdin'], {
+    ...candidate,
+    duplicateOverride: 'NEW REQUISITION CONFIRMED',
+  });
+  assert.equal(result.recorded, 'alias-backend-new');
+  const stored = (await readFile(join(directory, 'applications.ndjson'), 'utf8')).trim().split('\n').map(JSON.parse);
+  assert.equal('reapplicationApproval' in stored[1], false);
+});
+
+test('never permits hard duplicates even when both override phrases are supplied', async (t) => {
+  const { env } = await fixture(t, 'hard-duplicates');
+  const original = submission(150, undefined, {
+    id: 'hard-original',
+    company: 'Hard Duplicate Co',
+    role: 'Senior Backend Engineer',
+    url: 'https://jobs.example.com/hard-original',
+    employerJobId: 'hard:150',
+    submittedAt: new Date(Date.now() - (30 * 86_400_000)).toISOString(),
+  });
+  cli(env, ['ledger', 'add', '--stdin'], original);
+  const overrides = {
+    duplicateOverride: 'NEW REQUISITION CONFIRMED',
+    companyReapplyOverride: 'CANDIDATE APPROVED EARLY REAPPLICATION',
+    submittedAt: new Date().toISOString(),
+  };
+  const candidates = [
+    { ...submission(151, undefined), ...overrides, id: original.id, company: original.company },
+    { ...submission(152, undefined), ...overrides, company: original.company, url: original.url },
+    { ...submission(153, undefined), ...overrides, company: original.company, employerJobId: original.employerJobId },
+  ];
+
+  const messages = [/matching ledger ID/, /matching canonical URL/, /matching employer job ID or requisition/];
+  for (const [index, candidate] of candidates.entries()) {
+    const blocked = cliFailure(env, ['ledger', 'add', '--stdin'], candidate);
+    assert.equal(blocked.status, 1);
+    assert.match(blocked.stderr, /Hard duplicate blocked/);
+    assert.match(blocked.stderr, messages[index]);
+  }
+});
+
+test('serializes concurrent company writes so the cooldown cannot be bypassed', async (t) => {
+  const { directory, env } = await fixture(t, 'concurrent-company-cooldown');
+  cli(env, ['ledger', 'add', '--stdin'], submission(160, undefined, {
+    id: 'concurrent-backend-role',
+    company: 'Concurrent Co',
+    role: 'Senior Backend Engineer',
+    url: 'https://jobs.example.com/concurrent-backend-160',
+    submittedAt: new Date(Date.now() - (16 * 86_400_000)).toISOString(),
+  }));
+  const first = submission(161, undefined, {
+    id: 'concurrent-product-role',
+    company: 'Concurrent Co',
+    role: 'Staff Product Engineer',
+    url: 'https://jobs.example.com/concurrent-product-161',
+    submittedAt: new Date().toISOString(),
+  });
+  const second = submission(162, undefined, {
+    id: 'concurrent-data-role',
+    company: 'Concurrent Co',
+    role: 'Principal Data Engineer',
+    url: 'https://jobs.example.com/concurrent-data-162',
+    submittedAt: new Date().toISOString(),
+  });
+
+  const results = await Promise.all([
+    cliConcurrent(env, ['ledger', 'add', '--stdin'], first),
+    cliConcurrent(env, ['ledger', 'add', '--stdin'], second),
+  ]);
+  assert.deepEqual(results.map((result) => result.status).sort(), [0, 1]);
+  assert.match(results.find((result) => result.status === 1).stderr, /reapplication cooldown is active/i);
+  const stored = (await readFile(join(directory, 'applications.ndjson'), 'utf8')).trim().split('\n').map(JSON.parse);
+  assert.equal(stored.length, 2);
 });
 
 test('does not complete a round from blocked or partially filled applications', async (t) => {

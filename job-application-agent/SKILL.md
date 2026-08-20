@@ -54,8 +54,8 @@ For batches, scheduled work, or resumable handoffs, read [references/RUNS.md](re
 
 1. Recheck employer, title, direct domain, posting status, eligibility, and `autoEligible` immediately before submission.
 2. Run `ledger check --stdin` with the internal ledger ID, canonical URL, employer job ID, company, and role when available. Review both requisition duplicate status and same-company history.
-3. Stop on a hard requisition, employer-job-ID, canonical-URL, or ledger-ID duplicate. Treat a same-company/same-role match without a shared job ID as a possible duplicate and use `duplicateOverride: "NEW REQUISITION CONFIRMED"` only after verifying a distinct requisition.
-4. For a genuinely different role at a previously applied company, follow `companyReapply`: proceed automatically only when it returns `eligible-after-cooldown` (15 days since the latest company application and no recorded follow-up). Otherwise keep the company match in review unless the candidate explicitly overrides it.
+3. Stop on a hard ledger-ID, canonical-URL, employer-job-ID, or requisition duplicate. Treat a same-company/same-role alias as a possible duplicate. Use `duplicateOverride: "NEW REQUISITION CONFIRMED"` only after verifying it is a distinct requisition.
+4. For a genuinely different role at a previously applied company, follow `companyReapply`: proceed automatically only when it returns `eligible-after-cooldown` (15 full days since the latest company application and no recorded outcome). `cooldown-active` and `follow-up-present` require the candidate's explicit approval and `companyReapplyOverride: "CANDIDATE APPROVED EARLY REAPPLICATION"`.
 5. Keep authentication in the existing browser session. Never inspect cookies, local storage, passwords, or session files.
 6. Fill only explicit profile fields, candidate-provided answers, or facts verified in the canonical resume.
 7. Follow [references/APPLICATION_GUIDANCE.md](references/APPLICATION_GUIDANCE.md) for narrative answers.
