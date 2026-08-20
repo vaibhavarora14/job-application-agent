@@ -1,0 +1,12 @@
+# High-risk contribution surfaces require maintainer review.
+/.github/ @vaibhavarora14
+/installer/ @vaibhavarora14
+/job-application-agent/scripts/ @vaibhavarora14
+/bin/ @vaibhavarora14
+/scripts/ci/ @vaibhavarora14
+/scripts/smoke-package.mjs @vaibhavarora14
+/telemetry-worker/migrations/ @vaibhavarora14
+/telemetry-worker/wrangler.jsonc @vaibhavarora14
+/package.json @vaibhavarora14
+/package-lock.json @vaibhavarora14
+/SECURITY.md @vaibhavarora14

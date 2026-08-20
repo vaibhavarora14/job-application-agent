@@ -1,49 +1,50 @@
 {
-  "name": "job-application-agent-cloud",
-  "version": "0.1.0",
-  "private": true,
-  "engines": {
-    "node": ">=22.13.0"
+  "name": "job-application-agent",
+  "version": "3.1.1",
+  "description": "A privacy-first Agent Skill and CLI for evidence-based job discovery, application completion, and outcome tracking.",
+  "license": "MIT",
+  "type": "module",
+  "bin": {
+    "job-application-agent": "bin/job-application-agent.mjs"
+  },
+  "files": [
+    "bin/",
+    "installer/src/",
+    "job-application-agent/",
+    "LICENSE",
+    "README.md"
+  ],
+  "keywords": [
+    "agent-skills",
+    "skill",
+    "job-search",
+    "job-application",
+    "career"
+  ],
+  "homepage": "https://github.com/vaibhavarora14/job-application-agent#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/vaibhavarora14/job-application-agent.git"
+  },
+  "bugs": {
+    "url": "https://github.com/vaibhavarora14/job-application-agent/issues"
+  },
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
   },
   "scripts": {
-    "dev": "WRANGLER_LOG_PATH=.wrangler/wrangler.log vinext dev",
-    "build": "WRANGLER_LOG_PATH=.wrangler/wrangler.log vinext build",
-    "start": "WRANGLER_LOG_PATH=.wrangler/wrangler.log vinext start",
-    "test": "npm run build && node --test tests/*.test.mjs tests/*.spec.mjs",
-    "lint": "eslint . --ignore-pattern dist --ignore-pattern .next",
-    "db:generate": "drizzle-kit generate"
+    "test": "node --test",
+    "check:native-artifacts": "node scripts/ci/validate-native-artifacts.mjs",
+    "privacy-audit": "node --test job-application-agent/tests/privacy-audit.test.mjs",
+    "smoke:package": "node scripts/smoke-package.mjs",
+    "check": "node --check job-application-agent/scripts/job-application.mjs && node --check job-application-agent/scripts/secret-store.mjs && node --check job-application-agent/scripts/telemetry-client.mjs && node --check job-application-agent/scripts/telemetry-schema.mjs && node --check telemetry-worker/src/worker.mjs && node --check telemetry-worker/src/public-stats.mjs && node --check telemetry-worker/public/dashboard.js && node --check installer/src/cli.mjs && node --check installer/src/installer.mjs && node --check installer/src/runner.mjs && node --check installer/src/scheduler.mjs && node --check scripts/ci/classify-paths.mjs && node --check scripts/ci/validate-native-artifacts.mjs && node --check bin/job-application-agent.mjs",
+    "prepack": "npm run check && npm test && npm run privacy-audit"
   },
-  "dependencies": {
-    "dodopayments": "^2.47.0",
-    "drizzle-orm": "0.45.2",
-    "react": "19.2.8",
-    "react-dom": "19.2.8"
+  "engines": {
+    "node": ">=20"
   },
   "devDependencies": {
-    "@cloudflare/vite-plugin": "1.53.0",
-    "@cloudflare/workers-types": "5.20260819.1",
-    "@eslint/js": "9.39.4",
-    "@next/eslint-plugin-next": "16.2.6",
-    "@openai/sites-vite-plugin": "0.1.0",
-    "@tailwindcss/postcss": "4.2.1",
-    "@types/node": "22.19.19",
-    "@types/react": "19.2.14",
-    "@types/react-dom": "19.2.3",
-    "@vitejs/plugin-react": "6.0.2",
-    "@vitejs/plugin-rsc": "0.5.34",
-    "drizzle-kit": "0.31.10",
-    "eslint": "9.39.4",
-    "eslint-plugin-jsx-a11y": "6.10.2",
-    "eslint-plugin-react": "7.37.5",
-    "eslint-plugin-react-hooks": "7.1.1",
-    "globals": "16.4.0",
-    "react-server-dom-webpack": "19.2.8",
-    "tailwindcss": "4.2.1",
-    "typescript": "5.9.3",
-    "typescript-eslint": "8.59.3",
-    "vinext": "1.0.0-beta.6",
-    "vite": "8.2.1",
-    "wrangler": "4.124.0"
-  },
-  "type": "module"
+    "yaml": "2.9.0"
+  }
 }

@@ -1,71 +1,154 @@
-# JobAppAgent — Cloud landing site
+<div align="center">
 
-The public landing, community dashboard, and Dodo Payments checkout
-surface for [jobappagent.com](https://jobappagent.com). It runs on Sites using
-vinext, Cloudflare Workers, and D1.
+# 💼 Job Application Agent
 
-## Local development
+### Find better roles, apply with verified facts, and learn from outcomes.
 
-Requires Node.js `>=22.13.0`.
+[![Validate](https://github.com/vaibhavarora14/job-application-agent/actions/workflows/validate.yml/badge.svg)](https://github.com/vaibhavarora14/job-application-agent/actions/workflows/validate.yml)
+[![npm](https://img.shields.io/npm/v/job-application-agent?logo=npm&color=CB3837)](https://www.npmjs.com/package/job-application-agent)
+[![MIT License](https://img.shields.io/badge/license-MIT-2563EB.svg)](LICENSE)
+[![Agent Skills](https://img.shields.io/badge/Agent_Skills-compatible-111827)](job-application-agent/SKILL.md)
+
+[Get started](#-get-started) · [Safety](#-safety) · [Privacy](#-privacy) · [Dashboard](https://job-application-agent-telemetry.varora1406.workers.dev/) · [Security](SECURITY.md)
+
+</div>
+
+---
+
+Job Application Agent is an [Agent Skill](https://agentskills.io/specification) that helps a coding agent discover, evaluate, complete, and track your own job applications. It uses one verified résumé, checks eligibility and duplicates, and records only confirmed submissions.
+
+## 🚀 Get started
+
+Install it:
 
 ```bash
-cp .env.example .env.local
-npm ci
-npm run dev
+npx job-application-agent@latest install
 ```
 
-Payment settings are server-only. Never prefix them with `NEXT_PUBLIC_` or
-commit populated environment files.
+Then tell your coding agent:
 
-## Required production environment
+```text
+Use job-application-agent to onboard my résumé and job preferences.
+```
 
-- `PUBLIC_SITE_URL`: canonical HTTPS origin, currently `https://jobappagent.com`
-- `RATE_LIMIT_SALT`: unique random secret used to pseudonymize rate-limit keys
-- `COMMUNITY_STATS_UPSTREAM`: validated aggregate telemetry endpoint
-- `REFUND_CRON_SECRET`: bearer secret shared with the daily refund workflow
-- `DODO_PAYMENTS_API_KEY`: Dodo server API key for checkout-session creation
-- `DODO_PAYMENTS_WEBHOOK_KEY`: signing secret for the configured endpoint
-- `DODO_PRODUCT_ID`: one-time founding-access product. The live product uses
-  Dodo `by_country` localized pricing: USD $49 by default and INR ₹3,388.98
-  before 18% GST for India, producing a ₹3,999 tax-inclusive checkout total.
-- `DODO_PAYMENTS_ENVIRONMENT`: `test_mode` during verification, then `live_mode`
+After onboarding, use natural commands:
 
-The Dodo webhook endpoint is `https://jobappagent.com/api/webhooks/dodo`.
-Subscribe it to payment, successful refund, and dispute events. Checkout
-collects the customer email; the landing page does not require a lead form.
-Keep the Site in test mode until a checkout and signed `payment.succeeded`
-delivery have both been verified.
+```text
+search jobs
+apply https://company.example/jobs/123
+apply all relevant jobs from this thread: <URL>
+run a round of 10
+show attention queue
+record outcome Company — Senior Engineer — interview
+```
 
-Paid access is activated separately from payment. New purchases receive 30 days
-from activation; earlier 90-day purchases keep their original entitlement.
-`.github/workflows/refund-unactivated-purchases.yml` calls the
-protected refund endpoint daily and requests full, idempotent refunds for paid
-purchases that remain unactivated after 60 days.
+Requires Node.js 20 or newer and a browser-capable coding agent.
 
-`stats.jobappagent.com` is attached to the same Sites project. Host-aware routing
-serves the community dashboard at that origin while the telemetry Worker remains
-the ingestion and aggregate-data service.
+## ✨ What it does
 
-## Release checks
+| Stage | Behavior |
+|---|---|
+| **Discover** | Searches direct career pages, ATS platforms, and candidate-provided leads. |
+| **Qualify** | Checks seniority, skills, location, authorization, compensation, and posting status. |
+| **Apply** | Fills forms and uploads one canonical résumé using verified facts only. |
+| **Track** | Deduplicates applications and records only visible submission confirmations. |
+| **Improve** | Reviews outcomes and proposes targeting changes without rewriting candidate facts. |
+
+## 🤖 Choose your autonomy level
+
+- **`review-each`** — review every completed application before submission.
+- **`routine-auto`** — allow routine submissions while keeping sensitive and judgment-heavy steps with you.
+
+For durable autonomy across resumable or scheduled runs:
+
+```bash
+echo '{"mode":"routine-auto"}' | node ~/.agents/skills/job-application-agent/scripts/job-application.mjs autonomy grant --stdin
+```
+
+Check or revoke it at any time:
+
+```bash
+node ~/.agents/skills/job-application-agent/scripts/job-application.mjs autonomy status
+node ~/.agents/skills/job-application-agent/scripts/job-application.mjs autonomy revoke
+```
+
+## 🛡️ Safety
+
+The agent pauses for:
+
+- passwords, SSO, MFA, and CAPTCHA;
+- legal attestations and government identifiers;
+- demographic or voluntary self-identification questions;
+- unclear work authorization, sponsorship, location, or compensation;
+- claims that cannot be verified from your profile or résumé;
+- browser or operating-system permission prompts.
+
+It never reads browser cookies or session files, bypasses access controls, or counts a filled form as a submission.
+
+## 🧭 How it works
+
+```mermaid
+flowchart LR
+    A["Verified résumé + profile"] --> B["Find active roles"]
+    B --> C["Check fit + duplicates"]
+    C --> D["Fill truthful application"]
+    D --> E{"Needs you?"}
+    E -- Yes --> F["Attention queue"]
+    E -- No --> G["Submit"]
+    F --> G
+    G --> H["Confirm + record"]
+```
+
+The bundled CLI handles private profile storage, résumé import, scoring, duplicate checks, resumable rounds, attention queues, and application/outcome ledgers. The coding agent handles discovery and browser interaction under the rules in [`SKILL.md`](job-application-agent/SKILL.md).
+
+## 🔐 Privacy
+
+| Data | Where it stays |
+|---|---|
+| Profile | macOS Keychain or Windows Credential Manager |
+| Résumé and ledgers | Owner-only local state directory |
+| Browser login | Existing browser session |
+| Skill code | Version-controlled installation directory |
+
+Candidate data, résumés, application history, credentials, and browser sessions are never committed to this repository.
+
+Anonymous structured analytics are enabled by default to improve the agent. They may include job and workflow categories, but never candidate identity, résumé content, prompts, answers, browser data, IP addresses, or raw errors.
+
+```bash
+node ~/.agents/skills/job-application-agent/scripts/job-application.mjs telemetry status
+node ~/.agents/skills/job-application-agent/scripts/job-application.mjs telemetry disable
+```
+
+See [`ANALYTICS.md`](job-application-agent/references/ANALYTICS.md) for the event contract and retention policy, or view the [public aggregate dashboard](https://job-application-agent-telemetry.varora1406.workers.dev/).
+
+<details>
+<summary><strong>Installation and update details</strong></summary>
+
+The installer places the skill at `~/.agents/skills/job-application-agent` and enables automatic updates by default. Compatible vendor skill directories are also supported when they already exist.
+
+```bash
+npx job-application-agent@latest status
+npx job-application-agent@latest update
+npx job-application-agent@latest updates disable
+npx job-application-agent@latest updates enable
+```
+
+Updates are staged and validated before replacement. Private candidate state lives outside the replaceable skill directory.
+
+</details>
+
+## 🧰 Develop
 
 ```bash
 npm test
-npm run lint
-npx tsc --noEmit
-npm audit --omit=dev
 ```
 
-`npm test` builds the worker and covers community response validation, checkout
-and webhook normalization, purchase activation/refund rules, public request
-bounds, security headers, rate limiting, legal pages, crawler metadata, and the
-D1 health probe.
+GitHub Actions validates the skill and runs the same test suite on every pull request. See [`CONTRIBUTING.md`](CONTRIBUTING.md) for the full local verification and review contract. To try the workflow without installing, paste [`SHARE_PROMPT.md`](SHARE_PROMPT.md) into a new agent chat.
 
-## Data and deployment
+## ⚖️ Responsible use
 
-- `.openai/hosting.json` binds D1 as `DB`.
-- Drizzle migrations live in `drizzle/`.
-- The worker also creates the rate-limit table defensively before the first
-  public write, so a missing migration cannot leave anonymous endpoints open.
-- Runtime secrets belong in Sites environment variables, never in this repo.
-- Deploy privately, verify checkout and payment in Dodo test mode, then
-  change access to public and repeat anonymous production smoke tests.
+Use this project only for your own job search. It does not guarantee interviews, offers, eligibility, or application accuracy. Never use it to impersonate another person, bypass CAPTCHA, evade access controls, or make deceptive claims.
+
+Report privacy or security issues through the process in [`SECURITY.md`](SECURITY.md). Do not open a public issue containing personal data or application records.
+
+Released under the [MIT License](LICENSE).

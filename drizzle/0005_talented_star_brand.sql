@@ -1,1 +1,0 @@
-ALTER TABLE `founding_purchases` ADD `access_days` integer DEFAULT 90 NOT NULL;

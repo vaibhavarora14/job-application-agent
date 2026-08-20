@@ -1,0 +1,149 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="description" content="Anonymous community benchmarks and verified application activity from the open-source Job Application Agent.">
+    <meta name="theme-color" content="#f2f4fb">
+    <title>Job Application Agent — Community Pulse</title>
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='16' fill='%232962f4'/%3E%3Cpath d='M20 44 44 20m0 0H27m17 0v17' fill='none' stroke='white' stroke-width='6' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E">
+    <link rel="stylesheet" href="/styles.css">
+    <script type="module" src="/dashboard.js"></script>
+  </head>
+  <body>
+    <a class="skip-link" href="#main">Skip to community pulse</a>
+    <header class="site-header">
+      <a class="brand" href="https://github.com/vaibhavarora14/job-application-agent" aria-label="Job Application Agent on GitHub">
+        <span class="brand-mark" aria-hidden="true">↗</span>
+        <span>Job Application Agent</span>
+      </a>
+      <nav aria-label="Primary navigation">
+        <a aria-current="page" href="#pulse">Community pulse</a>
+        <a href="#methodology">Methodology</a>
+        <a href="#privacy">Privacy</a>
+        <a class="button button-quiet" href="https://github.com/vaibhavarora14/job-application-agent">GitHub <span aria-hidden="true">↗</span></a>
+      </nav>
+    </header>
+
+    <main id="main">
+      <section id="pulse" class="status-row" aria-label="Data status">
+        <div class="status-line" role="status" aria-live="polite">
+          <span class="status-dot" aria-hidden="true"></span>
+          <span id="data-status">Loading live aggregate data…</span>
+        </div>
+        <div class="status-meta">
+          <span class="coverage-pill" data-derived="outcome-coverage">— outcomes reported</span>
+          <span id="updated-at">Awaiting live data</span>
+        </div>
+      </section>
+
+      <section class="hero-grid" aria-labelledby="page-title">
+        <div class="hero-card">
+          <div class="hero-orb" aria-hidden="true"></div>
+          <p class="eyebrow">Anonymous aggregate momentum</p>
+          <h1 id="page-title">The job-search agents are moving.</h1>
+          <div class="install-command" aria-label="Installation command">
+            <code><span aria-hidden="true">$</span> npx job-application-agent@latest</code>
+            <button id="copy-install" type="button">Copy</button>
+          </div>
+        </div>
+        <article class="weekly-card">
+          <p>Applications in the latest 7 days</p>
+          <strong data-derived="weekly-submissions">—</strong>
+          <span>Verified employer or ATS success states</span>
+        </article>
+      </section>
+
+      <section class="signal-grid" aria-label="Community signals">
+        <article class="signal-card">
+          <p>Peak day</p>
+          <strong data-derived="peak-submissions">—</strong>
+          <span>Most verified submissions in one day</span>
+        </article>
+        <article class="signal-card signal-lime">
+          <p>Per active installation</p>
+          <strong data-derived="per-installation">—</strong>
+          <span>Latest seven-day submissions ÷ installations active in 30 days</span>
+        </article>
+        <article class="signal-card signal-violet">
+          <p>Interview progression</p>
+          <strong data-derived="interview-rate">—</strong>
+          <span>Early signal based on reported interviews</span>
+        </article>
+        <article class="signal-card">
+          <p>Active days</p>
+          <strong data-derived="active-days">—</strong>
+          <span>Days with verified activity in the last 30 days</span>
+        </article>
+      </section>
+
+      <section class="insight-grid" aria-label="Community breakdowns">
+        <article class="panel leaderboard-panel">
+          <div class="panel-heading">
+            <div><h2>Role-level leaderboard</h2><p>Where the community is aiming</p></div>
+            <span class="tag"><span data-derived="senior-targeting">—</span> senior+</span>
+          </div>
+          <div id="seniority-leaderboard" class="leaderboard dynamic-view"></div>
+        </article>
+
+        <article class="panel leaderboard-panel">
+          <div class="panel-heading">
+            <div><h2>ATS leaderboard</h2><p>Verified submissions by platform</p></div>
+            <span class="tag">Last 90 days</span>
+          </div>
+          <div id="ats-leaderboard" class="leaderboard dynamic-view"></div>
+        </article>
+
+        <article class="milestone-card">
+          <span class="spark" aria-hidden="true">✦</span>
+          <p><strong data-metric="applicationsSubmitted">—</strong> verified applications. Zero identities exposed.</p>
+          <span>A public milestone built from personless, aggregate telemetry.</span>
+          <a class="button button-lime" href="https://github.com/vaibhavarora14/job-application-agent">Share this milestone <span aria-hidden="true">↗</span></a>
+        </article>
+      </section>
+
+      <section class="detail-grid">
+        <article class="panel velocity-panel">
+          <div class="panel-heading">
+            <div><h2>Application velocity</h2><p>Verified activity over recent reporting days</p></div>
+            <span class="tag">Live aggregate</span>
+          </div>
+          <div id="velocity-chart" class="velocity-chart dynamic-view" role="img" aria-label="Verified application submissions over recent days"></div>
+        </article>
+        <article id="methodology" class="panel outcome-panel">
+          <div class="panel-heading">
+            <div><h2>Outcome coverage</h2><p data-derived="outcome-detail">Awaiting live data</p></div>
+            <span class="tag" data-derived="outcome-coverage">— reported</span>
+          </div>
+          <div id="outcome-bar" class="outcome-bar dynamic-view" aria-label="Reported application outcomes"></div>
+          <div id="outcome-legend" class="outcome-legend"></div>
+          <p class="method-note"><strong>Read this honestly:</strong> progression rates remain early signals until more submitted applications receive outcome updates.</p>
+        </article>
+      </section>
+
+      <section class="action-row" aria-label="Actions">
+        <a class="button button-primary" href="https://www.npmjs.com/package/job-application-agent">Install agent <span aria-hidden="true">→</span></a>
+        <a class="button" href="https://github.com/vaibhavarora14/job-application-agent#use-it">Record an outcome <span aria-hidden="true">↗</span></a>
+        <a class="button" href="https://x.com/intent/post?text=Job%20Application%20Agent%20is%20tracking%20verified%2C%20anonymous%20community%20impact.&url=https%3A%2F%2Fjob-application-agent-telemetry.varora1406.workers.dev%2F">Share impact <span aria-hidden="true">↗</span></a>
+        <a class="button" href="https://github.com/vaibhavarora14/job-application-agent/blob/main/job-application-agent/references/ANALYTICS.md">View methodology <span aria-hidden="true">↗</span></a>
+      </section>
+
+      <section id="privacy" class="privacy-note">
+        <p><span aria-hidden="true">●</span> Includes clearly labelled historical backfill data.</p>
+        <p>Anonymous aggregate telemetry · No names · No profiles · No résumés</p>
+      </section>
+    </main>
+
+    <footer>
+      <span>Community pulse · identity-free by design</span>
+      <a href="https://github.com/vaibhavarora14/job-application-agent">Open source on GitHub <span aria-hidden="true">↗</span></a>
+    </footer>
+
+    <template id="empty-template">
+      <div class="empty-state">
+        <span aria-hidden="true">↗</span>
+        <p><strong>Early days.</strong> This view will fill as anonymous telemetry arrives.</p>
+      </div>
+    </template>
+  </body>
+</html>
