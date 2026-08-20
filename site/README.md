@@ -97,5 +97,5 @@ resend api-keys create --profile jobappagent --name "JobAppAgent production" --p
 Add the SPF and DKIM records returned by the domain-create command before
 verification. Leave open and click tracking disabled. Store the API token when
 it is created—it cannot be retrieved again—and add it directly to the Site's
-`RESEND_API_KEY` secret. Configure Cloudflare Email Routing so
-`support@jobappagent.com` forwards to an owner-controlled, verified destination.
+`RESEND_API_KEY` secret. Configure the `support@jobappagent.com` alias in
+ImprovMX so replies forward to an owner-controlled, verified destination.

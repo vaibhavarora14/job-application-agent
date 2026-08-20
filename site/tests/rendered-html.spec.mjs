@@ -101,6 +101,7 @@ test("server-renders human-readable privacy and terms pages", async () => {
   const privacyHtml = await privacy.text();
   assert.match(privacyHtml, /Privacy, in plain language/);
   assert.match(privacyHtml, /Resend/);
+  assert.match(privacyHtml, /ImprovMX/);
   assert.match(privacyHtml, /support@jobappagent\.com/);
   assert.match(privacyHtml, /not add.*marketing/i);
   const termsHtml = await terms.text();
