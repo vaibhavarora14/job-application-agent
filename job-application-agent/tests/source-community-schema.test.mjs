@@ -70,3 +70,9 @@ test('fails closed for unknown non-collection paths and strips collection querie
   assert.equal(normalized.baseUrl, 'https://example.com/openings/engineering');
   assert.equal(JSON.stringify(normalized).includes('candidate@example.com'), false);
 });
+
+test('rejects identity-like path namespaces even when they contain a collection cue', () => {
+  for (const baseUrl of ['https://example.com/users/jane/openings', 'https://example.com/profile/jane/careers', 'https://x.com/jane/jobs']) {
+    assert.throws(() => normalizeCommunitySource({ ...source, baseUrl }), /profile or personal|identity-like/i, baseUrl);
+  }
+});

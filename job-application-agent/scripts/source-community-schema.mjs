@@ -24,7 +24,13 @@ function terms(value, label) {
 function looksPersonal(url) {
   return (/(^|\.)linkedin\.com$/i.test(url.hostname) && /^\/in\//i.test(url.pathname))
     || (/(^|\.)github\.com$/i.test(url.hostname) && /^\/[^/]+\/?$/i.test(url.pathname))
-    || (/(^|\.)x\.com$/i.test(url.hostname) && /^\/(?!home|jobs|search|i\/)[^/]+\/?$/i.test(url.pathname));
+    || (/(^|\.)x\.com$/i.test(url.hostname) && /^\/(?!home(?:\/|$)|jobs(?:\/|$)|search(?:\/|$)|i\/)[^/]+(?:\/|$)/i.test(url.pathname));
+}
+
+function looksIdentityPath(pathname) {
+  const segments = pathname.split('/').filter(Boolean).map((segment) => segment.toLowerCase());
+  const namespaces = new Set(['user', 'users', 'profile', 'profiles', 'member', 'members', 'author', 'authors', 'person', 'people']);
+  return segments.some((segment, index) => namespaces.has(segment) && index < segments.length - 1);
 }
 
 function isPublicHostname(hostname) {
@@ -82,6 +88,7 @@ export function normalizeCommunitySource(input) {
   let decodedPath = url.pathname;
   try { decodedPath = decodeURIComponent(decodedPath); } catch { /* Preserve the encoded path for validation. */ }
   if (containsIdentityLike(decodedPath)) throw new Error('community source.baseUrl must not contain identity-like content.');
+  if (looksIdentityPath(decodedPath)) throw new Error('community source.baseUrl must not contain an identity-like path.');
   if (looksPersonal(url)) throw new Error('community source.baseUrl must not be a profile or personal URL.');
   if (!isRepeatableCommunitySourceRoute(url)) throw new Error('community source.baseUrl must identify a repeatable discovery surface, not a one-off job.');
   url.search = '';
