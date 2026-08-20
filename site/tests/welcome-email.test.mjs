@@ -44,7 +44,14 @@ test("renders equivalent 90-day HTML and plain-text purchase terms", () => {
     assert.match(copy, /applying to the right roles/);
     assert.match(copy, /one-time transactional email/);
   }
+  assert.match(message.html, /aria-label="JobAppAgent"/);
+  assert.match(message.html, /role="presentation"/);
+  assert.match(message.html, /Starts when cloud access is activated/);
+  for (const brandColor of ["#173f35", "#63b995", "#f2e9d8", "#fffaf0"]) {
+    assert.match(message.html, new RegExp(brandColor, "i"));
+  }
   assert.doesNotMatch(message.html, /<img\b/i);
+  assert.doesNotMatch(message.html, /https?:\/\//i);
 });
 
 test("renders the stored 30-day entitlement without changing the surrounding promise", () => {
