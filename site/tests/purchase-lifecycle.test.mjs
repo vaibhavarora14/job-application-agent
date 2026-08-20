@@ -10,6 +10,14 @@ test("starts the 90-day entitlement only when access is activated", () => {
   });
 });
 
+test("uses the access duration stored with an individual purchase", () => {
+  assert.deepEqual(activationWindow("2026-10-01T12:00:00.000Z", 30), {
+    activatedAt: "2026-10-01T12:00:00.000Z",
+    accessExpiresAt: "2026-10-31T12:00:00.000Z",
+  });
+  assert.throws(() => activationWindow("2026-10-01T12:00:00.000Z", 0), /duration/i);
+});
+
 test("refunds only succeeded purchases that remain unactivated for 60 days", () => {
   const now = new Date("2026-10-20T00:00:00.000Z");
   assert.equal(isRefundDue({ status: "succeeded", paidAt: "2026-08-20T00:00:00.000Z", activatedAt: null }, now), true);

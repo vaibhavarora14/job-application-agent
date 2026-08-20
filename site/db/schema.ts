@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { index, integer, sqliteTable, text } from "drizzle-orm/sqlite-core";
+import { index, integer, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core";
 
 export const foundingRegistrations = sqliteTable("founding_registrations", {
   id: text("id").primaryKey(),
@@ -39,6 +39,7 @@ export const foundingPurchases = sqliteTable("founding_purchases", {
   dodoCustomerId: text("dodo_customer_id"),
   customerEmail: text("customer_email"),
   productId: text("product_id").notNull(),
+  accessDays: integer("access_days").notNull().default(90),
   status: text("status").notNull().default("created"),
   amount: integer("amount"),
   currency: text("currency"),
@@ -53,6 +54,22 @@ export const foundingPurchases = sqliteTable("founding_purchases", {
   updatedAt: text("updated_at").notNull().default(sql`CURRENT_TIMESTAMP`),
 }, (table) => [
   index("idx_founding_purchases_refund_due").on(table.status, table.activationDeadlineAt),
+]);
+
+export const customerEmailDeliveries = sqliteTable("customer_email_deliveries", {
+  id: text("id").primaryKey(),
+  purchaseId: text("purchase_id").notNull().references(() => foundingPurchases.id),
+  messageKind: text("message_kind").notNull(),
+  status: text("status").notNull().default("pending"),
+  attemptCount: integer("attempt_count").notNull().default(0),
+  providerMessageId: text("provider_message_id"),
+  lastAttemptAt: text("last_attempt_at"),
+  acceptedAt: text("accepted_at"),
+  createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+  updatedAt: text("updated_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+}, (table) => [
+  uniqueIndex("idx_customer_email_deliveries_purchase_kind").on(table.purchaseId, table.messageKind),
+  index("idx_customer_email_deliveries_retry").on(table.status, table.lastAttemptAt),
 ]);
 
 export const paymentWebhookEvents = sqliteTable("payment_webhook_events", {
