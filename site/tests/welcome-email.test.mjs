@@ -43,6 +43,9 @@ test("renders equivalent 90-day HTML and plain-text purchase terms", () => {
     assert.match(copy, /support@jobappagent\.com/);
     assert.match(copy, /applying to the right roles/);
     assert.match(copy, /one-time transactional email/);
+    assert.match(copy, /open-source package/i);
+    assert.match(copy, /npx job-application-agent@latest install/);
+    assert.match(copy, /https:\/\/www\.npmjs\.com\/package\/job-application-agent/);
   }
   assert.match(message.html, /aria-label="JobAppAgent"/);
   assert.match(message.html, /role="presentation"/);
@@ -51,7 +54,8 @@ test("renders equivalent 90-day HTML and plain-text purchase terms", () => {
     assert.match(message.html, new RegExp(brandColor, "i"));
   }
   assert.doesNotMatch(message.html, /<img\b/i);
-  assert.doesNotMatch(message.html, /https?:\/\//i);
+  const externalUrls = [...message.html.matchAll(/https?:\/\/[^"']+/gi)].map(([url]) => url);
+  assert.deepEqual(externalUrls, ["https://www.npmjs.com/package/job-application-agent"]);
 });
 
 test("renders the stored 30-day entitlement without changing the surrounding promise", () => {

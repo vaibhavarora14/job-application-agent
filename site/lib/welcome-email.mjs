@@ -29,10 +29,11 @@ export function buildWelcomeEmail(purchase, config) {
   const subject = "Welcome to JobAppAgent — your reservation is confirmed";
   const paragraphs = [
     "Hi there,",
-    "Thank you for being one of the first people to back JobAppAgent. Your support means a lot.",
-    `Your reservation is confirmed. JobAppAgent is scheduled to launch on September 18, 2026. Your ${purchase.accessDays} days of access will begin when we activate your cloud access—not on the day you paid. If access has not been activated within 60 days of payment, we’ll automatically request a full refund through Dodo Payments.`,
-    "We’re building JobAppAgent to take repetitive work out of the job search while keeping you in control of the decisions that matter. We’re here to support your goal of finding and applying to the right roles with less busywork.",
-    "If you have a question—or want to tell us about the roles, locations, or application challenge you’re focused on—reply directly. We’re here to help.",
+    "Thank you for being one of the first people to back JobAppAgent. Your reservation is confirmed, and your support means a lot.",
+    `JobAppAgent is scheduled to launch on September 18, 2026. Your ${purchase.accessDays} days of access will begin when we activate your cloud access—not on the day you paid. If access has not been activated within 60 days of payment, we’ll automatically request a full refund through Dodo Payments.`,
+    "Want to continue now? Use our open-source package with your local AI agent to keep your job search and application journey moving:",
+    "npx job-application-agent@latest install\nhttps://www.npmjs.com/package/job-application-agent",
+    "We’re here to support your goal of finding and applying to the right roles with less busywork. Reply directly with any questions.",
     `Thanks again,\nVaibhav\nJobAppAgent\n${config.replyTo}`,
     "This is a one-time transactional email about your JobAppAgent purchase. You will not be added to marketing emails without separate permission.",
   ];
@@ -60,18 +61,19 @@ export function buildWelcomeEmail(purchase, config) {
   <div style="font-family:'Courier New',monospace;font-size:11px;line-height:1.4;letter-spacing:1.6px;text-transform:uppercase;color:#2f6f5b">Reservation confirmed</div>
   <h1 style="margin:10px 0 24px;font-family:Georgia,'Times New Roman',serif;font-size:34px;line-height:1.22;font-weight:400;color:#173f35">Your place is reserved.</h1>
   <p style="margin:0 0 18px;font-family:Arial,sans-serif;font-size:16px;line-height:1.7;color:#486159">Hi there,</p>
-  <p style="margin:0 0 26px;font-family:Arial,sans-serif;font-size:16px;line-height:1.7;color:#486159">Thank you for being one of the first people to back JobAppAgent. Your support means a lot.</p>
+  <p style="margin:0 0 26px;font-family:Arial,sans-serif;font-size:16px;line-height:1.7;color:#486159">Thank you for being one of the first people to back JobAppAgent. Your reservation is confirmed, and your support means a lot.</p>
   <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" bgcolor="#e5f2eb" style="width:100%;background:#e5f2eb;border-left:4px solid #63b995;border-radius:10px">
     <tr><td style="padding:22px 24px"><div style="font-family:'Courier New',monospace;font-size:11px;line-height:1.4;letter-spacing:1.4px;text-transform:uppercase;color:#2f6f5b">Your access</div><div style="margin-top:6px;font-family:Georgia,'Times New Roman',serif;font-size:27px;line-height:1.25;color:#173f35">${purchase.accessDays} days of access</div><div style="margin-top:7px;font-family:Arial,sans-serif;font-size:14px;line-height:1.5;color:#486159">Starts when cloud access is activated—not on the day you paid.</div></td></tr>
   </table>
   <p style="margin:26px 0 0;font-family:Arial,sans-serif;font-size:16px;line-height:1.7;color:#486159">JobAppAgent is scheduled to launch on <strong style="color:#173f35">September 18, 2026</strong>. If access has not been activated within 60 days of payment, we’ll automatically request a full refund through Dodo Payments.</p>
   <div style="height:1px;margin:32px 0;background:#d8ccb7"></div>
-  <h2 style="margin:0 0 12px;font-family:Georgia,'Times New Roman',serif;font-size:23px;line-height:1.35;font-weight:400;color:#173f35">Less busywork. Your decisions stay yours.</h2>
-  <p style="margin:0 0 28px;font-family:Arial,sans-serif;font-size:16px;line-height:1.7;color:#486159">We’re building JobAppAgent to take repetitive work out of the job search while keeping you in control of the decisions that matter. We’re here to support your goal of finding and applying to the right roles with less busywork.</p>
-  <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" bgcolor="#f2e9d8" style="width:100%;background:#f2e9d8;border-radius:10px">
-    <tr><td style="padding:22px 24px"><div style="font-family:'Courier New',monospace;font-size:11px;line-height:1.4;letter-spacing:1.4px;text-transform:uppercase;color:#2f6f5b">We’re here to help</div><p style="margin:8px 0 10px;font-family:Arial,sans-serif;font-size:15px;line-height:1.65;color:#486159">Have a question—or want to tell us about the roles, locations, or application challenge you’re focused on? Reply directly.</p><a href="mailto:${config.replyTo}" style="font-family:Arial,sans-serif;font-size:15px;font-weight:700;color:#173f35;text-decoration:underline">${config.replyTo}</a></td></tr>
+  <h2 style="margin:0 0 10px;font-family:Georgia,'Times New Roman',serif;font-size:23px;line-height:1.35;font-weight:400;color:#173f35">Start locally today.</h2>
+  <p style="margin:0 0 18px;font-family:Arial,sans-serif;font-size:15px;line-height:1.65;color:#486159">Use our open-source package with your local AI agent to continue your job search and application journey right away.</p>
+  <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" bgcolor="#173f35" style="width:100%;background:#173f35;border-radius:10px">
+    <tr><td style="padding:20px 22px"><div style="font-family:'Courier New',monospace;font-size:11px;line-height:1.4;letter-spacing:1.4px;text-transform:uppercase;color:#a9d8c3">Install</div><div style="margin:8px 0 12px;font-family:'Courier New',monospace;font-size:14px;line-height:1.5;color:#fffaf0">npx job-application-agent@latest install</div><a href="https://www.npmjs.com/package/job-application-agent" style="font-family:Arial,sans-serif;font-size:14px;font-weight:700;color:#a9d8c3;text-decoration:underline">View the open-source package →</a></td></tr>
   </table>
-  <p style="margin:30px 0 0;font-family:Arial,sans-serif;font-size:16px;line-height:1.65;color:#486159">Thanks again,<br><strong style="color:#173f35">Vaibhav</strong><br>JobAppAgent</p>
+  <p style="margin:26px 0 0;font-family:Arial,sans-serif;font-size:15px;line-height:1.65;color:#486159">We’re here to support your goal of finding and applying to the right roles with less busywork. Reply directly with any questions.</p>
+  <p style="margin:24px 0 0;font-family:Arial,sans-serif;font-size:15px;line-height:1.65;color:#486159">Thanks again,<br><strong style="color:#173f35">Vaibhav</strong><br>JobAppAgent<br><a href="mailto:${config.replyTo}" style="color:#173f35;text-decoration:underline">${config.replyTo}</a></p>
 </td></tr>
 <tr><td bgcolor="#f2e9d8" style="padding:22px 28px;background:#f2e9d8;border:1px solid #d8ccb7;border-top:0;border-radius:0 0 16px 16px">
   <p style="margin:0;font-family:Arial,sans-serif;font-size:12px;line-height:1.6;color:#73867f">This is a one-time transactional email about your JobAppAgent purchase. You will not be added to marketing emails without separate permission.</p>
