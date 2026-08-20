@@ -1,7 +1,9 @@
 import type { Metadata } from "next";
+import { headers } from "next/headers";
 import { CommunityProof } from "./components/CommunityProof";
 import { FoundingCheckout } from "./components/FoundingCheckout";
 import { SiteFooter, SiteHeader } from "./components/SiteChrome";
+import { resolveOfferPricing } from "../lib/regional-pricing.mjs";
 
 export const metadata: Metadata = {
   title: "A calmer way to job hunt.",
@@ -14,7 +16,12 @@ const steps = [
   ["03", "Review the record", "Every decision, application, pause, and outcome stays visible so the search improves instead of becoming noise."],
 ] as const;
 
-export default function Home() {
+export default async function Home() {
+  const country = (await headers()).get("x-jobappagent-country");
+  const offer = resolveOfferPricing(country);
+  const paymentCopy = offer.region === "india"
+    ? `Pay ${offer.displayPrice} now, ${offer.priceNote}.`
+    : `Pay ${offer.displayPrice} now at the ${offer.priceNote}.`;
   return <>
     <SiteHeader />
     <main id="top">
@@ -44,8 +51,8 @@ export default function Home() {
 
       <section className="section page-width" id="founding">
         <div className="founding-card">
-          <div><p className="eyebrow">Pre-launch offer</p><h2>Reserve the launch price.</h2><p>JobAppAgent launches September 18, 2026. Pay $49 globally or ₹3,999 including GST in India now. Your 90 days begin only when access is activated. If we have not activated you within 60 days of payment, you will be automatically refunded.</p></div>
-          <div className="offer-panel"><div><span>PRE-LAUNCH PRICE</span><strong>$49</strong><small>₹3,999 incl. GST in India · launches September 18</small></div><ul><li>90 days from activation</li><li>Scheduled job discovery</li><li>Persistent, resumable runs</li><li>Decision notifications</li><li>Secure checkout by Dodo Payments</li></ul><FoundingCheckout /></div>
+          <div><p className="eyebrow">Pre-launch offer</p><h2>Reserve the launch price.</h2><p>JobAppAgent launches September 18, 2026. {paymentCopy} Your 90 days begin only when access is activated. If we have not activated you within 60 days of payment, you will be automatically refunded.</p></div>
+          <div className="offer-panel"><div><span>PRE-LAUNCH PRICE</span><strong>{offer.displayPrice}</strong><small>{offer.priceNote} · launches September 18</small></div><ul><li>90 days from activation</li><li>Scheduled job discovery</li><li>Persistent, resumable runs</li><li>Decision notifications</li><li>Secure checkout by Dodo Payments</li></ul><FoundingCheckout /></div>
         </div>
       </section>
 
