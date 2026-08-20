@@ -44,10 +44,10 @@ const worker = {
 
     const appRequest = withTrustedCountry(request);
     const response = withPublicSecurityHeaders(await handler.fetch(appRequest, env, ctx));
-    if (url.pathname !== "/") return response;
+    if (!["/", "/terms", "/checkout/return"].includes(url.pathname)) return response;
     const headers = new Headers(response.headers);
     headers.set("cache-control", "private, no-store");
-    headers.set("vary", "CF-IPCountry");
+    if (url.pathname === "/") headers.set("vary", "CF-IPCountry");
     return new Response(response.body, { status: response.status, statusText: response.statusText, headers });
   },
 };
