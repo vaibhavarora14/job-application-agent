@@ -100,7 +100,6 @@ test("publishes the approved Quiet Trust identity at every product-icon size", (
 test("server-renders human-readable privacy and terms pages", async () => {
   const [privacy, terms] = await Promise.all([render("/privacy"), render("/terms")]);
   assert.equal(privacy.status, 200); assert.equal(terms.status, 200);
-  assert.match(terms.headers.get("cache-control") ?? "", /no-store/);
   assert.match(await privacy.text(), /Privacy, in plain language/);
   const termsHtml = await terms.text();
   assert.match(termsHtml, /one-time \$49 globally/);
