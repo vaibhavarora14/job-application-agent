@@ -28,6 +28,8 @@ const AUTONOMY_HARD_STOPS = Object.freeze(['authentication', 'mfa', 'captcha', '
 const ATTENTION_STAGES = new Set(['discovery', 'assessment', 'application', 'contact', 'resume', 'questions', 'legal', 'demographic', 'review', 'submission', 'confirmation', 'outcome', 'answers', 'upload']);
 const ATTENTION_BLOCKERS = new Set(['authentication', 'mfa', 'captcha', 'legal-attestation', 'demographic', 'government-id', 'ambiguous-authorization', 'ambiguous-compensation', 'unverifiable-claim', 'judgment', 'video', 'upload', 'site-error', 'other']);
 const REQUIRED_ACTIONS = new Set(['sign-in', 'complete-mfa', 'complete-captcha', 'review-legal', 'choose-demographic', 'provide-government-id', 'provide-authorization', 'provide-compensation', 'verify-claim', 'provide-judgment', 'record-video', 'enable-upload', 'retry-site']);
+const COMPANY_REAPPLY_COOLDOWN_DAYS = 15;
+const COMPANY_REAPPLY_OVERRIDE = 'CANDIDATE APPROVED EARLY REAPPLICATION';
 const REQUIRED_PROFILE = ['name', 'email', 'phone', 'location', 'workAuthorization', 'roleFamilies', 'seniority', 'targetLocations', 'workModes', 'submissionMode', 'yearsExperience', 'autoSubmitMinScore', 'manualReviewMinScore', 'minMustHaveCoverage'];
 const STRING_PROFILE_FIELDS = new Set(['name', 'email', 'phone', 'location', 'workAuthorization', 'linkedin', 'github', 'portfolio', 'availability', 'currentCompensation', 'targetCompensation', 'submissionMode']);
 const ARRAY_PROFILE_FIELDS = new Set(['roleFamilies', 'seniority', 'skills', 'targetLocations', 'excludedLocations', 'workModes', 'industries', 'excludedCompanies']);
@@ -442,6 +444,27 @@ function normalizedText(value) {
   return String(value ?? '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
 }
 
+function comparableRoleTokens(value) {
+  const normalized = normalizedText(value)
+    .replace(/\bsr\b/g, 'senior')
+    .replace(/\bjr\b/g, 'junior')
+    .replace(/\bfull stack\b/g, 'fullstack')
+    .replace(/\bfront end\b/g, 'frontend')
+    .replace(/\bback end\b/g, 'backend');
+  const ignored = new Set(['software', 'junior', 'mid', 'senior', 'staff', 'principal', 'lead', 'manager', 'director', 'founding']);
+  return new Set(normalized.split(' ')
+    .map((token) => token === 'developer' ? 'engineer' : token)
+    .filter((token) => token && !ignored.has(token)));
+}
+
+function rolesLikelySame(left, right) {
+  const leftTokens = comparableRoleTokens(left);
+  const rightTokens = comparableRoleTokens(right);
+  if (leftTokens.size === 0 || rightTokens.size === 0) return normalizedText(left) === normalizedText(right);
+  const shared = [...leftTokens].filter((token) => rightTokens.has(token)).length;
+  return shared / Math.min(leftTokens.size, rightTokens.size) >= 0.75;
+}
+
 function canonicalApplicationKey(entry, fallback = '') {
   if (entry.employerJobId) return `job:${normalizedText(entry.company)}:${String(entry.employerJobId).toLowerCase()}`;
   if (entry.company && entry.role) return `legacy-role:${normalizedText(entry.company)}:${normalizedText(entry.role)}`;
@@ -737,63 +760,105 @@ async function canonicalResumePath() {
   return { path: target };
 }
 
-function duplicateResult(entries, candidate) {
+function duplicateResult(entries, candidate, outcomes = [], now = new Date()) {
   const candidateCompany = normalizedText(candidate.company);
   const candidateRole = normalizedText(candidate.role);
   const candidateUrl = normalizeUrl(candidate.url);
-  const sameCompanyRole = (entry) => candidateCompany && candidateRole && normalizedText(entry.company) === candidateCompany && normalizedText(entry.role) === candidateRole;
-  const hard = entries.find((entry) => entry.id === candidate.id
-    || (candidate.employerJobId && entry.employerJobId && normalizedText(entry.company) === candidateCompany && entry.employerJobId.toLowerCase() === String(candidate.employerJobId).toLowerCase())
-    || normalizeUrl(entry.url) === candidateUrl);
+  const sameCompanyRole = (entry) => candidateCompany && candidateRole
+    && normalizedText(entry.company) === candidateCompany
+    && rolesLikelySame(entry.role, candidate.role);
+  const hardId = entries.find((entry) => entry.id === candidate.id);
+  const hardEmployerJobId = entries.find((entry) => candidate.employerJobId && entry.employerJobId
+    && normalizedText(entry.company) === candidateCompany
+    && entry.employerJobId.toLowerCase() === String(candidate.employerJobId).toLowerCase());
+  const hardUrl = entries.find((entry) => normalizeUrl(entry.url) === candidateUrl);
+  const hard = hardId ?? hardEmployerJobId ?? hardUrl;
+  const hardReason = hardId ? 'id' : hardEmployerJobId ? 'employer-job-id' : hardUrl ? 'url' : null;
   const possible = hard ? null : entries.find(sameCompanyRole);
   const match = hard ?? possible;
-  const companyApplications = candidateCompany
-    ? entries.filter((entry) => normalizedText(entry.company) === candidateCompany).slice(-20).map((entry) => ({
+  const sameCompanyEntries = candidateCompany
+    ? entries.filter((entry) => normalizedText(entry.company) === candidateCompany)
+    : [];
+  const companyApplications = sameCompanyEntries.slice(-20).map((entry) => ({
       id: entry.id,
       company: entry.company,
       role: entry.role,
       submittedAt: entry.submittedAt,
       ...(entry.employerJobId ? { employerJobId: entry.employerJobId } : {}),
-    }))
-    : [];
+    }));
+  const latestCompanyApplication = [...sameCompanyEntries]
+    .filter((entry) => !Number.isNaN(Date.parse(entry.submittedAt)))
+    .sort((left, right) => Date.parse(right.submittedAt) - Date.parse(left.submittedAt))[0] ?? null;
+  const daysSinceLatest = latestCompanyApplication
+    ? Math.max(0, Math.floor((now.getTime() - Date.parse(latestCompanyApplication.submittedAt)) / 86_400_000))
+    : null;
+  const hasFollowUp = latestCompanyApplication
+    ? outcomes.some((outcome) => outcome.id === latestCompanyApplication.id)
+    : false;
+  let companyReapplyDecision = 'fresh-company';
+  if (hard) companyReapplyDecision = 'hard-duplicate';
+  else if (possible) companyReapplyDecision = 'same-role-review';
+  else if (latestCompanyApplication && hasFollowUp) companyReapplyDecision = 'follow-up-present';
+  else if (latestCompanyApplication && daysSinceLatest < COMPANY_REAPPLY_COOLDOWN_DAYS) companyReapplyDecision = 'cooldown-active';
+  else if (latestCompanyApplication) companyReapplyDecision = 'eligible-after-cooldown';
   return {
     duplicate: Boolean(hard),
     possibleDuplicate: Boolean(possible),
-    reason: hard ? (hard.id === candidate.id ? 'id' : candidate.employerJobId && hard.employerJobId ? 'employer-job-id' : 'url') : possible ? 'company-role' : null,
+    reason: hardReason ?? (possible ? 'company-role' : null),
     match: match ? { id: match.id, company: match.company, role: match.role, submittedAt: match.submittedAt } : null,
     sameCompany: companyApplications.length > 0,
     companyApplications,
+    companyReapply: {
+      eligible: companyReapplyDecision === 'eligible-after-cooldown',
+      decision: companyReapplyDecision,
+      cooldownDays: COMPANY_REAPPLY_COOLDOWN_DAYS,
+      latestSubmittedAt: latestCompanyApplication?.submittedAt ?? null,
+      daysSinceLatest,
+      hasFollowUp,
+    },
   };
 }
 
 async function ledgerCheck(candidate) {
   object(candidate, 'candidate');
-  const entries = await jsonLines(join(await ensureStateDir(), 'applications.ndjson'));
+  const dir = await ensureStateDir();
+  const entries = await jsonLines(join(dir, 'applications.ndjson'));
+  const outcomes = await jsonLines(join(dir, 'outcomes.ndjson'));
   string(candidate.url, 'candidate.url', 2048);
-  return duplicateResult(entries, candidate);
+  return duplicateResult(entries, candidate, outcomes);
 }
 
-async function ledgerAdd(entryInput, duplicateOverride) {
+async function ledgerAdd(entryInput, duplicateOverride, companyReapplyOverride) {
   const entry = validateLedgerEntry(entryInput);
   return withStateLock('applications', async (dir) => {
     const file = join(dir, 'applications.ndjson');
     const entries = await jsonLines(file);
+    const outcomes = await jsonLines(join(dir, 'outcomes.ndjson'));
     if (entry.roundId) {
       const roundEvents = await jsonLines(join(dir, 'rounds.ndjson'));
       if (!roundEvents.some((event) => event.type === 'started' && event.roundId === entry.roundId)) throw new Error('entry.roundId does not identify a started round.');
       if (roundEvents.some((event) => event.type === 'completed' && event.roundId === entry.roundId)) throw new Error('entry.roundId identifies a completed round.');
     }
-    const duplicate = duplicateResult(entries, entry);
-    if (duplicate.duplicate) throw new Error('This application is already recorded.');
+    const duplicate = duplicateResult(entries, entry, outcomes);
+    if (duplicate.duplicate) throw new Error(`Hard duplicate blocked: matching ${duplicate.reason === 'employer-job-id' ? 'employer job ID or requisition' : duplicate.reason === 'url' ? 'canonical URL' : 'ledger ID'}.`);
     if (duplicate.possibleDuplicate && duplicateOverride !== 'NEW REQUISITION CONFIRMED') throw new Error('A possible same-company role duplicate requires NEW REQUISITION CONFIRMED.');
-    await appendFile(file, `${JSON.stringify(entry)}\n`, { mode: 0o600 });
+    if (!duplicate.possibleDuplicate && duplicate.companyReapply.decision === 'cooldown-active' && companyReapplyOverride !== COMPANY_REAPPLY_OVERRIDE) {
+      throw new Error(`Company reapplication cooldown is active for ${COMPANY_REAPPLY_COOLDOWN_DAYS} full days; use ${COMPANY_REAPPLY_OVERRIDE} only with explicit candidate approval.`);
+    }
+    if (!duplicate.possibleDuplicate && duplicate.companyReapply.decision === 'follow-up-present' && companyReapplyOverride !== COMPANY_REAPPLY_OVERRIDE) {
+      throw new Error(`Company reapplication blocked because the latest application has a recorded follow-up; use ${COMPANY_REAPPLY_OVERRIDE} only with explicit candidate approval.`);
+    }
+    const storedEntry = ['cooldown-active', 'follow-up-present'].includes(duplicate.companyReapply.decision)
+      ? { ...entry, reapplicationApproval: 'candidate-explicit' }
+      : entry;
+    await appendFile(file, `${JSON.stringify(storedEntry)}\n`, { mode: 0o600 });
     await chmod(file, 0o600);
     if (entry.roundId) {
       const roundsFile = join(dir, 'rounds.ndjson');
       await appendFile(roundsFile, `${JSON.stringify({ type: 'submission-confirmed', roundId: entry.roundId, applicationId: entry.id, occurredAt: entry.submittedAt })}\n`, { mode: 0o600 });
       await chmod(roundsFile, 0o600);
     }
-    return { recorded: entry.id, review: buildReview([...entries, entry]) };
+    return { recorded: storedEntry.id, review: buildReview([...entries, storedEntry]) };
   });
 }
 
@@ -1096,7 +1161,7 @@ async function executeCommand([area, action, value], telemetry, session) {
     const input = await jsonStdin();
     const telemetryDetails = validateSubmissionTelemetry(input.telemetry);
     const entry = validateLedgerEntry(input);
-    result = await ledgerAdd(entry, input.duplicateOverride);
+    result = await ledgerAdd(entry, input.duplicateOverride, input.companyReapplyOverride);
     domainEvents.push(await telemetryApplicationSubmitted(entry, telemetryDetails));
   } else if (area === 'ledger' && action === 'outcome' && value === '--stdin') {
     const outcome = await ledgerOutcome(await jsonStdin());

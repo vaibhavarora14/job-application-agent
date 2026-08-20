@@ -51,16 +51,17 @@ For batches, scheduled work, or resumable handoffs, read [references/RUNS.md](re
 
 1. Recheck employer, title, direct domain, posting status, eligibility, and `autoEligible` immediately before submission.
 2. Run `ledger check --stdin` with the internal ledger ID, canonical URL, employer job ID, company, and role when available. Review both requisition duplicate status and same-company history.
-3. Stop on a hard duplicate. Treat a same-company/same-role match without a shared job ID as a possible duplicate. Use `duplicateOverride: "NEW REQUISITION CONFIRMED"` only after verifying it is a distinct requisition.
-4. Keep authentication in the existing browser session. Never inspect cookies, local storage, passwords, or session files.
-5. Fill only explicit profile fields, candidate-provided answers, or facts verified in the canonical resume.
-6. Follow [references/APPLICATION_GUIDANCE.md](references/APPLICATION_GUIDANCE.md) for narrative answers.
-7. Upload only the canonical resume unless the candidate explicitly provides another attachment. Resolve its absolute path with `resume path`, then follow [references/BROWSER_UPLOADS.md](references/BROWSER_UPLOADS.md). Use the browser's privileged path-based upload capability first; treat a visible native file picker as a fallback.
-8. Do not answer demographic questions. Stop for login/SSO/MFA, CAPTCHA, legal attestations, unclear authorization or compensation, sensitive identifiers, and judgment-only questions.
-9. Verify every required field, answer, attachment, and disclosure. Submit when the current request or active autonomy grant authorizes it.
-10. Record `submitted` only after visible success confirmation, using independent `discoverySource`, `applicationChannel`, and `roundId` values. Record no submission when confirmation is missing or ambiguous.
-11. Record workflow telemetry with `telemetry record --stdin`. Let `ledger add` emit `application_submitted`; do not emit it twice. Pass job URLs and structured metrics only through documented transient fields.
-12. Queue hard stops with `attention add --stdin` and continue elsewhere. Record reproducible general-purpose failures with `friction record --stdin`; improvement work must never delay application work.
+3. Stop on a hard ledger-ID, canonical-URL, employer-job-ID, or requisition duplicate. Treat a same-company/same-role alias as a possible duplicate. Use `duplicateOverride: "NEW REQUISITION CONFIRMED"` only after verifying it is a distinct requisition.
+4. For a genuinely different role at a previously applied company, follow `companyReapply`: proceed automatically only when it returns `eligible-after-cooldown` (15 full days since the latest company application and no recorded outcome). `cooldown-active` and `follow-up-present` require the candidate's explicit approval and `companyReapplyOverride: "CANDIDATE APPROVED EARLY REAPPLICATION"`.
+5. Keep authentication in the existing browser session. Never inspect cookies, local storage, passwords, or session files.
+6. Fill only explicit profile fields, candidate-provided answers, or facts verified in the canonical resume.
+7. Follow [references/APPLICATION_GUIDANCE.md](references/APPLICATION_GUIDANCE.md) for narrative answers.
+8. Upload only the canonical resume unless the candidate explicitly provides another attachment. Resolve its absolute path with `resume path`, then follow [references/BROWSER_UPLOADS.md](references/BROWSER_UPLOADS.md). Use the browser's privileged path-based upload capability first; treat a visible native file picker as a fallback.
+9. Do not answer demographic questions. Stop for login/SSO/MFA, CAPTCHA, legal attestations, unclear authorization or compensation, sensitive identifiers, and judgment-only questions.
+10. Verify every required field, answer, attachment, and disclosure. Submit when the current request or active autonomy grant authorizes it.
+11. Record `submitted` only after visible success confirmation, using independent `discoverySource`, `applicationChannel`, and `roundId` values. Record no submission when confirmation is missing or ambiguous.
+12. Record workflow telemetry with `telemetry record --stdin`. Let `ledger add` emit `application_submitted`; do not emit it twice. Pass job URLs and structured metrics only through documented transient fields.
+13. Queue hard stops with `attention add --stdin` and continue elsewhere. Record reproducible general-purpose failures with `friction record --stdin`; improvement work must never delay application work.
 
 ## Outcomes and reviews
 
