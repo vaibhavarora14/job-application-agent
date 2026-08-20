@@ -136,7 +136,7 @@ export async function savePaidIntent(id: string, intent: string) {
   return (result.meta?.changes ?? 0) > 0;
 }
 
-export async function createPurchase(productId: string, accessDays = 30) {
+export async function createPurchase(productId: string, accessDays = 90) {
   await ensureSchema();
   const id = crypto.randomUUID();
   await env.DB.prepare("INSERT INTO founding_purchases (id,product_id,access_days) VALUES (?,?,?)").bind(id, productId, accessDays).run();

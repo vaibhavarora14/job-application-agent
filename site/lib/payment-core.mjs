@@ -5,7 +5,7 @@ const paymentEvents = new Set([
   "dispute.cancelled", "dispute.won", "dispute.expired", "dispute.challenged",
 ]);
 
-export const CURRENT_ACCESS_DAYS = 30;
+export const CURRENT_ACCESS_DAYS = 90;
 
 export function validatePurchaseId(input) {
   const purchaseId = typeof input === "string" ? input.trim() : "";
@@ -36,7 +36,7 @@ export function buildCheckoutRequest({ productId, purchaseId, publicSiteUrl }) {
     product_cart: [{ product_id: productId, quantity: 1 }],
     return_url: `${base}/checkout/return?purchase_id=${purchaseId}`,
     cancel_url: `${base}/#founding`,
-    metadata: { purchase_id: purchaseId, offer: "prelaunch_30_days" },
+    metadata: { purchase_id: purchaseId, offer: "prelaunch_90_days" },
     customization: {
       force_language: "en",
       theme: "light",

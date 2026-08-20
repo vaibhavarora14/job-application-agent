@@ -13,8 +13,8 @@ import {
 
 const purchaseId = "11111111-1111-4111-8111-111111111111";
 
-test("stores 30 days for the current offer", () => {
-  assert.equal(CURRENT_ACCESS_DAYS, 30);
+test("stores 90 days for the current offer", () => {
+  assert.equal(CURRENT_ACCESS_DAYS, 90);
 });
 
 test("accepts only a UUID purchase id for status and reuse", () => {
@@ -45,7 +45,7 @@ test("builds a hosted checkout that collects customer details at Dodo", () => {
     product_cart: [{ product_id: "pdt_founding", quantity: 1 }],
     return_url: `https://agent.example/checkout/return?purchase_id=${purchaseId}`,
     cancel_url: "https://agent.example/#founding",
-    metadata: { purchase_id: purchaseId, offer: "prelaunch_30_days" },
+    metadata: { purchase_id: purchaseId, offer: "prelaunch_90_days" },
     customization: {
       force_language: "en",
       theme: "light",

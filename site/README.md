@@ -47,9 +47,8 @@ or persistence failure returns `503` so Dodo can retry fulfillment. The email
 uses the purchase's stored `access_days` value rather than current landing-page
 copy.
 
-Paid access is activated separately from payment. New purchases store a 30-day
-entitlement, while purchases made under the earlier offer retain their stored
-90 days; either period starts at activation. `.github/workflows/refund-unactivated-purchases.yml` calls the
+Paid access is activated separately from payment. New purchases store a 90-day
+entitlement, which starts at activation. `.github/workflows/refund-unactivated-purchases.yml` calls the
 protected refund endpoint daily and requests full, idempotent refunds for paid
 purchases that remain unactivated after 60 days.
 
