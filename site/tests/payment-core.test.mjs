@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {
+  CURRENT_ACCESS_DAYS,
   buildCheckoutRequest,
   canonicalCheckoutReturnUrl,
   hasPaidAccess,
@@ -11,6 +12,10 @@ import {
 } from "../lib/payment-core.mjs";
 
 const purchaseId = "11111111-1111-4111-8111-111111111111";
+
+test("stores 30 days for the current offer", () => {
+  assert.equal(CURRENT_ACCESS_DAYS, 30);
+});
 
 test("accepts only a UUID purchase id for status and reuse", () => {
   assert.deepEqual(validatePurchaseId(purchaseId), { ok: true, purchaseId });
@@ -40,7 +45,7 @@ test("builds a hosted checkout that collects customer details at Dodo", () => {
     product_cart: [{ product_id: "pdt_founding", quantity: 1 }],
     return_url: `https://agent.example/checkout/return?purchase_id=${purchaseId}`,
     cancel_url: "https://agent.example/#founding",
-    metadata: { purchase_id: purchaseId, offer: "founding_90_days" },
+    metadata: { purchase_id: purchaseId, offer: "prelaunch_30_days" },
     customization: {
       force_language: "en",
       theme: "light",

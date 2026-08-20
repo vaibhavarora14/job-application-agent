@@ -58,7 +58,9 @@ export async function deliverPurchaseWelcome({ purchase, config, claimDelivery, 
     return { ok: false, error: "invalid_purchase" };
   }
   const key = { purchaseId: purchase.id, messageKind: WELCOME_MESSAGE_KIND };
-  if (!await claimDelivery(key)) return { ok: true, sent: false, duplicate: true };
+  const claim = await claimDelivery(key);
+  if (claim === "accepted") return { ok: true, sent: false, duplicate: true };
+  if (claim !== "claimed") return { ok: false, error: "delivery_in_progress" };
   let providerMessageId;
   try {
     const sent = await sendEmail(buildWelcomeEmail(purchase, config), {

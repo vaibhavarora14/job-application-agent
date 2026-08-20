@@ -136,7 +136,7 @@ export async function savePaidIntent(id: string, intent: string) {
   return (result.meta?.changes ?? 0) > 0;
 }
 
-export async function createPurchase(productId: string, accessDays = 90) {
+export async function createPurchase(productId: string, accessDays = 30) {
   await ensureSchema();
   const id = crypto.randomUUID();
   await env.DB.prepare("INSERT INTO founding_purchases (id,product_id,access_days) VALUES (?,?,?)").bind(id, productId, accessDays).run();
@@ -200,7 +200,10 @@ export async function claimWelcomeEmailDelivery(input: { purchaseId: string; mes
       status IN ('pending','failed') OR
       (status='sending' AND (last_attempt_at IS NULL OR last_attempt_at<=datetime('now','-5 minutes')))
     )`).bind(input.purchaseId, input.messageKind).run();
-  return (result.meta?.changes ?? 0) > 0;
+  if ((result.meta?.changes ?? 0) > 0) return "claimed";
+  const delivery = await db.prepare(`SELECT status FROM customer_email_deliveries
+    WHERE purchase_id=? AND message_kind=?`).bind(input.purchaseId, input.messageKind).first<{ status: string }>();
+  return delivery?.status === "accepted" ? "accepted" : "busy";
 }
 
 export async function markWelcomeEmailAccepted(input: { purchaseId: string; messageKind: string; providerMessageId: string }) {

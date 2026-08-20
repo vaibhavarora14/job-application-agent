@@ -59,7 +59,7 @@ test("accepts a succeeded purchase once with a stable idempotency key", async ()
   const result = await deliverPurchaseWelcome({
     purchase: purchase(),
     config,
-    claimDelivery: async (input) => { calls.push(["claim", input]); return true; },
+    claimDelivery: async (input) => { calls.push(["claim", input]); return "claimed"; },
     sendEmail: async (message, options) => { calls.push(["send", message, options]); return { id: "email_123" }; },
     markAccepted: async (input) => { calls.push(["accepted", input]); return true; },
     markFailed: async (input) => { calls.push(["failed", input]); },
@@ -76,12 +76,12 @@ test("accepts a succeeded purchase once with a stable idempotency key", async ()
   assert.equal(calls.some(([name]) => name === "failed"), false);
 });
 
-test("skips a webhook replay when the delivery cannot be claimed", async () => {
+test("skips a webhook replay only when the delivery was already accepted", async () => {
   let sends = 0;
   const result = await deliverPurchaseWelcome({
     purchase: purchase(),
     config,
-    claimDelivery: async () => false,
+    claimDelivery: async () => "accepted",
     sendEmail: async () => { sends += 1; return { id: "email_123" }; },
     markAccepted: async () => true,
     markFailed: async () => {},
@@ -97,9 +97,9 @@ test("allows only one concurrent delivery claim to send", async () => {
     purchase: purchase(),
     config,
     claimDelivery: async () => {
-      if (claimed) return false;
+      if (claimed) return "accepted";
       claimed = true;
-      return true;
+      return "claimed";
     },
     sendEmail: async () => { sends += 1; return { id: "email_123" }; },
     markAccepted: async () => true,
@@ -114,12 +114,26 @@ test("allows only one concurrent delivery claim to send", async () => {
   assert.equal(results.filter((result) => result.duplicate).length, 1);
 });
 
+test("keeps an unresolved concurrent delivery retryable", async () => {
+  let sends = 0;
+  const result = await deliverPurchaseWelcome({
+    purchase: purchase(),
+    config,
+    claimDelivery: async () => "busy",
+    sendEmail: async () => { sends += 1; return { id: "email_123" }; },
+    markAccepted: async () => true,
+    markFailed: async () => {},
+  });
+  assert.deepEqual(result, { ok: false, error: "delivery_in_progress" });
+  assert.equal(sends, 0);
+});
+
 test("marks a provider failure as retryable without exposing its details", async () => {
   const failed = [];
   const result = await deliverPurchaseWelcome({
     purchase: purchase(),
     config,
-    claimDelivery: async () => true,
+    claimDelivery: async () => "claimed",
     sendEmail: async () => { throw new Error("provider included customer@example.com in error"); },
     markAccepted: async () => assert.fail("must not accept a failed send"),
     markFailed: async (input) => { failed.push(input); },
@@ -133,7 +147,7 @@ test("retries when provider acceptance cannot be persisted", async () => {
   const result = await deliverPurchaseWelcome({
     purchase: purchase(),
     config,
-    claimDelivery: async () => true,
+    claimDelivery: async () => "claimed",
     sendEmail: async () => ({ id: "email_123" }),
     markAccepted: async () => false,
     markFailed: async () => { failures += 1; },
@@ -152,7 +166,7 @@ test("does not send welcome email for a non-succeeded or malformed purchase", as
     const result = await deliverPurchaseWelcome({
       purchase: invalidPurchase,
       config,
-      claimDelivery: async () => { claims += 1; return true; },
+      claimDelivery: async () => { claims += 1; return "claimed"; },
       sendEmail: async () => ({ id: "email_123" }),
       markAccepted: async () => true,
       markFailed: async () => {},
