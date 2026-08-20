@@ -71,7 +71,8 @@ export async function deliverPurchaseWelcome({ purchase, config, claimDelivery, 
     return { ok: false, error: "delivery_failed" };
   }
   try {
-    await markAccepted({ ...key, providerMessageId });
+    const accepted = await markAccepted({ ...key, providerMessageId });
+    if (!accepted) throw new Error("Email acceptance was not persisted.");
   } catch {
     return { ok: false, error: "delivery_failed" };
   }

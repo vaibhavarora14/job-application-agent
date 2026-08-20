@@ -61,7 +61,7 @@ test("accepts a succeeded purchase once with a stable idempotency key", async ()
     config,
     claimDelivery: async (input) => { calls.push(["claim", input]); return true; },
     sendEmail: async (message, options) => { calls.push(["send", message, options]); return { id: "email_123" }; },
-    markAccepted: async (input) => { calls.push(["accepted", input]); },
+    markAccepted: async (input) => { calls.push(["accepted", input]); return true; },
     markFailed: async (input) => { calls.push(["failed", input]); },
   });
 
@@ -83,7 +83,7 @@ test("skips a webhook replay when the delivery cannot be claimed", async () => {
     config,
     claimDelivery: async () => false,
     sendEmail: async () => { sends += 1; return { id: "email_123" }; },
-    markAccepted: async () => {},
+    markAccepted: async () => true,
     markFailed: async () => {},
   });
   assert.deepEqual(result, { ok: true, sent: false, duplicate: true });
@@ -102,7 +102,7 @@ test("allows only one concurrent delivery claim to send", async () => {
       return true;
     },
     sendEmail: async () => { sends += 1; return { id: "email_123" }; },
-    markAccepted: async () => {},
+    markAccepted: async () => true,
     markFailed: async () => {},
   };
   const results = await Promise.all([
@@ -128,6 +128,20 @@ test("marks a provider failure as retryable without exposing its details", async
   assert.deepEqual(failed, [{ purchaseId: purchase().id, messageKind: WELCOME_MESSAGE_KIND }]);
 });
 
+test("retries when provider acceptance cannot be persisted", async () => {
+  let failures = 0;
+  const result = await deliverPurchaseWelcome({
+    purchase: purchase(),
+    config,
+    claimDelivery: async () => true,
+    sendEmail: async () => ({ id: "email_123" }),
+    markAccepted: async () => false,
+    markFailed: async () => { failures += 1; },
+  });
+  assert.deepEqual(result, { ok: false, error: "delivery_failed" });
+  assert.equal(failures, 0, "leave the claim stale so the idempotent send can be reclaimed");
+});
+
 test("does not send welcome email for a non-succeeded or malformed purchase", async () => {
   let claims = 0;
   for (const invalidPurchase of [
@@ -140,7 +154,7 @@ test("does not send welcome email for a non-succeeded or malformed purchase", as
       config,
       claimDelivery: async () => { claims += 1; return true; },
       sendEmail: async () => ({ id: "email_123" }),
-      markAccepted: async () => {},
+      markAccepted: async () => true,
       markFailed: async () => {},
     });
     assert.deepEqual(result, { ok: false, error: "invalid_purchase" });

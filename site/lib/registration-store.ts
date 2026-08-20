@@ -1,11 +1,13 @@
 import { env } from "cloudflare:workers";
 import { activationDeadline, activationWindow } from "./purchase-lifecycle.mjs";
+import { PURCHASE_WEBHOOK_UPDATE_SQL } from "./purchase-webhook-store.mjs";
 
 let schemaReady: Promise<void> | undefined;
 
 async function ensureSchema() {
   const db = env.DB;
-  schemaReady ??= db.batch([db.prepare(`CREATE TABLE IF NOT EXISTS founding_registrations (
+  schemaReady ??= (async () => {
+    await db.batch([db.prepare(`CREATE TABLE IF NOT EXISTS founding_registrations (
     id TEXT PRIMARY KEY NOT NULL,
     email TEXT NOT NULL UNIQUE,
     target_role TEXT NOT NULL,
@@ -42,6 +44,7 @@ async function ensureSchema() {
     dodo_customer_id TEXT,
     customer_email TEXT,
     product_id TEXT NOT NULL,
+    access_days INTEGER NOT NULL DEFAULT 90,
     status TEXT NOT NULL DEFAULT 'created',
     amount INTEGER,
     currency TEXT,
@@ -54,7 +57,24 @@ async function ensureSchema() {
     refund_requested_at TEXT,
     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
-  )`), db.prepare("CREATE INDEX IF NOT EXISTS idx_founding_payments_registration_id ON founding_payments(registration_id)"), db.prepare("CREATE INDEX IF NOT EXISTS idx_founding_purchases_refund_due ON founding_purchases(status,activation_deadline_at)"), db.prepare("PRAGMA optimize")]).then(() => undefined);
+  )`), db.prepare(`CREATE TABLE IF NOT EXISTS customer_email_deliveries (
+    id TEXT PRIMARY KEY NOT NULL,
+    purchase_id TEXT NOT NULL REFERENCES founding_purchases(id),
+    message_kind TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'pending',
+    attempt_count INTEGER NOT NULL DEFAULT 0,
+    provider_message_id TEXT,
+    last_attempt_at TEXT,
+    accepted_at TEXT,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(purchase_id,message_kind)
+  )`), db.prepare("CREATE INDEX IF NOT EXISTS idx_founding_payments_registration_id ON founding_payments(registration_id)"), db.prepare("CREATE INDEX IF NOT EXISTS idx_founding_purchases_refund_due ON founding_purchases(status,activation_deadline_at)"), db.prepare("CREATE INDEX IF NOT EXISTS idx_customer_email_deliveries_retry ON customer_email_deliveries(status,last_attempt_at)"), db.prepare("PRAGMA optimize")]);
+    const columns = await db.prepare("PRAGMA table_info(founding_purchases)").all<{ name: string }>();
+    if (!(columns.results ?? []).some((column) => column.name === "access_days")) {
+      await db.prepare("ALTER TABLE founding_purchases ADD COLUMN access_days INTEGER NOT NULL DEFAULT 90").run();
+    }
+  })();
   return schemaReady;
 }
 
@@ -116,10 +136,10 @@ export async function savePaidIntent(id: string, intent: string) {
   return (result.meta?.changes ?? 0) > 0;
 }
 
-export async function createPurchase(productId: string) {
+export async function createPurchase(productId: string, accessDays = 90) {
   await ensureSchema();
   const id = crypto.randomUUID();
-  await env.DB.prepare("INSERT INTO founding_purchases (id,product_id) VALUES (?,?)").bind(id, productId).run();
+  await env.DB.prepare("INSERT INTO founding_purchases (id,product_id,access_days) VALUES (?,?,?)").bind(id, productId, accessDays).run();
   return id;
 }
 
@@ -151,18 +171,52 @@ export async function applyPurchaseWebhook(eventId: string, payment: {
   await db.batch([
     db.prepare("INSERT INTO payment_webhook_events (id,event_type,payment_id) VALUES (?,?,?) ON CONFLICT(id) DO NOTHING")
       .bind(eventId, payment.eventType, payment.paymentId),
-    db.prepare(`UPDATE founding_purchases SET dodo_payment_id=?,dodo_customer_id=COALESCE(?,dodo_customer_id),
-      customer_email=COALESCE(?,customer_email),status=CASE
-        WHEN status='refunded' OR ? IS NULL OR (status LIKE 'dispute_%' AND ? NOT LIKE 'dispute_%') THEN status ELSE ? END,
-      amount=COALESCE(?,amount),currency=COALESCE(?,currency),paid_at=COALESCE(?,paid_at),
-      activation_deadline_at=COALESCE(?,activation_deadline_at),refund_id=COALESCE(?,refund_id),
-      refund_status=CASE WHEN refund_status='succeeded' OR ? IS NULL THEN refund_status ELSE ? END,updated_at=CURRENT_TIMESTAMP
-      WHERE product_id=? AND ((? IS NOT NULL AND id=?) OR dodo_payment_id=?)`)
+    db.prepare(PURCHASE_WEBHOOK_UPDATE_SQL)
       .bind(payment.paymentId, payment.customerId, payment.customerEmail, payment.status, payment.status, payment.status,
         payment.amount, payment.currency, paidAt, deadline, payment.refundId ?? null,
         payment.refundStatus ?? null, payment.refundStatus ?? null,
         payment.productId, payment.purchaseId, payment.purchaseId, payment.paymentId),
   ]);
+}
+
+export async function getWelcomeEmailPurchase(purchaseId: string) {
+  await ensureSchema();
+  return env.DB.prepare(`SELECT id,customer_email AS customerEmail,access_days AS accessDays,status
+    FROM founding_purchases WHERE id=?`).bind(purchaseId).first<{
+      id: string; customerEmail: string | null; accessDays: number; status: string;
+    }>();
+}
+
+export async function claimWelcomeEmailDelivery(input: { purchaseId: string; messageKind: string }) {
+  await ensureSchema();
+  const db = env.DB;
+  await db.prepare(`INSERT INTO customer_email_deliveries (id,purchase_id,message_kind)
+    SELECT ?,id,? FROM founding_purchases WHERE id=? AND status='succeeded'
+    ON CONFLICT(purchase_id,message_kind) DO NOTHING`)
+    .bind(crypto.randomUUID(), input.messageKind, input.purchaseId).run();
+  const result = await db.prepare(`UPDATE customer_email_deliveries SET status='sending',
+    attempt_count=attempt_count+1,last_attempt_at=CURRENT_TIMESTAMP,updated_at=CURRENT_TIMESTAMP
+    WHERE purchase_id=? AND message_kind=? AND (
+      status IN ('pending','failed') OR
+      (status='sending' AND (last_attempt_at IS NULL OR last_attempt_at<=datetime('now','-5 minutes')))
+    )`).bind(input.purchaseId, input.messageKind).run();
+  return (result.meta?.changes ?? 0) > 0;
+}
+
+export async function markWelcomeEmailAccepted(input: { purchaseId: string; messageKind: string; providerMessageId: string }) {
+  await ensureSchema();
+  const result = await env.DB.prepare(`UPDATE customer_email_deliveries SET status='accepted',provider_message_id=?,
+    accepted_at=CURRENT_TIMESTAMP,updated_at=CURRENT_TIMESTAMP
+    WHERE purchase_id=? AND message_kind=? AND status='sending'`)
+    .bind(input.providerMessageId, input.purchaseId, input.messageKind).run();
+  return (result.meta?.changes ?? 0) > 0;
+}
+
+export async function markWelcomeEmailFailed(input: { purchaseId: string; messageKind: string }) {
+  await ensureSchema();
+  await env.DB.prepare(`UPDATE customer_email_deliveries SET status='failed',updated_at=CURRENT_TIMESTAMP
+    WHERE purchase_id=? AND message_kind=? AND status='sending'`)
+    .bind(input.purchaseId, input.messageKind).run();
 }
 
 export async function getPurchaseStatus(purchaseId: string) {
@@ -177,7 +231,10 @@ export async function getPurchaseStatus(purchaseId: string) {
 
 export async function activatePurchase(purchaseId: string, at = new Date()) {
   await ensureSchema();
-  const window = activationWindow(at.toISOString());
+  const purchase = await env.DB.prepare("SELECT access_days AS accessDays FROM founding_purchases WHERE id=?")
+    .bind(purchaseId).first<{ accessDays: number }>();
+  if (!purchase) return null;
+  const window = activationWindow(at.toISOString(), purchase.accessDays);
   const result = await env.DB.prepare(`UPDATE founding_purchases SET activated_at=?,access_expires_at=?,updated_at=CURRENT_TIMESTAMP
     WHERE id=? AND status='succeeded' AND activated_at IS NULL AND refund_status IS NULL`)
     .bind(window.activatedAt, window.accessExpiresAt, purchaseId).run();

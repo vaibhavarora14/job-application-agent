@@ -9,5 +9,8 @@ declare namespace Cloudflare {
     RATE_LIMIT_SALT?: string;
     COMMUNITY_STATS_UPSTREAM?: string;
     REFUND_CRON_SECRET?: string;
+    RESEND_API_KEY?: string;
+    WELCOME_EMAIL_FROM?: string;
+    SUPPORT_EMAIL?: string;
   }
 }
