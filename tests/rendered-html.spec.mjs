@@ -9,11 +9,13 @@ function pngDimensions(path) {
   return { width: image.readUInt32BE(16), height: image.readUInt32BE(20) };
 }
 
-async function render(path = "/", bindings = {}) {
+async function render(path = "/", bindings = {}, cfCountry) {
   const workerUrl = new URL("../dist/server/index.js", import.meta.url);
   workerUrl.searchParams.set("test", `${process.pid}-${Date.now()}`);
   const { default: worker } = await import(workerUrl.href);
-  return worker.fetch(new Request(`http://localhost${path}`, { headers: { accept: "text/html" } }), { ASSETS: { fetch: async () => new Response("Not found", { status: 404 }) }, ...bindings }, { waitUntil() {}, passThroughOnException() {} });
+  const request = new Request(`http://localhost${path}`, { headers: { accept: "text/html" } });
+  if (cfCountry) Object.defineProperty(request, "cf", { value: { country: cfCountry } });
+  return worker.fetch(request, { ASSETS: { fetch: async () => new Response("Not found", { status: 404 }) }, ...bindings }, { waitUntil() {}, passThroughOnException() {} });
 }
 
 test("server-renders the focused cloud offer and honest community proof", async () => {
@@ -35,13 +37,37 @@ test("server-renders the focused cloud offer and honest community proof", async 
   assert.match(html, /Jobs assessed/);
   assert.match(html, /Reserve at pre-launch price/);
   assert.match(html, /launches September 18, 2026/);
-  assert.match(html, /₹3,999 including GST in India/);
-  assert.match(html, /\$49 globally/);
+  assert.match(html, /\$49/);
+  assert.match(html, /global pre-launch price/);
+  assert.doesNotMatch(html, /₹3,999/);
   assert.match(html, /Verified facts only/);
   assert.match(html, /Secure checkout by Dodo Payments/);
   assert.doesNotMatch(html, /FOUNDING CLOUD ACCESS/);
   assert.doesNotMatch(html, /Run it locally|Install from GitHub|Join early access|first 50/i);
   assert.doesNotMatch(html, /codex-preview|react-loading-skeleton|Your site is taking shape/i);
+});
+
+test("server-renders only the India price for a visitor resolved to India", async () => {
+  const response = await render("/", {}, "IN");
+  assert.equal(response.status, 200);
+  const html = await response.text();
+  assert.match(html, /₹3,999/);
+  assert.match(html, /including GST in India/);
+  assert.doesNotMatch(html, /\$49/);
+  assert.match(response.headers.get("cache-control") ?? "", /no-store/);
+});
+
+test("does not trust a visitor-supplied country header", async () => {
+  const workerUrl = new URL("../dist/server/index.js", import.meta.url);
+  workerUrl.searchParams.set("test", `${process.pid}-${Date.now()}`);
+  const { default: worker } = await import(workerUrl.href);
+  const request = new Request("http://localhost/", {
+    headers: { accept: "text/html", "x-jobappagent-country": "IN" },
+  });
+  const response = await worker.fetch(request, { ASSETS: { fetch: async () => new Response("Not found", { status: 404 }) } }, { waitUntil() {}, passThroughOnException() {} });
+  const html = await response.text();
+  assert.match(html, /\$49/);
+  assert.doesNotMatch(html, /₹3,999/);
 });
 
 test("publishes the approved Quiet Trust identity at every product-icon size", () => {

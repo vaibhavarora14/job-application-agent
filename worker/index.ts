@@ -42,9 +42,25 @@ const worker = {
       return withPublicSecurityHeaders(response);
     }
 
-    return withPublicSecurityHeaders(await handler.fetch(request, env, ctx));
+    const appRequest = withTrustedCountry(request);
+    const response = withPublicSecurityHeaders(await handler.fetch(appRequest, env, ctx));
+    if (url.pathname !== "/") return response;
+    const headers = new Headers(response.headers);
+    headers.set("cache-control", "private, no-store");
+    headers.set("vary", "CF-IPCountry");
+    return new Response(response.body, { status: response.status, statusText: response.statusText, headers });
   },
 };
+
+function withTrustedCountry(request: Request) {
+  const country = (request as Request & { cf?: { country?: string } }).cf?.country;
+  const headers = new Headers(request.headers);
+  headers.delete("x-jobappagent-country");
+  if (typeof country === "string" && /^[a-z]{2}$/i.test(country)) {
+    headers.set("x-jobappagent-country", country.toUpperCase());
+  }
+  return new Request(request, { headers });
+}
 
 function withPublicSecurityHeaders(response: Response) {
   const headers = new Headers(response.headers);
