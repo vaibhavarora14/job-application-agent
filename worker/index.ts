@@ -53,7 +53,8 @@ const worker = {
 };
 
 function withTrustedCountry(request: Request) {
-  const country = (request as Request & { cf?: { country?: string } }).cf?.country;
+  const country = (request as Request & { cf?: { country?: string } }).cf?.country
+    ?? request.headers.get("cf-ipcountry");
   const headers = new Headers(request.headers);
   headers.delete("x-jobappagent-country");
   if (typeof country === "string" && /^[a-z]{2}$/i.test(country)) {
