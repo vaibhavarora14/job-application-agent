@@ -57,6 +57,19 @@ test("server-renders only the India price for a visitor resolved to India", asyn
   assert.match(response.headers.get("cache-control") ?? "", /no-store/);
 });
 
+test("uses Cloudflare's country header when Sites dispatch omits request.cf", async () => {
+  const workerUrl = new URL("../dist/server/index.js", import.meta.url);
+  workerUrl.searchParams.set("test", `${process.pid}-${Date.now()}`);
+  const { default: worker } = await import(workerUrl.href);
+  const request = new Request("http://localhost/", {
+    headers: { accept: "text/html", "cf-ipcountry": "IN" },
+  });
+  const response = await worker.fetch(request, { ASSETS: { fetch: async () => new Response("Not found", { status: 404 }) } }, { waitUntil() {}, passThroughOnException() {} });
+  const html = await response.text();
+  assert.match(html, /₹3,999/);
+  assert.doesNotMatch(html, /\$49/);
+});
+
 test("does not trust a visitor-supplied country header", async () => {
   const workerUrl = new URL("../dist/server/index.js", import.meta.url);
   workerUrl.searchParams.set("test", `${process.pid}-${Date.now()}`);
