@@ -154,7 +154,7 @@ test('telemetry persistence and deployment paths require code-owner review', asy
 });
 
 test('staging moderation always rejects an approved fixture after a failed verification', async () => {
-  const workflow = await readFile(new URL('../../.github/workflows/staging-telemetry.yml', import.meta.url), 'utf8');
+  const workflow = (await readFile(new URL('../../.github/workflows/staging-telemetry.yml', import.meta.url), 'utf8')).replace(/\r\n/g, '\n');
   assert.match(workflow, /id:\s*verify_reviewed/);
   assert.match(workflow, /id:\s*reject_source\n\s*if:\s*\$\{\{ always\(\) && steps\.pending_source\.outputs\.community_source_id != '' \}\}/);
   assert.match(workflow, /steps\.verify_reviewed\.outcome == 'success'/);
