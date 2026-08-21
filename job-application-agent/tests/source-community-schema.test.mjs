@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { isRepeatableCommunitySourceRoute, normalizeCommunitySource } from '../scripts/source-community-schema.mjs';
+import { communitySourceId, isRepeatableCommunitySourceRoute, normalizeCommunitySource } from '../scripts/source-community-schema.mjs';
 
 const source = {
   name: 'Example Jobs',
@@ -90,4 +90,18 @@ test('normalizes trailing DNS root dots before rejecting private hosts', () => {
   for (const baseUrl of ['https://localhost./jobs', 'https://service.local./careers', 'https://service.internal./openings']) {
     assert.throws(() => normalizeCommunitySource({ ...source, baseUrl }), /public internet hostname/i, baseUrl);
   }
+});
+
+test('rejects identity-like public hostnames after normalizing a trailing DNS root dot', () => {
+  for (const baseUrl of ['https://14155550100.example.org./jobs', 'https://candidate-14155550100.example.org/openings']) {
+    assert.throws(() => normalizeCommunitySource({ ...source, baseUrl }), /identity-like/i, baseUrl);
+  }
+});
+
+test('source IDs normalize scheme and hostname case while preserving path case', async () => {
+  const upperHost = await communitySourceId({ ...source, baseUrl: 'HTTPS://EXAMPLE.COM/Jobs' });
+  const lowerHost = await communitySourceId({ ...source, baseUrl: 'https://example.com/Jobs' });
+  const lowerPath = await communitySourceId({ ...source, baseUrl: 'https://example.com/jobs' });
+  assert.equal(upperHost, lowerHost);
+  assert.notEqual(upperHost, lowerPath);
 });

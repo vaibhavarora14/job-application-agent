@@ -6,6 +6,8 @@ import { join } from 'node:path';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
 
+import { sourcesSync } from '../scripts/job-application.mjs';
+
 const script = fileURLToPath(new URL('../scripts/job-application.mjs', import.meta.url));
 
 async function fixture(t, label) {
@@ -234,6 +236,36 @@ test('exposes independent opt-out controls for default community source sharing'
   assert.deepEqual(suggestion.community, { shared: false, reason: 'disabled' });
   assert.equal(cli(env, ['sources', 'pending']).count, 1);
   if (process.platform !== 'win32') assert.equal((await stat(join(directory, 'source-sharing.json'))).mode & 0o777, 0o600);
+});
+
+test('source sync counts only the contribution actually attempted before an unavailable relay stops the queue', async (t) => {
+  const { directory, env } = await fixture(t, 'source-sync-attempts');
+  const previous = process.env.JOB_APPLICATION_AGENT_STATE_DIR;
+  process.env.JOB_APPLICATION_AGENT_STATE_DIR = directory;
+  t.after(() => {
+    if (previous == null) delete process.env.JOB_APPLICATION_AGENT_STATE_DIR;
+    else process.env.JOB_APPLICATION_AGENT_STATE_DIR = previous;
+  });
+  const suggestion = (id, baseUrl) => ({
+    type: 'suggested', id, name: `Source ${id}`, baseUrl, kind: 'job-board',
+    regions: ['global'], roleFamilies: ['engineering'], requiresSession: false,
+    createdAt: new Date().toISOString(),
+  });
+  await writeFile(join(directory, 'source-suggestions.ndjson'), [
+    JSON.stringify(suggestion('source-suggestion-one', 'https://one.example.com/openings')),
+    JSON.stringify(suggestion('source-suggestion-two', 'https://two.example.com/openings')),
+  ].join('\n').concat('\n'));
+  let calls = 0;
+
+  const result = await sourcesSync({
+    contribute: async () => {
+      calls += 1;
+      return { shared: false, reason: 'unavailable' };
+    },
+  });
+
+  assert.equal(calls, 1);
+  assert.deepEqual(result, { attempted: 1, shared: 0, remaining: 2 });
 });
 
 test('blocks a different role at the same company during the 15-day cooldown', async (t) => {

@@ -5,7 +5,7 @@ import { SKILL_VERSION } from './telemetry-client.mjs';
 import { createSourceContributionEnvelope, normalizeCommunitySource, validateCommunitySourceList } from './source-community-schema.mjs';
 
 export const DEFAULT_SOURCE_COMMUNITY_ENDPOINT = process.env.JOB_APPLICATION_AGENT_SOURCE_COMMUNITY_URL ?? process.env.JOB_APPLICATION_AGENT_TELEMETRY_URL ?? 'https://job-application-agent-telemetry.varora1406.workers.dev';
-export const SOURCE_SHARING_NOTICE = 'Community source sharing is enabled by default. Repeatable public job boards and hiring feeds are shared anonymously after removing personal and referral data. Run `sources sharing disable` to opt out.\n';
+export const SOURCE_SHARING_NOTICE = 'Community source sharing is enabled by default. Repeatable public job boards and hiring feeds are shared anonymously into a pending maintainer-review queue after removing personal and referral data. Run `sources sharing disable` to opt out.\n';
 
 const CONFIG_FILE = 'source-sharing.json';
 

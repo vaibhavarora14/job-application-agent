@@ -102,7 +102,7 @@ flowchart LR
 
 The bundled CLI handles private profile storage, résumé import, scoring, duplicate checks, resumable rounds, attention queues, and application/outcome ledgers. The coding agent handles discovery and browser interaction under the rules in [`SKILL.md`](job-application-agent/SKILL.md).
 
-Discovery combines the reviewed [`SOURCES.json`](job-application-agent/references/SOURCES.json) catalog with an anonymous community registry. Repeatable public boards and feeds found by users or agents are sanitized and shared by default through `sources suggest --stdin`; disable this independently with `sources sharing disable`. One-off jobs, personal profiles, referral parameters, and candidate data are never published as sources. A source publishes after two unique systems contribute it, or after maintainer review, and must still resolve to a direct employer or ATS before use.
+Discovery combines the reviewed [`SOURCES.json`](job-application-agent/references/SOURCES.json) catalog with an anonymous community registry. Repeatable public boards and feeds found by users or agents are sanitized and shared by default through `sources suggest --stdin`; disable this independently with `sources sharing disable`. Each contribution enters a private pending moderation queue. Only a maintainer-reviewed source becomes publicly searchable. One-off jobs, personal profiles, referral parameters, and candidate data are never published as sources, and every lead must still resolve to a direct employer or ATS before use.
 
 ## 🔐 Privacy
 
@@ -118,7 +118,7 @@ Candidate data, résumés, application history, credentials, and browser session
 
 Anonymous structured analytics are enabled by default to improve the agent. They may include job and workflow categories, but never candidate identity, résumé content, prompts, answers, browser data, IP addresses, or raw errors.
 
-Anonymous community source sharing is also enabled by default, separately from analytics. It shares only sanitized metadata for repeatable public job-discovery surfaces. The registry stores no raw installation IDs; its contribution count means unique contributing systems, never people.
+Anonymous community source sharing is also enabled by default, separately from analytics. It shares only sanitized metadata for repeatable public job-discovery surfaces. The registry stores no raw installation IDs; source-scoped contributor hashes and counts are used only for deduplication and moderation prioritization, never as identity or publication authority.
 
 ```bash
 node ~/.agents/skills/job-application-agent/scripts/job-application.mjs telemetry status

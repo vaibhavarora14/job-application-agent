@@ -709,16 +709,18 @@ async function sourcesPending() {
   return { scope: 'local-unsent', count: pending.length, suggestions: pending };
 }
 
-async function sourcesSync(community, limit = 10) {
+export async function sourcesSync(community, limit = 10) {
   const pending = (await sourcesPending()).suggestions.slice(0, limit);
   let shared = 0;
+  let attempted = 0;
   for (const suggestion of pending) {
+    attempted += 1;
     const contribution = await community.contribute(shareableSuggestion(suggestion));
     await markSourceShared(suggestion.id, contribution);
     if (contribution.shared) shared += 1;
     else if (contribution.reason === 'disabled' || contribution.reason === 'unavailable') break;
   }
-  return { attempted: pending.length, shared, remaining: (await sourcesPending()).count };
+  return { attempted, shared, remaining: (await sourcesPending()).count };
 }
 
 async function withStateLock(name, action) {

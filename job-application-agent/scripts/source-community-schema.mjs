@@ -99,6 +99,7 @@ export function normalizeCommunitySource(input) {
   if (url.protocol !== 'https:' || url.username || url.password) throw new Error('community source.baseUrl must be a public HTTPS URL.');
   url.hostname = url.hostname.replace(/\.+$/, '');
   if (!isPublicHostname(url.hostname)) throw new Error('community source.baseUrl must use a public internet hostname.');
+  if (containsIdentityLike(url.hostname)) throw new Error('community source.baseUrl must not contain identity-like content.');
   const decodedPath = decodedPathname(url.pathname);
   if (containsIdentityLike(decodedPath)) throw new Error('community source.baseUrl must not contain identity-like content.');
   if (looksIdentityPath(decodedPath)) throw new Error('community source.baseUrl must not contain an identity-like path.');
@@ -142,7 +143,7 @@ export function validateSourceContributionEnvelope(input) {
 
 export async function communitySourceId(source) {
   const normalized = normalizeCommunitySource(source);
-  const bytes = new TextEncoder().encode(normalized.baseUrl.toLowerCase());
+  const bytes = new TextEncoder().encode(normalized.baseUrl);
   const digest = new Uint8Array(await crypto.subtle.digest('SHA-256', bytes));
   return `community-${[...digest].map((value) => value.toString(16).padStart(2, '0')).join('').slice(0, 16)}`;
 }
@@ -156,7 +157,7 @@ export function validateCommunitySourceList(input) {
     const allowed = new Set(['sourceId', 'name', 'baseUrl', 'kind', 'regions', 'roleFamilies', 'requiresSession', 'registryStatus', 'contributionCount']);
     for (const key of Object.keys(source)) if (!allowed.has(key)) throw new Error(`Unknown community source entry property: ${key}.`);
     if (!SOURCE_ID.test(source.sourceId)) throw new Error('community source entry.sourceId is invalid.');
-    if (!['community-unreviewed', 'community-reviewed'].includes(source.registryStatus)) throw new Error('community source entry.registryStatus is invalid.');
+    if (source.registryStatus !== 'community-reviewed') throw new Error('community source entry.registryStatus is invalid.');
     if (!Number.isSafeInteger(source.contributionCount) || source.contributionCount < 1 || source.contributionCount > 1_000_000_000) throw new Error('community source entry.contributionCount is invalid.');
     const normalized = normalizeCommunitySource(Object.fromEntries(['name', 'baseUrl', 'kind', 'regions', 'roleFamilies', 'requiresSession'].map((key) => [key, source[key]])));
     return { sourceId: source.sourceId, ...normalized, registryStatus: source.registryStatus, contributionCount: source.contributionCount };

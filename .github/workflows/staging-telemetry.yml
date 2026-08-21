@@ -34,7 +34,35 @@ jobs:
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           SIGNING_SECRET: ${{ secrets.TELEMETRY_STAGING_SIGNING_SECRET }}
           POSTHOG_PROJECT_TOKEN: ${{ secrets.POSTHOG_STAGING_PROJECT_TOKEN }}
-      - name: Run staging contract test
+      - name: Run pending-source staging contract
+        id: pending_source
         run: node telemetry-worker/tests/e2e-staging.mjs
         env:
           TELEMETRY_STAGING_URL: https://job-application-agent-telemetry-staging.varora1406.workers.dev
+      - name: Approve staging source through owner-only D1 moderation
+        run: |
+          source_id='${{ steps.pending_source.outputs.community_source_id }}'
+          [[ "$source_id" =~ ^community-[0-9a-f]{16}$ ]]
+          npx --yes wrangler@4.122.0 d1 execute job-application-agent-public-stats-staging --remote --config telemetry-worker/wrangler.jsonc --env staging --command "UPDATE community_sources SET publication_status = 'published', review_status = 'maintainer-reviewed', published_at = COALESCE(published_at, strftime('%Y-%m-%dT%H:%M:%fZ', 'now')), reviewed_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now'), updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now') WHERE source_id = '$source_id' AND publication_status = 'pending';"
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      - name: Verify reviewed source is public
+        run: node telemetry-worker/tests/e2e-staging.mjs
+        env:
+          TELEMETRY_STAGING_URL: https://job-application-agent-telemetry-staging.varora1406.workers.dev
+          STAGING_EXPECT_SOURCE_ID: ${{ steps.pending_source.outputs.community_source_id }}
+      - name: Reject staging source through owner-only D1 moderation
+        run: |
+          source_id='${{ steps.pending_source.outputs.community_source_id }}'
+          [[ "$source_id" =~ ^community-[0-9a-f]{16}$ ]]
+          npx --yes wrangler@4.122.0 d1 execute job-application-agent-public-stats-staging --remote --config telemetry-worker/wrangler.jsonc --env staging --command "UPDATE community_sources SET publication_status = 'rejected', review_status = 'maintainer-reviewed', rejected_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now'), reviewed_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now'), updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now') WHERE source_id = '$source_id';"
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      - name: Verify rejected source stays private
+        run: node telemetry-worker/tests/e2e-staging.mjs
+        env:
+          TELEMETRY_STAGING_URL: https://job-application-agent-telemetry-staging.varora1406.workers.dev
+          STAGING_EXPECT_SOURCE_ID: ${{ steps.pending_source.outputs.community_source_id }}
+          STAGING_EXPECT_REJECTED: 'true'

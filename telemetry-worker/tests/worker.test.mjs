@@ -25,12 +25,11 @@ function env() {
         const hashes = contributorHashes.get(source.sourceId) ?? new Set();
         hashes.add(contributorHash);
         contributorHashes.set(source.sourceId, hashes);
-        if (current.publicationStatus === 'pending' && hashes.size >= 2) current.publicationStatus = 'published';
         return { publicationStatus: current.publicationStatus, uniqueContributors: hashes.size };
       },
       async listPublished() {
         return [...communitySources.values()]
-          .filter((source) => source.publicationStatus === 'published')
+          .filter((source) => source.publicationStatus === 'published' && source.reviewStatus === 'maintainer-reviewed')
           .map((source) => ({
             sourceId: source.sourceId,
             name: source.name,
@@ -62,7 +61,7 @@ async function contribution(bindings, installationId, source, token = null) {
   }), bindings);
 }
 
-test('two unique systems publish a sanitized source while repeat submissions count once', async () => {
+test('any number of newly minted systems leaves a sanitized source pending while repeat submissions count once', async () => {
   const bindings = env();
   const installationId = '11111111-1111-4111-8111-111111111111';
   const secondInstallationId = '22222222-2222-4222-8222-222222222222';
@@ -101,24 +100,21 @@ test('two unique systems publish a sanitized source while repeat submissions cou
     body: JSON.stringify({ ...contribution, installationId: secondInstallationId, token: secondToken }),
   }), bindings);
   const secondBody = await second.json();
-  assert.equal(secondBody.publicationStatus, 'published');
+  assert.equal(secondBody.publicationStatus, 'pending');
   assert.equal(secondBody.uniqueContributors, 2);
 
   const listed = await worker.fetch(new Request('https://relay.example.com/v1/sources'), bindings);
   assert.equal(listed.status, 200);
   const body = await listed.json();
-  assert.equal(body.sources.length, 1);
-  assert.equal(body.sources[0].baseUrl, 'https://jobs.example.org/openings/engineering');
-  assert.equal(body.sources[0].contributionCount, 2);
-  assert.equal(body.sources[0].registryStatus, 'community-unreviewed');
+  assert.deepEqual(body.sources, []);
   assert.equal(JSON.stringify(body).includes(installationId), false);
   assert.equal(JSON.stringify(body).includes(secondInstallationId), false);
   assert.equal(JSON.stringify(body).includes([...bindings.contributorHashes.values()][0].values().next().value), false);
   assert.equal(JSON.stringify(body).includes('private'), false);
-  assert.equal(listed.headers.get('cache-control'), 'public, max-age=900');
+  assert.equal(listed.headers.get('cache-control'), 'no-store');
 });
 
-test('manual review can publish early while rejected sources never republish automatically', async () => {
+test('only maintainer-reviewed sources become public while rejected sources never republish automatically', async () => {
   const approvedBindings = env();
   const source = {
     name: 'Maintainer Approved Board',
@@ -130,6 +126,11 @@ test('manual review can publish early while rejected sources never republish aut
   };
   const approvedResponse = await contribution(approvedBindings, '11111111-1111-4111-8111-111111111111', source);
   const approvedId = (await approvedResponse.json()).sourceId;
+  Object.assign(approvedBindings.communitySources.get(approvedId), {
+    publicationStatus: 'published',
+    reviewStatus: 'unreviewed',
+  });
+  assert.deepEqual((await (await worker.fetch(new Request('https://relay.example.com/v1/sources'), approvedBindings)).json()).sources, []);
   Object.assign(approvedBindings.communitySources.get(approvedId), {
     publicationStatus: 'published',
     reviewStatus: 'maintainer-reviewed',
@@ -180,6 +181,11 @@ test('first valid metadata wins and contributor hashes are source-scoped and nev
     regions: ['private-region'],
     roleFamilies: ['sales'],
     requiresSession: true,
+  });
+
+  Object.assign(bindings.communitySources.get(sourceId), {
+    publicationStatus: 'published',
+    reviewStatus: 'maintainer-reviewed',
   });
 
   const body = await (await worker.fetch(new Request('https://relay.example.com/v1/sources'), bindings)).json();

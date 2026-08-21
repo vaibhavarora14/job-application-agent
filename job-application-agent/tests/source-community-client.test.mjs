@@ -25,7 +25,7 @@ function relay() {
     regions: ['global', 'remote'],
     roleFamilies: ['engineering'],
     requiresSession: false,
-    registryStatus: 'community-unreviewed',
+    registryStatus: 'community-reviewed',
     contributionCount: 2,
   }];
   const fetch = async (url, options = {}) => {
@@ -67,7 +67,7 @@ test('community source listing validates the public response before reuse', asyn
   assert.equal(listed.sourceId, 'community-abcdef1234567890');
   assert.equal(listed.baseUrl, 'https://jobs.example.org/openings/engineering');
   assert.equal(listed.contributionCount, 2);
-  assert.equal(listed.registryStatus, 'community-unreviewed');
+  assert.equal(listed.registryStatus, 'community-reviewed');
 });
 
 test('source sharing can be disabled independently and never blocks local collection', async (t) => {

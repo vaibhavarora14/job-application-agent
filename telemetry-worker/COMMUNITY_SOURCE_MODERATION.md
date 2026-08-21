@@ -1,6 +1,6 @@
 # Community source moderation
 
-Community source moderation is owner-only and uses D1 directly. There is no public administration endpoint. Run every command against staging first, then repeat it against production only after checking the affected `community-…` source ID.
+Community source moderation is owner-only and uses D1 directly. There is no public administration endpoint. Every accepted source remains `pending` regardless of how many systems contribute it; only an explicit owner decision can publish it. Run every command against staging first, then repeat it against production only after checking the affected `community-…` source ID.
 
 ## Inspect pending sources
 
@@ -26,7 +26,7 @@ npx --yes wrangler@4.122.0 d1 execute job-application-agent-public-stats-staging
 npx --yes wrangler@4.122.0 d1 execute job-application-agent-public-stats --remote --config telemetry-worker/wrangler.jsonc --command "<SQL>"
 ```
 
-## Publish a pending source early
+## Publish a pending source
 
 Replace the example source ID only after inspecting its canonical URL and metadata:
 
@@ -75,4 +75,4 @@ SET name = 'Corrected source name',
 WHERE source_id = 'community-0000000000000000';
 ```
 
-Do not query, export, or publish `contributor_hash`. It exists only to count unique contributing systems for a single canonical source and must never be interpreted as a person count.
+Do not query, export, or publish `contributor_hash`. It exists only to deduplicate systems for a single canonical source and to prioritize manual review; it must never be interpreted as a person count, identity, trust signal, or publication authority.
