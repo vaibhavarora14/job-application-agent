@@ -46,6 +46,14 @@ function decodedPathname(pathname) {
   throw new Error('community source.baseUrl path encoding is too deeply nested.');
 }
 
+function looksCredentialLikePath(pathname) {
+  return pathname.split('/').filter(Boolean).some((segment) => {
+    const opaque = segment.replace(/=+$/, '');
+    if (!/^[A-Za-z0-9_-]{20,}$/.test(opaque)) return false;
+    return (/[a-z]/.test(opaque) && /[A-Z]/.test(opaque)) || /\d/.test(opaque) || /[-_]/.test(opaque);
+  });
+}
+
 function isPublicHostname(hostname) {
   const value = hostname.toLowerCase();
   if (value === 'localhost' || value.endsWith('.localhost') || value.endsWith('.local') || value.endsWith('.internal')) return false;
@@ -106,6 +114,7 @@ export function normalizeCommunitySource(input) {
   url.pathname = decodedPath;
   if (looksPersonal(url)) throw new Error('community source.baseUrl must not be a profile or personal URL.');
   if (!isRepeatableCommunitySourceRoute(url)) throw new Error('community source.baseUrl must identify a repeatable discovery surface, not a one-off job.');
+  if (looksCredentialLikePath(decodedPath)) throw new Error('community source.baseUrl must not contain credential-like path segments.');
   url.search = '';
   url.hash = '';
   const kind = boundedString(value.kind, 'community source.kind', 40).toLowerCase();

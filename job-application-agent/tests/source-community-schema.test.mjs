@@ -86,6 +86,13 @@ test('rejects repeatedly encoded identity paths and identity-bearing taxonomy fi
   assert.throws(() => normalizeCommunitySource({ ...source, roleFamilies: ['+1 415 555 0100'] }), /identity-like/i);
 });
 
+test('rejects credential-like opaque path segments before source sharing', () => {
+  assert.throws(
+    () => normalizeCommunitySource({ ...source, baseUrl: 'https://example.com/feed/AbCdEfGhIjKlMnOpQrStUvWxYz/jobs' }),
+    /credential-like/i,
+  );
+});
+
 test('normalizes trailing DNS root dots before rejecting private hosts', () => {
   for (const baseUrl of ['https://localhost./jobs', 'https://service.local./careers', 'https://service.internal./openings']) {
     assert.throws(() => normalizeCommunitySource({ ...source, baseUrl }), /public internet hostname/i, baseUrl);

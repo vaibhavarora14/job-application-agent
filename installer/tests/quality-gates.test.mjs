@@ -153,6 +153,13 @@ test('telemetry persistence and deployment paths require code-owner review', asy
   assert.match(codeowners, /^\/telemetry-worker\/wrangler\.jsonc\s+@vaibhavarora14$/m);
 });
 
+test('staging moderation always rejects an approved fixture after a failed verification', async () => {
+  const workflow = await readFile(new URL('../../.github/workflows/staging-telemetry.yml', import.meta.url), 'utf8');
+  assert.match(workflow, /id:\s*verify_reviewed/);
+  assert.match(workflow, /id:\s*reject_source\n\s*if:\s*\$\{\{ always\(\) && steps\.pending_source\.outputs\.community_source_id != '' \}\}/);
+  assert.match(workflow, /steps\.verify_reviewed\.outcome == 'success'/);
+});
+
 test('validation exposes a stable quality gate and a six-combination high-risk matrix', async () => {
   const workflow = await readFile(new URL('../../.github/workflows/validate.yml', import.meta.url), 'utf8');
   assert.match(workflow, /^\s{2}quality-gate:/m);

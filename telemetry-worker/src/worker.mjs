@@ -192,6 +192,7 @@ async function contributeSource(request, env) {
   let identity;
   try { identity = await verifyToken(envelope.token, env.SIGNING_SECRET); } catch (error) { return response({ error: /expired/i.test(error.message) ? 'token_expired' : 'invalid_token' }, 401); }
   if (identity.installationId !== envelope.installationId) return response({ error: 'invalid_token' }, 401);
+  if (!await allowed(env.SOURCE_RATE_LIMITER, 'source-write')) return response({ error: 'rate_limited' }, 429);
   if (!await allowed(env.SOURCE_RATE_LIMITER, envelope.installationId)) return response({ error: 'rate_limited' }, 429);
 
   const sourceId = await communitySourceId(envelope.source);

@@ -40,6 +40,7 @@ jobs:
         env:
           TELEMETRY_STAGING_URL: https://job-application-agent-telemetry-staging.varora1406.workers.dev
       - name: Approve staging source through owner-only D1 moderation
+        id: approve_source
         run: |
           source_id='${{ steps.pending_source.outputs.community_source_id }}'
           [[ "$source_id" =~ ^community-[0-9a-f]{16}$ ]]
@@ -48,11 +49,14 @@ jobs:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
       - name: Verify reviewed source is public
+        id: verify_reviewed
         run: node telemetry-worker/tests/e2e-staging.mjs
         env:
           TELEMETRY_STAGING_URL: https://job-application-agent-telemetry-staging.varora1406.workers.dev
           STAGING_EXPECT_SOURCE_ID: ${{ steps.pending_source.outputs.community_source_id }}
       - name: Reject staging source through owner-only D1 moderation
+        id: reject_source
+        if: ${{ always() && steps.pending_source.outputs.community_source_id != '' }}
         run: |
           source_id='${{ steps.pending_source.outputs.community_source_id }}'
           [[ "$source_id" =~ ^community-[0-9a-f]{16}$ ]]
@@ -61,6 +65,7 @@ jobs:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
       - name: Verify rejected source stays private
+        if: ${{ steps.pending_source.outcome == 'success' && steps.approve_source.outcome == 'success' && steps.verify_reviewed.outcome == 'success' && steps.reject_source.outcome == 'success' }}
         run: node telemetry-worker/tests/e2e-staging.mjs
         env:
           TELEMETRY_STAGING_URL: https://job-application-agent-telemetry-staging.varora1406.workers.dev

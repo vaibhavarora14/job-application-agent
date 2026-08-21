@@ -5,6 +5,7 @@ import worker, { createToken, verifyToken } from '../src/worker.mjs';
 
 function env() {
   const captured = [];
+  const sourceRateLimitKeys = [];
   const communitySources = new Map();
   const contributorHashes = new Map();
   return {
@@ -13,7 +14,7 @@ function env() {
     POSTHOG_HOST: 'https://us.i.posthog.com',
     INSTALL_RATE_LIMITER: { limit: async () => ({ success: true }) },
     EVENT_RATE_LIMITER: { limit: async () => ({ success: true }) },
-    SOURCE_RATE_LIMITER: { limit: async () => ({ success: true }) },
+    SOURCE_RATE_LIMITER: { limit: async ({ key }) => { sourceRateLimitKeys.push(key); return { success: true }; } },
     SOURCE_STORE: {
       async contribute(source, contributorHash) {
         const current = communitySources.get(source.sourceId) ?? {
@@ -50,6 +51,7 @@ function env() {
     captured,
     communitySources,
     contributorHashes,
+    sourceRateLimitKeys,
   };
 }
 
@@ -112,6 +114,22 @@ test('any number of newly minted systems leaves a sanitized source pending while
   assert.equal(JSON.stringify(body).includes([...bindings.contributorHashes.values()][0].values().next().value), false);
   assert.equal(JSON.stringify(body).includes('private'), false);
   assert.equal(listed.headers.get('cache-control'), 'no-store');
+});
+
+test('source writes use an endpoint-wide limiter before the installation limiter', async () => {
+  const bindings = env();
+  const installationId = '11111111-1111-4111-8111-111111111111';
+  const source = {
+    name: 'Rate Limited Board', baseUrl: 'https://limit.example.com/openings', kind: 'job-board',
+    regions: ['global'], roleFamilies: ['engineering'], requiresSession: false,
+  };
+  assert.equal((await contribution(bindings, installationId, source)).status, 202);
+  assert.deepEqual(bindings.sourceRateLimitKeys, ['source-write', installationId]);
+
+  const blocked = env();
+  blocked.SOURCE_RATE_LIMITER = { limit: async ({ key }) => ({ success: key !== 'source-write' }) };
+  assert.equal((await contribution(blocked, installationId, source)).status, 429);
+  assert.equal(blocked.communitySources.size, 0);
 });
 
 test('only maintainer-reviewed sources become public while rejected sources never republish automatically', async () => {
