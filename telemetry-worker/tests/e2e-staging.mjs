@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict';
 import { appendFile } from 'node:fs/promises';
 
+import { stagingSourceBaseUrl } from './staging-source-fixture.mjs';
+
 const endpoint = process.env.TELEMETRY_STAGING_URL?.replace(/\/$/, '');
 if (!endpoint) throw new Error('TELEMETRY_STAGING_URL is required.');
 
@@ -87,7 +89,7 @@ if (expectedSourceId) {
 } else {
   const stagingSource = {
     name: 'Staging Engineering Board',
-    baseUrl: `https://staging-${Date.now()}.example.com/openings/engineering?private=removed#jobs`,
+    baseUrl: stagingSourceBaseUrl(),
     kind: 'job-board',
     regions: ['global'],
     roleFamilies: ['engineering'],
