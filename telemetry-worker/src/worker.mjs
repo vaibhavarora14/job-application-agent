@@ -202,6 +202,7 @@ async function contributeSource(request, env) {
 }
 
 async function listSources(_request, env) {
+  if (!await allowed(env.SOURCE_RATE_LIMITER, 'source-read')) return response({ error: 'rate_limited' }, 429);
   const sources = await sourceStore(env).listPublished();
   return response({ version: 1, sources }, 200, 'no-store');
 }

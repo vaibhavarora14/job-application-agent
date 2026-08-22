@@ -104,6 +104,59 @@ test('network failures are best effort and return an unavailable result', async 
   assert.deepEqual(await client.contribute(source), { shared: false, reason: 'unavailable' });
 });
 
+test('a failed contribution does not suppress a healthy community registry read', async (t) => {
+  const directory = await mkdtemp(join(tmpdir(), 'source-community-independent-read-'));
+  t.after(() => rm(directory, { recursive: true, force: true }));
+  const network = relay();
+  const fetch = async (url, options = {}) => {
+    if (url.endsWith('/v1/sources') && options.method === 'POST') return Response.json({ error: 'rate_limited' }, { status: 429 });
+    return network.fetch(url, options);
+  };
+  const client = new SourceCommunityClient({ stateDir: directory, endpoint: 'https://relay.example.com', fetch, stderr: () => {} });
+
+  assert.deepEqual(await client.contribute(source), { shared: false, reason: 'unavailable' });
+  const [listed] = await client.list();
+  assert.equal(listed.sourceId, 'community-abcdef1234567890');
+});
+
+test('concurrent opt-out is preserved and rechecked before source transmission', async (t) => {
+  const directory = await mkdtemp(join(tmpdir(), 'source-community-opt-out-race-'));
+  t.after(() => rm(directory, { recursive: true, force: true }));
+  await writeFile(join(directory, 'source-sharing.json'), JSON.stringify({
+    version: 1,
+    enabled: true,
+    disclosed: true,
+    installationId: null,
+    token: null,
+    tokenExpiresAt: null,
+  }));
+  let releaseInstall;
+  let installStarted;
+  const installGate = new Promise((resolve) => { releaseInstall = resolve; });
+  const installObserved = new Promise((resolve) => { installStarted = resolve; });
+  const sourcePosts = [];
+  const fetch = async (url, options = {}) => {
+    if (url.endsWith('/v1/install')) {
+      installStarted();
+      await installGate;
+      return Response.json({ installationId: '11111111-1111-4111-8111-111111111111', token: 'source-token', expiresAt: '2099-01-01T00:00:00.000Z' }, { status: 201 });
+    }
+    sourcePosts.push({ url, options });
+    return Response.json({ accepted: true, sourceId: 'community-abcdef1234567890', publicationStatus: 'pending', uniqueContributors: 1 }, { status: 202 });
+  };
+  const contributor = new SourceCommunityClient({ stateDir: directory, endpoint: 'https://relay.example.com', fetch, stderr: () => {} });
+  const settings = new SourceCommunityClient({ stateDir: directory, endpoint: 'https://relay.example.com', fetch, stderr: () => {} });
+
+  const contribution = contributor.contribute(source);
+  await installObserved;
+  assert.equal((await settings.configure('disable')).enabled, false);
+  releaseInstall();
+
+  assert.deepEqual(await contribution, { shared: false, reason: 'disabled' });
+  assert.equal(sourcePosts.length, 0);
+  assert.equal(JSON.parse(await readFile(join(directory, 'source-sharing.json'), 'utf8')).enabled, false);
+});
+
 test('invalid stored relay credentials are replaced once and persisted', async (t) => {
   const directory = await mkdtemp(join(tmpdir(), 'source-community-credential-recovery-'));
   t.after(() => rm(directory, { recursive: true, force: true }));

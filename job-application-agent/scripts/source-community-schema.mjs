@@ -13,7 +13,9 @@ function boundedString(value, label, max) {
 }
 
 function containsIdentityLike(value) {
-  return /[\w.+-]+@[\w.-]+\.[a-z]{2,}|\+?\d[\d\s().-]{7,}/i.test(value);
+  const normalized = value.normalize('NFKC');
+  return /[^\s/@]+@(?:[^\s./@]+\.)+[^\s./@]+/u.test(normalized)
+    || /\+?\d[\d\s().-]{7,}/u.test(normalized);
 }
 
 function terms(value, label) {

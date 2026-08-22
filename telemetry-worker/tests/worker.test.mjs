@@ -132,6 +132,20 @@ test('source writes use an endpoint-wide limiter before the installation limiter
   assert.equal(blocked.communitySources.size, 0);
 });
 
+test('source reads use an endpoint-wide limiter before querying the registry', async () => {
+  const bindings = env();
+  const response = await worker.fetch(new Request('https://relay.example.com/v1/sources'), bindings);
+  assert.equal(response.status, 200);
+  assert.deepEqual(bindings.sourceRateLimitKeys, ['source-read']);
+
+  const blocked = env();
+  blocked.SOURCE_RATE_LIMITER = { limit: async ({ key }) => ({ success: key !== 'source-read' }) };
+  blocked.SOURCE_STORE.listPublished = async () => { throw new Error('registry must not be queried'); };
+  const limited = await worker.fetch(new Request('https://relay.example.com/v1/sources'), blocked);
+  assert.equal(limited.status, 429);
+  assert.deepEqual(await limited.json(), { error: 'rate_limited' });
+});
+
 test('only maintainer-reviewed sources become public while rejected sources never republish automatically', async () => {
   const approvedBindings = env();
   const source = {

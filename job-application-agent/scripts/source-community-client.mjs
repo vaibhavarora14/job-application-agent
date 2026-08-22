@@ -1,5 +1,6 @@
-import { chmod, mkdir, readFile, rename, writeFile } from 'node:fs/promises';
+import { chmod, mkdir, open, readFile, rename, unlink, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
+import { setTimeout as delay } from 'node:timers/promises';
 
 import { SKILL_VERSION } from './telemetry-client.mjs';
 import { createSourceContributionEnvelope, normalizeCommunitySource, validateCommunitySourceList } from './source-community-schema.mjs';
@@ -8,6 +9,12 @@ export const DEFAULT_SOURCE_COMMUNITY_ENDPOINT = process.env.JOB_APPLICATION_AGE
 export const SOURCE_SHARING_NOTICE = 'Community source sharing is enabled by default. Repeatable public job boards and hiring feeds are shared anonymously into a pending maintainer-review queue after removing personal and referral data. Run `sources sharing disable` to opt out.\n';
 
 const CONFIG_FILE = 'source-sharing.json';
+const CONFIG_LOCK_FILE = '.source-sharing.lock';
+const CONFIG_LOCK_TIMEOUT_MS = 15_000;
+
+function defaultConfig() {
+  return { version: 1, enabled: true, disclosed: false, installationId: null, token: null, tokenExpiresAt: null };
+}
 
 async function writePrivate(file, value) {
   const temporary = `${file}.${process.pid}.tmp`;
@@ -27,6 +34,7 @@ export class SourceCommunityClient {
   }
 
   get configPath() { return join(this.stateDir, CONFIG_FILE); }
+  get configLockPath() { return join(this.stateDir, CONFIG_LOCK_FILE); }
 
   async ensureDirectory() {
     await mkdir(this.stateDir, { recursive: true, mode: 0o700 });
@@ -43,18 +51,56 @@ export class SourceCommunityClient {
     }
   }
 
-  async saveConfig(config) {
+  async saveConfigUnlocked(config) {
     await this.ensureDirectory();
     await writePrivate(this.configPath, config);
   }
 
-  async config() {
-    let config = await this.readConfig();
-    if (!config) {
-      config = { version: 1, enabled: true, disclosed: false, installationId: null, token: null, tokenExpiresAt: null };
-      await this.saveConfig(config);
+  async withConfigLock(operation) {
+    await this.ensureDirectory();
+    const startedAt = Date.now();
+    let handle;
+    while (!handle) {
+      try {
+        handle = await open(this.configLockPath, 'wx', 0o600);
+      } catch (error) {
+        if (error.code !== 'EEXIST') throw error;
+        if (Date.now() - startedAt >= CONFIG_LOCK_TIMEOUT_MS) throw new Error('Could not acquire source-sharing config lock.');
+        await delay(20);
+      }
     }
-    return config;
+    try {
+      await handle.writeFile(`${process.pid}\n`);
+    } catch (error) {
+      await handle.close();
+      await unlink(this.configLockPath).catch(() => {});
+      throw error;
+    }
+    try {
+      return await operation();
+    } finally {
+      await handle.close();
+      await unlink(this.configLockPath).catch((error) => { if (error.code !== 'ENOENT') throw error; });
+    }
+  }
+
+  async updateConfig(transform) {
+    return this.withConfigLock(async () => {
+      const current = await this.readConfig() ?? defaultConfig();
+      const next = transform(current);
+      await this.saveConfigUnlocked(next);
+      return next;
+    });
+  }
+
+  async config() {
+    return this.withConfigLock(async () => {
+      const existing = await this.readConfig();
+      if (existing) return existing;
+      const config = defaultConfig();
+      await this.saveConfigUnlocked(config);
+      return config;
+    });
   }
 
   async status() {
@@ -63,14 +109,15 @@ export class SourceCommunityClient {
   }
 
   async configure(action) {
-    const config = await this.config();
     if (action === 'status') return this.status();
-    if (action === 'enable') config.enabled = true;
-    else if (action === 'disable') config.enabled = false;
-    else if (action === 'reset') Object.assign(config, { enabled: false, disclosed: true, installationId: null, token: null, tokenExpiresAt: null });
-    else throw new Error('Source sharing action must be status, enable, disable, or reset.');
-    config.disclosed = true;
-    await this.saveConfig(config);
+    await this.updateConfig((config) => {
+      if (action === 'enable') config.enabled = true;
+      else if (action === 'disable') config.enabled = false;
+      else if (action === 'reset') Object.assign(config, { enabled: false, disclosed: true, installationId: null, token: null, tokenExpiresAt: null });
+      else throw new Error('Source sharing action must be status, enable, disable, or reset.');
+      config.disclosed = true;
+      return config;
+    });
     return this.status();
   }
 
@@ -79,16 +126,16 @@ export class SourceCommunityClient {
     let body = config.installationId && config.token ? { installationId: config.installationId, token: config.token } : {};
     let response = await this.fetch(`${this.endpoint}/v1/install`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body), signal: AbortSignal.timeout(this.timeoutMs) });
     if (response.status === 401 && body.installationId) {
-      Object.assign(config, { installationId: null, token: null, tokenExpiresAt: null });
-      await this.saveConfig(config);
+      config = await this.updateConfig((current) => {
+        if (current.installationId === body.installationId) Object.assign(current, { installationId: null, token: null, tokenExpiresAt: null });
+        return current;
+      });
       body = {};
       response = await this.fetch(`${this.endpoint}/v1/install`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body), signal: AbortSignal.timeout(this.timeoutMs) });
     }
     if (!response.ok) throw new Error('community relay unavailable');
     const identity = await response.json();
-    const next = { ...config, installationId: identity.installationId, token: identity.token, tokenExpiresAt: identity.expiresAt };
-    await this.saveConfig(next);
-    return next;
+    return this.updateConfig((current) => ({ ...current, installationId: identity.installationId, token: identity.token, tokenExpiresAt: identity.expiresAt }));
   }
 
   async preview(input) {
@@ -102,19 +149,21 @@ export class SourceCommunityClient {
       if (!config.enabled) return { shared: false, reason: 'disabled' };
       if (!config.disclosed) {
         this.stderr(SOURCE_SHARING_NOTICE);
-        config.disclosed = true;
-        await this.saveConfig(config);
+        config = await this.updateConfig((current) => ({ ...current, disclosed: true }));
+        if (!config.enabled) return { shared: false, reason: 'disabled' };
       }
       config = await this.credentials(config);
-      const envelope = createSourceContributionEnvelope({ installationId: config.installationId, token: config.token, source, skillVersion: SKILL_VERSION });
-      let response = await this.fetch(`${this.endpoint}/v1/sources`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(envelope), signal: AbortSignal.timeout(this.timeoutMs) });
+      let sent = await this.sendContribution(config, source);
+      if (sent.disabled) return { shared: false, reason: 'disabled' };
+      let response = sent.response;
       if (response.status === 401) {
-        config.tokenExpiresAt = null;
+        config = await this.updateConfig((current) => ({ ...current, tokenExpiresAt: null }));
         config = await this.credentials(config);
-        response = await this.fetch(`${this.endpoint}/v1/sources`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(createSourceContributionEnvelope({ installationId: config.installationId, token: config.token, source, skillVersion: SKILL_VERSION })), signal: AbortSignal.timeout(this.timeoutMs) });
+        sent = await this.sendContribution(config, source);
+        if (sent.disabled) return { shared: false, reason: 'disabled' };
+        response = sent.response;
       }
       if (!response.ok) {
-        this.unavailable = true;
         return { shared: false, reason: 'unavailable' };
       }
       const result = await response.json();
@@ -125,19 +174,28 @@ export class SourceCommunityClient {
       if (!Number.isSafeInteger(result.uniqueContributors) || result.uniqueContributors < 1 || result.uniqueContributors > 1_000_000_000) return { shared: false, reason: 'unavailable' };
       return { shared: true, sourceId: result.sourceId, publicationStatus: result.publicationStatus, uniqueContributors: result.uniqueContributors };
     } catch {
-      this.unavailable = true;
       return { shared: false, reason: 'unavailable' };
     }
   }
 
+  async sendContribution(config, source) {
+    return this.withConfigLock(async () => {
+      const current = await this.readConfig() ?? config;
+      if (!current.enabled) return { disabled: true };
+      const envelope = createSourceContributionEnvelope({ installationId: current.installationId, token: current.token, source, skillVersion: SKILL_VERSION });
+      const response = await this.fetch(`${this.endpoint}/v1/sources`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(envelope), signal: AbortSignal.timeout(this.timeoutMs) });
+      return { disabled: false, response };
+    });
+  }
+
   async list() {
-    if (this.unavailable) return [];
+    if (this.readUnavailable) return [];
     try {
       const response = await this.fetch(`${this.endpoint}/v1/sources`, { headers: { accept: 'application/json' }, signal: AbortSignal.timeout(this.timeoutMs) });
       if (!response.ok) return [];
       return validateCommunitySourceList(await response.json());
     } catch {
-      this.unavailable = true;
+      this.readUnavailable = true;
       return [];
     }
   }

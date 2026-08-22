@@ -86,6 +86,20 @@ test('rejects repeatedly encoded identity paths and identity-bearing taxonomy fi
   assert.throws(() => normalizeCommunitySource({ ...source, roleFamilies: ['+1 415 555 0100'] }), /identity-like/i);
 });
 
+test('rejects Unicode and compatibility-form email identities before sharing', () => {
+  const privateValues = [
+    { name: 'Jobs curated by josé@example.com' },
+    { regions: ['用户@example.com'] },
+    { regions: ['उपयोगकर्ता@example.com'] },
+    { roleFamilies: ['ｊｏｓｅ＠ｅｘａｍｐｌｅ．ｃｏｍ'] },
+    { baseUrl: 'https://example.com/%E7%94%A8%E6%88%B7%40example.com/openings' },
+  ];
+
+  for (const override of privateValues) {
+    assert.throws(() => normalizeCommunitySource({ ...source, ...override }), /identity-like/i);
+  }
+});
+
 test('rejects credential-like opaque path segments before source sharing', () => {
   assert.throws(
     () => normalizeCommunitySource({ ...source, baseUrl: 'https://example.com/feed/AbCdEfGhIjKlMnOpQrStUvWxYz/jobs' }),
