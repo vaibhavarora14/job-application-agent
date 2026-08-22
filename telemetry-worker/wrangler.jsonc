@@ -36,6 +36,11 @@
       "name": "EVENT_RATE_LIMITER",
       "namespace_id": "41002",
       "simple": { "limit": 120, "period": 60 }
+    },
+    {
+      "name": "SOURCE_RATE_LIMITER",
+      "namespace_id": "41005",
+      "simple": { "limit": 30, "period": 60 }
     }
   ],
   "env": {
@@ -68,6 +73,11 @@
           "name": "EVENT_RATE_LIMITER",
           "namespace_id": "41004",
           "simple": { "limit": 60, "period": 60 }
+        },
+        {
+          "name": "SOURCE_RATE_LIMITER",
+          "namespace_id": "41006",
+          "simple": { "limit": 20, "period": 60 }
         }
       ]
     }

@@ -35,6 +35,7 @@ After onboarding, use natural commands:
 
 ```text
 search jobs
+list discovery sources for India and global remote engineering
 apply https://company.example/jobs/123
 apply all relevant jobs from this thread: <URL>
 run a round of 10
@@ -48,7 +49,7 @@ Requires Node.js 20 or newer and a browser-capable coding agent.
 
 | Stage | Behavior |
 |---|---|
-| **Discover** | Searches direct career pages, ATS platforms, and candidate-provided leads. |
+| **Discover** | Searches a shared, versioned catalog of direct careers, ATS platforms, networks, feeds, and job boards, then verifies every lead at the employer. |
 | **Qualify** | Checks seniority, skills, location, authorization, compensation, and posting status. |
 | **Apply** | Fills forms and uploads one canonical résumé using verified facts only. |
 | **Track** | Deduplicates applications and records only visible submission confirmations. |
@@ -101,6 +102,8 @@ flowchart LR
 
 The bundled CLI handles private profile storage, résumé import, scoring, duplicate checks, resumable rounds, attention queues, and application/outcome ledgers. The coding agent handles discovery and browser interaction under the rules in [`SKILL.md`](job-application-agent/SKILL.md).
 
+Discovery combines the reviewed [`SOURCES.json`](job-application-agent/references/SOURCES.json) catalog with an anonymous community registry. Repeatable public boards and feeds found by users or agents are sanitized and shared by default through `sources suggest --stdin`; disable this independently with `sources sharing disable`. Each contribution enters a private pending moderation queue. Only a maintainer-reviewed source becomes publicly searchable. One-off jobs, personal profiles, referral parameters, and candidate data are never published as sources, and every lead must still resolve to a direct employer or ATS before use.
+
 ## 🔐 Privacy
 
 | Data | Where it stays |
@@ -108,15 +111,20 @@ The bundled CLI handles private profile storage, résumé import, scoring, dupli
 | Profile | macOS Keychain or Windows Credential Manager |
 | Résumé and ledgers | Owner-only local state directory |
 | Browser login | Existing browser session |
+| Source-sharing preference | Owner-only local state directory |
 | Skill code | Version-controlled installation directory |
 
 Candidate data, résumés, application history, credentials, and browser sessions are never committed to this repository.
 
 Anonymous structured analytics are enabled by default to improve the agent. They may include job and workflow categories, but never candidate identity, résumé content, prompts, answers, browser data, IP addresses, or raw errors.
 
+Anonymous community source sharing is also enabled by default, separately from analytics. It shares only sanitized metadata for repeatable public job-discovery surfaces. The registry stores no raw installation IDs; source-scoped contributor hashes and counts are used only for deduplication and moderation prioritization, never as identity or publication authority.
+
 ```bash
 node ~/.agents/skills/job-application-agent/scripts/job-application.mjs telemetry status
 node ~/.agents/skills/job-application-agent/scripts/job-application.mjs telemetry disable
+node ~/.agents/skills/job-application-agent/scripts/job-application.mjs sources sharing status
+node ~/.agents/skills/job-application-agent/scripts/job-application.mjs sources sharing disable
 ```
 
 See [`ANALYTICS.md`](job-application-agent/references/ANALYTICS.md) for the event contract and retention policy, or view the [public aggregate dashboard](https://job-application-agent-telemetry.varora1406.workers.dev/).

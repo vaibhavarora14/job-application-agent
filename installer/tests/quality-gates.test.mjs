@@ -43,6 +43,7 @@ test('classifies installer, state, workflow, package, and security changes as hi
     'bin/job-application-agent.mjs',
     'scripts/smoke-package.mjs',
     'scripts/ci/classify-paths.mjs',
+    'telemetry-worker/src/worker.mjs',
     'telemetry-worker/migrations/0002_add_index.sql',
     'telemetry-worker/wrangler.jsonc',
     'SECURITY.md',
@@ -51,13 +52,13 @@ test('classifies installer, state, workflow, package, and security changes as hi
   }
 });
 
-test('tracks dependency and JavaScript changes independently', () => {
+test('tracks dependency and ordinary JavaScript changes independently', () => {
   assert.deepEqual(classifyChangedPaths(['package-lock.json']), {
     codeChanged: false,
     dependencyChanged: true,
     highRisk: true,
   });
-  assert.deepEqual(classifyChangedPaths(['telemetry-worker/src/worker.mjs']), {
+  assert.deepEqual(classifyChangedPaths(['telemetry-worker/public/dashboard.js']), {
     codeChanged: true,
     dependencyChanged: false,
     highRisk: false,
@@ -147,8 +148,16 @@ test('workflows install lockfile dependencies before running repository tests', 
 
 test('telemetry persistence and deployment paths require code-owner review', async () => {
   const codeowners = await readFile(new URL('../../.github/CODEOWNERS', import.meta.url), 'utf8');
+  assert.match(codeowners, /^\/telemetry-worker\/src\/\s+@vaibhavarora14$/m);
   assert.match(codeowners, /^\/telemetry-worker\/migrations\/\s+@vaibhavarora14$/m);
   assert.match(codeowners, /^\/telemetry-worker\/wrangler\.jsonc\s+@vaibhavarora14$/m);
+});
+
+test('staging moderation always rejects an approved fixture after a failed verification', async () => {
+  const workflow = (await readFile(new URL('../../.github/workflows/staging-telemetry.yml', import.meta.url), 'utf8')).replace(/\r\n/g, '\n');
+  assert.match(workflow, /id:\s*verify_reviewed/);
+  assert.match(workflow, /id:\s*reject_source\n\s*if:\s*\$\{\{ always\(\) && steps\.pending_source\.outputs\.community_source_id != '' \}\}/);
+  assert.match(workflow, /steps\.verify_reviewed\.outcome == 'success'/);
 });
 
 test('validation exposes a stable quality gate and a six-combination high-risk matrix', async () => {

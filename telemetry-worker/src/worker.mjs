@@ -1,10 +1,12 @@
 import { TELEMETRY_SCHEMA_VERSION, TELEMETRY_MAX_BYTES, validateTelemetryEnvelope } from '../../job-application-agent/scripts/telemetry-schema.mjs';
+import { communitySourceId, validateSourceContributionEnvelope } from '../../job-application-agent/scripts/source-community-schema.mjs';
 import { publicStatsResponse, recordPublicAggregate } from './public-stats.mjs';
 
 const encoder = new TextEncoder();
 const decoder = new TextDecoder();
 const TOKEN_TTL_SECONDS = 30 * 24 * 60 * 60;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const SOURCE_MAX_BYTES = 4096;
 
 function base64url(bytes) {
   return btoa(String.fromCharCode(...bytes)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
@@ -40,8 +42,8 @@ export async function verifyToken(token, secret, now = new Date(), { allowExpire
   return decoded;
 }
 
-function response(body, status = 200) {
-  return Response.json(body, { status, headers: { 'cache-control': 'no-store', 'x-content-type-options': 'nosniff', 'referrer-policy': 'no-referrer' } });
+function response(body, status = 200, cacheControl = 'no-store') {
+  return Response.json(body, { status, headers: { 'cache-control': cacheControl, 'x-content-type-options': 'nosniff', 'referrer-policy': 'no-referrer' } });
 }
 
 async function readJson(request, maxBytes) {
@@ -105,6 +107,106 @@ async function events(request, env) {
   return response({ accepted: true, eventId }, 202);
 }
 
+function sourceStore(env) {
+  if (env.SOURCE_STORE) return env.SOURCE_STORE;
+  const database = env.PUBLIC_STATS_DB;
+  if (!database?.prepare) throw Object.assign(new Error('Source store unavailable.'), { status: 503 });
+  return {
+    async contribute(source, contributorHash) {
+      await database.batch([
+        database.prepare(`
+        INSERT INTO community_sources (
+          source_id, name, base_url, kind, regions_json, role_families_json,
+          requires_session, publication_status, review_status,
+          created_at, updated_at, first_contributed_at, last_contributed_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, 'pending', 'unreviewed', ?, ?, ?, ?)
+        ON CONFLICT(source_id) DO UPDATE SET
+          updated_at = excluded.updated_at,
+          last_contributed_at = excluded.last_contributed_at
+      `).bind(
+          source.sourceId,
+          source.name,
+          source.baseUrl,
+          source.kind,
+          JSON.stringify(source.regions),
+          JSON.stringify(source.roleFamilies),
+          source.requiresSession ? 1 : 0,
+          source.seenAt,
+          source.seenAt,
+          source.seenAt,
+          source.seenAt,
+        ),
+        database.prepare(`
+          INSERT INTO community_source_contributions (
+            source_id, contributor_hash, first_contributed_at, last_contributed_at
+          ) VALUES (?, ?, ?, ?)
+          ON CONFLICT(source_id, contributor_hash) DO UPDATE SET
+            last_contributed_at = excluded.last_contributed_at
+        `).bind(source.sourceId, contributorHash, source.seenAt, source.seenAt),
+      ]);
+      const state = await database.prepare(`
+        SELECT publication_status,
+               (SELECT COUNT(*) FROM community_source_contributions WHERE source_id = ?) AS unique_contributors
+        FROM community_sources
+        WHERE source_id = ?
+      `).bind(source.sourceId, source.sourceId).first();
+      return { publicationStatus: state.publication_status, uniqueContributors: Number(state.unique_contributors) };
+    },
+    async listPublished() {
+      const result = await database.prepare(`
+        SELECT sources.source_id, sources.name, sources.base_url, sources.kind,
+               sources.regions_json, sources.role_families_json, sources.requires_session,
+               sources.review_status, COUNT(contributions.contributor_hash) AS contribution_count
+        FROM community_sources AS sources
+        JOIN community_source_contributions AS contributions ON contributions.source_id = sources.source_id
+        WHERE sources.publication_status = 'published'
+          AND sources.review_status = 'maintainer-reviewed'
+        GROUP BY sources.source_id
+        ORDER BY contribution_count DESC, sources.last_contributed_at DESC
+        LIMIT 500
+      `).all();
+      return (result.results ?? []).map((row) => ({
+        sourceId: row.source_id,
+        name: row.name,
+        baseUrl: row.base_url,
+        kind: row.kind,
+        regions: JSON.parse(row.regions_json),
+        roleFamilies: JSON.parse(row.role_families_json),
+        requiresSession: row.requires_session === 1,
+        registryStatus: 'community-reviewed',
+        contributionCount: Number(row.contribution_count),
+      }));
+    },
+  };
+}
+
+async function sourceContributorHash(sourceId, installationId, secret) {
+  const signature = await crypto.subtle.sign('HMAC', await signingKey(secret), encoder.encode(`${sourceId}\0${installationId}`));
+  return [...new Uint8Array(signature)].map((value) => value.toString(16).padStart(2, '0')).join('');
+}
+
+async function contributeSource(request, env) {
+  const input = await readJson(request, SOURCE_MAX_BYTES);
+  let envelope;
+  try { envelope = validateSourceContributionEnvelope(input); } catch { return response({ error: 'invalid_source' }, 400); }
+  let identity;
+  try { identity = await verifyToken(envelope.token, env.SIGNING_SECRET); } catch (error) { return response({ error: /expired/i.test(error.message) ? 'token_expired' : 'invalid_token' }, 401); }
+  if (identity.installationId !== envelope.installationId) return response({ error: 'invalid_token' }, 401);
+  if (!await allowed(env.SOURCE_RATE_LIMITER, 'source-write')) return response({ error: 'rate_limited' }, 429);
+  if (!await allowed(env.SOURCE_RATE_LIMITER, envelope.installationId)) return response({ error: 'rate_limited' }, 429);
+
+  const sourceId = await communitySourceId(envelope.source);
+  const contributorHash = await sourceContributorHash(sourceId, envelope.installationId, env.SIGNING_SECRET);
+  const state = await sourceStore(env).contribute({ sourceId, ...envelope.source, seenAt: new Date().toISOString() }, contributorHash);
+  return response({ accepted: true, sourceId, ...state }, 202);
+}
+
+async function listSources(_request, env) {
+  if (!await allowed(env.SOURCE_RATE_LIMITER, 'source-read')) return response({ error: 'rate_limited' }, 429);
+  const sources = await sourceStore(env).listPublished();
+  return response({ version: 1, sources }, 200, 'no-store');
+}
+
 export async function handleRequest(request, env) {
   const { pathname } = new URL(request.url);
   if (request.method === 'GET' && pathname === '/') return Response.redirect('https://stats.jobappagent.com/', 308);
@@ -112,6 +214,8 @@ export async function handleRequest(request, env) {
   if (pathname === '/api/public-stats') return publicStatsResponse(request, env);
   if (request.method === 'POST' && pathname === '/v1/install') return install(request, env);
   if (request.method === 'POST' && pathname === '/v1/events') return events(request, env);
+  if (request.method === 'POST' && pathname === '/v1/sources') return contributeSource(request, env);
+  if (request.method === 'GET' && pathname === '/v1/sources') return listSources(request, env);
   return response({ error: 'not_found' }, 404);
 }
 
