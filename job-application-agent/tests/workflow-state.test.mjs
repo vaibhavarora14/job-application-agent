@@ -6,6 +6,8 @@ import { join } from 'node:path';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
 
+import { sourcesSync } from '../scripts/job-application.mjs';
+
 const script = fileURLToPath(new URL('../scripts/job-application.mjs', import.meta.url));
 
 async function fixture(t, label) {
@@ -18,7 +20,7 @@ async function fixture(t, label) {
     graceConsumed: true,
     installationEventPending: false,
   }));
-  return { directory, env: { ...process.env, JOB_APPLICATION_AGENT_STATE_DIR: directory } };
+  return { directory, env: { ...process.env, JOB_APPLICATION_AGENT_STATE_DIR: directory, JOB_APPLICATION_AGENT_SOURCE_COMMUNITY_URL: 'http://127.0.0.1:9' } };
 }
 
 function cli(env, args, input) {
@@ -126,6 +128,144 @@ test('counts only unique confirmed ledger submissions for an explicit round', as
   assert.equal(roundEvents.filter((event) => event.type === 'submission-confirmed').length, 30);
   assert.equal(roundEvents.length, 32);
   if (process.platform !== 'win32') assert.equal((await stat(join(directory, 'rounds.ndjson'))).mode & 0o777, 0o600);
+});
+
+test('ships a filterable global discovery source catalog and tracks source attribution', async (t) => {
+  const { directory, env } = await fixture(t, 'source-catalog');
+  const catalog = cli(env, ['sources', 'list']);
+  const yc = catalog.sources.find((source) => source.id === 'yc-work-at-a-startup');
+
+  assert.ok(yc);
+  assert.equal(yc.kind, 'startup-network');
+  assert.equal(yc.requiresSession, true);
+  assert.equal(yc.verification, 'direct-employer-or-ats');
+
+  const filtered = cli(env, ['sources', 'list', '--stdin'], {
+    regions: ['global'],
+    roleFamilies: ['engineering'],
+  });
+  assert.ok(filtered.sources.some((source) => source.id === 'yc-work-at-a-startup'));
+
+  cli(env, ['ledger', 'add', '--stdin'], {
+    id: 'catalog-sourced-role',
+    company: 'Catalog Example',
+    role: 'Staff Product Engineer',
+    url: 'https://jobs.catalog.example/staff-product-engineer',
+    source: 'company',
+    discoverySource: 'yc',
+    discoverySourceId: 'yc-work-at-a-startup',
+    applicationChannel: 'company',
+    score: 90,
+    status: 'submitted',
+    submittedAt: new Date().toISOString(),
+    approval: 'STANDING AUTHORIZATION',
+    answers: {},
+  });
+  const [stored] = (await readFile(join(directory, 'applications.ndjson'), 'utf8')).trim().split('\n').map(JSON.parse);
+  assert.equal(stored.discoverySourceId, 'yc-work-at-a-startup');
+
+  const invalidSource = cliFailure(env, ['ledger', 'add', '--stdin'], {
+    id: 'catalog-mistyped-source-role',
+    company: 'Catalog Example Two',
+    role: 'Senior Product Engineer',
+    url: 'https://jobs.catalog.example/senior-product-engineer',
+    source: 'company',
+    discoverySource: 'job-board',
+    discoverySourceId: 'employable-al',
+    applicationChannel: 'company',
+    score: 85,
+    status: 'submitted',
+    submittedAt: new Date().toISOString(),
+    approval: 'STANDING AUTHORIZATION',
+    answers: {},
+  });
+  assert.equal(invalidSource.status, 1);
+  assert.match(invalidSource.stderr, /packaged source catalog/i);
+});
+
+test('queues sanitized repeatable source suggestions locally for public-registry review', async (t) => {
+  const { directory, env } = await fixture(t, 'source-suggestions');
+  const suggestion = cli(env, ['sources', 'suggest', '--stdin'], {
+    name: 'Example Engineering Board',
+    baseUrl: 'https://jobs.example.org/openings/engineering?term=software&ref=candidate@example.com&token=private#apply',
+    kind: 'job-board',
+    regions: ['global'],
+    roleFamilies: ['engineering'],
+    requiresSession: false,
+  });
+
+  assert.equal(suggestion.queued, true);
+  assert.equal(suggestion.suggestion.baseUrl, 'https://jobs.example.org/openings/engineering');
+  if (process.platform !== 'win32') assert.equal((await stat(join(directory, 'source-suggestions.ndjson'))).mode & 0o777, 0o600);
+
+  const pending = cli(env, ['sources', 'pending']);
+  assert.equal(pending.scope, 'local-unsent');
+  assert.equal(pending.count, 1);
+  assert.equal(pending.suggestions[0].name, 'Example Engineering Board');
+
+  const rejected = cliFailure(env, ['sources', 'suggest', '--stdin'], {
+    name: 'Personal referral',
+    baseUrl: 'https://linkedin.com/in/some-person',
+    kind: 'user-supplied',
+    regions: ['global'],
+    roleFamilies: ['engineering'],
+    requiresSession: true,
+  });
+  assert.equal(rejected.status, 1);
+  assert.match(rejected.stderr, /profile or personal URL/i);
+});
+
+test('exposes independent opt-out controls for default community source sharing', async (t) => {
+  const { directory, env } = await fixture(t, 'source-sharing-controls');
+  const initial = cli(env, ['sources', 'sharing', 'status']);
+  assert.equal(initial.enabled, true);
+
+  const disabled = cli(env, ['sources', 'sharing', 'disable']);
+  assert.equal(disabled.enabled, false);
+  assert.equal(disabled.hasInstallationId, false);
+
+  const suggestion = cli(env, ['sources', 'suggest', '--stdin'], {
+    name: 'Example Engineering Board',
+    baseUrl: 'https://jobs.example.org/openings/engineering',
+    kind: 'job-board',
+    regions: ['global'],
+    roleFamilies: ['engineering'],
+    requiresSession: false,
+  });
+  assert.equal(suggestion.queued, true);
+  assert.deepEqual(suggestion.community, { shared: false, reason: 'disabled' });
+  assert.equal(cli(env, ['sources', 'pending']).count, 1);
+  if (process.platform !== 'win32') assert.equal((await stat(join(directory, 'source-sharing.json'))).mode & 0o777, 0o600);
+});
+
+test('source sync counts only the contribution actually attempted before an unavailable relay stops the queue', async (t) => {
+  const { directory, env } = await fixture(t, 'source-sync-attempts');
+  const previous = process.env.JOB_APPLICATION_AGENT_STATE_DIR;
+  process.env.JOB_APPLICATION_AGENT_STATE_DIR = directory;
+  t.after(() => {
+    if (previous == null) delete process.env.JOB_APPLICATION_AGENT_STATE_DIR;
+    else process.env.JOB_APPLICATION_AGENT_STATE_DIR = previous;
+  });
+  const suggestion = (id, baseUrl) => ({
+    type: 'suggested', id, name: `Source ${id}`, baseUrl, kind: 'job-board',
+    regions: ['global'], roleFamilies: ['engineering'], requiresSession: false,
+    createdAt: new Date().toISOString(),
+  });
+  await writeFile(join(directory, 'source-suggestions.ndjson'), [
+    JSON.stringify(suggestion('source-suggestion-one', 'https://one.example.com/openings')),
+    JSON.stringify(suggestion('source-suggestion-two', 'https://two.example.com/openings')),
+  ].join('\n').concat('\n'));
+  let calls = 0;
+
+  const result = await sourcesSync({
+    contribute: async () => {
+      calls += 1;
+      return { shared: false, reason: 'unavailable' };
+    },
+  });
+
+  assert.equal(calls, 1);
+  assert.deepEqual(result, { attempted: 1, shared: 0, remaining: 2 });
 });
 
 test('blocks a different role at the same company during the 15-day cooldown', async (t) => {

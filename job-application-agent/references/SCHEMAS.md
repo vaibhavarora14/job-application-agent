@@ -49,6 +49,7 @@ Treat `mustHaves[].evidence` as private resume analysis. It is used locally and 
   "description": "Posting text",
   "source": "greenhouse",
   "discoverySource": "linkedin",
+  "discoverySourceId": "linkedin-jobs-feed",
   "applicationChannel": "greenhouse",
   "url": "https://job-boards.greenhouse.io/example/jobs/123",
   "postingStatus": "active",
@@ -72,7 +73,7 @@ Treat `mustHaves[].evidence` as private resume analysis. It is used locally and 
 
 Allowed sources: `linkedin`, `greenhouse`, `lever`, `ashby`, `workable`, `comeet`, `workday`, `rippling`, `smartrecruiters`, `google-form`, `company`, `email`, and `other`.
 
-`source` remains the backward-compatible application channel. New workflows should also supply `discoverySource` (`direct-company`, `linkedin`, `x`, `yc`, `hacker-news`, `job-board`, `email`, `user-supplied`, `web-search`, or `other`) and `applicationChannel` using the allowed `source` values.
+`source` remains the backward-compatible application channel. New workflows should also supply `discoverySource` (`direct-company`, `linkedin`, `x`, `yc`, `hacker-news`, `job-board`, `email`, `user-supplied`, `web-search`, or `other`), the kebab-case `discoverySourceId` from [`SOURCES.json`](SOURCES.json) when known, and `applicationChannel` using the allowed `source` values.
 
 Allowed posting statuses: `active`, `closed`, `unclear`. Allowed eligibility: `eligible`, `unclear`, `ineligible`. Allowed seniority: `junior`, `mid`, `senior`, `staff`, `principal`, `lead`, `manager`, `director`, `founding`, `unspecified`. Allowed work modes: `remote`, `hybrid`, `onsite`, `unspecified`. Must-have statuses: `met`, `partial`, `missing`, `unclear`.
 
@@ -109,6 +110,7 @@ Add only after visible success confirmation.
   "employerJobId": "greenhouse:123",
   "source": "company",
   "discoverySource": "x",
+  "discoverySourceId": "x-hiring-feed",
   "applicationChannel": "company",
   "roundId": "round-2026-01-15-00000000-0000-4000-8000-000000000000",
   "score": 84,
@@ -129,7 +131,7 @@ Add only after visible success confirmation.
 
 Use `duplicateOverride` only for a verified distinct requisition after a possible-duplicate warning. Use `companyReapplyOverride` only when the candidate explicitly approves a different-role reapplication during the cooldown or after a recorded outcome. Both override phrases and `telemetry` are transient. An accepted company reapplication override stores only `reapplicationApproval: "candidate-explicit"` in the private ledger. Use approval `APPROVE SUBMIT` for per-application approval or `STANDING AUTHORIZATION` when the current request authorizes routine batch submission.
 
-`discoverySource`, `applicationChannel`, and `roundId` are optional for backward compatibility and should be supplied for new resumable rounds. `ledger check` returns hard duplicate status, bounded same-company history, and the same `companyReapply` decision enforced by `ledger add` while holding the application lock.
+`discoverySource`, `discoverySourceId`, `applicationChannel`, and `roundId` are optional for backward compatibility and should be supplied for new resumable rounds. `discoverySourceId` remains local and is not included in telemetry. `ledger check` returns hard duplicate status, bounded same-company history, and the same `companyReapply` decision enforced by `ledger add` while holding the application lock.
 
 ## Autonomy grant input
 

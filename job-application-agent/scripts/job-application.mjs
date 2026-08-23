@@ -1,12 +1,15 @@
 #!/usr/bin/env node
 
 import { createHash, randomUUID } from 'node:crypto';
+import { readFileSync } from 'node:fs';
 import { appendFile, chmod, mkdir, open, readFile, rename, stat, unlink, writeFile } from 'node:fs/promises';
 import { platform } from 'node:os';
 import { basename, join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
 import { createSecretStore, migrateLegacyStateDir, resolveStateDir } from './secret-store.mjs';
+import { SourceCommunityClient } from './source-community-client.mjs';
+import { normalizeCommunitySource } from './source-community-schema.mjs';
 import { TelemetryClient } from './telemetry-client.mjs';
 import { jobIdentity } from './telemetry-schema.mjs';
 
@@ -30,6 +33,10 @@ const ATTENTION_BLOCKERS = new Set(['authentication', 'mfa', 'captcha', 'legal-a
 const REQUIRED_ACTIONS = new Set(['sign-in', 'complete-mfa', 'complete-captcha', 'review-legal', 'choose-demographic', 'provide-government-id', 'provide-authorization', 'provide-compensation', 'verify-claim', 'provide-judgment', 'record-video', 'enable-upload', 'retry-site']);
 const COMPANY_REAPPLY_COOLDOWN_DAYS = 15;
 const COMPANY_REAPPLY_OVERRIDE = 'CANDIDATE APPROVED EARLY REAPPLICATION';
+const SOURCE_CATALOG_URL = new URL('../references/SOURCES.json', import.meta.url);
+const SOURCE_CATALOG = JSON.parse(readFileSync(SOURCE_CATALOG_URL, 'utf8'));
+if (!Array.isArray(SOURCE_CATALOG)) throw new Error('The packaged source catalog is invalid.');
+const SOURCE_CATALOG_IDS = new Set(SOURCE_CATALOG.map((source) => sourceId(source.id, 'source catalog id')));
 const REQUIRED_PROFILE = ['name', 'email', 'phone', 'location', 'workAuthorization', 'roleFamilies', 'seniority', 'targetLocations', 'workModes', 'submissionMode', 'yearsExperience', 'autoSubmitMinScore', 'manualReviewMinScore', 'minMustHaveCoverage'];
 const STRING_PROFILE_FIELDS = new Set(['name', 'email', 'phone', 'location', 'workAuthorization', 'linkedin', 'github', 'portfolio', 'availability', 'currentCompensation', 'targetCompensation', 'submissionMode']);
 const ARRAY_PROFILE_FIELDS = new Set(['roleFamilies', 'seniority', 'skills', 'targetLocations', 'excludedLocations', 'workModes', 'industries', 'excludedCompanies']);
@@ -81,6 +88,7 @@ export function commandCategory([area, action]) {
   if (area === 'telemetry') return 'telemetry';
   if (area === 'autonomy') return 'profile';
   if (area === 'round') return 'round';
+  if (area === 'sources') return 'search';
   if (area === 'attention' || area === 'friction') return 'batch';
   return 'other';
 }
@@ -175,6 +183,12 @@ function stringArray(value, label, required = false) {
   return value.map((item, index) => string(item, `${label}[${index}]`, 300));
 }
 
+function sourceId(value, label) {
+  const id = string(value, label, 80).toLowerCase();
+  if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(id)) throw new Error(`${label} must be a kebab-case public source ID.`);
+  return id;
+}
+
 function integer(value, label, min, max) {
   if (!Number.isInteger(value) || value < min || value > max) throw new Error(`${label} must be an integer from ${min} to ${max}.`);
   return value;
@@ -253,6 +267,9 @@ export function scoreJob(input, target) {
   const description = string(job.description, 'job.description', 40000);
   const source = string(job.source, 'job.source', 40).toLowerCase();
   const discoverySource = job.discoverySource == null ? null : string(job.discoverySource, 'job.discoverySource', 40).toLowerCase();
+  if (job.discoverySourceId != null && !SOURCE_CATALOG_IDS.has(sourceId(job.discoverySourceId, 'job.discoverySourceId'))) {
+    throw new Error('job.discoverySourceId must match an ID in the packaged source catalog.');
+  }
   const applicationChannel = job.applicationChannel == null ? null : string(job.applicationChannel, 'job.applicationChannel', 40).toLowerCase();
   const eligibility = string(job.eligibility, 'job.eligibility', 40).toLowerCase();
   const postingStatus = string(job.postingStatus ?? 'unclear', 'job.postingStatus', 40).toLowerCase();
@@ -410,6 +427,10 @@ export function validateLedgerEntry(input) {
   };
   if (entry.employerJobId != null) normalized.employerJobId = string(entry.employerJobId, 'entry.employerJobId', 300);
   if (entry.discoverySource != null) normalized.discoverySource = string(entry.discoverySource, 'entry.discoverySource', 40).toLowerCase();
+  if (entry.discoverySourceId != null) {
+    normalized.discoverySourceId = sourceId(entry.discoverySourceId, 'entry.discoverySourceId');
+    if (!SOURCE_CATALOG_IDS.has(normalized.discoverySourceId)) throw new Error('entry.discoverySourceId must match an ID in the packaged source catalog.');
+  }
   if (entry.applicationChannel != null) normalized.applicationChannel = string(entry.applicationChannel, 'entry.applicationChannel', 40).toLowerCase();
   if (entry.roundId != null) normalized.roundId = string(entry.roundId, 'entry.roundId', 180);
   if (!SOURCES.has(normalized.source)) throw new Error('entry.source is invalid.');
@@ -615,6 +636,91 @@ async function jsonLines(file) {
     if (error.code === 'ENOENT') return [];
     throw error;
   }
+}
+
+async function sourceCatalog() {
+  return SOURCE_CATALOG;
+}
+
+async function sourcesList(filtersInput = {}, communitySources = []) {
+  const filters = object(filtersInput, 'source filters');
+  const allowed = new Set(['regions', 'roleFamilies', 'kinds', 'requiresSession']);
+  for (const key of Object.keys(filters)) if (!allowed.has(key)) throw new Error(`Unknown source filter: ${key}.`);
+  const regions = filters.regions == null ? [] : terms(stringArray(filters.regions, 'source filters.regions'));
+  const roleFamilies = filters.roleFamilies == null ? [] : terms(stringArray(filters.roleFamilies, 'source filters.roleFamilies'));
+  const kinds = filters.kinds == null ? [] : terms(stringArray(filters.kinds, 'source filters.kinds'));
+  if (filters.requiresSession != null && typeof filters.requiresSession !== 'boolean') throw new Error('source filters.requiresSession must be a Boolean.');
+  const community = communitySources.map((source) => ({
+    id: null,
+    communitySourceId: source.sourceId,
+    name: source.name,
+    kind: source.kind,
+    jobsUrl: source.baseUrl,
+    regions: source.regions,
+    roleFamilies: source.roleFamilies,
+    requiresSession: source.requiresSession,
+    access: 'community',
+    verification: 'direct-employer-or-ats',
+    registryStatus: source.registryStatus,
+    contributionCount: source.contributionCount,
+  }));
+  const sources = [...await sourceCatalog(), ...community].filter((source) => {
+    if (regions.length && !source.regions.some((value) => regions.includes(value))) return false;
+    if (roleFamilies.length && !source.roleFamilies.some((value) => roleFamilies.includes(value))) return false;
+    if (kinds.length && !kinds.includes(source.kind)) return false;
+    if (filters.requiresSession != null && source.requiresSession !== filters.requiresSession) return false;
+    return true;
+  });
+  return { version: 1, count: sources.length, sources };
+}
+
+function sourceSuggestion(input) {
+  const value = normalizeCommunitySource(input);
+  return {
+    type: 'suggested',
+    id: `source-suggestion-${randomUUID()}`,
+    ...value,
+    createdAt: new Date().toISOString(),
+  };
+}
+
+function shareableSuggestion(suggestion) {
+  return Object.fromEntries(['name', 'baseUrl', 'kind', 'regions', 'roleFamilies', 'requiresSession'].map((key) => [key, suggestion[key]]));
+}
+
+async function markSourceShared(suggestionId, contribution) {
+  if (!contribution.shared) return;
+  await appendPrivateEvent('source-contribution-receipts', { suggestionId, sourceId: contribution.sourceId, sharedAt: new Date().toISOString() });
+}
+
+async function sourcesSuggest(input, community) {
+  const suggestion = sourceSuggestion(input);
+  await appendPrivateEvent('source-suggestions', suggestion);
+  const contribution = await community.contribute(shareableSuggestion(suggestion));
+  await markSourceShared(suggestion.id, contribution);
+  return { queued: true, community: contribution, suggestion };
+}
+
+async function sourcesPending() {
+  const suggestions = await jsonLines(join(await ensureStateDir(), 'source-suggestions.ndjson'));
+  const receipts = await jsonLines(join(await ensureStateDir(), 'source-contribution-receipts.ndjson'));
+  const shared = new Set(receipts.map((receipt) => receipt.suggestionId));
+  const pending = suggestions.filter((suggestion) => !shared.has(suggestion.id));
+  return { scope: 'local-unsent', count: pending.length, suggestions: pending };
+}
+
+export async function sourcesSync(community, limit = 10) {
+  const pending = (await sourcesPending()).suggestions.slice(0, limit);
+  let shared = 0;
+  let attempted = 0;
+  for (const suggestion of pending) {
+    attempted += 1;
+    const contribution = await community.contribute(shareableSuggestion(suggestion));
+    await markSourceShared(suggestion.id, contribution);
+    if (contribution.shared) shared += 1;
+    else if (contribution.reason === 'disabled' || contribution.reason === 'unavailable') break;
+  }
+  return { attempted, shared, remaining: (await sourcesPending()).count };
 }
 
 async function withStateLock(name, action) {
@@ -1136,7 +1242,7 @@ function roundCompletedTelemetry(round) {
   };
 }
 
-async function executeCommand([area, action, value], telemetry, session) {
+async function executeCommand([area, action, value], telemetry, session, community) {
   const domainEvents = [];
   let result;
   if (area === 'profile' && action === 'set' && value === '--stdin') {
@@ -1182,12 +1288,24 @@ async function executeCommand([area, action, value], telemetry, session) {
   else if (area === 'round' && action === 'complete' && value === '--stdin') {
     result = await roundComplete(await jsonStdin());
     domainEvents.push(roundCompletedTelemetry(result));
-  } else if (area === 'attention' && action === 'add' && value === '--stdin') result = await attentionAdd(await jsonStdin());
+  } else if (area === 'sources' && action === 'list' && value == null) {
+    await sourcesSync(community);
+    result = await sourcesList({}, await community.list());
+  } else if (area === 'sources' && action === 'list' && value === '--stdin') {
+    const filters = await jsonStdin();
+    await sourcesSync(community);
+    result = await sourcesList(filters, await community.list());
+  }
+  else if (area === 'sources' && action === 'suggest' && value === '--stdin') result = await sourcesSuggest(await jsonStdin(), community);
+  else if (area === 'sources' && action === 'pending' && value == null) result = await sourcesPending();
+  else if (area === 'sources' && action === 'sync' && value == null) result = await sourcesSync(community);
+  else if (area === 'sources' && action === 'sharing' && ['status', 'enable', 'disable', 'reset'].includes(value)) result = await community.configure(value);
+  else if (area === 'attention' && action === 'add' && value === '--stdin') result = await attentionAdd(await jsonStdin());
   else if (area === 'attention' && action === 'list' && value == null) result = await attentionList();
   else if (area === 'attention' && action === 'resolve' && value === '--stdin') result = await attentionResolve(await jsonStdin());
   else if (area === 'friction' && action === 'record' && value === '--stdin') result = await frictionRecord(await jsonStdin());
   else if (area === 'friction' && action === 'list' && value == null) result = await frictionList();
-  else throw new Error('Usage: profile set|migrate --stdin; profile check|field <name>; resume import <url-or-pdf>|path; score --stdin; ledger check|add|outcome|review-ack --stdin; ledger review; autonomy grant --stdin|status|preview|revoke; round start|complete --stdin|status [round-id]; attention add|resolve --stdin|list; friction record --stdin|list; telemetry status|enable|disable|reset|preview --stdin|record --stdin');
+  else throw new Error('Usage: profile set|migrate --stdin; profile check|field <name>; resume import <url-or-pdf>|path; score --stdin; ledger check|add|outcome|review-ack --stdin; ledger review; autonomy grant --stdin|status|preview|revoke; round start|complete --stdin|status [round-id]; sources list [--stdin]|suggest --stdin|pending|sync|sharing status|enable|disable|reset; attention add|resolve --stdin|list; friction record --stdin|list; telemetry status|enable|disable|reset|preview --stdin|record --stdin');
   for (const event of domainEvents) await telemetry.record(event, session);
   return result;
 }
@@ -1209,6 +1327,7 @@ async function recordInstallationStart(telemetry, session) {
 async function main(args) {
   const [area, action, value] = args;
   const telemetry = new TelemetryClient({ stateDir: stateDir() });
+  const community = new SourceCommunityClient({ stateDir: stateDir() });
   if (area === 'telemetry') {
     if (['status', 'enable', 'disable', 'reset'].includes(action) && value == null) return print(await telemetry.configure(action));
     if (action === 'preview' && value === '--stdin') return print(await telemetry.preview(await jsonStdin()));
@@ -1225,7 +1344,7 @@ async function main(args) {
   await recordInstallationStart(telemetry, session);
   const started = Date.now();
   try {
-    const result = await executeCommand(args, telemetry, session);
+    const result = await executeCommand(args, telemetry, session, community);
     await telemetry.record({ event: 'command_completed', properties: { command, result: 'success', durationBucket: durationBucket(Date.now() - started) } }, session);
     return print(result);
   } catch (error) {
