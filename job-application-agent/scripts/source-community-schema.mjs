@@ -15,7 +15,7 @@ function boundedString(value, label, max) {
 function containsIdentityLike(value) {
   const normalized = value.normalize('NFKC');
   return /[^\s/@]+@(?:[^\s./@]+\.)+[^\s./@]+/u.test(normalized)
-    || /\+?\d[\d\s().-]{7,}/u.test(normalized);
+    || /\+?\p{Nd}[\p{Nd}\s().-]{7,}/u.test(normalized);
 }
 
 function terms(value, label) {
@@ -50,7 +50,11 @@ function decodedPathname(pathname) {
 
 function looksCredentialLikePath(pathname) {
   return pathname.split('/').filter(Boolean).some((segment) => {
-    const opaque = segment.replace(/=+$/, '');
+    const normalized = segment.normalize('NFKC');
+    if (/^[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}$/.test(normalized)) return true;
+    if (/^(?:access[-_]?token|api[-_]?key|auth(?:orization)?|bearer|client[-_]?secret|password|secret|token)(?:[=:.]|\s+)(?:bearer\s+)?[A-Za-z0-9._~+/=-]{8,}$/i.test(normalized)) return true;
+    if (/^(?:cfat_|github_pat_|gh[pousr]_|[spr]k_(?:live|test)_|xox[baprs]-)[A-Za-z0-9_-]{8,}$/i.test(normalized)) return true;
+    const opaque = normalized.replace(/=+$/, '');
     if (!/^[A-Za-z0-9_-]{20,}$/.test(opaque)) return false;
     return (/[a-z]/.test(opaque) && /[A-Z]/.test(opaque)) || /\d/.test(opaque) || /[-_]/.test(opaque);
   });
@@ -110,7 +114,7 @@ export function normalizeCommunitySource(input) {
   url.hostname = url.hostname.replace(/\.+$/, '');
   if (!isPublicHostname(url.hostname)) throw new Error('community source.baseUrl must use a public internet hostname.');
   if (containsIdentityLike(url.hostname)) throw new Error('community source.baseUrl must not contain identity-like content.');
-  const decodedPath = decodedPathname(url.pathname);
+  const decodedPath = decodedPathname(url.pathname).normalize('NFKC');
   if (containsIdentityLike(decodedPath)) throw new Error('community source.baseUrl must not contain identity-like content.');
   if (looksIdentityPath(decodedPath)) throw new Error('community source.baseUrl must not contain an identity-like path.');
   url.pathname = decodedPath;
@@ -124,7 +128,7 @@ export function normalizeCommunitySource(input) {
   if (typeof value.requiresSession !== 'boolean') throw new Error('community source.requiresSession must be a Boolean.');
   return {
     name,
-    baseUrl: url.toString().replace(/\/$/, ''),
+    baseUrl: url.toString().replace(/\/+$/, ''),
     kind,
     regions: terms(value.regions, 'community source.regions'),
     roleFamilies: terms(value.roleFamilies, 'community source.roleFamilies'),

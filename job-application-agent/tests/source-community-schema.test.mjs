@@ -107,6 +107,44 @@ test('rejects credential-like opaque path segments before source sharing', () =>
   );
 });
 
+test('rejects JWT, key-value, and prefixed credentials in source paths', () => {
+  const credentialUrls = [
+    'https://example.com/feed/eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.SflKxwRJSMeKKF2QT4fwpMeJf36POk6yJV_adQssw5c/jobs',
+    'https://example.com/feed/token=AbCdEfGhIjKlMnOpQrStUvWxYz/jobs',
+    'https://example.com/feed/api_key.AbCdEfGhIjKlMnOpQrStUvWxYz/jobs',
+  ];
+
+  for (const baseUrl of credentialUrls) {
+    assert.throws(() => normalizeCommunitySource({ ...source, baseUrl }), /credential-like/i, baseUrl);
+  }
+});
+
+test('rejects phone identities written with Unicode decimal digits', () => {
+  const privateValues = [
+    { name: 'Jobs curated by +٩١ ٩٨٧٦٥ ٤٣٢١٠' },
+    { regions: ['+९१ ९८७६५ ४३२१०'] },
+    { baseUrl: 'https://example.com/%2B%D9%A9%D9%A1%20%D9%A9%D9%A8%D9%A7%D9%A6%D9%A5%20%D9%A4%D9%A3%D9%A2%D9%A1%D9%A0/jobs' },
+  ];
+
+  for (const override of privateValues) {
+    assert.throws(() => normalizeCommunitySource({ ...source, ...override }), /identity-like/i);
+  }
+});
+
+test('normalizes compatibility characters before personal-path classification', () => {
+  for (const baseUrl of ['https://example.com/ｐｒｏｆｉｌｅ/candidate/jobs', 'https://example.com/ｕｓｅｒ/candidate/jobs']) {
+    assert.throws(() => normalizeCommunitySource({ ...source, baseUrl }), /identity-like/i, baseUrl);
+  }
+});
+
+test('removes every trailing path separator when canonicalizing source URLs', async () => {
+  const canonical = normalizeCommunitySource({ ...source, baseUrl: 'https://example.com/jobs' });
+  const redundant = normalizeCommunitySource({ ...source, baseUrl: 'https://example.com/jobs///' });
+
+  assert.equal(redundant.baseUrl, canonical.baseUrl);
+  assert.equal(await communitySourceId(redundant), await communitySourceId(canonical));
+});
+
 test('normalizes trailing DNS root dots before rejecting private hosts', () => {
   for (const baseUrl of ['https://localhost./jobs', 'https://service.local./careers', 'https://service.internal./openings']) {
     assert.throws(() => normalizeCommunitySource({ ...source, baseUrl }), /public internet hostname/i, baseUrl);
