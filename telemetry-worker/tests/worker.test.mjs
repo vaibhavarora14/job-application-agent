@@ -6,6 +6,7 @@ import worker, { createToken, verifyToken } from '../src/worker.mjs';
 function env() {
   const captured = [];
   const sourceRateLimitKeys = [];
+  const sourceReadRateLimitKeys = [];
   const communitySources = new Map();
   const contributorHashes = new Map();
   return {
@@ -15,6 +16,7 @@ function env() {
     INSTALL_RATE_LIMITER: { limit: async () => ({ success: true }) },
     EVENT_RATE_LIMITER: { limit: async () => ({ success: true }) },
     SOURCE_RATE_LIMITER: { limit: async ({ key }) => { sourceRateLimitKeys.push(key); return { success: true }; } },
+    SOURCE_READ_RATE_LIMITER: { limit: async ({ key }) => { sourceReadRateLimitKeys.push(key); return { success: true }; } },
     SOURCE_STORE: {
       async contribute(source, contributorHash) {
         const current = communitySources.get(source.sourceId) ?? {
@@ -52,6 +54,7 @@ function env() {
     communitySources,
     contributorHashes,
     sourceRateLimitKeys,
+    sourceReadRateLimitKeys,
   };
 }
 
@@ -132,14 +135,15 @@ test('source writes use an endpoint-wide limiter before the installation limiter
   assert.equal(blocked.communitySources.size, 0);
 });
 
-test('source reads use an endpoint-wide limiter before querying the registry', async () => {
+test('source reads use an independent high-capacity limiter before querying the registry', async () => {
   const bindings = env();
   const response = await worker.fetch(new Request('https://relay.example.com/v1/sources'), bindings);
   assert.equal(response.status, 200);
-  assert.deepEqual(bindings.sourceRateLimitKeys, ['source-read']);
+  assert.deepEqual(bindings.sourceRateLimitKeys, []);
+  assert.deepEqual(bindings.sourceReadRateLimitKeys, ['registry']);
 
   const blocked = env();
-  blocked.SOURCE_RATE_LIMITER = { limit: async ({ key }) => ({ success: key !== 'source-read' }) };
+  blocked.SOURCE_READ_RATE_LIMITER = { limit: async ({ key }) => ({ success: key !== 'registry' }) };
   blocked.SOURCE_STORE.listPublished = async () => { throw new Error('registry must not be queried'); };
   const limited = await worker.fetch(new Request('https://relay.example.com/v1/sources'), blocked);
   assert.equal(limited.status, 429);

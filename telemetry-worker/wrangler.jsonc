@@ -41,6 +41,11 @@
       "name": "SOURCE_RATE_LIMITER",
       "namespace_id": "41005",
       "simple": { "limit": 30, "period": 60 }
+    },
+    {
+      "name": "SOURCE_READ_RATE_LIMITER",
+      "namespace_id": "41007",
+      "simple": { "limit": 1500, "period": 60 }
     }
   ],
   "env": {
@@ -78,6 +83,11 @@
           "name": "SOURCE_RATE_LIMITER",
           "namespace_id": "41006",
           "simple": { "limit": 20, "period": 60 }
+        },
+        {
+          "name": "SOURCE_READ_RATE_LIMITER",
+          "namespace_id": "41008",
+          "simple": { "limit": 300, "period": 60 }
         }
       ]
     }
