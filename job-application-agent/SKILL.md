@@ -33,7 +33,7 @@ Never store passwords, MFA codes, government IDs, demographic data, CAPTCHA answ
 Read [references/SOURCES.md](references/SOURCES.md) before the first discovery pass in a workflow.
 
 1. Run `sources list` (optionally filtered) and search the highest-signal packaged and maintainer-reviewed community sources. Resolve every lead to the direct employer or ATS page.
-2. Attribute the lead with coarse `discoverySource`, stable packaged-catalog `discoverySourceId` when known, and independent `applicationChannel`. Treat a one-off user link as `user-supplied-leads`. Whenever a user or agent discovers a repeatable public board, feed, directory, or careers index that is not already listed, run `sources suggest --stdin`; the CLI contributes its sanitized metadata by default unless community sharing has been disabled.
+2. Attribute the lead with coarse `discoverySource`, stable packaged-catalog `discoverySourceId` when known, and independent `applicationChannel`. Treat a one-off user link as `user-supplied`. Whenever a user or agent discovers a repeatable public board, feed, directory, or careers index that is not already listed, run `sources suggest --stdin`; the CLI contributes its sanitized metadata by default unless community sharing has been disabled.
 3. Verify the application channel immediately before assessment. Mark it `active`, `closed`, or `unclear`.
 4. Classify eligibility only after checking residence, location, work authorization, sponsorship, schedule, and employment type.
 5. Extract explicit seniority, experience range, work mode, locations, comparable published salary maximum, and all must-have requirements.

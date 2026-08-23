@@ -182,3 +182,9 @@ test('validation commands are portable across Windows and pipefail shells', asyn
   assert.match(smokePackage, /process\.env\.npm_execpath/);
   assert.doesNotMatch(smokePackage, /execFileAsync\(['"]npm['"]/, 'the smoke check must not assume a Unix npm executable');
 });
+
+test('skill instructions use the accepted one-off discovery source enum', async () => {
+  const skill = await readFile(new URL('../../job-application-agent/SKILL.md', import.meta.url), 'utf8');
+  assert.match(skill, /Treat a one-off user link as `user-supplied`\./);
+  assert.doesNotMatch(skill, /Treat a one-off user link as `user-supplied-leads`\./);
+});
