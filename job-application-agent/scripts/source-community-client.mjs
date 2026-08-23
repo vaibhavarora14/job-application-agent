@@ -1,4 +1,4 @@
-import { chmod, mkdir, open, readFile, rename, unlink, writeFile } from 'node:fs/promises';
+import { chmod, mkdir, open, readFile, rename, stat, unlink, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 
@@ -11,9 +11,29 @@ export const SOURCE_SHARING_NOTICE = 'Community source sharing is enabled by def
 const CONFIG_FILE = 'source-sharing.json';
 const CONFIG_LOCK_FILE = '.source-sharing.lock';
 const CONFIG_LOCK_TIMEOUT_MS = 15_000;
+const CONFIG_LOCK_STALE_MS = 60_000;
 
 function defaultConfig() {
   return { version: 1, enabled: true, disclosed: false, installationId: null, token: null, tokenExpiresAt: null };
+}
+
+function sameCredentialState(left, right) {
+  return left.enabled === right.enabled
+    && left.installationId === right.installationId
+    && left.token === right.token
+    && left.tokenExpiresAt === right.tokenExpiresAt;
+}
+
+function processIsAlive(pid) {
+  if (!Number.isSafeInteger(pid) || pid <= 0) return false;
+  if (pid === process.pid) return true;
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (error) {
+    if (error.code === 'ESRCH') return false;
+    return true;
+  }
 }
 
 async function writePrivate(file, value) {
@@ -56,6 +76,33 @@ export class SourceCommunityClient {
     await writePrivate(this.configPath, config);
   }
 
+  async removeStaleConfigLock() {
+    let contents;
+    let metadata;
+    try {
+      [contents, metadata] = await Promise.all([
+        readFile(this.configLockPath, 'utf8'),
+        stat(this.configLockPath),
+      ]);
+    } catch (error) {
+      if (error.code === 'ENOENT') return true;
+      throw error;
+    }
+    const trimmed = contents.trim();
+    const pid = /^\d+$/.test(trimmed) ? Number(trimmed) : null;
+    const ownerIsDead = pid !== null && !processIsAlive(pid);
+    const lockExpired = Date.now() - metadata.mtimeMs >= CONFIG_LOCK_STALE_MS;
+    if (!ownerIsDead && !lockExpired) return false;
+    try {
+      if (await readFile(this.configLockPath, 'utf8') !== contents) return false;
+      await unlink(this.configLockPath);
+      return true;
+    } catch (error) {
+      if (error.code === 'ENOENT') return true;
+      throw error;
+    }
+  }
+
   async withConfigLock(operation) {
     await this.ensureDirectory();
     const startedAt = Date.now();
@@ -65,6 +112,7 @@ export class SourceCommunityClient {
         handle = await open(this.configLockPath, 'wx', 0o600);
       } catch (error) {
         if (error.code !== 'EEXIST') throw error;
+        if (await this.removeStaleConfigLock()) continue;
         if (Date.now() - startedAt >= CONFIG_LOCK_TIMEOUT_MS) throw new Error('Could not acquire source-sharing config lock.');
         await delay(20);
       }
@@ -123,6 +171,7 @@ export class SourceCommunityClient {
 
   async credentials(config) {
     if (config.installationId && config.token && config.tokenExpiresAt && Date.parse(config.tokenExpiresAt) > this.now().getTime() + 60_000) return config;
+    let expectedState = config;
     let body = config.installationId && config.token ? { installationId: config.installationId, token: config.token } : {};
     let response = await this.fetch(`${this.endpoint}/v1/install`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body), signal: AbortSignal.timeout(this.timeoutMs) });
     if (response.status === 401 && body.installationId) {
@@ -130,12 +179,15 @@ export class SourceCommunityClient {
         if (current.installationId === body.installationId) Object.assign(current, { installationId: null, token: null, tokenExpiresAt: null });
         return current;
       });
+      expectedState = config;
       body = {};
       response = await this.fetch(`${this.endpoint}/v1/install`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body), signal: AbortSignal.timeout(this.timeoutMs) });
     }
     if (!response.ok) throw new Error('community relay unavailable');
     const identity = await response.json();
-    return this.updateConfig((current) => ({ ...current, installationId: identity.installationId, token: identity.token, tokenExpiresAt: identity.expiresAt }));
+    return this.updateConfig((current) => sameCredentialState(current, expectedState)
+      ? { ...current, installationId: identity.installationId, token: identity.token, tokenExpiresAt: identity.expiresAt }
+      : current);
   }
 
   async preview(input) {

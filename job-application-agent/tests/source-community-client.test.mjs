@@ -157,6 +157,59 @@ test('concurrent opt-out is preserved and rechecked before source transmission',
   assert.equal(JSON.parse(await readFile(join(directory, 'source-sharing.json'), 'utf8')).enabled, false);
 });
 
+test('concurrent reset is not undone by an in-flight credential refresh', async (t) => {
+  const directory = await mkdtemp(join(tmpdir(), 'source-community-reset-race-'));
+  t.after(() => rm(directory, { recursive: true, force: true }));
+  await writeFile(join(directory, 'source-sharing.json'), JSON.stringify({
+    version: 1,
+    enabled: true,
+    disclosed: true,
+    installationId: null,
+    token: null,
+    tokenExpiresAt: null,
+  }));
+  let releaseInstall;
+  let installStarted;
+  const installGate = new Promise((resolve) => { releaseInstall = resolve; });
+  const installObserved = new Promise((resolve) => { installStarted = resolve; });
+  const fetch = async (url) => {
+    if (!url.endsWith('/v1/install')) throw new Error('source contribution must remain disabled');
+    installStarted();
+    await installGate;
+    return Response.json({ installationId: '11111111-1111-4111-8111-111111111111', token: 'source-token', expiresAt: '2099-01-01T00:00:00.000Z' }, { status: 201 });
+  };
+  const contributor = new SourceCommunityClient({ stateDir: directory, endpoint: 'https://relay.example.com', fetch, stderr: () => {} });
+  const settings = new SourceCommunityClient({ stateDir: directory, endpoint: 'https://relay.example.com', fetch, stderr: () => {} });
+
+  const contribution = contributor.contribute(source);
+  await installObserved;
+  assert.deepEqual(await settings.configure('reset'), {
+    enabled: false,
+    disclosed: true,
+    hasInstallationId: false,
+    endpoint: 'https://relay.example.com',
+    schemaVersion: 1,
+  });
+  releaseInstall();
+
+  assert.deepEqual(await contribution, { shared: false, reason: 'disabled' });
+  const stored = JSON.parse(await readFile(join(directory, 'source-sharing.json'), 'utf8'));
+  assert.equal(stored.enabled, false);
+  assert.equal(stored.installationId, null);
+  assert.equal(stored.token, null);
+  assert.equal(stored.tokenExpiresAt, null);
+});
+
+test('recovers a source-sharing lock whose owner process no longer exists', async (t) => {
+  const directory = await mkdtemp(join(tmpdir(), 'source-community-stale-lock-'));
+  t.after(() => rm(directory, { recursive: true, force: true }));
+  await writeFile(join(directory, '.source-sharing.lock'), '99999999\n');
+  const client = new SourceCommunityClient({ stateDir: directory, endpoint: 'https://relay.example.com', fetch: async () => { throw new Error('network must not be used'); }, stderr: () => {} });
+
+  assert.equal((await client.configure('disable')).enabled, false);
+  await assert.rejects(() => stat(join(directory, '.source-sharing.lock')), { code: 'ENOENT' });
+});
+
 test('invalid stored relay credentials are replaced once and persisted', async (t) => {
   const directory = await mkdtemp(join(tmpdir(), 'source-community-credential-recovery-'));
   t.after(() => rm(directory, { recursive: true, force: true }));
