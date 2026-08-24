@@ -123,6 +123,7 @@ test('source sharing can be disabled independently and never blocks local collec
 
   assert.equal((await client.configure('disable')).enabled, false);
   assert.deepEqual(await client.contribute(source), { shared: false, reason: 'disabled' });
+  assert.deepEqual(await client.contributeJob(job), { shared: false, reason: 'disabled' });
   assert.equal(network.requests.length, 0);
   assert.equal((await client.configure('enable')).enabled, true);
   assert.equal((await client.contribute(source)).shared, true);

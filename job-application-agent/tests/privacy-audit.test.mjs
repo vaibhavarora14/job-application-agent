@@ -3,7 +3,7 @@ import test from 'node:test';
 
 import { prepareTelemetryInput } from '../scripts/telemetry-client.mjs';
 import { validateEvent } from '../scripts/telemetry-schema.mjs';
-import { normalizeCommunitySource } from '../scripts/source-community-schema.mjs';
+import { createCommunityJobContributionEnvelope, normalizeCommunityJob, normalizeCommunitySource } from '../scripts/source-community-schema.mjs';
 
 const forbiddenProperties = [
   'name', 'email', 'phone', 'exactAddress', 'linkedin', 'github', 'portfolio', 'candidateLocation',
@@ -55,4 +55,27 @@ test('privacy audit strips identity-bearing source parameters and rejects person
   assert.equal(JSON.stringify(source).includes('candidate@example.com'), false);
   assert.throws(() => normalizeCommunitySource({ ...source, name: 'candidate@example.com' }), /identity/i);
   assert.throws(() => normalizeCommunitySource({ ...source, baseUrl: 'https://linkedin.com/in/candidate' }), /profile or personal/i);
+});
+
+test('privacy audit permits only sanitized public fields in community jobs', () => {
+  const job = normalizeCommunityJob({
+    url: 'https://jobs.ashbyhq.com/example/12345678-1234-4123-8123-123456789abc?email=candidate@example.com&token=secret#private',
+    company: 'Example',
+    role: 'Senior Product Engineer',
+    applicationChannel: 'ashby',
+    discoverySource: 'job-board',
+  });
+  const envelope = createCommunityJobContributionEnvelope({
+    installationId: '11111111-1111-4111-8111-111111111111',
+    token: 'anonymous-relay-token',
+    skillVersion: '3.2.0',
+    job,
+  });
+  const serialized = JSON.stringify(envelope.job);
+  assert.equal(serialized.includes('candidate@example.com'), false);
+  assert.equal(serialized.includes('secret'), false);
+  assert.deepEqual(Object.keys(envelope.job).sort(), ['applicationChannel', 'company', 'discoverySource', 'providerUrl', 'role', 'url']);
+  assert.throws(() => normalizeCommunityJob({ ...job, answers: { private: true } }), /unknown/i);
+  assert.throws(() => normalizeCommunityJob({ ...job, company: 'candidate@example.com' }), /identity/i);
+  assert.throws(() => normalizeCommunityJob({ ...job, url: 'https://linkedin.com/in/candidate' }), /personal/i);
 });
