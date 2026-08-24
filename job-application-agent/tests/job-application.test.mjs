@@ -48,6 +48,14 @@ const matchingJob = {
   ],
 };
 
+function isolatedCliEnv(directory) {
+  return {
+    ...process.env,
+    JOB_APPLICATION_AGENT_STATE_DIR: directory,
+    JOB_APPLICATION_AGENT_SOURCE_COMMUNITY_URL: 'http://127.0.0.1:9',
+  };
+}
+
 function runCli(script, args, input, env) {
   return new Promise((resolve) => {
     const child = spawn(process.execPath, [script, ...args], { env, stdio: ['pipe', 'pipe', 'pipe'] });
@@ -73,7 +81,7 @@ test('returns the canonical resume path for direct browser uploads', async (t) =
   const resume = join(directory, 'resume.pdf');
   await writeFile(join(directory, 'telemetry.json'), JSON.stringify({ version: 1, enabled: false, disclosed: true, graceConsumed: true, installationEventPending: false }));
   await writeFile(resume, '%PDF-1.7\ncanonical resume fixture');
-  const env = { ...process.env, JOB_APPLICATION_AGENT_STATE_DIR: directory };
+  const env = isolatedCliEnv(directory);
 
   const result = JSON.parse(execFileSync(process.execPath, [script, 'resume', 'path'], { env, encoding: 'utf8' }));
 
@@ -246,7 +254,7 @@ test('deduplicates ledger entries by normalized URL', async (t) => {
     telemetry: { durationBucket: '5-15m', fieldsFilled: 14, shortAnswerCount: 2, resumeUploaded: true },
   };
   await writeFile(join(directory, 'telemetry.json'), JSON.stringify({ version: 1, enabled: false, disclosed: true, graceConsumed: true, installationEventPending: false }));
-  const env = { ...process.env, JOB_APPLICATION_AGENT_STATE_DIR: directory };
+  const env = isolatedCliEnv(directory);
   execFileSync(process.execPath, [script, 'ledger', 'add', '--stdin'], { input: JSON.stringify(entry), env, encoding: 'utf8' });
   const duplicate = JSON.parse(execFileSync(process.execPath, [script, 'ledger', 'check', '--stdin'], { input: JSON.stringify({ id: 'different', url: 'https://jobs.example.com/123?ref=friend' }), env, encoding: 'utf8' }));
   assert.equal(duplicate.duplicate, true);
@@ -263,7 +271,7 @@ test('warns on same-company role matches and serializes concurrent duplicate sub
   t.after(() => rm(directory, { recursive: true, force: true }));
   const script = fileURLToPath(new URL('../scripts/job-application.mjs', import.meta.url));
   await writeFile(join(directory, 'telemetry.json'), JSON.stringify({ version: 1, enabled: false, disclosed: true, graceConsumed: true, installationEventPending: false }));
-  const env = { ...process.env, JOB_APPLICATION_AGENT_STATE_DIR: directory };
+  const env = isolatedCliEnv(directory);
   const base = {
     company: 'Example', role: 'Senior Product Engineer', url: 'https://jobs.example.com/123', source: 'company', score: 88,
     status: 'submitted', submittedAt: '2026-01-15T10:00:00Z', approval: 'STANDING AUTHORIZATION', answers: {}, employerJobId: 'example:123',
@@ -291,7 +299,7 @@ test('records structured outcomes idempotently without duplicate rows', async (t
     id: 'example-role-1', company: 'Example', role: 'Senior Product Engineer', url: 'https://jobs.example.com/123', source: 'company', score: 88,
     status: 'submitted', submittedAt: '2026-01-15T10:00:00Z', approval: 'STANDING AUTHORIZATION', answers: {},
   })}\n`);
-  const env = { ...process.env, JOB_APPLICATION_AGENT_STATE_DIR: directory };
+  const env = isolatedCliEnv(directory);
   const outcome = { id: 'example-role-1', status: 'rejected', occurredAt: '2026-01-20T09:00:00Z', note: 'No sponsorship' };
   const enriched = { ...outcome, reasons: [{ category: 'eligibility', evidence: 'explicit' }] };
   const first = JSON.parse(execFileSync(process.execPath, [script, 'ledger', 'outcome', '--stdin'], { input: JSON.stringify(outcome), env, encoding: 'utf8' }));
@@ -314,7 +322,7 @@ test('records bounded interview quality and failure-point enrichment idempotentl
     id: 'example-role-1', company: 'Example', role: 'Staff Product Engineer', url: 'https://jobs.example.com/123', source: 'company', score: 91,
     status: 'submitted', submittedAt: '2026-01-15T10:00:00Z', approval: 'STANDING AUTHORIZATION', answers: {},
   })}\n`);
-  const env = { ...process.env, JOB_APPLICATION_AGENT_STATE_DIR: directory };
+  const env = isolatedCliEnv(directory);
   const base = { id: 'example-role-1', status: 'interview', occurredAt: '2026-01-20T09:00:00Z' };
   const enriched = { ...base, interviewQuality: 'weak', failurePoint: 'role-scope' };
   const first = JSON.parse(execFileSync(process.execPath, [script, 'ledger', 'outcome', '--stdin'], { input: JSON.stringify(base), env, encoding: 'utf8' }));
@@ -400,7 +408,7 @@ test('acknowledges a generated review only through the explicit CLI command', as
     source: 'company', score: 80, status: 'submitted', submittedAt: '2026-01-01T10:00:00Z', approval: 'STANDING AUTHORIZATION', answers: {},
   }));
   await writeFile(join(directory, 'applications.ndjson'), `${entries.map(JSON.stringify).join('\n')}\n`);
-  const env = { ...process.env, JOB_APPLICATION_AGENT_STATE_DIR: directory };
+  const env = isolatedCliEnv(directory);
   const before = JSON.parse(execFileSync(process.execPath, [script, 'ledger', 'review'], { env, encoding: 'utf8' }));
   assert.equal(before.reviewDue, true);
   assert.equal(await readFile(join(directory, 'reviews.ndjson'), 'utf8').catch(() => ''), '');

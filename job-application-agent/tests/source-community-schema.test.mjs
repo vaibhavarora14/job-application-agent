@@ -53,6 +53,7 @@ test('accepts public job detail identifiers but rejects private, personal, and c
 
   const rejected = [
     'http://localhost/jobs/123',
+    'https://jobs.example.com/123',
     'https://linkedin.com/in/some-person',
     'https://company.example/candidate/9876543210',
     'https://company.example/referral/12345678-1234-4123-8123-123456789abc',
@@ -61,7 +62,7 @@ test('accepts public job detail identifiers but rejects private, personal, and c
     'https://company.example/jobs/access-token=abcdefghijklmnop',
     'https://user:password@company.example/jobs/123',
   ];
-  for (const url of rejected) assert.throws(() => normalizeCommunityJob({ ...job, url }), /public HTTPS|personal|credential/i, url);
+  for (const url of rejected) assert.throws(() => normalizeCommunityJob({ ...job, url }), /public HTTPS|personal|credential|reserved example/i, url);
 });
 
 test('preserves only stable query job identifiers while removing referral data', async () => {

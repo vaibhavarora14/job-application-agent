@@ -74,6 +74,11 @@ function isPublicHostname(hostname) {
   return value.includes('.');
 }
 
+function isReservedExampleHostname(hostname) {
+  const value = hostname.toLowerCase();
+  return ['example.com', 'example.net', 'example.org'].some((suffix) => value === suffix || value.endsWith(`.${suffix}`));
+}
+
 function hostnameMatches(hostname, suffix) {
   return hostname === suffix || hostname.endsWith(`.${suffix}`);
 }
@@ -139,6 +144,7 @@ export function normalizeCommunityJob(input) {
   if (url.protocol !== 'https:' || url.username || url.password) throw new Error('community job.url must be a public HTTPS URL.');
   url.hostname = url.hostname.replace(/\.+$/, '').toLowerCase();
   if (!isPublicHostname(url.hostname)) throw new Error('community job.url must use a public HTTPS hostname.');
+  if (isReservedExampleHostname(url.hostname)) throw new Error('community job.url must not use a reserved example hostname.');
   const pathname = decodedPathname(url.pathname).normalize('NFKC');
   url.pathname = pathname;
   if (containsEmailLike(pathname) || containsPhoneLikeLocation(url.hostname, pathname) || looksIdentityPath(pathname) || looksPersonal(url)) throw new Error('community job.url must not be a personal URL.');
