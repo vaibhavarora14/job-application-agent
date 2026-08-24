@@ -8,6 +8,7 @@ export const PROFILE_ACCOUNT = 'profile';
 export const DEFAULT_SECRET_SERVICE = 'com.vaibhavarora.job-application-agent';
 export const LEGACY_SECRET_SERVICE = 'com.openai.codex.job-application-agent';
 export const LINUX_PROFILE_ERROR = 'Secure profile storage requires macOS or Windows.';
+export const LINUX_STORE_REQUIRED_TOOL = 'secret-tool';
 export const WINDOWS_PROFILE_SCRIPT = fileURLToPath(new URL('./windows-profile-store.ps1', import.meta.url));
 
 export function resolveSecretService(env = process.env) {
@@ -99,6 +100,42 @@ function createDarwinStore({ execFileSync: exec, service, legacyService, account
   };
 }
 
+function linuxFind(exec, service, account) {
+  try {
+    return exec(LINUX_STORE_REQUIRED_TOOL, ['lookup', 'service', service, 'account', account], {
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+  } catch {
+    return null;
+  }
+}
+
+function linuxWrite(exec, service, account, raw) {
+  try {
+    exec(LINUX_STORE_REQUIRED_TOOL, ['store', '--label=job-application-agent', 'service', service, 'account', account], {
+      input: raw,
+      encoding: 'utf8',
+      stdio: ['pipe', 'pipe', 'pipe'],
+    });
+  } catch {
+    throw new Error('Secret Service could not store the profile. Unlock your keyring and retry; no profile data was logged.');
+  }
+}
+
+function createLinuxStore({ execFileSync: exec, service, account }) {
+  return {
+    readProfile() {
+      const current = linuxFind(exec, service, account);
+      if (current != null && current.trim()) return decodeSecret(current.trim());
+      throw new Error('The stored profile is missing or unreadable. Run profile set again.');
+    },
+    writeProfile(raw) {
+      linuxWrite(exec, service, account, raw);
+    },
+  };
+}
+
 function windowsRequest(exec, scriptPath, payload, plaintext = '') {
   const input = `${JSON.stringify(payload)}\n${plaintext}`;
   try {
@@ -160,5 +197,6 @@ export function createSecretStore({
 } = {}) {
   if (platform === 'darwin') return createDarwinStore({ execFileSync: exec, service, legacyService, account });
   if (platform === 'win32') return createWin32Store({ execFileSync: exec, service, account, stateDir, scriptPath });
+  if (platform === 'linux') return createLinuxStore({ execFileSync: exec, service, account });
   return unsupportedStore();
 }

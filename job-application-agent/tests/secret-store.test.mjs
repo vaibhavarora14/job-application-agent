@@ -132,8 +132,25 @@ test('windows store keeps a wrapping key small and a profile larger than 2560 by
   assert.ok(files.get(profileFile).length > 2560);
 });
 
-test('linux store rejects secure profile storage with a clear error', () => {
-  const store = createSecretStore({ platform: 'linux' });
-  assert.throws(() => store.readProfile(), { message: LINUX_PROFILE_ERROR });
-  assert.throws(() => store.writeProfile('{}'), { message: LINUX_PROFILE_ERROR });
+test('linux store writes and reads the profile via Secret Service', () => {
+  const secrets = new Map();
+  const exec = (command, args, options) => {
+    assert.equal(command, 'secret-tool');
+    if (args[0] === 'lookup') {
+      const service = args[args.indexOf('service') + 1];
+      const account = args[args.indexOf('account') + 1];
+      if (!secrets.has(`${service}/${account}`)) throw new Error('not found');
+      return `${secrets.get(`${service}/${account}`)}\n`;
+    }
+    if (args[0] === 'store') {
+      const service = args[args.indexOf('service') + 1];
+      const account = args[args.indexOf('account') + 1];
+      secrets.set(`${service}/${account}`, options.input);
+      return '';
+    }
+    throw new Error(`unexpected secret-tool args: ${args.join(' ')}`);
+  };
+  const store = createSecretStore({ platform: 'linux', execFileSync: exec });
+  store.writeProfile(JSON.stringify(sampleProfile));
+  assert.equal(store.readProfile(), JSON.stringify(sampleProfile));
 });
