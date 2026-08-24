@@ -15,6 +15,14 @@ const source = {
   requiresSession: false,
 };
 
+const job = {
+  url: 'https://jobs.ashbyhq.com/example/12345678-1234-4123-8123-123456789abc?ref=candidate@example.com#apply',
+  company: 'Example',
+  role: 'Senior Product Engineer',
+  applicationChannel: 'ashby',
+  discoverySource: 'job-board',
+};
+
 function relay() {
   const requests = [];
   const community = [{
@@ -28,10 +36,24 @@ function relay() {
     registryStatus: 'community-reviewed',
     contributionCount: 2,
   }];
+  const jobs = [{
+    jobId: 'community-job-abcdef1234567890',
+    url: 'https://jobs.ashbyhq.com/example/12345678-1234-4123-8123-123456789abc',
+    company: 'Example',
+    role: 'Senior Product Engineer',
+    applicationChannel: 'ashby',
+    discoverySource: 'job-board',
+    providerUrl: 'https://jobs.ashbyhq.com/example',
+    firstSeenAt: '2026-08-24T00:00:00.000Z',
+    lastSeenAt: '2026-08-24T00:00:00.000Z',
+    contributionCount: 2,
+  }];
   const fetch = async (url, options = {}) => {
     requests.push({ url, options, body: options.body ? JSON.parse(options.body) : null });
     if (url.endsWith('/v1/install')) return Response.json({ installationId: '11111111-1111-4111-8111-111111111111', token: 'source-token', expiresAt: '2099-01-01T00:00:00.000Z' }, { status: 201 });
     if (url.endsWith('/v1/sources') && options.method === 'POST') return Response.json({ accepted: true, sourceId: 'community-abcdef1234567890', publicationStatus: 'pending', uniqueContributors: 1 }, { status: 202 });
+    if (url.endsWith('/v1/jobs') && options.method === 'POST') return Response.json({ accepted: true, jobId: 'community-job-abcdef1234567890', contributionCount: 2 }, { status: 202 });
+    if (url.includes('/v1/jobs')) return Response.json({ version: 1, jobs, nextCursor: 'next-page' });
     return Response.json({ version: 1, sources: community });
   };
   return { fetch, requests };
@@ -47,7 +69,7 @@ test('source sharing is enabled by default, disclosed, sanitized, and sent immed
   const result = await client.contribute(source);
 
   assert.deepEqual(result, { shared: true, sourceId: 'community-abcdef1234567890', publicationStatus: 'pending', uniqueContributors: 1 });
-  assert.match(notice, /community source sharing is enabled by default/i);
+  assert.match(notice, /community sharing is enabled by default/i);
   assert.equal(network.requests.length, 2);
   assert.equal(network.requests[1].url, 'https://relay.example.com/v1/sources');
   assert.equal(network.requests[1].body.source.baseUrl, 'https://jobs.example.org/openings/engineering');
@@ -56,6 +78,29 @@ test('source sharing is enabled by default, disclosed, sanitized, and sent immed
   assert.equal(stored.enabled, true);
   assert.equal(stored.disclosed, true);
   if (process.platform !== 'win32') assert.equal((await stat(join(directory, 'source-sharing.json'))).mode & 0o777, 0o600);
+});
+
+test('confirmed jobs are sanitized, shared anonymously, and public listings are validated', async (t) => {
+  const directory = await mkdtemp(join(tmpdir(), 'source-community-job-'));
+  t.after(() => rm(directory, { recursive: true, force: true }));
+  const network = relay();
+  const client = new SourceCommunityClient({ stateDir: directory, endpoint: 'https://relay.example.com', fetch: network.fetch, stderr: () => {} });
+
+  const contributed = await client.contributeJob(job);
+  assert.deepEqual(contributed, { shared: true, jobId: 'community-job-abcdef1234567890', contributionCount: 2 });
+  const posted = network.requests.find((request) => request.url.endsWith('/v1/jobs') && request.options.method === 'POST');
+  assert.equal(posted.body.job.url, 'https://jobs.ashbyhq.com/example/12345678-1234-4123-8123-123456789abc');
+  assert.equal(posted.body.job.providerUrl, 'https://jobs.ashbyhq.com/example');
+  assert.equal(JSON.stringify(posted.body).includes('candidate@example.com'), false);
+
+  const listed = await client.listJobs({ limit: 25, cursor: 'current-page' });
+  assert.equal(listed.jobs[0].jobId, 'community-job-abcdef1234567890');
+  assert.equal(listed.jobs[0].contributionCount, 2);
+  assert.equal(listed.nextCursor, 'next-page');
+  assert.equal(network.requests.at(-1).url, 'https://relay.example.com/v1/jobs?limit=25&cursor=current-page');
+  const requestsBeforeInvalidInput = network.requests.length;
+  await assert.rejects(() => client.listJobs({ limit: 0 }), /between 1 and 100/i);
+  assert.equal(network.requests.length, requestsBeforeInvalidInput);
 });
 
 test('community source listing validates the public response before reuse', async (t) => {

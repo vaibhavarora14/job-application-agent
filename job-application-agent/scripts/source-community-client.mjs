@@ -3,10 +3,17 @@ import { join } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 
 import { SKILL_VERSION } from './telemetry-client.mjs';
-import { createSourceContributionEnvelope, normalizeCommunitySource, validateCommunitySourceList } from './source-community-schema.mjs';
+import {
+  createCommunityJobContributionEnvelope,
+  createSourceContributionEnvelope,
+  normalizeCommunityJob,
+  normalizeCommunitySource,
+  validateCommunityJobList,
+  validateCommunitySourceList,
+} from './source-community-schema.mjs';
 
 export const DEFAULT_SOURCE_COMMUNITY_ENDPOINT = process.env.JOB_APPLICATION_AGENT_SOURCE_COMMUNITY_URL ?? process.env.JOB_APPLICATION_AGENT_TELEMETRY_URL ?? 'https://job-application-agent-telemetry.varora1406.workers.dev';
-export const SOURCE_SHARING_NOTICE = 'Community source sharing is enabled by default. Repeatable public job boards and hiring feeds are shared anonymously into a pending maintainer-review queue after removing personal and referral data. Run `sources sharing disable` to opt out.\n';
+export const SOURCE_SHARING_NOTICE = 'Community sharing is enabled by default. Confirmed public job links are published immediately, while repeatable job boards and hiring feeds enter maintainer review. Personal, answer, resume, score, referral, and candidate timing data are never sent. Run `sources sharing disable` to opt out.\n';
 
 const CONFIG_FILE = 'source-sharing.json';
 const CONFIG_LOCK_FILE = '.source-sharing.lock';
@@ -240,15 +247,74 @@ export class SourceCommunityClient {
     });
   }
 
+  async contributeJob(input) {
+    const job = normalizeCommunityJob(input);
+    try {
+      let config = await this.config();
+      if (!config.enabled) return { shared: false, reason: 'disabled' };
+      if (!config.disclosed) {
+        this.stderr(SOURCE_SHARING_NOTICE);
+        config = await this.updateConfig((current) => ({ ...current, disclosed: true }));
+        if (!config.enabled) return { shared: false, reason: 'disabled' };
+      }
+      config = await this.credentials(config);
+      let sent = await this.sendJobContribution(config, job);
+      if (sent.disabled) return { shared: false, reason: 'disabled' };
+      let response = sent.response;
+      if (response.status === 401) {
+        config = await this.updateConfig((current) => ({ ...current, tokenExpiresAt: null }));
+        config = await this.credentials(config);
+        sent = await this.sendJobContribution(config, job);
+        if (sent.disabled) return { shared: false, reason: 'disabled' };
+        response = sent.response;
+      }
+      if (!response.ok) return { shared: false, reason: 'unavailable' };
+      const result = await response.json();
+      const allowed = new Set(['accepted', 'jobId', 'contributionCount']);
+      if (!result || typeof result !== 'object' || Array.isArray(result) || Object.keys(result).some((key) => !allowed.has(key))) return { shared: false, reason: 'unavailable' };
+      if (result.accepted !== true || !/^community-job-[0-9a-f]{16}$/.test(result.jobId)) return { shared: false, reason: 'unavailable' };
+      if (!Number.isSafeInteger(result.contributionCount) || result.contributionCount < 1 || result.contributionCount > 1_000_000_000) return { shared: false, reason: 'unavailable' };
+      return { shared: true, jobId: result.jobId, contributionCount: result.contributionCount };
+    } catch {
+      return { shared: false, reason: 'unavailable' };
+    }
+  }
+
+  async sendJobContribution(config, job) {
+    return this.withConfigLock(async () => {
+      const current = await this.readConfig() ?? config;
+      if (!current.enabled) return { disabled: true };
+      const envelope = createCommunityJobContributionEnvelope({ installationId: current.installationId, token: current.token, job, skillVersion: SKILL_VERSION });
+      const response = await this.fetch(`${this.endpoint}/v1/jobs`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(envelope), signal: AbortSignal.timeout(this.timeoutMs) });
+      return { disabled: false, response };
+    });
+  }
+
   async list() {
-    if (this.readUnavailable) return [];
+    if (this.sourceReadUnavailable) return [];
     try {
       const response = await this.fetch(`${this.endpoint}/v1/sources`, { headers: { accept: 'application/json' }, signal: AbortSignal.timeout(this.timeoutMs) });
       if (!response.ok) return [];
       return validateCommunitySourceList(await response.json());
     } catch {
-      this.readUnavailable = true;
+      this.sourceReadUnavailable = true;
       return [];
+    }
+  }
+
+  async listJobs({ limit = 50, cursor = null } = {}) {
+    if (this.jobReadUnavailable) return { version: 1, jobs: [], nextCursor: null };
+    if (!Number.isSafeInteger(limit) || limit < 1 || limit > 100) throw new Error('Community job limit must be between 1 and 100.');
+    if (cursor !== null && (typeof cursor !== 'string' || !cursor || cursor.length > 1024)) throw new Error('Community job cursor is invalid.');
+    try {
+      const query = new URLSearchParams({ limit: String(limit) });
+      if (cursor !== null) query.set('cursor', cursor);
+      const response = await this.fetch(`${this.endpoint}/v1/jobs?${query}`, { headers: { accept: 'application/json' }, signal: AbortSignal.timeout(this.timeoutMs) });
+      if (!response.ok) return { version: 1, jobs: [], nextCursor: null };
+      return validateCommunityJobList(await response.json());
+    } catch {
+      this.jobReadUnavailable = true;
+      return { version: 1, jobs: [], nextCursor: null };
     }
   }
 }
