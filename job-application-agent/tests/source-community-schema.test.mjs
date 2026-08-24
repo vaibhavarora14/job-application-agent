@@ -54,10 +54,31 @@ test('accepts public job detail identifiers but rejects private, personal, and c
   const rejected = [
     'http://localhost/jobs/123',
     'https://linkedin.com/in/some-person',
+    'https://company.example/candidate/9876543210',
+    'https://company.example/referral/12345678-1234-4123-8123-123456789abc',
+    'https://candidate-14155550100.example.org/jobs/123',
+    'https://company.example/jobs/+1-415-555-0100',
     'https://company.example/jobs/access-token=abcdefghijklmnop',
     'https://user:password@company.example/jobs/123',
   ];
   for (const url of rejected) assert.throws(() => normalizeCommunityJob({ ...job, url }), /public HTTPS|personal|credential/i, url);
+});
+
+test('preserves only stable query job identifiers while removing referral data', async () => {
+  const first = normalizeCommunityJob({
+    ...job,
+    url: 'https://company.example/viewjob?jobId=111&utm_source=private&ref=candidate@example.com',
+  });
+  const second = normalizeCommunityJob({
+    ...job,
+    url: 'https://company.example/viewjob?jobId=222&utm_source=private',
+  });
+
+  assert.equal(first.url, 'https://company.example/viewjob?jobid=111');
+  assert.equal(second.url, 'https://company.example/viewjob?jobid=222');
+  assert.notEqual(await communityJobId(first), await communityJobId(second));
+  assert.equal(first.url.includes('candidate@example.com'), false);
+  assert.equal(normalizeCommunityJob({ ...job, url: 'https://boards.example/jobs?gh_jid=7654321&utm_campaign=secret' }).url, 'https://boards.example/jobs?gh_jid=7654321');
 });
 
 test('community job IDs deduplicate tracking variants and contribution envelopes validate strictly', async () => {

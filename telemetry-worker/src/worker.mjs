@@ -225,8 +225,13 @@ function jobStore(env) {
             skill_version = excluded.skill_version
         `).bind(job.jobId, contributorHash, job.firstSeenAt, job.lastSeenAt, job.skillVersion),
       ]);
-      const state = await database.prepare('SELECT COUNT(*) AS contribution_count FROM community_job_contributions WHERE job_id = ?').bind(job.jobId).first();
-      return { contributionCount: Number(state.contribution_count) };
+      const state = await database.prepare(`
+        SELECT jobs.publication_status,
+               (SELECT COUNT(*) FROM community_job_contributions WHERE job_id = jobs.job_id) AS contribution_count
+        FROM community_jobs AS jobs
+        WHERE jobs.job_id = ?
+      `).bind(job.jobId).first();
+      return { publicationStatus: state.publication_status, contributionCount: Number(state.contribution_count) };
     },
     async list({ limit, cursor }) {
       const result = await database.prepare(`
@@ -234,7 +239,9 @@ function jobStore(env) {
                jobs.discovery_source, jobs.provider_url, jobs.first_seen_at, jobs.last_seen_at,
                (SELECT COUNT(*) FROM community_job_contributions WHERE job_id = jobs.job_id) AS contribution_count
         FROM community_jobs AS jobs
-        WHERE (? IS NULL OR jobs.last_seen_at < ? OR (jobs.last_seen_at = ? AND jobs.job_id < ?))
+        WHERE jobs.publication_status = 'published'
+          AND jobs.review_status = 'maintainer-reviewed'
+          AND (? IS NULL OR jobs.last_seen_at < ? OR (jobs.last_seen_at = ? AND jobs.job_id < ?))
         ORDER BY jobs.last_seen_at DESC, jobs.job_id DESC
         LIMIT ?
       `).bind(cursor?.lastSeenAt ?? null, cursor?.lastSeenAt ?? null, cursor?.lastSeenAt ?? null, cursor?.jobId ?? null, limit + 1).all();
@@ -258,6 +265,13 @@ function jobStore(env) {
 async function sourceContributorHash(sourceId, installationId, secret) {
   const signature = await crypto.subtle.sign('HMAC', await signingKey(secret), encoder.encode(`${sourceId}\0${installationId}`));
   return [...new Uint8Array(signature)].map((value) => value.toString(16).padStart(2, '0')).join('');
+}
+
+async function publicReadKey(request, secret, scope) {
+  const address = (request.headers.get('cf-connecting-ip') ?? 'unknown').slice(0, 128);
+  const signature = await crypto.subtle.sign('HMAC', await signingKey(secret), encoder.encode(`${scope}\0${address}`));
+  const digest = [...new Uint8Array(signature)].map((value) => value.toString(16).padStart(2, '0')).join('');
+  return `${scope}:${digest}`;
 }
 
 async function contributeSource(request, env) {
@@ -293,13 +307,13 @@ async function contributeJob(request, env) {
   if (!await allowed(env.SOURCE_RATE_LIMITER, envelope.installationId)) return response({ error: 'rate_limited' }, 429);
   const jobId = await communityJobId(envelope.job);
   const contributorHash = await sourceContributorHash(jobId, envelope.installationId, env.SIGNING_SECRET);
-  const seenAt = new Date().toISOString();
+  const seenAt = `${new Date().toISOString().slice(0, 10)}T00:00:00.000Z`;
   const state = await jobStore(env).contribute({ jobId, ...envelope.job, firstSeenAt: seenAt, lastSeenAt: seenAt, skillVersion: envelope.skillVersion }, contributorHash);
   return response({ accepted: true, jobId, ...state }, 202);
 }
 
 async function listJobs(request, env) {
-  if (!await allowed(env.SOURCE_READ_RATE_LIMITER, 'jobs')) return response({ error: 'rate_limited' }, 429);
+  if (!await allowed(env.SOURCE_READ_RATE_LIMITER, await publicReadKey(request, env.SIGNING_SECRET, 'jobs'))) return response({ error: 'rate_limited' }, 429);
   const url = new URL(request.url);
   for (const key of url.searchParams.keys()) if (!['limit', 'cursor'].includes(key)) return response({ error: 'invalid_job_query' }, 400);
   const rawLimit = url.searchParams.get('limit');

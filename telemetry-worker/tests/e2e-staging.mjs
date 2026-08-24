@@ -72,8 +72,10 @@ const rejected = await fetch(`${endpoint}/v1/events`, {
 });
 assert.equal(rejected.status, 400);
 
+const stagingJobRunId = String(process.env.GITHUB_RUN_ID ?? 'local-contract')
+  .replace(/\d/g, (digit) => String.fromCharCode('k'.charCodeAt(0) + Number(digit)));
 const stagingJob = {
-  url: 'https://jobs.example.com/staging-fixture-community-job?ref=private-staging-value#apply',
+  url: `https://jobs.example.com/staging-fixture-community-job-${stagingJobRunId}?ref=private-staging-value#apply`,
   company: 'Staging Fixture Company',
   role: 'Community Job Contract Engineer',
   applicationChannel: 'company',
@@ -87,18 +89,27 @@ const contributedJob = await fetch(`${endpoint}/v1/jobs`, {
 assert.equal(contributedJob.status, 202);
 const contributedJobBody = await contributedJob.json();
 assert.match(contributedJobBody.jobId, /^community-job-[0-9a-f]{16}$/);
+const expectedJobId = process.env.STAGING_EXPECT_JOB_ID;
+const expectedJobStatus = process.env.STAGING_EXPECT_JOB_STATUS ?? 'pending';
+if (expectedJobId) assert.equal(contributedJobBody.jobId, expectedJobId);
+assert.equal(contributedJobBody.publicationStatus, expectedJobStatus);
 assert.ok(contributedJobBody.contributionCount >= 1);
 
 const communityJobs = await fetch(`${endpoint}/v1/jobs?limit=100`);
 assert.equal(communityJobs.status, 200);
 const communityJobsBody = await communityJobs.json();
 const publicJob = communityJobsBody.jobs.find((entry) => entry.jobId === contributedJobBody.jobId);
-assert.ok(publicJob);
-assert.equal(publicJob.url, 'https://jobs.example.com/staging-fixture-community-job');
-assert.equal(publicJob.providerUrl, 'https://jobs.example.com');
-assert.equal(JSON.stringify(publicJob).includes('private-staging-value'), false);
-assert.equal(JSON.stringify(publicJob).includes(identity.installationId), false);
-assert.equal('submittedAt' in publicJob, false);
+if (expectedJobStatus === 'published') {
+  assert.ok(publicJob);
+  assert.equal(publicJob.url, stagingJob.url.split('?')[0]);
+  assert.equal(publicJob.providerUrl, 'https://jobs.example.com');
+  assert.equal('publicationStatus' in publicJob, false);
+} else {
+  assert.equal(publicJob, undefined);
+}
+assert.equal(JSON.stringify(communityJobsBody).includes('private-staging-value'), false);
+assert.equal(JSON.stringify(communityJobsBody).includes(identity.installationId), false);
+if (process.env.GITHUB_OUTPUT && !expectedJobId) await appendFile(process.env.GITHUB_OUTPUT, `community_job_id=${contributedJobBody.jobId}\n`);
 
 const rejectedJob = await fetch(`${endpoint}/v1/jobs`, {
   method: 'POST',

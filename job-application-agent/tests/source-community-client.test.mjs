@@ -52,7 +52,7 @@ function relay() {
     requests.push({ url, options, body: options.body ? JSON.parse(options.body) : null });
     if (url.endsWith('/v1/install')) return Response.json({ installationId: '11111111-1111-4111-8111-111111111111', token: 'source-token', expiresAt: '2099-01-01T00:00:00.000Z' }, { status: 201 });
     if (url.endsWith('/v1/sources') && options.method === 'POST') return Response.json({ accepted: true, sourceId: 'community-abcdef1234567890', publicationStatus: 'pending', uniqueContributors: 1 }, { status: 202 });
-    if (url.endsWith('/v1/jobs') && options.method === 'POST') return Response.json({ accepted: true, jobId: 'community-job-abcdef1234567890', contributionCount: 2 }, { status: 202 });
+    if (url.endsWith('/v1/jobs') && options.method === 'POST') return Response.json({ accepted: true, jobId: 'community-job-abcdef1234567890', publicationStatus: 'pending', contributionCount: 2 }, { status: 202 });
     if (url.includes('/v1/jobs')) return Response.json({ version: 1, jobs, nextCursor: 'next-page' });
     return Response.json({ version: 1, sources: community });
   };
@@ -77,7 +77,64 @@ test('source sharing is enabled by default, disclosed, sanitized, and sent immed
   const stored = JSON.parse(await readFile(join(directory, 'source-sharing.json'), 'utf8'));
   assert.equal(stored.enabled, true);
   assert.equal(stored.disclosed, true);
+  assert.equal(stored.jobSharingDisclosed, true);
   if (process.platform !== 'win32') assert.equal((await stat(join(directory, 'source-sharing.json'))).mode & 0o777, 0o600);
+});
+
+test('existing source-sharing users receive one command to opt out before job backfill', async (t) => {
+  const directory = await mkdtemp(join(tmpdir(), 'source-community-upgrade-disclosure-'));
+  t.after(() => rm(directory, { recursive: true, force: true }));
+  await writeFile(join(directory, 'source-sharing.json'), JSON.stringify({
+    version: 1,
+    enabled: true,
+    disclosed: true,
+    installationId: '11111111-1111-4111-8111-111111111111',
+    token: 'source-token',
+    tokenExpiresAt: '2099-01-01T00:00:00.000Z',
+  }));
+  const network = relay();
+  let notice = '';
+  const client = new SourceCommunityClient({ stateDir: directory, endpoint: 'https://relay.example.com', fetch: network.fetch, stderr: (value) => { notice += value; } });
+
+  assert.deepEqual(await client.contributeJob(job), { shared: false, reason: 'grace' });
+  assert.match(notice, /confirmed public job links/i);
+  assert.equal(JSON.parse(await readFile(join(directory, 'source-sharing.json'), 'utf8')).jobSharingDisclosed, true);
+  assert.equal(network.requests.length, 0);
+  notice = '';
+  assert.equal((await client.contributeJob(job)).shared, true);
+  assert.equal(notice, '');
+});
+
+test('an interrupted job-sharing disclosure still preserves the grace command', async (t) => {
+  const directory = await mkdtemp(join(tmpdir(), 'source-community-job-grace-recovery-'));
+  t.after(() => rm(directory, { recursive: true, force: true }));
+  await writeFile(join(directory, 'source-sharing.json'), JSON.stringify({
+    version: 1,
+    enabled: true,
+    disclosed: true,
+    jobSharingDisclosed: true,
+    jobSharingGraceConsumed: false,
+    installationId: null,
+    token: null,
+    tokenExpiresAt: null,
+  }));
+  const network = relay();
+  const client = new SourceCommunityClient({ stateDir: directory, endpoint: 'https://relay.example.com', fetch: network.fetch, stderr: () => {} });
+
+  assert.deepEqual(await client.contributeJob(job), { shared: false, reason: 'grace' });
+  assert.equal(network.requests.length, 0);
+  assert.equal((await client.contributeJob(job)).shared, true);
+});
+
+test('historical applications without a source config receive the disclosure grace command', async (t) => {
+  const directory = await mkdtemp(join(tmpdir(), 'source-community-historical-no-config-'));
+  t.after(() => rm(directory, { recursive: true, force: true }));
+  await writeFile(join(directory, 'applications.ndjson'), '{"historical":true}\n');
+  const network = relay();
+  const client = new SourceCommunityClient({ stateDir: directory, endpoint: 'https://relay.example.com', fetch: network.fetch, stderr: () => {} });
+
+  assert.deepEqual(await client.contributeJob(job), { shared: false, reason: 'grace' });
+  assert.equal(network.requests.length, 0);
 });
 
 test('confirmed jobs are sanitized, shared anonymously, and public listings are validated', async (t) => {
@@ -87,7 +144,7 @@ test('confirmed jobs are sanitized, shared anonymously, and public listings are 
   const client = new SourceCommunityClient({ stateDir: directory, endpoint: 'https://relay.example.com', fetch: network.fetch, stderr: () => {} });
 
   const contributed = await client.contributeJob(job);
-  assert.deepEqual(contributed, { shared: true, jobId: 'community-job-abcdef1234567890', contributionCount: 2 });
+  assert.deepEqual(contributed, { shared: true, jobId: 'community-job-abcdef1234567890', publicationStatus: 'pending', contributionCount: 2 });
   const posted = network.requests.find((request) => request.url.endsWith('/v1/jobs') && request.options.method === 'POST');
   assert.equal(posted.body.job.url, 'https://jobs.ashbyhq.com/example/12345678-1234-4123-8123-123456789abc');
   assert.equal(posted.body.job.providerUrl, 'https://jobs.ashbyhq.com/example');
@@ -119,13 +176,15 @@ test('source sharing can be disabled independently and never blocks local collec
   const directory = await mkdtemp(join(tmpdir(), 'source-community-disabled-'));
   t.after(() => rm(directory, { recursive: true, force: true }));
   const network = relay();
-  const client = new SourceCommunityClient({ stateDir: directory, endpoint: 'https://relay.example.com', fetch: network.fetch, stderr: () => {} });
+  let notice = '';
+  const client = new SourceCommunityClient({ stateDir: directory, endpoint: 'https://relay.example.com', fetch: network.fetch, stderr: (value) => { notice += value; } });
 
   assert.equal((await client.configure('disable')).enabled, false);
   assert.deepEqual(await client.contribute(source), { shared: false, reason: 'disabled' });
   assert.deepEqual(await client.contributeJob(job), { shared: false, reason: 'disabled' });
   assert.equal(network.requests.length, 0);
   assert.equal((await client.configure('enable')).enabled, true);
+  assert.match(notice, /confirmed public job links/i);
   assert.equal((await client.contribute(source)).shared, true);
 });
 
@@ -232,6 +291,7 @@ test('concurrent reset is not undone by an in-flight credential refresh', async 
   assert.deepEqual(await settings.configure('reset'), {
     enabled: false,
     disclosed: true,
+    jobSharingDisclosed: false,
     hasInstallationId: false,
     endpoint: 'https://relay.example.com',
     schemaVersion: 1,

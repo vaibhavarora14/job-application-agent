@@ -40,7 +40,7 @@ function looksPersonal(url) {
 
 function looksIdentityPath(pathname) {
   const segments = pathname.split('/').filter(Boolean).map((segment) => segment.toLowerCase());
-  const namespaces = new Set(['user', 'users', 'profile', 'profiles', 'member', 'members', 'author', 'authors', 'person', 'people']);
+  const namespaces = new Set(['user', 'users', 'profile', 'profiles', 'member', 'members', 'author', 'authors', 'person', 'people', 'candidate', 'candidates', 'referral', 'referrals', 'referrer', 'referrers']);
   return segments.some((segment, index) => namespaces.has(segment) && index < segments.length - 1);
 }
 
@@ -93,6 +93,35 @@ function explicitCredentialPath(pathname) {
   });
 }
 
+function containsPhoneLikeLocation(hostname, pathname) {
+  if (containsIdentityLike(hostname)) return true;
+  return pathname.split('/').filter(Boolean).some((segment) => {
+    const normalized = segment.normalize('NFKC');
+    if (/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(normalized)) return false;
+    const digits = normalized.match(/\p{Nd}/gu)?.length ?? 0;
+    const separators = normalized.match(/[\s().-]/gu)?.length ?? 0;
+    return digits >= 8 && (/\+\p{Nd}/u.test(normalized) || separators >= 2);
+  });
+}
+
+const STABLE_JOB_QUERY_KEYS = new Set([
+  'gh_jid', 'jk', 'job', 'job_id', 'jobid', 'req', 'req_id', 'reqid',
+  'requisition', 'requisition_id', 'requisitionid',
+]);
+
+function stableJobQuery(searchParams) {
+  const identifiers = new Map();
+  for (const [rawKey, rawValue] of searchParams) {
+    const key = rawKey.toLowerCase();
+    if (!STABLE_JOB_QUERY_KEYS.has(key)) continue;
+    const value = rawValue.normalize('NFKC').trim();
+    if (!/^[A-Za-z0-9._~-]{1,128}$/.test(value)) continue;
+    if (identifiers.has(key) && identifiers.get(key) !== value) throw new Error(`community job.url contains conflicting ${key} identifiers.`);
+    identifiers.set(key, value);
+  }
+  return [...identifiers].sort(([left], [right]) => left.localeCompare(right));
+}
+
 function providerUrl(url) {
   const hostname = url.hostname.toLowerCase();
   const segments = url.pathname.split('/').filter(Boolean);
@@ -112,10 +141,12 @@ export function normalizeCommunityJob(input) {
   if (!isPublicHostname(url.hostname)) throw new Error('community job.url must use a public HTTPS hostname.');
   const pathname = decodedPathname(url.pathname).normalize('NFKC');
   url.pathname = pathname;
-  if (containsEmailLike(pathname) || looksIdentityPath(pathname) || looksPersonal(url)) throw new Error('community job.url must not be a personal URL.');
+  if (containsEmailLike(pathname) || containsPhoneLikeLocation(url.hostname, pathname) || looksIdentityPath(pathname) || looksPersonal(url)) throw new Error('community job.url must not be a personal URL.');
   if (explicitCredentialPath(pathname)) throw new Error('community job.url must not contain credential-like path segments.');
+  const identifiers = stableJobQuery(url.searchParams);
   url.pathname = pathname.replace(/\/+$/, '') || '/';
   url.search = '';
+  for (const [key, identifier] of identifiers) url.searchParams.append(key, identifier);
   url.hash = '';
   const applicationChannel = boundedString(value.applicationChannel, 'community job.applicationChannel', 40).toLowerCase();
   if (!COMMUNITY_JOB_CHANNELS.has(applicationChannel)) throw new Error('community job.applicationChannel is invalid.');

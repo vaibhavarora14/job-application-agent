@@ -170,121 +170,6 @@ function setupCopyAction() {
   });
 }
 
-let nextJobCursor = null;
-let jobsLoading = false;
-
-function publicHttpsUrl(value) {
-  try {
-    const url = new URL(value);
-    return url.protocol === 'https:' && !url.username && !url.password ? url.href : null;
-  } catch {
-    return null;
-  }
-}
-
-function jobLink(label, href, className) {
-  const link = document.createElement('a');
-  link.className = className;
-  link.textContent = label;
-  link.href = href;
-  link.target = '_blank';
-  link.rel = 'noopener noreferrer';
-  return link;
-}
-
-function renderCommunityJobs(jobs, { append = false } = {}) {
-  const list = document.querySelector('#community-job-list');
-  if (!append) list.replaceChildren();
-  let rendered = 0;
-  for (const job of jobs) {
-    const url = publicHttpsUrl(job?.url);
-    const providerUrl = publicHttpsUrl(job?.providerUrl);
-    if (!url || !providerUrl || typeof job.company !== 'string' || typeof job.role !== 'string') continue;
-    const item = document.createElement('li');
-    item.className = 'community-job-row';
-
-    const summary = document.createElement('div');
-    summary.className = 'community-job-summary';
-    const title = document.createElement('h3');
-    title.append(jobLink(job.role, url, 'community-job-title'));
-    const company = document.createElement('p');
-    company.textContent = job.company;
-    summary.append(title, company);
-
-    const details = document.createElement('div');
-    details.className = 'community-job-details';
-    const channel = document.createElement('span');
-    channel.textContent = String(job.applicationChannel ?? 'other').replaceAll('-', ' ');
-    const contributors = document.createElement('span');
-    const count = number(job.contributionCount);
-    contributors.textContent = `${fullFormat.format(count)} ${count === 1 ? 'contributor' : 'contributors'}`;
-    const seen = document.createElement('time');
-    const seenAt = new Date(job.lastSeenAt);
-    if (Number.isFinite(seenAt.getTime())) {
-      seen.dateTime = seenAt.toISOString();
-      seen.textContent = new Intl.DateTimeFormat('en', { dateStyle: 'medium' }).format(seenAt);
-    } else {
-      seen.textContent = 'Recently confirmed';
-    }
-    details.append(channel, contributors, seen);
-
-    const links = document.createElement('div');
-    links.className = 'community-job-actions';
-    links.append(jobLink('Open job ↗', url, 'community-job-action'));
-    if (providerUrl !== new URL(url).origin && providerUrl !== url) links.append(jobLink('Provider ↗', providerUrl, 'community-job-provider'));
-
-    item.append(summary, details, links);
-    list.append(item);
-    rendered += 1;
-  }
-  return rendered;
-}
-
-async function loadCommunityJobs(cursor = null) {
-  if (jobsLoading) return;
-  jobsLoading = true;
-  const list = document.querySelector('#community-job-list');
-  const status = document.querySelector('#job-feed-status');
-  const button = document.querySelector('#load-more-jobs');
-  button.disabled = true;
-  status.textContent = cursor ? 'Loading more' : 'Loading links';
-  try {
-    const response = await fetch('/v1/jobs?limit=25' + (cursor ? `&cursor=${encodeURIComponent(cursor)}` : ''), { headers: { accept: 'application/json' } });
-    if (!response.ok) throw new Error('The community job feed is unavailable.');
-    const data = await response.json();
-    const rendered = renderCommunityJobs(Array.isArray(data.jobs) ? data.jobs : [], { append: Boolean(cursor) });
-    nextJobCursor = typeof data.nextCursor === 'string' && data.nextCursor ? data.nextCursor : null;
-    if (!cursor && rendered === 0) {
-      const empty = emptyState();
-      const message = empty.querySelector('p');
-      const heading = document.createElement('strong');
-      heading.textContent = 'No public links yet.';
-      message.replaceChildren(heading, ' Confirmed applications will appear here automatically.');
-      list.append(empty);
-    }
-    status.textContent = rendered ? `${list.querySelectorAll('.community-job-row').length} links shown` : 'Live feed connected';
-    button.hidden = nextJobCursor == null;
-  } catch {
-    if (!cursor) {
-      list.replaceChildren(emptyState());
-      list.querySelector('p').textContent = 'Community job links are temporarily unavailable.';
-    }
-    status.textContent = 'Links unavailable';
-    button.hidden = nextJobCursor == null;
-  } finally {
-    list.setAttribute('aria-busy', 'false');
-    button.disabled = false;
-    jobsLoading = false;
-  }
-}
-
-function setupCommunityJobs() {
-  document.querySelector('#load-more-jobs')?.addEventListener('click', () => {
-    if (nextJobCursor) loadCommunityJobs(nextJobCursor);
-  });
-  loadCommunityJobs();
-}
-
 async function loadDashboard() {
   const status = document.querySelector('.status-line');
   try {
@@ -311,6 +196,5 @@ async function loadDashboard() {
 
 if (typeof document !== 'undefined') {
   setupCopyAction();
-  setupCommunityJobs();
   loadDashboard();
 }

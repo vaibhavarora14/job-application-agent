@@ -48,6 +48,8 @@ test("server-renders the branded community dashboard", async () => {
   const html = await response.text();
   assert.match(html, /Community momentum/);
   assert.match(html, /Reported activity by day/);
+  assert.match(html, /Community job leads/);
+  assert.match(html, /maintainer-reviewed/i);
   assert.match(html, /Anonymous aggregate telemetry/);
   assert.doesNotMatch(html, /Install agent|Open source on GitHub/i);
 });

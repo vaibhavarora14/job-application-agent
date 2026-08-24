@@ -6,6 +6,11 @@ CREATE TABLE IF NOT EXISTS community_jobs (
   application_channel TEXT NOT NULL,
   discovery_source TEXT,
   provider_url TEXT NOT NULL,
+  publication_status TEXT NOT NULL DEFAULT 'pending' CHECK(publication_status IN ('pending', 'published', 'rejected')),
+  review_status TEXT NOT NULL DEFAULT 'unreviewed' CHECK(review_status IN ('unreviewed', 'maintainer-reviewed')),
+  published_at TEXT,
+  reviewed_at TEXT,
+  rejected_at TEXT,
   first_seen_at TEXT NOT NULL,
   last_seen_at TEXT NOT NULL,
   first_skill_version TEXT NOT NULL,
@@ -23,6 +28,9 @@ CREATE TABLE IF NOT EXISTS community_job_contributions (
 
 CREATE INDEX IF NOT EXISTS idx_community_jobs_recent
   ON community_jobs(last_seen_at DESC, job_id DESC);
+
+CREATE INDEX IF NOT EXISTS idx_community_jobs_publication
+  ON community_jobs(publication_status, review_status, last_seen_at DESC, job_id DESC);
 
 CREATE INDEX IF NOT EXISTS idx_community_job_contributions_job
   ON community_job_contributions(job_id, last_seen_at DESC);

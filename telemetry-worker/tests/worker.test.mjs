@@ -50,15 +50,17 @@ function env() {
     },
     JOB_STORE: {
       async contribute(job, contributorHash) {
-        const current = communityJobs.get(job.jobId) ?? job;
+        const current = communityJobs.get(job.jobId) ?? { ...job, publicationStatus: 'pending', reviewStatus: 'unreviewed' };
         communityJobs.set(job.jobId, { ...current, lastSeenAt: job.lastSeenAt });
         const hashes = jobContributorHashes.get(job.jobId) ?? new Set();
         hashes.add(contributorHash);
         jobContributorHashes.set(job.jobId, hashes);
-        return { contributionCount: hashes.size };
+        return { publicationStatus: current.publicationStatus, contributionCount: hashes.size };
       },
       async list({ limit, cursor }) {
-        const ordered = [...communityJobs.values()].sort((left, right) => right.lastSeenAt.localeCompare(left.lastSeenAt) || right.jobId.localeCompare(left.jobId));
+        const ordered = [...communityJobs.values()]
+          .filter((job) => job.publicationStatus === 'published' && job.reviewStatus === 'maintainer-reviewed')
+          .sort((left, right) => right.lastSeenAt.localeCompare(left.lastSeenAt) || right.jobId.localeCompare(left.jobId));
         const start = cursor == null ? 0 : ordered.findIndex((job) => job.lastSeenAt < cursor.lastSeenAt || (job.lastSeenAt === cursor.lastSeenAt && job.jobId < cursor.jobId));
         const jobs = ordered.slice(Math.max(0, start), Math.max(0, start) + limit + 1).map((job) => ({ ...job, contributionCount: jobContributorHashes.get(job.jobId)?.size ?? 0 }));
         return { jobs: jobs.slice(0, limit), hasMore: jobs.length > limit };
@@ -86,7 +88,7 @@ async function jobContribution(bindings, installationId, job, token = null) {
   }), bindings);
 }
 
-test('confirmed public jobs are immediately listed, deduplicated by URL and contributor, and paginated', async () => {
+test('confirmed jobs are logged pending, deduplicated, and listed only after maintainer review', async () => {
   const bindings = env();
   const firstInstallation = '11111111-1111-4111-8111-111111111111';
   const secondInstallation = '22222222-2222-4222-8222-222222222222';
@@ -103,6 +105,7 @@ test('confirmed public jobs are immediately listed, deduplicated by URL and cont
   assert.deepEqual(await first.json(), {
     accepted: true,
     jobId: await import('../../job-application-agent/scripts/source-community-schema.mjs').then(({ communityJobId }) => communityJobId(job)),
+    publicationStatus: 'pending',
     contributionCount: 1,
   });
   assert.equal((await (await jobContribution(bindings, firstInstallation, job)).json()).contributionCount, 1);
@@ -110,18 +113,25 @@ test('confirmed public jobs are immediately listed, deduplicated by URL and cont
 
   const listed = await worker.fetch(new Request('https://relay.example.com/v1/jobs?limit=1'), bindings);
   assert.equal(listed.status, 200);
-  const body = await listed.json();
+  assert.deepEqual((await listed.json()).jobs, []);
+  const firstJobId = [...bindings.communityJobs.keys()][0];
+  Object.assign(bindings.communityJobs.get(firstJobId), { publicationStatus: 'published', reviewStatus: 'maintainer-reviewed' });
+  const body = await (await worker.fetch(new Request('https://relay.example.com/v1/jobs?limit=1'), bindings)).json();
   assert.equal(body.jobs.length, 1);
   assert.equal(body.jobs[0].company, 'Example');
   assert.equal(body.jobs[0].url.includes('private'), false);
   assert.equal(body.jobs[0].providerUrl, 'https://jobs.ashbyhq.com/example');
   assert.equal(body.jobs[0].contributionCount, 2);
+  assert.match(body.jobs[0].firstSeenAt, /^\d{4}-\d{2}-\d{2}T00:00:00\.000Z$/);
+  assert.match(body.jobs[0].lastSeenAt, /^\d{4}-\d{2}-\d{2}T00:00:00\.000Z$/);
   assert.equal(body.nextCursor, null);
   assert.equal(JSON.stringify(body).includes(firstInstallation), false);
   assert.equal(JSON.stringify(body).includes([...bindings.jobContributorHashes.values()][0].values().next().value), false);
 
   const secondJob = { ...job, url: 'https://job-boards.greenhouse.io/another/jobs/7654321', company: 'Another' };
   await jobContribution(bindings, firstInstallation, secondJob);
+  const secondJobId = [...bindings.communityJobs.keys()].find((id) => id !== firstJobId);
+  Object.assign(bindings.communityJobs.get(secondJobId), { publicationStatus: 'published', reviewStatus: 'maintainer-reviewed' });
   const firstPage = await (await worker.fetch(new Request('https://relay.example.com/v1/jobs?limit=1'), bindings)).json();
   assert.equal(firstPage.jobs.length, 1);
   assert.ok(firstPage.nextCursor);
@@ -141,6 +151,17 @@ test('community job endpoint rejects private payloads, invalid cursors, bad toke
   assert.equal((await worker.fetch(new Request('https://relay.example.com/v1/jobs?cursor=not-valid'), bindings)).status, 400);
   bindings.SOURCE_RATE_LIMITER = { limit: async () => ({ success: false }) };
   assert.equal((await jobContribution(bindings, installationId, job, token)).status, 429);
+});
+
+test('community job reads rate-limit a secret-derived client bucket without retaining the address', async () => {
+  const bindings = env();
+  const response = await worker.fetch(new Request('https://relay.example.com/v1/jobs', {
+    headers: { 'cf-connecting-ip': '203.0.113.42' },
+  }), bindings);
+  assert.equal(response.status, 200);
+  assert.equal(bindings.sourceReadRateLimitKeys.length, 1);
+  assert.match(bindings.sourceReadRateLimitKeys[0], /^jobs:[0-9a-f]{64}$/);
+  assert.equal(bindings.sourceReadRateLimitKeys[0].includes('203.0.113.42'), false);
 });
 
 async function contribution(bindings, installationId, source, token = null) {

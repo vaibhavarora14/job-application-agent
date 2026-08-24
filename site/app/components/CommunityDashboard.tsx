@@ -1,6 +1,7 @@
 "use client";
 
 import { compactNumber, fullNumber, useCommunityStats } from "./useCommunityStats";
+import { useCommunityJobs } from "./useCommunityJobs";
 
 function Leaderboard({ title, subtitle, entries, wide = false }: { title: string; subtitle: string; entries: Array<{ label: string; count: number }>; wide?: boolean }) {
   const maximum = Math.max(1, ...entries.map((entry) => entry.count));
@@ -16,6 +17,7 @@ function Leaderboard({ title, subtitle, entries, wide = false }: { title: string
 
 export function CommunityDashboard() {
   const { data, error, loading } = useCommunityStats();
+  const communityJobs = useCommunityJobs();
   const outcomesReported = data?.breakdowns.outcomes.reduce((total, entry) => total + entry.count, 0) ?? 0;
   const outcomeCoverage = data?.metrics.applicationsSubmitted
     ? Math.round((outcomesReported / data.metrics.applicationsSubmitted) * 1000) / 10
@@ -33,6 +35,22 @@ export function CommunityDashboard() {
       <article><strong>{data ? compactNumber.format(data.metrics.activeInstallations30d) : "—"}</strong><span>Active installations · last 30 days</span></article>
       <article><strong>{data ? compactNumber.format(data.metrics.applicationsSubmitted) : "—"}</strong><span>Verified applications submitted</span></article>
       <article><strong>{data ? compactNumber.format(data.metrics.jobsAssessed) : "—"}</strong><span>Jobs assessed</span></article>
+    </section>
+
+    <section className="community-jobs dashboard-panel" aria-labelledby="community-jobs-title" aria-busy={communityJobs.loading || communityJobs.loadingMore}>
+      <div className="panel-heading">
+        <div><p className="eyebrow">Community sourcing</p><h2 id="community-jobs-title">Community job leads</h2><p>Confirmed public application links reported by agent installations and published only after maintainer review.</p></div>
+        <span className="tag">Maintainer-reviewed</span>
+      </div>
+      <p className="community-jobs-caution"><strong>Verify every lead.</strong> Community reports are not employer endorsements; check the company, role, and destination before applying.</p>
+      {communityJobs.loading ? <p className="empty-data" role="status">Loading reviewed job leads…</p>
+        : communityJobs.error && communityJobs.jobs.length === 0 ? <p className="empty-data" role="status">Reviewed job leads are temporarily unavailable.</p>
+          : communityJobs.jobs.length === 0 ? <p className="empty-data">No job leads have completed maintainer review yet.</p>
+            : <ol className="community-job-list">{communityJobs.jobs.map((job) => <li key={job.jobId}>
+              <div className="community-job-copy"><span>{job.company}</span><h3>{job.role}</h3><p>{job.applicationChannel.replaceAll("-", " ")} · {fullNumber.format(job.contributionCount)} agent {job.contributionCount === 1 ? "report" : "reports"}</p></div>
+              <div className="community-job-actions"><a className="button button-small" href={job.url} target="_blank" rel="noopener noreferrer">Open job</a><a className="text-link" href={job.providerUrl} target="_blank" rel="noopener noreferrer">Provider ↗</a></div>
+            </li>)}</ol>}
+      {communityJobs.nextCursor ? <button className="button button-secondary community-jobs-more" type="button" disabled={communityJobs.loadingMore} onClick={() => void communityJobs.loadMore()}>{communityJobs.loadingMore ? "Loading…" : "Load more reviewed jobs"}</button> : null}
     </section>
 
     <section className="dashboard-grid">

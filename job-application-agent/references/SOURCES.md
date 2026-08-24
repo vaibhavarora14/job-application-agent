@@ -22,7 +22,7 @@ Optional filter input:
 }
 ```
 
-`sources list` combines the packaged catalog with the live repeatable-source registry. Public v1 community entries are always maintainer-approved and have `registryStatus: "community-reviewed"`. Their `id` and `communitySourceId` are the same stable community ID and may be stored as `discoverySourceId`. `sources jobs` returns the newest confirmed public job links, 50 at a time by default, with an opaque `nextCursor` for pagination. Both are discovery leads, not endorsements or eligibility claims. Resolve every lead to the direct employer or ATS page and verify that posting immediately before assessment and submission.
+`sources list` combines the packaged catalog with the live repeatable-source registry. Public v1 community entries are always maintainer-approved and have `registryStatus: "community-reviewed"`. Their `id` and `communitySourceId` are the same stable community ID and may be stored as `discoverySourceId`. `sources jobs` returns the newest maintainer-reviewed confirmed job links, 50 at a time by default, with an opaque `nextCursor` for pagination. Both are discovery leads, not endorsements or eligibility claims. Resolve every lead to the direct employer or ATS page and verify that posting immediately before assessment and submission.
 
 Store three independent attribution fields when available:
 
@@ -34,7 +34,7 @@ Store three independent attribution fields when available:
 
 ## Community sharing
 
-Community sharing is enabled by default and independent of usage analytics. A confirmed `ledger add` immediately contributes the sanitized public job metadata. Existing confirmed ledger entries are the durable backfill/retry queue and are retried in bounded batches during later commands. No separate contribution command is required for applied jobs.
+Community sharing is enabled by default and independent of usage analytics. A confirmed `ledger add` queues and attempts the sanitized public job metadata automatically. Installations with historical applications consume one full disclosure command without transmission before backfill, giving them time to run `sources sharing disable`; an explicit `sources sharing enable` opts in immediately. New installations have no historical backfill and contribute the first newly confirmed job after displaying the notice. Existing confirmed ledger entries are the durable backfill/retry queue and are retried in bounded batches during later commands. No separate contribution command is required for applied jobs.
 
 Whenever the user or agent discovers a repeatable public discovery surface—not a recruiter profile, referral link, personal URL, or one-off job detail route—queue it for maintainer review:
 
@@ -62,7 +62,7 @@ Suggestion input:
 
 The first eligible contribution displays a disclosure and sends during that command. `disable` stops both job and discovery-source sharing; `enable` resumes and retries it; `reset` disables sharing and removes its anonymous relay credentials. The preference, anonymous credential, and delivery receipts are stored in owner-only local files.
 
-The applied-job contract contains only the canonical HTTPS job URL (query and fragment removed), company, role, application channel, optional coarse discovery source, and a server-derived provider URL. The server adds first/last-seen times and a unique anonymous-contributor count. Candidate identity, résumé, form answers, score, application timestamp, referral parameters, raw installation ID, and contributor hash are never public or stored with a community job. Direct job records become public immediately because they originate from confirmed applications; canonical URL deduplication prevents repeated rows.
+The applied-job contract contains only the canonical HTTPS job URL, company, role, application channel, optional coarse discovery source, and a server-derived provider URL. Referral, tracking, and fragment data are removed; a small allowlist of stable job/requisition query identifiers is retained so query-addressed jobs do not collapse together. The server adds day-bucketed first/last-seen dates and an anonymous agent-report count. Candidate identity, résumé, form answers, score, application timestamp, referral parameters, raw installation ID, and contributor hash are never public or stored with a community job. Every accepted record is logged as pending; only a maintainer-reviewed destination and matching company/role can become public. Canonical URL deduplication prevents repeated rows, and rejected records never republish automatically.
 
 The client and relay use the same fail-closed source-route classifier. They remove query parameters and fragments; reject embedded credentials, credential-like opaque path segments, identity-like names and paths, personal profiles, local/private hosts, unknown fields, oversized payloads, and known detail routes from Workday, LinkedIn Jobs, Greenhouse, Lever, Ashby, Workable, and SmartRecruiters. Unknown domains are accepted only at the root or on explicit collection, directory, feed, careers, openings, or job-index routes. Only the source name, canonical public base URL, kind, regions, role families, and session requirement are shared.
 

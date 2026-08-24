@@ -46,7 +46,6 @@ test('community statistics are derived from aggregate data without invented valu
 
 test('community dashboard exposes its primary actions and honest data labels', async () => {
   const html = await readFile(new URL('../public/index.html', import.meta.url), 'utf8');
-  const javascript = await readFile(new URL('../public/dashboard.js', import.meta.url), 'utf8');
 
   assert.match(html, /The job-search agents are moving/i);
   assert.match(html, /Install agent/i);
@@ -57,9 +56,4 @@ test('community dashboard exposes its primary actions and honest data labels', a
   assert.match(html, /outcomes reported/i);
   assert.match(html, /Latest seven-day submissions ÷ installations active in 30 days/i);
   assert.match(html, /Active days/i);
-  assert.match(html, /Community job links/i);
-  assert.match(html, /id="community-job-list"/i);
-  assert.match(html, /id="load-more-jobs"/i);
-  assert.match(javascript, /fetch\('\/v1\/jobs\?limit=25/);
-  assert.match(javascript, /rel = 'noopener noreferrer'/);
 });

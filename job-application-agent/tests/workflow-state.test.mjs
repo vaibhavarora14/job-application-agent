@@ -287,6 +287,16 @@ test('source sync counts only the contribution actually attempted before an unav
   assert.deepEqual(result, { attempted: 1, shared: 0, remaining: 2 });
 });
 
+test('combined community sync preserves the existing top-level source result', async (t) => {
+  const { env } = await fixture(t, 'combined-community-sync-contract');
+  const result = cli(env, ['sources', 'sync']);
+  assert.equal(result.attempted, 0);
+  assert.equal(result.shared, 0);
+  assert.equal(result.remaining, 0);
+  assert.deepEqual(result.communityJobs, { attempted: 0, shared: 0, remaining: 0, unshareable: 0 });
+  assert.equal('sources' in result, false);
+});
+
 test('backfills confirmed ledger jobs with only public fields and durable receipts', async (t) => {
   const { directory } = await fixture(t, 'community-job-backfill');
   const previous = process.env.JOB_APPLICATION_AGENT_STATE_DIR;
@@ -338,6 +348,24 @@ test('community job retries stop on relay failure without marking the applicatio
   assert.deepEqual(result, { attempted: 1, shared: 0, remaining: 1, unshareable: 0 });
   assert.equal(calls, 1);
   assert.deepEqual((await communityJobsPending()).applications.map((entry) => entry.applicationId), ['round-role-204']);
+});
+
+test('community job backfill stops for the disclosure grace command', async (t) => {
+  const { directory } = await fixture(t, 'community-job-grace');
+  const previous = process.env.JOB_APPLICATION_AGENT_STATE_DIR;
+  process.env.JOB_APPLICATION_AGENT_STATE_DIR = directory;
+  t.after(() => {
+    if (previous == null) delete process.env.JOB_APPLICATION_AGENT_STATE_DIR;
+    else process.env.JOB_APPLICATION_AGENT_STATE_DIR = previous;
+  });
+  await writeFile(join(directory, 'applications.ndjson'), [submission(205), submission(206)].map(JSON.stringify).join('\n').concat('\n'));
+  let calls = 0;
+  const result = await communityJobsSync({ contributeJob: async () => {
+    calls += 1;
+    return { shared: false, reason: 'grace' };
+  } });
+  assert.deepEqual(result, { attempted: 1, shared: 0, remaining: 2, unshareable: 0 });
+  assert.equal(calls, 1);
 });
 
 test('ledger add automatically attempts community sharing and reports durable pending work', async (t) => {

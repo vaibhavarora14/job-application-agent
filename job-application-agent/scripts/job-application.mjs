@@ -780,15 +780,16 @@ export async function communityJobsSync(community, { limit = 10, applicationIds 
     const contribution = await community.contributeJob(entry.job);
     await markCommunityJobShared(entry.applicationId, contribution);
     if (contribution.shared) shared += 1;
-    else if (contribution.reason === 'disabled' || contribution.reason === 'unavailable') break;
+    else if (contribution.reason === 'disabled' || contribution.reason === 'unavailable' || contribution.reason === 'grace') break;
   }
   const remaining = await communityJobsPending();
   return { attempted, shared, remaining: remaining.count, unshareable: remaining.unshareable };
 }
 
 async function syncAllCommunityData(community) {
+  const sources = await sourcesSync(community);
   return {
-    sources: await sourcesSync(community),
+    ...sources,
     communityJobs: await communityJobsSync(community),
   };
 }
