@@ -6,7 +6,7 @@ import { join } from 'node:path';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
 
-import { communityJobsPending, communityJobsSync, sourcesSync } from '../scripts/job-application.mjs';
+import { communityJobsPending, communityJobsSync, sourcesList, sourcesSync, validateLedgerEntry } from '../scripts/job-application.mjs';
 
 const script = fileURLToPath(new URL('../scripts/job-application.mjs', import.meta.url));
 
@@ -180,7 +180,26 @@ test('ships a filterable global discovery source catalog and tracks source attri
     answers: {},
   });
   assert.equal(invalidSource.status, 1);
-  assert.match(invalidSource.stderr, /packaged source catalog/i);
+  assert.match(invalidSource.stderr, /packaged or community source ID/i);
+});
+
+test('community registry IDs remain usable as local discovery attribution', async () => {
+  const communitySource = {
+    sourceId: 'community-abcdef1234567890',
+    name: 'Example Engineering Board',
+    baseUrl: 'https://jobs.example.org/openings',
+    kind: 'job-board',
+    regions: ['global'],
+    roleFamilies: ['engineering'],
+    requiresSession: false,
+    registryStatus: 'community-reviewed',
+    contributionCount: 2,
+  };
+  const listed = await sourcesList({}, [communitySource]);
+  const source = listed.sources.find((entry) => entry.id === communitySource.sourceId);
+  assert.equal(source.communitySourceId, communitySource.sourceId);
+  const entry = validateLedgerEntry(submission(21, null, { discoverySourceId: source.id }));
+  assert.equal(entry.discoverySourceId, communitySource.sourceId);
 });
 
 test('queues sanitized repeatable source suggestions locally for public-registry review', async (t) => {

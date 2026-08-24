@@ -37,6 +37,7 @@ const SOURCE_CATALOG_URL = new URL('../references/SOURCES.json', import.meta.url
 const SOURCE_CATALOG = JSON.parse(readFileSync(SOURCE_CATALOG_URL, 'utf8'));
 if (!Array.isArray(SOURCE_CATALOG)) throw new Error('The packaged source catalog is invalid.');
 const SOURCE_CATALOG_IDS = new Set(SOURCE_CATALOG.map((source) => sourceId(source.id, 'source catalog id')));
+const COMMUNITY_SOURCE_ID = /^community-[0-9a-f]{16}$/;
 const REQUIRED_PROFILE = ['name', 'email', 'phone', 'location', 'workAuthorization', 'roleFamilies', 'seniority', 'targetLocations', 'workModes', 'submissionMode', 'yearsExperience', 'autoSubmitMinScore', 'manualReviewMinScore', 'minMustHaveCoverage'];
 const STRING_PROFILE_FIELDS = new Set(['name', 'email', 'phone', 'location', 'workAuthorization', 'linkedin', 'github', 'portfolio', 'availability', 'currentCompensation', 'targetCompensation', 'submissionMode']);
 const ARRAY_PROFILE_FIELDS = new Set(['roleFamilies', 'seniority', 'skills', 'targetLocations', 'excludedLocations', 'workModes', 'industries', 'excludedCompanies']);
@@ -189,6 +190,12 @@ function sourceId(value, label) {
   return id;
 }
 
+function knownDiscoverySourceId(value, label) {
+  const id = sourceId(value, label);
+  if (!SOURCE_CATALOG_IDS.has(id) && !COMMUNITY_SOURCE_ID.test(id)) throw new Error(`${label} must match a packaged or community source ID.`);
+  return id;
+}
+
 function integer(value, label, min, max) {
   if (!Number.isInteger(value) || value < min || value > max) throw new Error(`${label} must be an integer from ${min} to ${max}.`);
   return value;
@@ -267,9 +274,7 @@ export function scoreJob(input, target) {
   const description = string(job.description, 'job.description', 40000);
   const source = string(job.source, 'job.source', 40).toLowerCase();
   const discoverySource = job.discoverySource == null ? null : string(job.discoverySource, 'job.discoverySource', 40).toLowerCase();
-  if (job.discoverySourceId != null && !SOURCE_CATALOG_IDS.has(sourceId(job.discoverySourceId, 'job.discoverySourceId'))) {
-    throw new Error('job.discoverySourceId must match an ID in the packaged source catalog.');
-  }
+  if (job.discoverySourceId != null) knownDiscoverySourceId(job.discoverySourceId, 'job.discoverySourceId');
   const applicationChannel = job.applicationChannel == null ? null : string(job.applicationChannel, 'job.applicationChannel', 40).toLowerCase();
   const eligibility = string(job.eligibility, 'job.eligibility', 40).toLowerCase();
   const postingStatus = string(job.postingStatus ?? 'unclear', 'job.postingStatus', 40).toLowerCase();
@@ -428,8 +433,7 @@ export function validateLedgerEntry(input) {
   if (entry.employerJobId != null) normalized.employerJobId = string(entry.employerJobId, 'entry.employerJobId', 300);
   if (entry.discoverySource != null) normalized.discoverySource = string(entry.discoverySource, 'entry.discoverySource', 40).toLowerCase();
   if (entry.discoverySourceId != null) {
-    normalized.discoverySourceId = sourceId(entry.discoverySourceId, 'entry.discoverySourceId');
-    if (!SOURCE_CATALOG_IDS.has(normalized.discoverySourceId)) throw new Error('entry.discoverySourceId must match an ID in the packaged source catalog.');
+    normalized.discoverySourceId = knownDiscoverySourceId(entry.discoverySourceId, 'entry.discoverySourceId');
   }
   if (entry.applicationChannel != null) normalized.applicationChannel = string(entry.applicationChannel, 'entry.applicationChannel', 40).toLowerCase();
   if (entry.roundId != null) normalized.roundId = string(entry.roundId, 'entry.roundId', 180);
@@ -642,7 +646,7 @@ async function sourceCatalog() {
   return SOURCE_CATALOG;
 }
 
-async function sourcesList(filtersInput = {}, communitySources = []) {
+export async function sourcesList(filtersInput = {}, communitySources = []) {
   const filters = object(filtersInput, 'source filters');
   const allowed = new Set(['regions', 'roleFamilies', 'kinds', 'requiresSession']);
   for (const key of Object.keys(filters)) if (!allowed.has(key)) throw new Error(`Unknown source filter: ${key}.`);
@@ -651,7 +655,7 @@ async function sourcesList(filtersInput = {}, communitySources = []) {
   const kinds = filters.kinds == null ? [] : terms(stringArray(filters.kinds, 'source filters.kinds'));
   if (filters.requiresSession != null && typeof filters.requiresSession !== 'boolean') throw new Error('source filters.requiresSession must be a Boolean.');
   const community = communitySources.map((source) => ({
-    id: null,
+    id: source.sourceId,
     communitySourceId: source.sourceId,
     name: source.name,
     kind: source.kind,
