@@ -8,6 +8,7 @@ declare namespace Cloudflare {
     PUBLIC_SITE_URL?: string;
     RATE_LIMIT_SALT?: string;
     COMMUNITY_STATS_UPSTREAM?: string;
+    COMMUNITY_JOBS_UPSTREAM?: string;
     REFUND_CRON_SECRET?: string;
   }
 }

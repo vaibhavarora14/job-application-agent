@@ -1,4 +1,4 @@
-# Community source moderation
+# Community source and job moderation
 
 Community source moderation is owner-only and uses D1 directly. There is no public administration endpoint. Every accepted source remains `pending` regardless of how many systems contribute it; only an explicit owner decision can publish it. Run every command against staging first, then repeat it against production only after checking the affected `community-…` source ID.
 
@@ -76,3 +76,43 @@ WHERE source_id = 'community-0000000000000000';
 ```
 
 Do not query, export, or publish `contributor_hash`. It exists only to deduplicate systems for a single canonical source and to prioritize manual review; it must never be interpreted as a person count, identity, trust signal, or publication authority.
+
+## Review automatically logged jobs
+
+Confirmed application links are collected automatically, but no anonymous installation can publish one. Inspect pending jobs without selecting contributor hashes:
+
+```sql
+SELECT jobs.job_id, jobs.canonical_url, jobs.company, jobs.role,
+       jobs.application_channel, jobs.discovery_source, jobs.provider_url,
+       COUNT(contributions.contributor_hash) AS agent_reports,
+       jobs.first_seen_at, jobs.last_seen_at
+FROM community_jobs AS jobs
+JOIN community_job_contributions AS contributions ON contributions.job_id = jobs.job_id
+WHERE jobs.publication_status = 'pending'
+GROUP BY jobs.job_id
+ORDER BY agent_reports DESC, jobs.last_seen_at DESC;
+```
+
+Verify that the destination is a genuine employer or ATS job page and that the company and role match. Then publish the exact reviewed ID:
+
+```sql
+UPDATE community_jobs
+SET publication_status = 'published',
+    review_status = 'maintainer-reviewed',
+    published_at = COALESCE(published_at, strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+    reviewed_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+WHERE job_id = 'community-job-0000000000000000'
+  AND publication_status = 'pending';
+```
+
+Reject a misleading, expired, private, or unsafe destination so later anonymous reports cannot republish it:
+
+```sql
+UPDATE community_jobs
+SET publication_status = 'rejected',
+    review_status = 'maintainer-reviewed',
+    rejected_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now'),
+    reviewed_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+WHERE job_id = 'community-job-0000000000000000'
+  AND publication_status <> 'rejected';
+```

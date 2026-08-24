@@ -6,7 +6,7 @@ import { join } from 'node:path';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
 
-import { sourcesSync } from '../scripts/job-application.mjs';
+import { communityJobsPending, communityJobsSync, sourcesList, sourcesSync, validateLedgerEntry } from '../scripts/job-application.mjs';
 
 const script = fileURLToPath(new URL('../scripts/job-application.mjs', import.meta.url));
 
@@ -180,7 +180,26 @@ test('ships a filterable global discovery source catalog and tracks source attri
     answers: {},
   });
   assert.equal(invalidSource.status, 1);
-  assert.match(invalidSource.stderr, /packaged source catalog/i);
+  assert.match(invalidSource.stderr, /packaged or community source ID/i);
+});
+
+test('community registry IDs remain usable as local discovery attribution', async () => {
+  const communitySource = {
+    sourceId: 'community-abcdef1234567890',
+    name: 'Example Engineering Board',
+    baseUrl: 'https://jobs.example.org/openings',
+    kind: 'job-board',
+    regions: ['global'],
+    roleFamilies: ['engineering'],
+    requiresSession: false,
+    registryStatus: 'community-reviewed',
+    contributionCount: 2,
+  };
+  const listed = await sourcesList({}, [communitySource]);
+  const source = listed.sources.find((entry) => entry.id === communitySource.sourceId);
+  assert.equal(source.communitySourceId, communitySource.sourceId);
+  const entry = validateLedgerEntry(submission(21, null, { discoverySourceId: source.id }));
+  assert.equal(entry.discoverySourceId, communitySource.sourceId);
 });
 
 test('queues sanitized repeatable source suggestions locally for public-registry review', async (t) => {
@@ -266,6 +285,99 @@ test('source sync counts only the contribution actually attempted before an unav
 
   assert.equal(calls, 1);
   assert.deepEqual(result, { attempted: 1, shared: 0, remaining: 2 });
+});
+
+test('combined community sync preserves the existing top-level source result', async (t) => {
+  const { env } = await fixture(t, 'combined-community-sync-contract');
+  const result = cli(env, ['sources', 'sync']);
+  assert.equal(result.attempted, 0);
+  assert.equal(result.shared, 0);
+  assert.equal(result.remaining, 0);
+  assert.deepEqual(result.communityJobs, { attempted: 0, shared: 0, remaining: 0, unshareable: 0 });
+  assert.equal('sources' in result, false);
+});
+
+test('backfills confirmed ledger jobs with only public fields and durable receipts', async (t) => {
+  const { directory } = await fixture(t, 'community-job-backfill');
+  const previous = process.env.JOB_APPLICATION_AGENT_STATE_DIR;
+  process.env.JOB_APPLICATION_AGENT_STATE_DIR = directory;
+  t.after(() => {
+    if (previous == null) delete process.env.JOB_APPLICATION_AGENT_STATE_DIR;
+    else process.env.JOB_APPLICATION_AGENT_STATE_DIR = previous;
+  });
+  await writeFile(join(directory, 'applications.ndjson'), [
+    submission(201, null, { url: 'https://jobs.ashbyhq.com/example/12345678-1234-4123-8123-123456789abc?ref=candidate@example.com#apply' }),
+    submission(202, null, { url: 'https://job-boards.greenhouse.io/example/jobs/7654321?token=private' }),
+    submission(203, null, { url: 'https://linkedin.com/in/private-person' }),
+  ].map(JSON.stringify).join('\n').concat('\n'));
+  const posted = [];
+  const community = {
+    contributeJob: async (job) => {
+      posted.push(job);
+      return { shared: true, jobId: `community-job-${String(posted.length).padStart(16, '0')}`, contributionCount: 1 };
+    },
+  };
+
+  assert.deepEqual(await communityJobsSync(community, { limit: 1 }), { attempted: 1, shared: 1, remaining: 1, unshareable: 1 });
+  assert.deepEqual(Object.keys(posted[0]).sort(), ['applicationChannel', 'company', 'discoverySource', 'providerUrl', 'role', 'url']);
+  assert.equal(posted[0].url.includes('candidate@example.com'), false);
+  assert.equal(JSON.stringify(posted[0]).includes('answers'), false);
+  assert.equal(JSON.stringify(posted[0]).includes('submittedAt'), false);
+  assert.equal(JSON.stringify(posted[0]).includes('score'), false);
+  assert.deepEqual(await communityJobsSync(community, { limit: 10 }), { attempted: 1, shared: 1, remaining: 0, unshareable: 1 });
+  assert.equal(posted.length, 2);
+  assert.deepEqual(await communityJobsPending(), { count: 0, unshareable: 1, applications: [] });
+
+  const receipts = (await readFile(join(directory, 'community-job-contribution-receipts.ndjson'), 'utf8')).trim().split('\n').map(JSON.parse);
+  assert.deepEqual(Object.keys(receipts[0]).sort(), ['applicationId', 'jobId', 'sharedAt']);
+  assert.equal(JSON.stringify(receipts).includes('candidate@example.com'), false);
+  if (process.platform !== 'win32') assert.equal((await stat(join(directory, 'community-job-contribution-receipts.ndjson'))).mode & 0o777, 0o600);
+});
+
+test('community job retries stop on relay failure without marking the application shared', async (t) => {
+  const { directory } = await fixture(t, 'community-job-retry');
+  const previous = process.env.JOB_APPLICATION_AGENT_STATE_DIR;
+  process.env.JOB_APPLICATION_AGENT_STATE_DIR = directory;
+  t.after(() => {
+    if (previous == null) delete process.env.JOB_APPLICATION_AGENT_STATE_DIR;
+    else process.env.JOB_APPLICATION_AGENT_STATE_DIR = previous;
+  });
+  await writeFile(join(directory, 'applications.ndjson'), `${JSON.stringify(submission(204))}\n`);
+  let calls = 0;
+  const result = await communityJobsSync({ contributeJob: async () => { calls += 1; return { shared: false, reason: 'unavailable' }; } });
+  assert.deepEqual(result, { attempted: 1, shared: 0, remaining: 1, unshareable: 0 });
+  assert.equal(calls, 1);
+  assert.deepEqual((await communityJobsPending()).applications.map((entry) => entry.applicationId), ['round-role-204']);
+});
+
+test('community job backfill stops for the disclosure grace command', async (t) => {
+  const { directory } = await fixture(t, 'community-job-grace');
+  const previous = process.env.JOB_APPLICATION_AGENT_STATE_DIR;
+  process.env.JOB_APPLICATION_AGENT_STATE_DIR = directory;
+  t.after(() => {
+    if (previous == null) delete process.env.JOB_APPLICATION_AGENT_STATE_DIR;
+    else process.env.JOB_APPLICATION_AGENT_STATE_DIR = previous;
+  });
+  await writeFile(join(directory, 'applications.ndjson'), [submission(205), submission(206)].map(JSON.stringify).join('\n').concat('\n'));
+  let calls = 0;
+  const result = await communityJobsSync({ contributeJob: async () => {
+    calls += 1;
+    return { shared: false, reason: 'grace' };
+  } });
+  assert.deepEqual(result, { attempted: 1, shared: 0, remaining: 2, unshareable: 0 });
+  assert.equal(calls, 1);
+});
+
+test('ledger add automatically attempts community sharing and reports durable pending work', async (t) => {
+  const { env } = await fixture(t, 'community-job-ledger-hook');
+  const result = cli(env, ['ledger', 'add', '--stdin'], submission(20, null, { id: 'community-ledger-hook' }));
+  assert.equal(result.recorded, 'community-ledger-hook');
+  assert.deepEqual(result.communityJob, { attempted: 1, shared: 0, remaining: 1, unshareable: 0 });
+
+  const pending = cli(env, ['sources', 'pending']);
+  assert.equal(pending.communityJobs.count, 1);
+  assert.equal(pending.communityJobs.applications[0].applicationId, 'community-ledger-hook');
+  assert.equal(JSON.stringify(pending.communityJobs).includes('answers'), false);
 });
 
 test('blocks a different role at the same company during the 15-day cooldown', async (t) => {

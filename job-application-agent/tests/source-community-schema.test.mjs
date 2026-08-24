@@ -1,7 +1,16 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { communitySourceId, isRepeatableCommunitySourceRoute, normalizeCommunitySource } from '../scripts/source-community-schema.mjs';
+import {
+  communityJobId,
+  communitySourceId,
+  createCommunityJobContributionEnvelope,
+  isRepeatableCommunitySourceRoute,
+  normalizeCommunityJob,
+  normalizeCommunitySource,
+  validateCommunityJobContributionEnvelope,
+  validateCommunityJobList,
+} from '../scripts/source-community-schema.mjs';
 
 const source = {
   name: 'Example Jobs',
@@ -11,6 +20,101 @@ const source = {
   roleFamilies: ['engineering'],
   requiresSession: false,
 };
+
+const job = {
+  url: 'https://jobs.ashbyhq.com/example/12345678-1234-4123-8123-123456789abc?utm_source=private#apply',
+  company: 'Example',
+  role: 'Senior Product Engineer',
+  applicationChannel: 'ashby',
+  discoverySource: 'job-board',
+};
+
+test('normalizes an applied job and derives its reusable provider without referral data', () => {
+  const normalized = normalizeCommunityJob(job);
+
+  assert.deepEqual(normalized, {
+    url: 'https://jobs.ashbyhq.com/example/12345678-1234-4123-8123-123456789abc',
+    company: 'Example',
+    role: 'Senior Product Engineer',
+    applicationChannel: 'ashby',
+    discoverySource: 'job-board',
+    providerUrl: 'https://jobs.ashbyhq.com/example',
+  });
+});
+
+test('accepts public job detail identifiers but rejects private, personal, and credential-bearing routes', () => {
+  const accepted = [
+    'https://job-boards.greenhouse.io/example/jobs/1234567',
+    'https://jobs.lever.co/example/12345678-1234-4123-8123-123456789abc',
+    'https://jobs.ashbyhq.com/example/12345678-1234-4123-8123-123456789abc',
+    'https://company.example/careers/senior-product-engineer',
+  ];
+  for (const url of accepted) assert.equal(normalizeCommunityJob({ ...job, url }).url, url);
+
+  const rejected = [
+    'http://localhost/jobs/123',
+    'https://linkedin.com/in/some-person',
+    'https://company.example/candidate/9876543210',
+    'https://company.example/referral/12345678-1234-4123-8123-123456789abc',
+    'https://candidate-14155550100.example.org/jobs/123',
+    'https://company.example/jobs/+1-415-555-0100',
+    'https://company.example/jobs/access-token=abcdefghijklmnop',
+    'https://user:password@company.example/jobs/123',
+  ];
+  for (const url of rejected) assert.throws(() => normalizeCommunityJob({ ...job, url }), /public HTTPS|personal|credential/i, url);
+});
+
+test('preserves only stable query job identifiers while removing referral data', async () => {
+  const first = normalizeCommunityJob({
+    ...job,
+    url: 'https://company.example/viewjob?jobId=111&utm_source=private&ref=candidate@example.com',
+  });
+  const second = normalizeCommunityJob({
+    ...job,
+    url: 'https://company.example/viewjob?jobId=222&utm_source=private',
+  });
+
+  assert.equal(first.url, 'https://company.example/viewjob?jobid=111');
+  assert.equal(second.url, 'https://company.example/viewjob?jobid=222');
+  assert.notEqual(await communityJobId(first), await communityJobId(second));
+  assert.equal(first.url.includes('candidate@example.com'), false);
+  assert.equal(normalizeCommunityJob({ ...job, url: 'https://boards.example/jobs?gh_jid=7654321&utm_campaign=secret' }).url, 'https://boards.example/jobs?gh_jid=7654321');
+});
+
+test('community job IDs deduplicate tracking variants and contribution envelopes validate strictly', async () => {
+  const first = await communityJobId(job);
+  const second = await communityJobId({ ...job, url: `${job.url.split('?')[0]}?ref=another#details` });
+  assert.equal(first, second);
+  assert.match(first, /^community-job-[0-9a-f]{16}$/);
+
+  const envelope = createCommunityJobContributionEnvelope({
+    installationId: '12345678-1234-4123-8123-123456789abc',
+    token: 'signed-token',
+    job,
+    skillVersion: '3.2.0',
+  });
+  assert.deepEqual(validateCommunityJobContributionEnvelope(envelope), envelope);
+  assert.throws(() => validateCommunityJobContributionEnvelope({ ...envelope, answers: { private: true } }), /Unknown community job contribution property/i);
+});
+
+test('validates paginated public community job responses without accepting extra data', async () => {
+  const jobId = await communityJobId(job);
+  const response = {
+    version: 1,
+    jobs: [{
+      jobId,
+      ...normalizeCommunityJob(job),
+      firstSeenAt: '2026-08-24T10:00:00.000Z',
+      lastSeenAt: '2026-08-24T11:00:00.000Z',
+      contributionCount: 2,
+    }],
+    nextCursor: 'opaque-cursor',
+  };
+
+  assert.deepEqual(validateCommunityJobList(response), response);
+  assert.throws(() => validateCommunityJobList({ ...response, installationId: 'private' }), /Unknown community job list property/i);
+  assert.throws(() => validateCommunityJobList({ ...response, jobs: [{ ...response.jobs[0], score: 90 }] }), /Unknown community job entry property/i);
+});
 
 test('rejects known ATS and network job-detail routes', () => {
   const detailUrls = [

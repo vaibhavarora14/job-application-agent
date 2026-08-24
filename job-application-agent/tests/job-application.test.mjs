@@ -108,6 +108,7 @@ test('scores a matching role from candidate preferences', () => {
   assert.equal(result.autoEligible, true);
   assert.equal(result.mustHaveCoverage, 83);
   assert.ok(result.score >= 80);
+  assert.equal(scoreJob({ ...matchingJob, discoverySourceId: 'community-abcdef1234567890' }, target).decision, 'review');
 });
 
 test('applies posting, eligibility, work-mode, seniority and evidence gates before auto-submit', () => {

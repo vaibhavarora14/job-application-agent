@@ -1,6 +1,9 @@
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const SOURCE_ID = /^community-[0-9a-f]{16}$/;
+const JOB_ID = /^community-job-[0-9a-f]{16}$/;
 export const SOURCE_KINDS = new Set(['direct-employer', 'professional-network', 'social-feed', 'startup-network', 'community-thread', 'job-board', 'curated-board', 'inbound', 'user-supplied']);
+export const COMMUNITY_JOB_CHANNELS = new Set(['linkedin', 'greenhouse', 'lever', 'ashby', 'workable', 'comeet', 'workday', 'rippling', 'smartrecruiters', 'google-form', 'company', 'email', 'other']);
+export const COMMUNITY_JOB_DISCOVERY_SOURCES = new Set(['direct-company', 'linkedin', 'x', 'yc', 'hacker-news', 'job-board', 'email', 'user-supplied', 'web-search', 'other']);
 
 function record(value, label) {
   if (!value || Array.isArray(value) || typeof value !== 'object') throw new Error(`${label} must be an object.`);
@@ -18,6 +21,10 @@ function containsIdentityLike(value) {
     || /\+?\p{Nd}[\p{Nd}\s().-]{7,}/u.test(normalized);
 }
 
+function containsEmailLike(value) {
+  return /[^\s/@]+@(?:[^\s./@]+\.)+[^\s./@]+/u.test(value.normalize('NFKC'));
+}
+
 function terms(value, label) {
   if (!Array.isArray(value) || value.length === 0 || value.length > 12) throw new Error(`${label} must be a non-empty array with at most 12 values.`);
   const normalized = value.map((item, index) => boundedString(item, `${label}[${index}]`, 40).toLowerCase());
@@ -33,7 +40,7 @@ function looksPersonal(url) {
 
 function looksIdentityPath(pathname) {
   const segments = pathname.split('/').filter(Boolean).map((segment) => segment.toLowerCase());
-  const namespaces = new Set(['user', 'users', 'profile', 'profiles', 'member', 'members', 'author', 'authors', 'person', 'people']);
+  const namespaces = new Set(['user', 'users', 'profile', 'profiles', 'member', 'members', 'author', 'authors', 'person', 'people', 'candidate', 'candidates', 'referral', 'referrals', 'referrer', 'referrers']);
   return segments.some((segment, index) => namespaces.has(segment) && index < segments.length - 1);
 }
 
@@ -69,6 +76,139 @@ function isPublicHostname(hostname) {
 
 function hostnameMatches(hostname, suffix) {
   return hostname === suffix || hostname.endsWith(`.${suffix}`);
+}
+
+function publicJobLabel(value, label, max) {
+  const result = boundedString(value, label, max);
+  if (containsIdentityLike(result) || /https?:\/\//i.test(result) || /[\x00-\x1f\x7f]/.test(result)) throw new Error(`${label} must not contain identity-like content.`);
+  return result;
+}
+
+function explicitCredentialPath(pathname) {
+  return pathname.split('/').filter(Boolean).some((segment) => {
+    const normalized = segment.normalize('NFKC');
+    return /^[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}$/.test(normalized)
+      || /^(?:access[-_]?token|api[-_]?key|auth(?:orization)?|bearer|client[-_]?secret|password|secret|token)(?:[=:.]|\s+)(?:bearer\s+)?[A-Za-z0-9._~+/=-]{8,}$/i.test(normalized)
+      || /^(?:cfat_|github_pat_|gh[pousr]_|[spr]k_(?:live|test)_|xox[baprs]-)[A-Za-z0-9_-]{8,}$/i.test(normalized);
+  });
+}
+
+function containsPhoneLikeLocation(hostname, pathname) {
+  if (containsIdentityLike(hostname)) return true;
+  return pathname.split('/').filter(Boolean).some((segment) => {
+    const normalized = segment.normalize('NFKC');
+    if (/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(normalized)) return false;
+    const digits = normalized.match(/\p{Nd}/gu)?.length ?? 0;
+    const separators = normalized.match(/[\s().-]/gu)?.length ?? 0;
+    return digits >= 8 && (/\+\p{Nd}/u.test(normalized) || separators >= 2);
+  });
+}
+
+const STABLE_JOB_QUERY_KEYS = new Set([
+  'gh_jid', 'jk', 'job', 'job_id', 'jobid', 'req', 'req_id', 'reqid',
+  'requisition', 'requisition_id', 'requisitionid',
+]);
+
+function stableJobQuery(searchParams) {
+  const identifiers = new Map();
+  for (const [rawKey, rawValue] of searchParams) {
+    const key = rawKey.toLowerCase();
+    if (!STABLE_JOB_QUERY_KEYS.has(key)) continue;
+    const value = rawValue.normalize('NFKC').trim();
+    if (!/^[A-Za-z0-9._~-]{1,128}$/.test(value)) continue;
+    if (identifiers.has(key) && identifiers.get(key) !== value) throw new Error(`community job.url contains conflicting ${key} identifiers.`);
+    identifiers.set(key, value);
+  }
+  return [...identifiers].sort(([left], [right]) => left.localeCompare(right));
+}
+
+function providerUrl(url) {
+  const hostname = url.hostname.toLowerCase();
+  const segments = url.pathname.split('/').filter(Boolean);
+  if (hostnameMatches(hostname, 'greenhouse.io') && segments[0]) return `${url.origin}/${segments[0]}`;
+  if (['jobs.lever.co', 'jobs.ashbyhq.com', 'apply.workable.com', 'jobs.smartrecruiters.com'].includes(hostname) && segments[0]) return `${url.origin}/${segments[0]}`;
+  if (hostnameMatches(hostname, 'linkedin.com')) return `${url.origin}/jobs`;
+  return url.origin;
+}
+
+export function normalizeCommunityJob(input) {
+  const value = record(input, 'community job');
+  const allowed = new Set(['url', 'company', 'role', 'applicationChannel', 'discoverySource', 'providerUrl']);
+  for (const key of Object.keys(value)) if (!allowed.has(key)) throw new Error(`Unknown community job property: ${key}.`);
+  const url = new URL(boundedString(value.url, 'community job.url', 2048));
+  if (url.protocol !== 'https:' || url.username || url.password) throw new Error('community job.url must be a public HTTPS URL.');
+  url.hostname = url.hostname.replace(/\.+$/, '').toLowerCase();
+  if (!isPublicHostname(url.hostname)) throw new Error('community job.url must use a public HTTPS hostname.');
+  const pathname = decodedPathname(url.pathname).normalize('NFKC');
+  url.pathname = pathname;
+  if (containsEmailLike(pathname) || containsPhoneLikeLocation(url.hostname, pathname) || looksIdentityPath(pathname) || looksPersonal(url)) throw new Error('community job.url must not be a personal URL.');
+  if (explicitCredentialPath(pathname)) throw new Error('community job.url must not contain credential-like path segments.');
+  const identifiers = stableJobQuery(url.searchParams);
+  url.pathname = pathname.replace(/\/+$/, '') || '/';
+  url.search = '';
+  for (const [key, identifier] of identifiers) url.searchParams.append(key, identifier);
+  url.hash = '';
+  const applicationChannel = boundedString(value.applicationChannel, 'community job.applicationChannel', 40).toLowerCase();
+  if (!COMMUNITY_JOB_CHANNELS.has(applicationChannel)) throw new Error('community job.applicationChannel is invalid.');
+  const discoverySource = value.discoverySource == null ? null : boundedString(value.discoverySource, 'community job.discoverySource', 40).toLowerCase();
+  if (discoverySource != null && !COMMUNITY_JOB_DISCOVERY_SOURCES.has(discoverySource)) throw new Error('community job.discoverySource is invalid.');
+  const derivedProviderUrl = providerUrl(url);
+  if (value.providerUrl != null && value.providerUrl !== derivedProviderUrl) throw new Error('community job.providerUrl must match the derived provider URL.');
+  return {
+    url: url.toString().replace(/\/+$/, ''),
+    company: publicJobLabel(value.company, 'community job.company', 160),
+    role: publicJobLabel(value.role, 'community job.role', 200),
+    applicationChannel,
+    ...(discoverySource == null ? {} : { discoverySource }),
+    providerUrl: derivedProviderUrl,
+  };
+}
+
+export async function communityJobId(job) {
+  const normalized = normalizeCommunityJob(job);
+  const digest = new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(normalized.url)));
+  return `community-job-${[...digest].map((value) => value.toString(16).padStart(2, '0')).join('').slice(0, 16)}`;
+}
+
+export function createCommunityJobContributionEnvelope({ installationId, token, job, skillVersion }) {
+  return validateCommunityJobContributionEnvelope({ schemaVersion: 1, skillVersion, installationId, token, job });
+}
+
+export function validateCommunityJobContributionEnvelope(input) {
+  const value = record(input, 'community job contribution');
+  const allowed = new Set(['schemaVersion', 'skillVersion', 'installationId', 'token', 'job']);
+  for (const key of Object.keys(value)) if (!allowed.has(key)) throw new Error(`Unknown community job contribution property: ${key}.`);
+  if (value.schemaVersion !== 1) throw new Error('Unsupported community job contribution schema version.');
+  const installationId = boundedString(value.installationId, 'community job contribution.installationId', 36);
+  if (!UUID.test(installationId)) throw new Error('community job contribution.installationId is invalid.');
+  return {
+    schemaVersion: 1,
+    skillVersion: boundedString(value.skillVersion, 'community job contribution.skillVersion', 40),
+    installationId,
+    token: boundedString(value.token, 'community job contribution.token', 2048),
+    job: normalizeCommunityJob(value.job),
+  };
+}
+
+export function validateCommunityJobList(input) {
+  const value = record(input, 'community job list');
+  const allowed = new Set(['version', 'jobs', 'nextCursor']);
+  for (const key of Object.keys(value)) if (!allowed.has(key)) throw new Error(`Unknown community job list property: ${key}.`);
+  if (value.version !== 1 || !Array.isArray(value.jobs) || value.jobs.length > 100) throw new Error('Invalid community job list.');
+  if (value.nextCursor != null && (typeof value.nextCursor !== 'string' || !value.nextCursor || value.nextCursor.length > 1024)) throw new Error('community job list.nextCursor is invalid.');
+  const jobs = value.jobs.map((entry) => {
+    const job = record(entry, 'community job entry');
+    const entryAllowed = new Set(['jobId', 'url', 'company', 'role', 'applicationChannel', 'discoverySource', 'providerUrl', 'firstSeenAt', 'lastSeenAt', 'contributionCount']);
+    for (const key of Object.keys(job)) if (!entryAllowed.has(key)) throw new Error(`Unknown community job entry property: ${key}.`);
+    if (!JOB_ID.test(job.jobId)) throw new Error('community job entry.jobId is invalid.');
+    if (!Number.isSafeInteger(job.contributionCount) || job.contributionCount < 1 || job.contributionCount > 1_000_000_000) throw new Error('community job entry.contributionCount is invalid.');
+    for (const field of ['firstSeenAt', 'lastSeenAt']) {
+      if (typeof job[field] !== 'string' || Number.isNaN(Date.parse(job[field]))) throw new Error(`community job entry.${field} must be an ISO date.`);
+    }
+    const normalized = normalizeCommunityJob(Object.fromEntries(['url', 'company', 'role', 'applicationChannel', 'discoverySource', 'providerUrl'].filter((key) => job[key] != null).map((key) => [key, job[key]])));
+    return { jobId: job.jobId, ...normalized, firstSeenAt: job.firstSeenAt, lastSeenAt: job.lastSeenAt, contributionCount: job.contributionCount };
+  });
+  return { version: 1, jobs, nextCursor: value.nextCursor ?? null };
 }
 
 export function isRepeatableCommunitySourceRoute(url) {

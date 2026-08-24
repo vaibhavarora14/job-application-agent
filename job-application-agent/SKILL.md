@@ -24,7 +24,7 @@ Use `scripts/job-application.mjs` for private state and deterministic checks. Re
 5. Use `review-each` for per-application approval. Use `routine-auto` only when the current request authorizes the destination or batch and every automatic-eligibility condition passes.
 6. When the candidate explicitly grants continuing autonomy, read [references/AUTONOMY.md](references/AUTONOMY.md) and persist it with `autonomy grant --stdin`. Do not repeat skill-level upload or submission approval prompts while the active grant and profile both use `routine-auto`.
 7. Obey browser and tool confirmation requirements regardless of the stored mode or autonomy grant.
-8. Disclose default-enabled structured anonymous analytics and the `telemetry disable` control. Disclose default-enabled anonymous community source sharing and the independent `sources sharing disable` control. The CLI also displays these disclosures before the first eligible transmission.
+8. Disclose default-enabled structured anonymous analytics and the `telemetry disable` control. Disclose default-enabled anonymous community sharing of confirmed public job links and repeatable discovery sources, plus the independent `sources sharing disable` control. The CLI also displays these disclosures before the first eligible transmission.
 
 Never store passwords, MFA codes, government IDs, demographic data, CAPTCHA answers, browser session data, or inferred candidate facts.
 
@@ -32,8 +32,8 @@ Never store passwords, MFA codes, government IDs, demographic data, CAPTCHA answ
 
 Read [references/SOURCES.md](references/SOURCES.md) before the first discovery pass in a workflow.
 
-1. Run `sources list` (optionally filtered) and search the highest-signal packaged and maintainer-reviewed community sources. Resolve every lead to the direct employer or ATS page.
-2. Attribute the lead with coarse `discoverySource`, stable packaged-catalog `discoverySourceId` when known, and independent `applicationChannel`. Treat a one-off user link as `user-supplied`. Whenever a user or agent discovers a repeatable public board, feed, directory, or careers index that is not already listed, run `sources suggest --stdin`; the CLI contributes its sanitized metadata by default unless community sharing has been disabled.
+1. Run `sources jobs` for recently confirmed direct job links and `sources list` (optionally filtered) for the highest-signal packaged and maintainer-reviewed discovery sources. Resolve every lead to the direct employer or ATS page.
+2. Attribute the lead with coarse `discoverySource`, stable packaged or community `discoverySourceId` when known, and independent `applicationChannel`. Treat a one-off user link as `user-supplied`. Whenever a user or agent discovers a repeatable public board, feed, directory, or careers index that is not already listed, run `sources suggest --stdin`; the CLI contributes its sanitized metadata by default unless community sharing has been disabled.
 3. Verify the application channel immediately before assessment. Mark it `active`, `closed`, or `unclear`.
 4. Classify eligibility only after checking residence, location, work authorization, sponsorship, schedule, and employment type.
 5. Extract explicit seniority, experience range, work mode, locations, comparable published salary maximum, and all must-have requirements.
@@ -62,7 +62,7 @@ For batches, scheduled work, or resumable handoffs, read [references/RUNS.md](re
 8. Upload only the canonical resume unless the candidate explicitly provides another attachment. Resolve its absolute path with `resume path`, then follow [references/BROWSER_UPLOADS.md](references/BROWSER_UPLOADS.md). Use the browser's privileged path-based upload capability first; treat a visible native file picker as a fallback.
 9. Do not answer demographic questions. Stop for login/SSO/MFA, CAPTCHA, legal attestations, unclear authorization or compensation, sensitive identifiers, and judgment-only questions.
 10. Verify every required field, answer, attachment, and disclosure. Submit when the current request or active autonomy grant authorizes it.
-11. Record `submitted` only after visible success confirmation, using independent `discoverySource`, `discoverySourceId`, `applicationChannel`, and `roundId` values. Record no submission when confirmation is missing or ambiguous.
+11. Record `submitted` only after visible success confirmation, using independent `discoverySource`, `discoverySourceId`, `applicationChannel`, and `roundId` values. `ledger add` automatically shares the sanitized public job metadata and durably retries on relay failure; do not run a separate manual contribution. Record no submission when confirmation is missing or ambiguous.
 12. Record workflow telemetry with `telemetry record --stdin`. Let `ledger add` emit `application_submitted`; do not emit it twice. Pass job URLs and structured metrics only through documented transient fields.
 13. Queue hard stops with `attention add --stdin` and continue elsewhere. Record reproducible general-purpose failures with `friction record --stdin`; improvement work must never delay application work.
 
@@ -98,6 +98,7 @@ node scripts/job-application.mjs autonomy status|preview|revoke
 node scripts/job-application.mjs round start|complete --stdin
 node scripts/job-application.mjs round status [round-id]
 node scripts/job-application.mjs sources list [--stdin]
+node scripts/job-application.mjs sources jobs [--stdin]
 node scripts/job-application.mjs sources suggest --stdin
 node scripts/job-application.mjs sources pending
 node scripts/job-application.mjs sources sync
