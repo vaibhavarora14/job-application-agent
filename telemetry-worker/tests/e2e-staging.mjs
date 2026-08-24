@@ -75,7 +75,7 @@ assert.equal(rejected.status, 400);
 const stagingJobRunId = String(process.env.GITHUB_RUN_ID ?? 'local-contract')
   .replace(/\d/g, (digit) => String.fromCharCode('k'.charCodeAt(0) + Number(digit)));
 const stagingJob = {
-  url: `https://jobs.example.com/staging-fixture-community-job-${stagingJobRunId}?ref=private-staging-value#apply`,
+  url: `https://jobs.fixture.example/staging-fixture-community-job-${stagingJobRunId}?ref=private-staging-value#apply`,
   company: 'Staging Fixture Company',
   role: 'Community Job Contract Engineer',
   applicationChannel: 'company',
@@ -102,7 +102,7 @@ const publicJob = communityJobsBody.jobs.find((entry) => entry.jobId === contrib
 if (expectedJobStatus === 'published') {
   assert.ok(publicJob);
   assert.equal(publicJob.url, stagingJob.url.split('?')[0]);
-  assert.equal(publicJob.providerUrl, 'https://jobs.example.com');
+  assert.equal(publicJob.providerUrl, 'https://jobs.fixture.example');
   assert.equal('publicationStatus' in publicJob, false);
 } else {
   assert.equal(publicJob, undefined);

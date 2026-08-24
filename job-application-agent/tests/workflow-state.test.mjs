@@ -56,7 +56,7 @@ function submission(index, roundId, overrides = {}) {
     id: `round-role-${index}`,
     company: `Company ${index}`,
     role: 'Senior Product Engineer',
-    url: `https://jobs.example.com/${index}`,
+    url: `https://jobs.fixture.example/${index}`,
     employerJobId: `example:${index}`,
     source: 'ashby',
     discoverySource: 'linkedin',
