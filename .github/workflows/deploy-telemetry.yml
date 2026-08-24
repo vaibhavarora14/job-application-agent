@@ -39,6 +39,7 @@ jobs:
           curl --fail --silent --show-error "$TELEMETRY_PRODUCTION_URL/healthz"
           curl --fail --silent --show-error "$TELEMETRY_PRODUCTION_URL/api/public-stats"
           curl --fail --silent --show-error "$TELEMETRY_PRODUCTION_URL/v1/sources"
+          curl --fail --silent --show-error "$TELEMETRY_PRODUCTION_URL/v1/jobs?limit=1"
           curl --fail --silent --show-error "$TELEMETRY_PRODUCTION_URL/"
         env:
           TELEMETRY_PRODUCTION_URL: https://job-application-agent-telemetry.varora1406.workers.dev

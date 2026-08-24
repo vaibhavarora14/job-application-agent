@@ -1,12 +1,14 @@
 # Discovery source registry
 
-The packaged [`SOURCES.json`](SOURCES.json) catalog is the reviewed, versioned list of repeatable discovery surfaces available to every installation. A community registry supplements it with newly discovered sources contributed by users and agents. Both are distinct from application channels such as Greenhouse, Ashby, Lever, and Workday.
+The packaged [`SOURCES.json`](SOURCES.json) catalog is the reviewed, versioned list of repeatable discovery surfaces available to every installation. A community registry supplements it with maintainer-reviewed discovery sources and direct public job links from confirmed applications. Both remain distinct from application channels such as Greenhouse, Ashby, Lever, and Workday.
 
 ## Use the catalog
 
 ```text
 node scripts/job-application.mjs sources list
 node scripts/job-application.mjs sources list --stdin
+node scripts/job-application.mjs sources jobs
+echo '{"limit":25,"cursor":"opaque-cursor"}' | node scripts/job-application.mjs sources jobs --stdin
 ```
 
 Optional filter input:
@@ -20,24 +22,27 @@ Optional filter input:
 }
 ```
 
-`sources list` combines the packaged catalog with the live community registry. Public v1 community entries are always maintainer-approved and have `registryStatus: "community-reviewed"`. They include a `communitySourceId` and remain discovery leads, not endorsements or eligibility claims. Resolve every lead to the direct employer or ATS page and verify that posting immediately before assessment and submission. Respect `requiresSession`; do not upload a résumé or transmit profile data merely to unlock discovery unless the candidate has authorized that destination.
+`sources list` combines the packaged catalog with the live repeatable-source registry. Public v1 community entries are always maintainer-approved and have `registryStatus: "community-reviewed"`. Their `id` and `communitySourceId` are the same stable community ID and may be stored as `discoverySourceId`. `sources jobs` returns the newest confirmed public job links, 50 at a time by default, with an opaque `nextCursor` for pagination. Both are discovery leads, not endorsements or eligibility claims. Resolve every lead to the direct employer or ATS page and verify that posting immediately before assessment and submission.
 
 Store three independent attribution fields when available:
 
 - `discoverySource`: coarse compatible channel such as `linkedin`, `x`, `yc`, `job-board`, or `user-supplied`.
-- `discoverySourceId`: stable catalog ID such as `yc-work-at-a-startup` or `hacker-news-who-is-hiring`.
+- `discoverySourceId`: stable packaged or community ID such as `yc-work-at-a-startup` or `community-abcdef1234567890`.
 - `applicationChannel`: actual submission channel such as `greenhouse`, `ashby`, `lever`, `company`, or `email`.
 
 `discoverySourceId` remains local in v1 and is not transmitted by telemetry.
 
 ## Community sharing
 
-Community source sharing is enabled by default and independent of usage analytics. Whenever the user or agent discovers a repeatable public discovery surface—not a one-off company job, recruiter profile, referral link, or personal URL—queue and contribute it:
+Community sharing is enabled by default and independent of usage analytics. A confirmed `ledger add` immediately contributes the sanitized public job metadata. Existing confirmed ledger entries are the durable backfill/retry queue and are retried in bounded batches during later commands. No separate contribution command is required for applied jobs.
+
+Whenever the user or agent discovers a repeatable public discovery surface—not a recruiter profile, referral link, personal URL, or one-off job detail route—queue it for maintainer review:
 
 ```text
 node scripts/job-application.mjs sources suggest --stdin
 node scripts/job-application.mjs sources pending
 node scripts/job-application.mjs sources sync
+node scripts/job-application.mjs sources jobs
 node scripts/job-application.mjs sources sharing status
 node scripts/job-application.mjs sources sharing disable
 ```
@@ -55,12 +60,14 @@ Suggestion input:
 }
 ```
 
-The first contribution displays a disclosure and sends during that command. `disable` stops future sharing; `enable` resumes it; `reset` disables sharing and removes its anonymous relay credentials. The source-sharing preference and anonymous credential are stored in an owner-only local file.
+The first eligible contribution displays a disclosure and sends during that command. `disable` stops both job and discovery-source sharing; `enable` resumes and retries it; `reset` disables sharing and removes its anonymous relay credentials. The preference, anonymous credential, and delivery receipts are stored in owner-only local files.
+
+The applied-job contract contains only the canonical HTTPS job URL (query and fragment removed), company, role, application channel, optional coarse discovery source, and a server-derived provider URL. The server adds first/last-seen times and a unique anonymous-contributor count. Candidate identity, résumé, form answers, score, application timestamp, referral parameters, raw installation ID, and contributor hash are never public or stored with a community job. Direct job records become public immediately because they originate from confirmed applications; canonical URL deduplication prevents repeated rows.
 
 The client and relay use the same fail-closed source-route classifier. They remove query parameters and fragments; reject embedded credentials, credential-like opaque path segments, identity-like names and paths, personal profiles, local/private hosts, unknown fields, oversized payloads, and known detail routes from Workday, LinkedIn Jobs, Greenhouse, Lever, Ashby, Workable, and SmartRecruiters. Unknown domains are accepted only at the root or on explicit collection, directory, feed, careers, openings, or job-index routes. Only the source name, canonical public base URL, kind, regions, role families, and session requirement are shared.
 
 The raw anonymous installation ID authenticates and rate-limits a request but is never stored in the registry. The relay stores a source-scoped HMAC only to deduplicate contributions and help a maintainer prioritize review. One system contributes at most once to a canonical source, and `contributionCount` always means unique contributing systems—not people. It is never identity, trust, authority, or a condition for publication. The first valid contribution owns the canonical metadata; later contributions cannot rewrite it.
 
-If sharing is disabled or offline, suggestions stay in the owner-only local queue. `sources pending` reports only these locally unsent suggestions; it does not expose server moderation status. `sources sync` retries locally unsent suggestions, and `sources list` performs a best-effort retry before reading the community registry. A server-accepted contribution is considered delivered even while its source is pending publication. Network failure never blocks discovery or an application.
+If sharing is disabled or offline, repeatable-source suggestions remain in their owner-only queue and confirmed jobs remain pending in the canonical ledger until a minimal delivery receipt exists. `sources pending` reports both kinds of locally unsent work. `sources sync` retries both, and `sources list` performs a best-effort retry before reading the registry. A server-accepted source suggestion is delivered even while pending moderation. Network failure never blocks discovery or an application.
 
-Every accepted community contribution remains in the private pending queue until an owner explicitly approves it with the owner-only D1 moderation commands. Rejected sources remain hidden after later contributions and cannot republish automatically. Maintainer commands and metadata-correction procedures are documented in [`telemetry-worker/COMMUNITY_SOURCE_MODERATION.md`](https://github.com/vaibhavarora14/job-application-agent/blob/main/telemetry-worker/COMMUNITY_SOURCE_MODERATION.md). Never publish candidate identity, job history, prompts, referral parameters, private URLs, contributor hashes, or one-off jobs.
+Every accepted repeatable-source contribution remains in the private moderation queue until an owner explicitly approves it with owner-only D1 commands. Rejected sources remain hidden after later contributions and cannot republish automatically. Maintainer procedures are documented in [`telemetry-worker/COMMUNITY_SOURCE_MODERATION.md`](https://github.com/vaibhavarora14/job-application-agent/blob/main/telemetry-worker/COMMUNITY_SOURCE_MODERATION.md). This moderation rule does not delay sanitized confirmed-job links.

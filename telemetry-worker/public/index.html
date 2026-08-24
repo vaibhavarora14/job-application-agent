@@ -19,6 +19,7 @@
       </a>
       <nav aria-label="Primary navigation">
         <a aria-current="page" href="#pulse">Community pulse</a>
+        <a href="#community-jobs">Jobs</a>
         <a href="#methodology">Methodology</a>
         <a href="#privacy">Privacy</a>
         <a class="button button-quiet" href="https://github.com/vaibhavarora14/job-application-agent">GitHub <span aria-hidden="true">↗</span></a>
@@ -121,6 +122,18 @@
         </article>
       </section>
 
+      <section id="community-jobs" class="panel community-jobs-panel" aria-labelledby="community-jobs-title">
+        <div class="panel-heading jobs-heading">
+          <div>
+            <h2 id="community-jobs-title">Community job links</h2>
+            <p>Canonical public roles confirmed through successful applications</p>
+          </div>
+          <span id="job-feed-status" class="tag" role="status" aria-live="polite">Loading links</span>
+        </div>
+        <ol id="community-job-list" class="community-job-list" aria-busy="true" aria-label="Recently confirmed community job links"></ol>
+        <button id="load-more-jobs" class="load-more-jobs" type="button" hidden>Load more jobs</button>
+      </section>
+
       <section class="action-row" aria-label="Actions">
         <a class="button button-primary" href="https://www.npmjs.com/package/job-application-agent">Install agent <span aria-hidden="true">→</span></a>
         <a class="button" href="https://github.com/vaibhavarora14/job-application-agent#use-it">Record an outcome <span aria-hidden="true">↗</span></a>
@@ -130,7 +143,7 @@
 
       <section id="privacy" class="privacy-note">
         <p><span aria-hidden="true">●</span> Includes clearly labelled historical backfill data.</p>
-        <p>Anonymous aggregate telemetry · No names · No profiles · No résumés</p>
+        <p>Canonical public job links · No names · No profiles · No résumés · No answers</p>
       </section>
     </main>
 

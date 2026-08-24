@@ -72,6 +72,41 @@ const rejected = await fetch(`${endpoint}/v1/events`, {
 });
 assert.equal(rejected.status, 400);
 
+const stagingJob = {
+  url: 'https://jobs.example.com/staging-fixture-community-job?ref=private-staging-value#apply',
+  company: 'Staging Fixture Company',
+  role: 'Community Job Contract Engineer',
+  applicationChannel: 'company',
+  discoverySource: 'other',
+};
+const contributedJob = await fetch(`${endpoint}/v1/jobs`, {
+  method: 'POST',
+  headers: { 'content-type': 'application/json' },
+  body: JSON.stringify({ schemaVersion: 1, skillVersion: '3.2.0-staging', installationId: identity.installationId, token: identity.token, job: stagingJob }),
+});
+assert.equal(contributedJob.status, 202);
+const contributedJobBody = await contributedJob.json();
+assert.match(contributedJobBody.jobId, /^community-job-[0-9a-f]{16}$/);
+assert.ok(contributedJobBody.contributionCount >= 1);
+
+const communityJobs = await fetch(`${endpoint}/v1/jobs?limit=100`);
+assert.equal(communityJobs.status, 200);
+const communityJobsBody = await communityJobs.json();
+const publicJob = communityJobsBody.jobs.find((entry) => entry.jobId === contributedJobBody.jobId);
+assert.ok(publicJob);
+assert.equal(publicJob.url, 'https://jobs.example.com/staging-fixture-community-job');
+assert.equal(publicJob.providerUrl, 'https://jobs.example.com');
+assert.equal(JSON.stringify(publicJob).includes('private-staging-value'), false);
+assert.equal(JSON.stringify(publicJob).includes(identity.installationId), false);
+assert.equal('submittedAt' in publicJob, false);
+
+const rejectedJob = await fetch(`${endpoint}/v1/jobs`, {
+  method: 'POST',
+  headers: { 'content-type': 'application/json' },
+  body: JSON.stringify({ schemaVersion: 1, skillVersion: '3.2.0-staging', installationId: identity.installationId, token: identity.token, job: { ...stagingJob, answers: { private: true } } }),
+});
+assert.equal(rejectedJob.status, 400);
+
 const expectedSourceId = process.env.STAGING_EXPECT_SOURCE_ID;
 if (expectedSourceId) {
   assert.match(expectedSourceId, /^community-[0-9a-f]{16}$/);
