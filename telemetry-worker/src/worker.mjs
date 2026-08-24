@@ -1,5 +1,10 @@
 import { TELEMETRY_SCHEMA_VERSION, TELEMETRY_MAX_BYTES, validateTelemetryEnvelope } from '../../job-application-agent/scripts/telemetry-schema.mjs';
-import { communitySourceId, validateSourceContributionEnvelope } from '../../job-application-agent/scripts/source-community-schema.mjs';
+import {
+  communityJobId,
+  communitySourceId,
+  validateCommunityJobContributionEnvelope,
+  validateSourceContributionEnvelope,
+} from '../../job-application-agent/scripts/source-community-schema.mjs';
 import { publicStatsResponse, recordPublicAggregate } from './public-stats.mjs';
 
 const encoder = new TextEncoder();
@@ -15,6 +20,20 @@ function base64url(bytes) {
 function unbase64url(value) {
   const padded = value.replace(/-/g, '+').replace(/_/g, '/') + '='.repeat((4 - value.length % 4) % 4);
   return Uint8Array.from(atob(padded), (character) => character.charCodeAt(0));
+}
+
+function jobCursor(value) {
+  if (value == null) return null;
+  if (typeof value !== 'string' || !value || value.length > 1024) throw new Error('Invalid job cursor.');
+  let decoded;
+  try { decoded = JSON.parse(decoder.decode(unbase64url(value))); } catch { throw new Error('Invalid job cursor.'); }
+  if (!decoded || Array.isArray(decoded) || typeof decoded !== 'object' || Object.keys(decoded).sort().join(',') !== 'jobId,lastSeenAt,v') throw new Error('Invalid job cursor.');
+  if (decoded.v !== 1 || !/^community-job-[0-9a-f]{16}$/.test(decoded.jobId) || typeof decoded.lastSeenAt !== 'string' || Number.isNaN(Date.parse(decoded.lastSeenAt))) throw new Error('Invalid job cursor.');
+  return { jobId: decoded.jobId, lastSeenAt: decoded.lastSeenAt };
+}
+
+function encodeJobCursor(job) {
+  return base64url(encoder.encode(JSON.stringify({ v: 1, lastSeenAt: job.lastSeenAt, jobId: job.jobId })));
 }
 
 async function signingKey(secret) {
@@ -180,6 +199,62 @@ function sourceStore(env) {
   };
 }
 
+function jobStore(env) {
+  if (env.JOB_STORE) return env.JOB_STORE;
+  const database = env.PUBLIC_STATS_DB;
+  if (!database?.prepare) throw Object.assign(new Error('Job store unavailable.'), { status: 503 });
+  return {
+    async contribute(job, contributorHash) {
+      await database.batch([
+        database.prepare(`
+          INSERT INTO community_jobs (
+            job_id, canonical_url, company, role, application_channel, discovery_source,
+            provider_url, first_seen_at, last_seen_at, first_skill_version, last_skill_version
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          ON CONFLICT(job_id) DO UPDATE SET
+            last_seen_at = excluded.last_seen_at,
+            last_skill_version = excluded.last_skill_version
+        `).bind(job.jobId, job.url, job.company, job.role, job.applicationChannel, job.discoverySource ?? null,
+          job.providerUrl, job.firstSeenAt, job.lastSeenAt, job.skillVersion, job.skillVersion),
+        database.prepare(`
+          INSERT INTO community_job_contributions (
+            job_id, contributor_hash, first_seen_at, last_seen_at, skill_version
+          ) VALUES (?, ?, ?, ?, ?)
+          ON CONFLICT(job_id, contributor_hash) DO UPDATE SET
+            last_seen_at = excluded.last_seen_at,
+            skill_version = excluded.skill_version
+        `).bind(job.jobId, contributorHash, job.firstSeenAt, job.lastSeenAt, job.skillVersion),
+      ]);
+      const state = await database.prepare('SELECT COUNT(*) AS contribution_count FROM community_job_contributions WHERE job_id = ?').bind(job.jobId).first();
+      return { contributionCount: Number(state.contribution_count) };
+    },
+    async list({ limit, cursor }) {
+      const result = await database.prepare(`
+        SELECT jobs.job_id, jobs.canonical_url, jobs.company, jobs.role, jobs.application_channel,
+               jobs.discovery_source, jobs.provider_url, jobs.first_seen_at, jobs.last_seen_at,
+               (SELECT COUNT(*) FROM community_job_contributions WHERE job_id = jobs.job_id) AS contribution_count
+        FROM community_jobs AS jobs
+        WHERE (? IS NULL OR jobs.last_seen_at < ? OR (jobs.last_seen_at = ? AND jobs.job_id < ?))
+        ORDER BY jobs.last_seen_at DESC, jobs.job_id DESC
+        LIMIT ?
+      `).bind(cursor?.lastSeenAt ?? null, cursor?.lastSeenAt ?? null, cursor?.lastSeenAt ?? null, cursor?.jobId ?? null, limit + 1).all();
+      const jobs = (result.results ?? []).map((row) => ({
+        jobId: row.job_id,
+        url: row.canonical_url,
+        company: row.company,
+        role: row.role,
+        applicationChannel: row.application_channel,
+        ...(row.discovery_source == null ? {} : { discoverySource: row.discovery_source }),
+        providerUrl: row.provider_url,
+        firstSeenAt: row.first_seen_at,
+        lastSeenAt: row.last_seen_at,
+        contributionCount: Number(row.contribution_count),
+      }));
+      return { jobs: jobs.slice(0, limit), hasMore: jobs.length > limit };
+    },
+  };
+}
+
 async function sourceContributorHash(sourceId, installationId, secret) {
   const signature = await crypto.subtle.sign('HMAC', await signingKey(secret), encoder.encode(`${sourceId}\0${installationId}`));
   return [...new Uint8Array(signature)].map((value) => value.toString(16).padStart(2, '0')).join('');
@@ -207,6 +282,35 @@ async function listSources(_request, env) {
   return response({ version: 1, sources }, 200, 'no-store');
 }
 
+async function contributeJob(request, env) {
+  const input = await readJson(request, SOURCE_MAX_BYTES);
+  let envelope;
+  try { envelope = validateCommunityJobContributionEnvelope(input); } catch { return response({ error: 'invalid_job' }, 400); }
+  let identity;
+  try { identity = await verifyToken(envelope.token, env.SIGNING_SECRET); } catch (error) { return response({ error: /expired/i.test(error.message) ? 'token_expired' : 'invalid_token' }, 401); }
+  if (identity.installationId !== envelope.installationId) return response({ error: 'invalid_token' }, 401);
+  if (!await allowed(env.SOURCE_RATE_LIMITER, 'job-write')) return response({ error: 'rate_limited' }, 429);
+  if (!await allowed(env.SOURCE_RATE_LIMITER, envelope.installationId)) return response({ error: 'rate_limited' }, 429);
+  const jobId = await communityJobId(envelope.job);
+  const contributorHash = await sourceContributorHash(jobId, envelope.installationId, env.SIGNING_SECRET);
+  const seenAt = new Date().toISOString();
+  const state = await jobStore(env).contribute({ jobId, ...envelope.job, firstSeenAt: seenAt, lastSeenAt: seenAt, skillVersion: envelope.skillVersion }, contributorHash);
+  return response({ accepted: true, jobId, ...state }, 202);
+}
+
+async function listJobs(request, env) {
+  if (!await allowed(env.SOURCE_READ_RATE_LIMITER, 'jobs')) return response({ error: 'rate_limited' }, 429);
+  const url = new URL(request.url);
+  for (const key of url.searchParams.keys()) if (!['limit', 'cursor'].includes(key)) return response({ error: 'invalid_job_query' }, 400);
+  const rawLimit = url.searchParams.get('limit');
+  const limit = rawLimit == null ? 50 : Number(rawLimit);
+  if (!Number.isSafeInteger(limit) || limit < 1 || limit > 100) return response({ error: 'invalid_job_query' }, 400);
+  let cursor;
+  try { cursor = jobCursor(url.searchParams.get('cursor')); } catch { return response({ error: 'invalid_job_query' }, 400); }
+  const result = await jobStore(env).list({ limit, cursor });
+  return response({ version: 1, jobs: result.jobs, nextCursor: result.hasMore ? encodeJobCursor(result.jobs.at(-1)) : null }, 200, 'no-store');
+}
+
 export async function handleRequest(request, env) {
   const { pathname } = new URL(request.url);
   if (request.method === 'GET' && pathname === '/') return Response.redirect('https://stats.jobappagent.com/', 308);
@@ -216,6 +320,8 @@ export async function handleRequest(request, env) {
   if (request.method === 'POST' && pathname === '/v1/events') return events(request, env);
   if (request.method === 'POST' && pathname === '/v1/sources') return contributeSource(request, env);
   if (request.method === 'GET' && pathname === '/v1/sources') return listSources(request, env);
+  if (request.method === 'POST' && pathname === '/v1/jobs') return contributeJob(request, env);
+  if (request.method === 'GET' && pathname === '/v1/jobs') return listJobs(request, env);
   return response({ error: 'not_found' }, 404);
 }
 
