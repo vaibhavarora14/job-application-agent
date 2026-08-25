@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { CommunityProof } from "./components/CommunityProof";
 import { FoundingCheckout } from "./components/FoundingCheckout";
+import { LaunchCountdown } from "./components/LaunchCountdown";
 import { SiteFooter, SiteHeader } from "./components/SiteChrome";
 
 export const metadata: Metadata = {
@@ -14,20 +15,24 @@ const steps = [
   ["03", "Review the record", "Every decision, application, pause, and outcome stays visible so the search improves instead of becoming noise."],
 ] as const;
 
+const cloudLaunchAt = "2026-09-18T00:00:00+05:30";
+
 export default function Home() {
   return <>
     <SiteHeader />
     <main id="top">
       <header className="hero page-width">
         <div className="hero-copy">
-          <p className="eyebrow">The disciplined job-search agent, now moving to the cloud</p>
+          <p className="eyebrow">Launching September 18 · Pre-launch reservations open</p>
           <h1>Set the goal.<span>Keep the search moving.</span></h1>
           <p className="hero-summary">Job Application Agent finds direct roles, filters weak fits, submits truthful applications, pauses for real decisions, and keeps learning from outcomes—even while you are away.</p>
           <div className="hero-actions"><FoundingCheckout /><a className="button button-secondary" href="https://stats.jobappagent.com">See community momentum</a></div>
           <ul className="hero-proof"><li>Verified facts only</li><li>You set the boundaries</li><li>Every action recorded</li></ul>
         </div>
-        <CommunityProof />
+        <LaunchCountdown releaseAt={cloudLaunchAt} />
       </header>
+
+      <section className="community-section page-width" aria-label="Community momentum"><CommunityProof /></section>
 
       <section className="section page-width" id="process">
         <div className="section-heading"><p className="eyebrow">How it works</p><h2>One clear loop. No application theatre.</h2><p>The agent handles repetition without turning your career into a volume game.</p></div>
@@ -44,13 +49,14 @@ export default function Home() {
 
       <section className="section page-width" id="founding">
         <div className="founding-card">
-          <div><p className="eyebrow">Founding cloud access</p><h2>Reserve the agent that keeps running.</h2><p>Pay $49 now. Your 90 days begin only when cloud access is activated. If we have not activated you within 60 days of payment, you will be automatically refunded.</p></div>
-          <div className="offer-panel"><div><span>ONE-TIME</span><strong>$49</strong><small>90 days from activation</small></div><ul><li>Scheduled job discovery</li><li>Persistent, resumable runs</li><li>Decision notifications</li><li>Secure checkout by Dodo Payments</li></ul><FoundingCheckout /></div>
+          <div><p className="eyebrow">Pre-launch cloud access</p><h2>Reserve the agent that keeps running.</h2><p>Job Application Agent launches September 18, 2026. Pay $49 now. Your 90 days begin only when cloud access is activated. If we have not activated you within 60 days of payment, you will be automatically refunded.</p></div>
+          <div className="offer-panel"><div><span>PRE-LAUNCH PRICE</span><strong>$49</strong><small>90 days from activation · launches September 18</small></div><ul><li>Scheduled job discovery</li><li>Persistent, resumable runs</li><li>Decision notifications</li><li>Secure checkout by Dodo Payments</li></ul><FoundingCheckout /></div>
         </div>
       </section>
 
       <section className="section faq page-width">
         <div className="section-heading"><p className="eyebrow">Straight answers</p><h2>Before you reserve.</h2></div>
+        <details><summary>When does Job Application Agent launch?</summary><p>The cloud product is scheduled to launch on September 18, 2026. This countdown runs to the start of launch day in India.</p></details>
         <details><summary>Is this a mass-application bot?</summary><p>No. It filters aggressively and applies only inside rules you set. Unclear or sensitive decisions pause for you.</p></details>
         <details><summary>When do my 90 days begin?</summary><p>On the day your cloud access is activated—not on the payment date.</p></details>
         <details><summary>What if access is not ready?</summary><p>If we have not activated your access within 60 days of payment, the full $49 payment is automatically refunded.</p></details>
