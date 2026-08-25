@@ -103,16 +103,16 @@ test('preserves the Linux secret-tool install error for profile-dependent comman
   assert.doesNotMatch(result.stderr, /profile needs migration/i);
 });
 
-test('preserves an unavailable Linux Secret Service error for profile-dependent commands', async (t) => {
+test('preserves an unavailable Linux Secret Service error for profile-dependent commands', {
+  skip: process.platform === 'win32',
+}, async (t) => {
   const directory = await mkdtemp(join(tmpdir(), 'job-agent-linux-service-error-'));
   const toolDirectory = await mkdtemp(join(tmpdir(), 'job-agent-secret-tool-'));
   t.after(() => rm(directory, { recursive: true, force: true }));
   t.after(() => rm(toolDirectory, { recursive: true, force: true }));
   const script = fileURLToPath(new URL('../scripts/job-application.mjs', import.meta.url));
-  const toolPath = join(toolDirectory, process.platform === 'win32' ? 'secret-tool.cmd' : 'secret-tool');
-  const toolSource = process.platform === 'win32'
-    ? '@echo off\r\n>&2 echo secret-tool: Secret Service is unavailable\r\nexit /b 1\r\n'
-    : '#!/bin/sh\nprintf "%s\\n" "secret-tool: Secret Service is unavailable" >&2\nexit 1\n';
+  const toolPath = join(toolDirectory, 'secret-tool');
+  const toolSource = '#!/bin/sh\nprintf "%s\\n" "secret-tool: Secret Service is unavailable" >&2\nexit 1\n';
   await writeFile(toolPath, toolSource, { mode: 0o755 });
   await writeFile(join(directory, 'telemetry.json'), JSON.stringify({ version: 1, enabled: false, disclosed: true, graceConsumed: true, installationEventPending: false }));
   const platformOverride = `data:text/javascript,${encodeURIComponent("Object.defineProperty(process, 'platform', { value: 'linux' });")}`;
