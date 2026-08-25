@@ -28,17 +28,17 @@ button, input { font: inherit; }
 .topbar strong { color: #85d8b8; font-weight: 600; }
 .site-nav { position: sticky; top: 0; z-index: 20; height: 4.75rem; border-bottom: 1px solid var(--line); background: rgb(247 249 252 / 94%); backdrop-filter: blur(.875rem); }
 .nav-inner { height: 100%; display: flex; align-items: center; justify-content: space-between; gap: 1.5rem; }
-.brand { display: flex; align-items: center; gap: .7rem; font-size: .9rem; font-weight: 750; text-decoration: none; }
+.brand { min-height: 2.75rem; display: flex; align-items: center; gap: .7rem; font-size: .9rem; font-weight: 750; text-decoration: none; }
 .brand-mark { width: 2rem; height: 2rem; border-radius: .55rem; display: grid; place-items: center; background: var(--brand); color: #fff; font: 600 .65rem var(--font-plex-mono), monospace; }
 .nav-links { display: flex; align-items: center; gap: 1.7rem; font-size: .875rem; }
-.nav-links > a { color: var(--text); text-decoration: none; }
+.nav-links > a { min-height: 2.75rem; display: inline-flex; align-items: center; color: var(--text); text-decoration: none; }
 .nav-links > a:hover { color: var(--brand); }
 
 .button { min-height: 3rem; padding: .85rem 1.2rem; border: 0; border-radius: .6rem; display: inline-flex; align-items: center; justify-content: center; gap: .5rem; background: var(--brand); color: #fff; font-size: .875rem; font-weight: 700; text-decoration: none; cursor: pointer; transition: background 180ms ease, transform 180ms ease; }
 .button:hover:not(:disabled) { background: var(--brand-hover); transform: translateY(-.1rem); }
 .button:disabled { cursor: wait; opacity: .72; }
 .button:focus-visible, a:focus-visible, summary:focus-visible { outline: 3px solid #2c9a6f; outline-offset: 3px; }
-.button-small { min-height: 2.5rem; padding: .65rem .95rem; font-size: .8rem; }
+.button-small { min-height: 2.75rem; padding: .65rem .95rem; font-size: .8rem; }
 .button-secondary { border: 1px solid var(--line); background: var(--surface); color: var(--ink); }
 .button-secondary:hover:not(:disabled) { background: var(--brand-soft); color: var(--brand); }
 .checkout-action { display: grid; gap: .55rem; }
@@ -86,7 +86,7 @@ button, input { font: inherit; }
 .community-proof { padding: 1.7rem; border: 1px solid var(--line); border-radius: 1.2rem; background: var(--surface); box-shadow: 0 1.6rem 4rem rgb(18 33 59 / 9%); }
 .proof-heading { display: flex; align-items: end; justify-content: space-between; gap: 1rem; padding-bottom: 1.4rem; border-bottom: 1px solid var(--line); }
 .proof-heading h2 { max-width: 22rem; margin: .55rem 0 0; font-size: clamp(1.65rem, 3vw, 2.3rem); line-height: 1.05; letter-spacing: -.04em; }
-.text-link { color: var(--brand); font-size: .8rem; font-weight: 700; text-decoration: none; white-space: nowrap; }
+.text-link { min-height: 2.75rem; display: inline-flex; align-items: center; color: var(--brand); font-size: .8rem; font-weight: 700; text-decoration: none; white-space: nowrap; }
 .metric-grid { margin-top: 1rem; display: grid; grid-template-columns: repeat(3, 1fr); gap: .7rem; }
 .metric-card { min-height: 9.5rem; padding: 1.15rem; border-radius: .8rem; display: flex; flex-direction: column; justify-content: space-between; background: var(--brand-soft); }
 .metric-card:nth-child(2) { background: var(--ink); color: #fff; }
@@ -208,7 +208,7 @@ button, input { font: inherit; }
 
 footer { padding: 2rem 0; border-top: 1px solid var(--line); background: var(--surface); color: var(--muted); font-size: .82rem; }
 footer .page-width { display: flex; justify-content: space-between; gap: 1rem; }
-footer a { margin-left: 1.25rem; color: var(--text); }
+footer a { min-width: 2.75rem; min-height: 2.75rem; margin-left: 1.25rem; padding-inline: .25rem; display: inline-flex; align-items: center; justify-content: center; color: var(--text); }
 
 @media (max-width: 64rem) {
   .nav-links > a { display: none; }
