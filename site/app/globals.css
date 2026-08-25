@@ -3,11 +3,12 @@
 :root {
   --ink: #173f35;
   --text: #486159;
-  --muted: #73867f;
+  --muted: #526b63;
   --background: #f2e9d8;
   --surface: #fffaf0;
   --line: #d8ccb7;
   --accent: #63b995;
+  --accent-text: #2f755f;
   --accent-hover: #4d9e7f;
   --accent-soft: #dfeee6;
   --green: #2f6f5b;
@@ -30,7 +31,7 @@ button, input { font: inherit; }
 .brand-mark { width: 2.25rem; height: 2.25rem; flex: 0 0 auto; border: 1px solid rgb(23 63 53 / 12%); border-radius: .7rem; background: url("/brand-mark.png") center / contain no-repeat; }
 .brand-lockup { display: grid; gap: .05rem; line-height: 1; }
 .brand-name { font-family: var(--font-display), serif; font-size: 1rem; font-weight: 700; letter-spacing: -.035em; }
-.brand-name > span { color: var(--accent); }
+.brand-name > span { color: var(--accent-text); }
 .brand-tagline { color: var(--muted); font: 500 .55rem/1.2 var(--font-mono), monospace; letter-spacing: .11em; text-transform: uppercase; }
 .nav-links { display: flex; align-items: center; gap: 1.7rem; font-size: .875rem; }
 .nav-links > a { min-height: 2.75rem; display: inline-flex; align-items: center; color: var(--text); text-decoration: none; }
@@ -49,7 +50,7 @@ button, input { font: inherit; }
 
 .hero { padding-block: 6.25rem 6.75rem; display: grid; grid-template-columns: minmax(0, .95fr) minmax(28rem, 1.05fr); gap: 5rem; align-items: center; }
 .hero h1 { margin: 1.25rem 0 1.65rem; font-family: var(--font-display), serif; font-size: clamp(3.45rem, 5.7vw, 5.15rem); font-weight: 400; line-height: .98; letter-spacing: -.055em; }
-.hero h1 span { display: block; color: var(--accent); font-style: italic; }
+.hero h1 span { display: block; color: var(--accent-text); font-style: italic; }
 .hero-summary { max-width: 37rem; margin: 0 0 1.8rem; color: var(--text); font-size: 1.12rem; line-height: 1.65; }
 .hero-actions { display: flex; flex-wrap: wrap; gap: .7rem; align-items: start; }
 .hero-proof { margin: 1.35rem 0 0; padding: 0; display: flex; flex-wrap: wrap; gap: .7rem 1.25rem; list-style: none; color: var(--muted); font: 500 .75rem/1.5 var(--font-mono), monospace; }
