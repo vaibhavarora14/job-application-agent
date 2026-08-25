@@ -49,7 +49,9 @@ test("server-renders the branded community dashboard", async () => {
   assert.match(html, /Aggregate product evidence/);
   assert.match(html, /See the work the agent is doing/);
   assert.match(html, /Current adoption and verified execution/);
-  assert.match(html, /Reported activity by day/);
+  assert.match(html, /Activity over time, with outcomes kept in context/);
+  assert.match(html, /Verified submissions by day/);
+  assert.match(html, /Where the work is concentrated/);
   assert.doesNotMatch(html, /Community job leads|Open job|maintainer-reviewed/i);
   assert.match(html, /Anonymous aggregate telemetry/);
   assert.doesNotMatch(html, /Install agent|Open source on GitHub/i);

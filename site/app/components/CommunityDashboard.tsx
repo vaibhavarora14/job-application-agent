@@ -2,9 +2,9 @@
 
 import { compactNumber, fullNumber, useCommunityStats } from "./useCommunityStats";
 
-function Leaderboard({ title, subtitle, entries, wide = false }: { title: string; subtitle: string; entries: Array<{ label: string; count: number }>; wide?: boolean }) {
+function Leaderboard({ title, subtitle, entries }: { title: string; subtitle: string; entries: Array<{ label: string; count: number }> }) {
   const maximum = Math.max(1, ...entries.map((entry) => entry.count));
-  return <article className={`dashboard-panel${wide ? " dashboard-panel-wide" : ""}`}>
+  return <article className="dashboard-panel">
     <div className="panel-heading"><div><h2>{title}</h2><p>{subtitle}</p></div><span className="tag">Aggregate</span></div>
     <div className="leaderboard">{entries.length ? entries.slice(0, 7).map((entry) => <div className="leaderboard-row" key={entry.label}>
       <span className="leaderboard-label">{entry.label.replaceAll("-", " ")}</span>
@@ -44,24 +44,39 @@ export function CommunityDashboard() {
       </div>
     </section>
 
-    <section className="dashboard-grid">
-      <article className="dashboard-panel activity-panel">
-        <div className="panel-heading"><div><h2>Reported activity by day</h2><p>Verified application success states across recent reporting days</p></div><span className="tag">Includes backfill</span></div>
-        <div className="activity-chart" role="img" aria-label="Verified applications by recent reporting day">
-          {recentDays.length ? recentDays.map((day) => <div className="activity-column" key={day.day} title={`${day.day}: ${day.submitted} verified applications`}>
-            <strong>{fullNumber.format(day.submitted)}</strong><progress className="activity-bar" max={maximum} value={day.submitted} aria-label={`${day.day}: ${day.submitted} verified applications`} /><small>{new Intl.DateTimeFormat("en", { month: "short", day: "numeric", timeZone: "UTC" }).format(new Date(`${day.day}T00:00:00Z`))}</small>
-          </div>) : <p className="empty-data">Waiting for verified activity.</p>}
-        </div>
-        <p className="backfill-note"><strong>Read the trend carefully.</strong> Totals include clearly labelled historical backfill, so individual spikes are not presented as organic daily growth.</p>
-      </article>
-      <article className="dashboard-panel outcome-panel">
-        <div className="panel-heading"><div><h2>Outcome coverage</h2><p>Early signal, not a placement claim</p></div><span className="tag">{outcomeCoverage}% reported</span></div>
-        <strong className="outcome-number">{fullNumber.format(outcomesReported)}</strong>
-        <p>known outcomes from {data ? fullNumber.format(data.metrics.applicationsSubmitted) : "—"} verified applications.</p>
-        <div className="outcome-list">{data?.breakdowns.outcomes.map((entry) => <span key={entry.label}><i />{fullNumber.format(entry.count)} {entry.label}</span>)}</div>
-      </article>
-      <Leaderboard title="Where applications land" subtitle="Verified submissions by ATS · last 90 days" entries={data?.breakdowns.ats ?? []} />
-      <Leaderboard title="Role levels in view" subtitle="Privacy-safe seniority segments · last 90 days" entries={data?.breakdowns.seniority ?? []} wide />
+    <section className="dashboard-section" aria-labelledby="execution-heading">
+      <div className="dashboard-section-heading">
+        <div><p className="eyebrow">Execution signal</p><h2 id="execution-heading">Activity over time, with outcomes kept in context.</h2></div>
+        <p>Trends show verified submissions by reporting day. Outcome coverage shows how much of that work has a reported result; it is not a placement rate.</p>
+      </div>
+      <div className="dashboard-grid dashboard-grid-execution">
+        <article className="dashboard-panel activity-panel">
+          <div className="panel-heading"><div><h3>Verified submissions by day</h3><p>Recent reporting days; historical backfill is labelled below</p></div><span className="tag">Includes backfill</span></div>
+          <div className={`activity-chart${recentDays.length ? "" : " activity-chart-empty"}`} role="img" aria-label="Verified applications by recent reporting day">
+            {recentDays.length ? recentDays.map((day) => <div className="activity-column" key={day.day} title={`${day.day}: ${day.submitted} verified applications`}>
+              <strong>{fullNumber.format(day.submitted)}</strong><progress className="activity-bar" max={maximum} value={day.submitted} aria-label={`${day.day}: ${day.submitted} verified applications`} /><small>{new Intl.DateTimeFormat("en", { month: "short", day: "numeric", timeZone: "UTC" }).format(new Date(`${day.day}T00:00:00Z`))}</small>
+            </div>) : <p className="empty-data">Waiting for verified activity.</p>}
+          </div>
+          <p className="backfill-note"><strong>Read the trend carefully.</strong> Totals include clearly labelled historical backfill, so individual spikes are not presented as organic daily growth.</p>
+        </article>
+        <article className="dashboard-panel outcome-panel">
+          <div className="panel-heading"><div><h3>Outcome coverage</h3><p>Early signal, not a placement claim</p></div><span className="tag">{outcomeCoverage}% reported</span></div>
+          <strong className="outcome-number">{fullNumber.format(outcomesReported)}</strong>
+          <p>known outcomes from {data ? fullNumber.format(data.metrics.applicationsSubmitted) : "—"} verified applications.</p>
+          <div className="outcome-list">{data?.breakdowns.outcomes.map((entry) => <span key={entry.label}><i />{fullNumber.format(entry.count)} {entry.label}</span>)}</div>
+        </article>
+      </div>
+    </section>
+
+    <section className="dashboard-section" aria-labelledby="coverage-heading">
+      <div className="dashboard-section-heading">
+        <div><p className="eyebrow">Application coverage</p><h2 id="coverage-heading">Where the work is concentrated.</h2></div>
+        <p>ATS and seniority segments describe the mix of verified submissions. Small segments stay grouped to preserve privacy.</p>
+      </div>
+      <div className="dashboard-grid dashboard-grid-coverage">
+        <Leaderboard title="Application destinations" subtitle="Verified submissions by ATS · last 90 days" entries={data?.breakdowns.ats ?? []} />
+        <Leaderboard title="Role levels assessed" subtitle="Privacy-safe seniority segments · last 90 days" entries={data?.breakdowns.seniority ?? []} />
+      </div>
     </section>
 
     <section id="methodology" className="methodology">
