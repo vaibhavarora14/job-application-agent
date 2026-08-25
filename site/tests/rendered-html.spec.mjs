@@ -52,6 +52,7 @@ test("server-renders the branded community dashboard", async () => {
   assert.match(html, /Activity over time, with outcomes kept in context/);
   assert.match(html, /Verified submissions by day/);
   assert.match(html, /Where the work is concentrated/);
+  assert.match(html, /Role levels discovered/);
   assert.match(html, /How the evidence is counted/);
   assert.doesNotMatch(html, /Community job leads|Open job|maintainer-reviewed/i);
   assert.match(html, /Anonymous aggregate telemetry/);

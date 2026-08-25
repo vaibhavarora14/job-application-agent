@@ -71,11 +71,11 @@ export function CommunityDashboard() {
     <section className="dashboard-section" aria-labelledby="coverage-heading">
       <div className="dashboard-section-heading">
         <div><p className="eyebrow">Application coverage</p><h2 id="coverage-heading">Where the work is concentrated.</h2></div>
-        <p>ATS and seniority segments describe the mix of verified submissions. Small segments stay grouped to preserve privacy.</p>
+        <p>ATS segments describe verified submission destinations. Seniority segments describe discovered roles. Small segments stay grouped to preserve privacy.</p>
       </div>
       <div className="dashboard-grid dashboard-grid-coverage">
         <Leaderboard title="Application destinations" subtitle="Verified submissions by ATS · last 90 days" entries={data?.breakdowns.ats ?? []} />
-        <Leaderboard title="Role levels assessed" subtitle="Privacy-safe seniority segments · last 90 days" entries={data?.breakdowns.seniority ?? []} />
+        <Leaderboard title="Role levels discovered" subtitle="Privacy-safe seniority segments · last 90 days" entries={data?.breakdowns.seniority ?? []} />
       </div>
     </section>
 
