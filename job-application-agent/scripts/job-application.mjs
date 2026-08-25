@@ -98,9 +98,9 @@ function telemetryStage(command) {
   return ({ search: 'discovery', assess: 'assessment', apply: 'submission', outcome: 'outcome', review: 'review', resume: 'resume', profile: 'contact', onboard: 'contact' })[command] ?? 'application';
 }
 
-function telemetryErrorCode(error) {
+export function telemetryErrorCode(error) {
   const message = String(error?.message ?? '');
-  if (/keychain|credential manager|dpapi|authentication|login/i.test(message)) return 'authentication_required';
+  if (/keychain|keyring|secret service|secret-tool|credential manager|dpapi|authentication|login/i.test(message)) return 'authentication_required';
   if (/network|fetch|http/i.test(message)) return 'network_failure';
   if (/invalid|must|required|expected|unsupported/i.test(message)) return 'invalid_input';
   return 'internal_error';
@@ -601,14 +601,14 @@ export function buildReview(entries, outcomeEntries = [], acknowledgements = [],
 
 function storedProfileRaw() {
   try { return object(JSON.parse(secretStore.readProfile()), 'profile'); } catch (error) {
-    if (/missing or unreadable|requires macOS or Windows|could not store|Windows profile storage/i.test(error.message)) throw error;
+    if (/missing or unreadable|could not read|could not store|Windows profile storage|not supported on this platform|secret-tool is not installed/i.test(error.message)) throw error;
     throw new Error('The stored profile is missing or unreadable. Run profile set again.');
   }
 }
 
 function storedProfile() {
   try { return validateProfile(storedProfileRaw()); } catch (error) {
-    if (/requires macOS or Windows/i.test(error.message)) throw error;
+    if (/Secret Service could not read|not supported on this platform|secret-tool is not installed/i.test(error.message)) throw error;
     throw new Error('The stored profile needs migration. Run profile check, then profile migrate --stdin.');
   }
 }
