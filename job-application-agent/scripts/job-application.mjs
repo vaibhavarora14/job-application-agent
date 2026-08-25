@@ -601,7 +601,7 @@ export function buildReview(entries, outcomeEntries = [], acknowledgements = [],
 
 function storedProfileRaw() {
   try { return object(JSON.parse(secretStore.readProfile()), 'profile'); } catch (error) {
-    if (/missing or unreadable|could not store|Windows profile storage|not supported on this platform/i.test(error.message)) throw error;
+    if (/missing or unreadable|could not store|Windows profile storage|not supported on this platform|secret-tool is not installed/i.test(error.message)) throw error;
     throw new Error('The stored profile is missing or unreadable. Run profile set again.');
   }
 }
