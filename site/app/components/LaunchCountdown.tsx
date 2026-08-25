@@ -24,10 +24,19 @@ export function LaunchCountdown({ releaseAt }: LaunchCountdownProps) {
   const [remaining, setRemaining] = useState<CountdownParts | null>(null);
 
   useEffect(() => {
-    const update = () => setRemaining(getCountdownParts(releaseAt));
-    update();
-    const interval = window.setInterval(update, 1_000);
-    return () => window.clearInterval(interval);
+    const initial = getCountdownParts(releaseAt);
+    const initialUpdate = window.setTimeout(() => setRemaining(initial), 0);
+    if (initial.complete) return () => window.clearTimeout(initialUpdate);
+
+    const interval = window.setInterval(() => {
+      const next = getCountdownParts(releaseAt);
+      setRemaining(next);
+      if (next.complete) window.clearInterval(interval);
+    }, 1_000);
+    return () => {
+      window.clearTimeout(initialUpdate);
+      window.clearInterval(interval);
+    };
   }, [releaseAt]);
 
   const complete = remaining?.complete ?? false;

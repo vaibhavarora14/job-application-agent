@@ -26,3 +26,7 @@ test("does not report launch complete during the final fractional second", () =>
 test("rejects an invalid launch schedule instead of displaying misleading time", () => {
   assert.throws(() => getCountdownParts("not-a-date", "2026-09-01T00:00:00Z"), /launch schedule/i);
 });
+
+test("rejects an invalid current time instead of displaying a misleading countdown", () => {
+  assert.throws(() => getCountdownParts("2026-09-18T00:00:00+05:30", "not-a-date"), /time reference/i);
+});
