@@ -601,14 +601,14 @@ export function buildReview(entries, outcomeEntries = [], acknowledgements = [],
 
 function storedProfileRaw() {
   try { return object(JSON.parse(secretStore.readProfile()), 'profile'); } catch (error) {
-    if (/missing or unreadable|requires macOS or Windows|could not store|Windows profile storage/i.test(error.message)) throw error;
+    if (/missing or unreadable|could not store|Windows profile storage|not supported on this platform/i.test(error.message)) throw error;
     throw new Error('The stored profile is missing or unreadable. Run profile set again.');
   }
 }
 
 function storedProfile() {
   try { return validateProfile(storedProfileRaw()); } catch (error) {
-    if (/requires macOS or Windows/i.test(error.message)) throw error;
+    if (/not supported on this platform/i.test(error.message)) throw error;
     throw new Error('The stored profile needs migration. Run profile check, then profile migrate --stdin.');
   }
 }

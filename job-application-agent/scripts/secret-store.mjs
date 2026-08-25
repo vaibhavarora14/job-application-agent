@@ -7,7 +7,7 @@ import { fileURLToPath } from 'node:url';
 export const PROFILE_ACCOUNT = 'profile';
 export const DEFAULT_SECRET_SERVICE = 'com.vaibhavarora.job-application-agent';
 export const LEGACY_SECRET_SERVICE = 'com.openai.codex.job-application-agent';
-export const LINUX_PROFILE_ERROR = 'Secure profile storage requires macOS or Windows.';
+export const UNSUPPORTED_PLATFORM_ERROR = 'Secure profile storage is not supported on this platform.';
 export const LINUX_STORE_REQUIRED_TOOL = 'secret-tool';
 export const WINDOWS_PROFILE_SCRIPT = fileURLToPath(new URL('./windows-profile-store.ps1', import.meta.url));
 
@@ -100,13 +100,18 @@ function createDarwinStore({ execFileSync: exec, service, legacyService, account
   };
 }
 
+function linuxToolMissing(error) {
+  return error?.code === 'ENOENT';
+}
+
 function linuxFind(exec, service, account) {
   try {
     return exec(LINUX_STORE_REQUIRED_TOOL, ['lookup', 'service', service, 'account', account], {
       encoding: 'utf8',
       stdio: ['ignore', 'pipe', 'pipe'],
     });
-  } catch {
+  } catch (error) {
+    if (linuxToolMissing(error)) throw new Error(`${LINUX_STORE_REQUIRED_TOOL} is not installed. Install libsecret-tools (e.g. sudo apt-get install libsecret-tools) to enable Linux profile storage.`);
     return null;
   }
 }
@@ -118,7 +123,8 @@ function linuxWrite(exec, service, account, raw) {
       encoding: 'utf8',
       stdio: ['pipe', 'pipe', 'pipe'],
     });
-  } catch {
+  } catch (error) {
+    if (linuxToolMissing(error)) throw new Error(`${LINUX_STORE_REQUIRED_TOOL} is not installed. Install libsecret-tools (e.g. sudo apt-get install libsecret-tools) to enable Linux profile storage.`);
     throw new Error('Secret Service could not store the profile. Unlock your keyring and retry; no profile data was logged.');
   }
 }
@@ -180,8 +186,8 @@ function createWin32Store({
 
 function unsupportedStore() {
   return {
-    readProfile() { throw new Error(LINUX_PROFILE_ERROR); },
-    writeProfile() { throw new Error(LINUX_PROFILE_ERROR); },
+    readProfile() { throw new Error(UNSUPPORTED_PLATFORM_ERROR); },
+    writeProfile() { throw new Error(UNSUPPORTED_PLATFORM_ERROR); },
   };
 }
 

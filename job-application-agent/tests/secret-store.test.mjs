@@ -8,7 +8,6 @@ import {
   createSecretStore,
   DEFAULT_SECRET_SERVICE,
   LEGACY_SECRET_SERVICE,
-  LINUX_PROFILE_ERROR,
   migrateLegacyStateDir,
   PROFILE_ACCOUNT,
   resolveStateDir,
@@ -152,5 +151,50 @@ test('linux store writes and reads the profile via Secret Service', () => {
   };
   const store = createSecretStore({ platform: 'linux', execFileSync: exec });
   store.writeProfile(JSON.stringify(sampleProfile));
+  assert.equal(store.readProfile(), JSON.stringify(sampleProfile));
+});
+
+test('linux store reports a clear error when secret-tool is not installed', () => {
+  const exec = () => { throw Object.assign(new Error('spawn secret-tool ENOENT'), { code: 'ENOENT' }); };
+  const store = createSecretStore({ platform: 'linux', execFileSync: exec });
+  assert.throws(() => store.writeProfile(JSON.stringify(sampleProfile)), /libsecret-tools/);
+  assert.throws(() => store.readProfile(), /libsecret-tools/);
+});
+
+test('linux store reports a clear error when keyring storage fails', () => {
+  const exec = (command, args) => {
+    assert.equal(command, 'secret-tool');
+    if (args[0] === 'lookup') throw new Error('not found');
+    throw new Error('keyring locked');
+  };
+  const store = createSecretStore({ platform: 'linux', execFileSync: exec });
+  assert.throws(() => store.writeProfile(JSON.stringify(sampleProfile)), /could not store the profile/);
+  assert.throws(() => store.readProfile(), /missing or unreadable/);
+});
+
+test('linux store keeps a prior profile readable when a later write fails', () => {
+  const secrets = new Map();
+  let failWrites = false;
+  const exec = (command, args, options) => {
+    assert.equal(command, 'secret-tool');
+    if (args[0] === 'lookup') {
+      const service = args[args.indexOf('service') + 1];
+      const account = args[args.indexOf('account') + 1];
+      if (!secrets.has(`${service}/${account}`)) throw new Error('not found');
+      return `${secrets.get(`${service}/${account}`)}\n`;
+    }
+    if (args[0] === 'store') {
+      if (failWrites) throw new Error('keyring locked');
+      const service = args[args.indexOf('service') + 1];
+      const account = args[args.indexOf('account') + 1];
+      secrets.set(`${service}/${account}`, options.input);
+      return '';
+    }
+    throw new Error(`unexpected secret-tool args: ${args.join(' ')}`);
+  };
+  const store = createSecretStore({ platform: 'linux', execFileSync: exec });
+  store.writeProfile(JSON.stringify(sampleProfile));
+  failWrites = true;
+  assert.throws(() => store.writeProfile(JSON.stringify({ ...sampleProfile, name: 'Overwrite' })), /could not store the profile/);
   assert.equal(store.readProfile(), JSON.stringify(sampleProfile));
 });
