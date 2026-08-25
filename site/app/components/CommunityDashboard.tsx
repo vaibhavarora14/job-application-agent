@@ -80,7 +80,7 @@ export function CommunityDashboard() {
     </section>
 
     <section id="methodology" className="methodology">
-      <div><p className="eyebrow">Methodology</p><h2>Proof without profiles.</h2></div>
+      <div><p className="eyebrow">Methodology</p><h2>How the evidence is counted.</h2></div>
       <div><p><strong>Active installation</strong> means an anonymous installation assessed a job or submitted an application during the last 30 days. It is not a verified individual-person count.</p><p><strong>Verified application</strong> means the employer or ATS showed a confirmed submission success state.</p><p>Segments with fewer than {data?.privacy.minimumSegmentCount ?? 3} observations are grouped into “other.”</p></div>
     </section>
     <p className="dashboard-updated">{data ? `Updated ${new Intl.DateTimeFormat("en", { dateStyle: "long", timeStyle: "short" }).format(new Date(data.generatedAt))}` : "Anonymous aggregate telemetry"}</p>
