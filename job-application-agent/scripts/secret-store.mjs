@@ -9,6 +9,7 @@ export const DEFAULT_SECRET_SERVICE = 'com.vaibhavarora.job-application-agent';
 export const LEGACY_SECRET_SERVICE = 'com.openai.codex.job-application-agent';
 export const UNSUPPORTED_PLATFORM_ERROR = 'Secure profile storage is not supported on this platform.';
 export const LINUX_STORE_REQUIRED_TOOL = 'secret-tool';
+export const LINUX_SECRET_MAX_BYTES = 8191;
 export const WINDOWS_PROFILE_SCRIPT = fileURLToPath(new URL('./windows-profile-store.ps1', import.meta.url));
 
 export function resolveSecretService(env = process.env) {
@@ -112,11 +113,17 @@ function linuxFind(exec, service, account) {
     });
   } catch (error) {
     if (linuxToolMissing(error)) throw new Error(`${LINUX_STORE_REQUIRED_TOOL} is not installed. Install libsecret-tools (e.g. sudo apt-get install libsecret-tools) to enable Linux profile storage.`);
+    if (String(error?.stderr ?? '').trim()) {
+      throw new Error('Secret Service could not read the profile. Start or unlock your keyring and retry; no profile data was logged.');
+    }
     return null;
   }
 }
 
 function linuxWrite(exec, service, account, raw) {
+  if (Buffer.byteLength(raw, 'utf8') > LINUX_SECRET_MAX_BYTES) {
+    throw new Error(`The profile is too large for Linux Secret Service storage. Keep it under ${LINUX_SECRET_MAX_BYTES + 1} UTF-8 bytes and retry; the stored profile was not changed.`);
+  }
   try {
     exec(LINUX_STORE_REQUIRED_TOOL, ['store', '--label=job-application-agent', 'service', service, 'account', account], {
       input: raw,

@@ -8,9 +8,11 @@ import {
   createSecretStore,
   DEFAULT_SECRET_SERVICE,
   LEGACY_SECRET_SERVICE,
+  LINUX_SECRET_MAX_BYTES,
   migrateLegacyStateDir,
   PROFILE_ACCOUNT,
   resolveStateDir,
+  UNSUPPORTED_PLATFORM_ERROR,
 } from '../scripts/secret-store.mjs';
 
 const sampleProfile = {
@@ -172,6 +174,45 @@ test('linux store reports a clear error when keyring storage fails', () => {
   assert.throws(() => store.readProfile(), /missing or unreadable/);
 });
 
+test('linux store treats a successful empty lookup as a missing profile', () => {
+  const store = createSecretStore({ platform: 'linux', execFileSync: () => '' });
+  assert.throws(() => store.readProfile(), /missing or unreadable/);
+});
+
+test('linux store rejects profiles that secret-tool would silently truncate', () => {
+  const stored = [];
+  const exec = (command, args, options) => {
+    assert.equal(command, 'secret-tool');
+    assert.equal(args[0], 'store');
+    stored.push(options.input);
+    return '';
+  };
+  const store = createSecretStore({ platform: 'linux', execFileSync: exec });
+
+  store.writeProfile('x'.repeat(LINUX_SECRET_MAX_BYTES));
+  assert.equal(stored[0].length, LINUX_SECRET_MAX_BYTES);
+  assert.throws(
+    () => store.writeProfile('x'.repeat(LINUX_SECRET_MAX_BYTES + 1)),
+    /too large for Linux Secret Service storage/,
+  );
+  assert.throws(
+    () => store.writeProfile('é'.repeat((LINUX_SECRET_MAX_BYTES + 1) / 2)),
+    /too large for Linux Secret Service storage/,
+  );
+  assert.equal(stored.length, 1);
+});
+
+test('linux store distinguishes an unavailable Secret Service from a missing profile', () => {
+  const exec = () => {
+    throw Object.assign(new Error('secret-tool exited with status 1'), {
+      stderr: 'secret-tool: Cannot autolaunch D-Bus without X11 $DISPLAY\n',
+    });
+  };
+  const store = createSecretStore({ platform: 'linux', execFileSync: exec });
+
+  assert.throws(() => store.readProfile(), /Secret Service could not read the profile/);
+});
+
 test('linux store keeps a prior profile readable when a later write fails', () => {
   const secrets = new Map();
   let failWrites = false;
@@ -197,4 +238,10 @@ test('linux store keeps a prior profile readable when a later write fails', () =
   failWrites = true;
   assert.throws(() => store.writeProfile(JSON.stringify({ ...sampleProfile, name: 'Overwrite' })), /could not store the profile/);
   assert.equal(store.readProfile(), JSON.stringify(sampleProfile));
+});
+
+test('unsupported platforms retain an explicit profile storage error', () => {
+  const store = createSecretStore({ platform: 'freebsd' });
+  assert.throws(() => store.readProfile(), { message: UNSUPPORTED_PLATFORM_ERROR });
+  assert.throws(() => store.writeProfile('{}'), { message: UNSUPPORTED_PLATFORM_ERROR });
 });

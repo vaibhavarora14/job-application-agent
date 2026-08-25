@@ -137,6 +137,18 @@ jobs:
       - run: npm ci
       - run: npm run check
       - run: npm test
+      - name: Install Linux Secret Service test dependencies
+        if: matrix.os == 'ubuntu-latest' && matrix.node == 20
+        run: sudo apt-get update && sudo apt-get install --yes dbus-x11 gnome-keyring libsecret-tools
+      - name: Test the real Linux Secret Service profile lifecycle
+        if: matrix.os == 'ubuntu-latest' && matrix.node == 20
+        shell: bash
+        run: |
+          dbus-run-session -- bash -euo pipefail -c '
+            eval "$(printf "\n" | gnome-keyring-daemon --unlock --components=secrets)"
+            export JOB_APPLICATION_AGENT_LINUX_SECRET_SERVICE_TEST=1
+            node --test job-application-agent/tests/linux-secret-service.integration.test.mjs
+          '
       - run: npm run privacy-audit
       - run: npm run smoke:package
       - run: npm run check:native-artifacts

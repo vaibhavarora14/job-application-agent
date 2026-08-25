@@ -6,7 +6,7 @@ import { join } from 'node:path';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
 
-import { buildReview, commandCategory, durationBucket, migrateProfile, profileStatus, scoreJob, telemetryJobAssessed, validateLedgerEntry, validateProfile, validateSubmissionTelemetry } from '../scripts/job-application.mjs';
+import { buildReview, commandCategory, durationBucket, migrateProfile, profileStatus, scoreJob, telemetryErrorCode, telemetryJobAssessed, validateLedgerEntry, validateProfile, validateSubmissionTelemetry } from '../scripts/job-application.mjs';
 
 const target = {
   name: 'Test Candidate',
@@ -56,9 +56,9 @@ function isolatedCliEnv(directory) {
   };
 }
 
-function runCli(script, args, input, env) {
+function runCli(script, args, input, env, runtimeArgs = []) {
   return new Promise((resolve) => {
-    const child = spawn(process.execPath, [script, ...args], { env, stdio: ['pipe', 'pipe', 'pipe'] });
+    const child = spawn(process.execPath, [...runtimeArgs, script, ...args], { env, stdio: ['pipe', 'pipe', 'pipe'] });
     let stdout = '';
     let stderr = '';
     child.stdout.on('data', (chunk) => { stdout += chunk; });
@@ -86,6 +86,43 @@ test('returns the canonical resume path for direct browser uploads', async (t) =
   const result = JSON.parse(execFileSync(process.execPath, [script, 'resume', 'path'], { env, encoding: 'utf8' }));
 
   assert.deepEqual(result, { path: resume });
+});
+
+test('preserves the Linux secret-tool install error for profile-dependent commands', async (t) => {
+  const directory = await mkdtemp(join(tmpdir(), 'job-agent-linux-profile-error-'));
+  t.after(() => rm(directory, { recursive: true, force: true }));
+  const script = fileURLToPath(new URL('../scripts/job-application.mjs', import.meta.url));
+  await writeFile(join(directory, 'telemetry.json'), JSON.stringify({ version: 1, enabled: false, disclosed: true, graceConsumed: true, installationEventPending: false }));
+  const platformOverride = `data:text/javascript,${encodeURIComponent("Object.defineProperty(process, 'platform', { value: 'linux' });")}`;
+  const env = { ...isolatedCliEnv(directory), PATH: '' };
+
+  const result = await runCli(script, ['profile', 'field', 'name'], undefined, env, ['--import', platformOverride]);
+
+  assert.equal(result.code, 1);
+  assert.match(result.stderr, /secret-tool is not installed/);
+  assert.doesNotMatch(result.stderr, /profile needs migration/i);
+});
+
+test('preserves an unavailable Linux Secret Service error for profile-dependent commands', async (t) => {
+  const directory = await mkdtemp(join(tmpdir(), 'job-agent-linux-service-error-'));
+  const toolDirectory = await mkdtemp(join(tmpdir(), 'job-agent-secret-tool-'));
+  t.after(() => rm(directory, { recursive: true, force: true }));
+  t.after(() => rm(toolDirectory, { recursive: true, force: true }));
+  const script = fileURLToPath(new URL('../scripts/job-application.mjs', import.meta.url));
+  const toolPath = join(toolDirectory, process.platform === 'win32' ? 'secret-tool.cmd' : 'secret-tool');
+  const toolSource = process.platform === 'win32'
+    ? '@echo off\r\n>&2 echo secret-tool: Secret Service is unavailable\r\nexit /b 1\r\n'
+    : '#!/bin/sh\nprintf "%s\\n" "secret-tool: Secret Service is unavailable" >&2\nexit 1\n';
+  await writeFile(toolPath, toolSource, { mode: 0o755 });
+  await writeFile(join(directory, 'telemetry.json'), JSON.stringify({ version: 1, enabled: false, disclosed: true, graceConsumed: true, installationEventPending: false }));
+  const platformOverride = `data:text/javascript,${encodeURIComponent("Object.defineProperty(process, 'platform', { value: 'linux' });")}`;
+  const env = { ...isolatedCliEnv(directory), PATH: toolDirectory };
+
+  const result = await runCli(script, ['profile', 'field', 'name'], undefined, env, ['--import', platformOverride]);
+
+  assert.equal(result.code, 1);
+  assert.match(result.stderr, /Secret Service could not read the profile/);
+  assert.doesNotMatch(result.stderr, /profile needs migration/i);
 });
 
 test('migrates a legacy profile without discarding identity or salary preference', () => {
@@ -428,6 +465,8 @@ test('maps commands and durations to bounded telemetry categories', () => {
   assert.equal(durationBucket(700), 'under-1s');
   assert.equal(durationBucket(70_000), '1-2m');
   assert.equal(durationBucket(2_000_000), '15m-plus');
+  assert.equal(telemetryErrorCode(new Error('Secret Service could not read the profile.')), 'authentication_required');
+  assert.equal(telemetryErrorCode(new Error('secret-tool is not installed.')), 'authentication_required');
 });
 
 test('builds a structured assessment event without description or candidate profile data', async () => {
