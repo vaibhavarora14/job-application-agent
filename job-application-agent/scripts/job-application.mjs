@@ -9,7 +9,7 @@ import { pathToFileURL } from 'node:url';
 
 import { createSecretStore, migrateLegacyStateDir, resolveStateDir } from './secret-store.mjs';
 import { SourceCommunityClient } from './source-community-client.mjs';
-import { normalizeCommunitySource } from './source-community-schema.mjs';
+import { normalizeCommunityJob, normalizeCommunitySource } from './source-community-schema.mjs';
 import { TelemetryClient } from './telemetry-client.mjs';
 import { jobIdentity } from './telemetry-schema.mjs';
 
@@ -37,6 +37,7 @@ const SOURCE_CATALOG_URL = new URL('../references/SOURCES.json', import.meta.url
 const SOURCE_CATALOG = JSON.parse(readFileSync(SOURCE_CATALOG_URL, 'utf8'));
 if (!Array.isArray(SOURCE_CATALOG)) throw new Error('The packaged source catalog is invalid.');
 const SOURCE_CATALOG_IDS = new Set(SOURCE_CATALOG.map((source) => sourceId(source.id, 'source catalog id')));
+const COMMUNITY_SOURCE_ID = /^community-[0-9a-f]{16}$/;
 const REQUIRED_PROFILE = ['name', 'email', 'phone', 'location', 'workAuthorization', 'roleFamilies', 'seniority', 'targetLocations', 'workModes', 'submissionMode', 'yearsExperience', 'autoSubmitMinScore', 'manualReviewMinScore', 'minMustHaveCoverage'];
 const STRING_PROFILE_FIELDS = new Set(['name', 'email', 'phone', 'location', 'workAuthorization', 'linkedin', 'github', 'portfolio', 'availability', 'currentCompensation', 'targetCompensation', 'submissionMode']);
 const ARRAY_PROFILE_FIELDS = new Set(['roleFamilies', 'seniority', 'skills', 'targetLocations', 'excludedLocations', 'workModes', 'industries', 'excludedCompanies']);
@@ -189,6 +190,12 @@ function sourceId(value, label) {
   return id;
 }
 
+function knownDiscoverySourceId(value, label) {
+  const id = sourceId(value, label);
+  if (!SOURCE_CATALOG_IDS.has(id) && !COMMUNITY_SOURCE_ID.test(id)) throw new Error(`${label} must match a packaged or community source ID.`);
+  return id;
+}
+
 function integer(value, label, min, max) {
   if (!Number.isInteger(value) || value < min || value > max) throw new Error(`${label} must be an integer from ${min} to ${max}.`);
   return value;
@@ -267,9 +274,7 @@ export function scoreJob(input, target) {
   const description = string(job.description, 'job.description', 40000);
   const source = string(job.source, 'job.source', 40).toLowerCase();
   const discoverySource = job.discoverySource == null ? null : string(job.discoverySource, 'job.discoverySource', 40).toLowerCase();
-  if (job.discoverySourceId != null && !SOURCE_CATALOG_IDS.has(sourceId(job.discoverySourceId, 'job.discoverySourceId'))) {
-    throw new Error('job.discoverySourceId must match an ID in the packaged source catalog.');
-  }
+  if (job.discoverySourceId != null) knownDiscoverySourceId(job.discoverySourceId, 'job.discoverySourceId');
   const applicationChannel = job.applicationChannel == null ? null : string(job.applicationChannel, 'job.applicationChannel', 40).toLowerCase();
   const eligibility = string(job.eligibility, 'job.eligibility', 40).toLowerCase();
   const postingStatus = string(job.postingStatus ?? 'unclear', 'job.postingStatus', 40).toLowerCase();
@@ -428,8 +433,7 @@ export function validateLedgerEntry(input) {
   if (entry.employerJobId != null) normalized.employerJobId = string(entry.employerJobId, 'entry.employerJobId', 300);
   if (entry.discoverySource != null) normalized.discoverySource = string(entry.discoverySource, 'entry.discoverySource', 40).toLowerCase();
   if (entry.discoverySourceId != null) {
-    normalized.discoverySourceId = sourceId(entry.discoverySourceId, 'entry.discoverySourceId');
-    if (!SOURCE_CATALOG_IDS.has(normalized.discoverySourceId)) throw new Error('entry.discoverySourceId must match an ID in the packaged source catalog.');
+    normalized.discoverySourceId = knownDiscoverySourceId(entry.discoverySourceId, 'entry.discoverySourceId');
   }
   if (entry.applicationChannel != null) normalized.applicationChannel = string(entry.applicationChannel, 'entry.applicationChannel', 40).toLowerCase();
   if (entry.roundId != null) normalized.roundId = string(entry.roundId, 'entry.roundId', 180);
@@ -642,7 +646,7 @@ async function sourceCatalog() {
   return SOURCE_CATALOG;
 }
 
-async function sourcesList(filtersInput = {}, communitySources = []) {
+export async function sourcesList(filtersInput = {}, communitySources = []) {
   const filters = object(filtersInput, 'source filters');
   const allowed = new Set(['regions', 'roleFamilies', 'kinds', 'requiresSession']);
   for (const key of Object.keys(filters)) if (!allowed.has(key)) throw new Error(`Unknown source filter: ${key}.`);
@@ -651,7 +655,7 @@ async function sourcesList(filtersInput = {}, communitySources = []) {
   const kinds = filters.kinds == null ? [] : terms(stringArray(filters.kinds, 'source filters.kinds'));
   if (filters.requiresSession != null && typeof filters.requiresSession !== 'boolean') throw new Error('source filters.requiresSession must be a Boolean.');
   const community = communitySources.map((source) => ({
-    id: null,
+    id: source.sourceId,
     communitySourceId: source.sourceId,
     name: source.name,
     kind: source.kind,
@@ -709,6 +713,10 @@ async function sourcesPending() {
   return { scope: 'local-unsent', count: pending.length, suggestions: pending };
 }
 
+async function communityPendingStatus() {
+  return { ...await sourcesPending(), communityJobs: await communityJobsPending() };
+}
+
 export async function sourcesSync(community, limit = 10) {
   const pending = (await sourcesPending()).suggestions.slice(0, limit);
   let shared = 0;
@@ -721,6 +729,69 @@ export async function sourcesSync(community, limit = 10) {
     else if (contribution.reason === 'disabled' || contribution.reason === 'unavailable') break;
   }
   return { attempted, shared, remaining: (await sourcesPending()).count };
+}
+
+function shareableLedgerJob(entry) {
+  return normalizeCommunityJob({
+    url: entry.url,
+    company: entry.company,
+    role: entry.role,
+    applicationChannel: entry.applicationChannel ?? entry.source,
+    ...(entry.discoverySource == null ? {} : { discoverySource: entry.discoverySource }),
+  });
+}
+
+async function markCommunityJobShared(applicationId, contribution) {
+  if (!contribution.shared) return;
+  await appendPrivateEvent('community-job-contribution-receipts', {
+    applicationId,
+    jobId: contribution.jobId,
+    sharedAt: new Date().toISOString(),
+  });
+}
+
+export async function communityJobsPending() {
+  const directory = await ensureStateDir();
+  const applications = await jsonLines(join(directory, 'applications.ndjson'));
+  const receipts = await jsonLines(join(directory, 'community-job-contribution-receipts.ndjson'));
+  const shared = new Set(receipts.map((receipt) => receipt.applicationId));
+  const pending = [];
+  let unshareable = 0;
+  for (const entry of applications) {
+    if (shared.has(entry.id)) continue;
+    try {
+      pending.push({ applicationId: entry.id, job: shareableLedgerJob(entry) });
+    } catch {
+      unshareable += 1;
+    }
+  }
+  return { count: pending.length, unshareable, applications: pending };
+}
+
+export async function communityJobsSync(community, { limit = 10, applicationIds = null } = {}) {
+  if (!Number.isSafeInteger(limit) || limit < 1 || limit > 100) throw new Error('Community job sync limit must be between 1 and 100.');
+  const selected = applicationIds == null ? null : new Set(applicationIds);
+  const state = await communityJobsPending();
+  const pending = state.applications.filter((entry) => selected == null || selected.has(entry.applicationId)).slice(0, limit);
+  let attempted = 0;
+  let shared = 0;
+  for (const entry of pending) {
+    attempted += 1;
+    const contribution = await community.contributeJob(entry.job);
+    await markCommunityJobShared(entry.applicationId, contribution);
+    if (contribution.shared) shared += 1;
+    else if (contribution.reason === 'disabled' || contribution.reason === 'unavailable' || contribution.reason === 'grace') break;
+  }
+  const remaining = await communityJobsPending();
+  return { attempted, shared, remaining: remaining.count, unshareable: remaining.unshareable };
+}
+
+async function syncAllCommunityData(community) {
+  const sources = await sourcesSync(community);
+  return {
+    ...sources,
+    communityJobs: await communityJobsSync(community),
+  };
 }
 
 async function withStateLock(name, action) {
@@ -1268,6 +1339,7 @@ async function executeCommand([area, action, value], telemetry, session, communi
     const telemetryDetails = validateSubmissionTelemetry(input.telemetry);
     const entry = validateLedgerEntry(input);
     result = await ledgerAdd(entry, input.duplicateOverride, input.companyReapplyOverride);
+    result.communityJob = await communityJobsSync(community, { limit: 1, applicationIds: [entry.id] });
     domainEvents.push(await telemetryApplicationSubmitted(entry, telemetryDetails));
   } else if (area === 'ledger' && action === 'outcome' && value === '--stdin') {
     const outcome = await ledgerOutcome(await jsonStdin());
@@ -1289,23 +1361,28 @@ async function executeCommand([area, action, value], telemetry, session, communi
     result = await roundComplete(await jsonStdin());
     domainEvents.push(roundCompletedTelemetry(result));
   } else if (area === 'sources' && action === 'list' && value == null) {
-    await sourcesSync(community);
+    await syncAllCommunityData(community);
     result = await sourcesList({}, await community.list());
   } else if (area === 'sources' && action === 'list' && value === '--stdin') {
     const filters = await jsonStdin();
-    await sourcesSync(community);
+    await syncAllCommunityData(community);
     result = await sourcesList(filters, await community.list());
   }
   else if (area === 'sources' && action === 'suggest' && value === '--stdin') result = await sourcesSuggest(await jsonStdin(), community);
-  else if (area === 'sources' && action === 'pending' && value == null) result = await sourcesPending();
-  else if (area === 'sources' && action === 'sync' && value == null) result = await sourcesSync(community);
-  else if (area === 'sources' && action === 'sharing' && ['status', 'enable', 'disable', 'reset'].includes(value)) result = await community.configure(value);
+  else if (area === 'sources' && action === 'pending' && value == null) result = await communityPendingStatus();
+  else if (area === 'sources' && action === 'sync' && value == null) result = await syncAllCommunityData(community);
+  else if (area === 'sources' && action === 'jobs' && value == null) result = await community.listJobs();
+  else if (area === 'sources' && action === 'jobs' && value === '--stdin') result = await community.listJobs(await jsonStdin());
+  else if (area === 'sources' && action === 'sharing' && ['status', 'enable', 'disable', 'reset'].includes(value)) {
+    result = await community.configure(value);
+    if (value === 'enable') result.communityJobs = await communityJobsSync(community);
+  }
   else if (area === 'attention' && action === 'add' && value === '--stdin') result = await attentionAdd(await jsonStdin());
   else if (area === 'attention' && action === 'list' && value == null) result = await attentionList();
   else if (area === 'attention' && action === 'resolve' && value === '--stdin') result = await attentionResolve(await jsonStdin());
   else if (area === 'friction' && action === 'record' && value === '--stdin') result = await frictionRecord(await jsonStdin());
   else if (area === 'friction' && action === 'list' && value == null) result = await frictionList();
-  else throw new Error('Usage: profile set|migrate --stdin; profile check|field <name>; resume import <url-or-pdf>|path; score --stdin; ledger check|add|outcome|review-ack --stdin; ledger review; autonomy grant --stdin|status|preview|revoke; round start|complete --stdin|status [round-id]; sources list [--stdin]|suggest --stdin|pending|sync|sharing status|enable|disable|reset; attention add|resolve --stdin|list; friction record --stdin|list; telemetry status|enable|disable|reset|preview --stdin|record --stdin');
+  else throw new Error('Usage: profile set|migrate --stdin; profile check|field <name>; resume import <url-or-pdf>|path; score --stdin; ledger check|add|outcome|review-ack --stdin; ledger review; autonomy grant --stdin|status|preview|revoke; round start|complete --stdin|status [round-id]; sources list [--stdin]|jobs [--stdin]|suggest --stdin|pending|sync|sharing status|enable|disable|reset; attention add|resolve --stdin|list; friction record --stdin|list; telemetry status|enable|disable|reset|preview --stdin|record --stdin');
   for (const event of domainEvents) await telemetry.record(event, session);
   return result;
 }
@@ -1345,6 +1422,7 @@ async function main(args) {
   const started = Date.now();
   try {
     const result = await executeCommand(args, telemetry, session, community);
+    if (!(area === 'sources' || (area === 'ledger' && action === 'add'))) await communityJobsSync(community).catch(() => null);
     await telemetry.record({ event: 'command_completed', properties: { command, result: 'success', durationBucket: durationBucket(Date.now() - started) } }, session);
     return print(result);
   } catch (error) {

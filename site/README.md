@@ -22,6 +22,7 @@ commit populated environment files.
 - `PUBLIC_SITE_URL`: canonical HTTPS origin, currently `https://jobappagent.com`
 - `RATE_LIMIT_SALT`: unique random secret used to pseudonymize rate-limit keys
 - `COMMUNITY_STATS_UPSTREAM`: validated aggregate telemetry endpoint
+- `COMMUNITY_JOBS_UPSTREAM`: maintainer-reviewed public job endpoint
 - `REFUND_CRON_SECRET`: bearer secret shared with the daily refund workflow
 - `DODO_PAYMENTS_API_KEY`: Dodo server API key for checkout-session creation
 - `DODO_PAYMENTS_WEBHOOK_KEY`: signing secret for the configured endpoint

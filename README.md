@@ -102,7 +102,7 @@ flowchart LR
 
 The bundled CLI handles private profile storage, résumé import, scoring, duplicate checks, resumable rounds, attention queues, and application/outcome ledgers. The coding agent handles discovery and browser interaction under the rules in [`SKILL.md`](job-application-agent/SKILL.md).
 
-Discovery combines the reviewed [`SOURCES.json`](job-application-agent/references/SOURCES.json) catalog with an anonymous community registry. Repeatable public boards and feeds found by users or agents are sanitized and shared by default through `sources suggest --stdin`; disable this independently with `sources sharing disable`. Each contribution enters a private pending moderation queue. Only a maintainer-reviewed source becomes publicly searchable. One-off jobs, personal profiles, referral parameters, and candidate data are never published as sources, and every lead must still resolve to a direct employer or ATS before use.
+Discovery combines the reviewed [`SOURCES.json`](job-application-agent/references/SOURCES.json) catalog with an anonymous community registry. Every confirmed application automatically contributes its canonical public job URL, company, role, application channel, and provider; prior confirmed ledger entries backfill during later commands after a one-command disclosure grace period. Jobs, repeatable boards, and feeds are logged pending and become visible in the public dashboard or CLI only after maintainer review. Disable both forms of community sharing independently from analytics with `sources sharing disable`.
 
 ## 🔐 Privacy
 
@@ -111,20 +111,21 @@ Discovery combines the reviewed [`SOURCES.json`](job-application-agent/reference
 | Profile | macOS Keychain or Windows Credential Manager |
 | Résumé and ledgers | Owner-only local state directory |
 | Browser login | Existing browser session |
-| Source-sharing preference | Owner-only local state directory |
+| Community-sharing preference and delivery receipts | Owner-only local state directory |
 | Skill code | Version-controlled installation directory |
 
 Candidate data, résumés, application history, credentials, and browser sessions are never committed to this repository.
 
 Anonymous structured analytics are enabled by default to improve the agent. They may include job and workflow categories, but never candidate identity, résumé content, prompts, answers, browser data, IP addresses, or raw errors.
 
-Anonymous community source sharing is also enabled by default, separately from analytics. It shares only sanitized metadata for repeatable public job-discovery surfaces. The registry stores no raw installation IDs; source-scoped contributor hashes and counts are used only for deduplication and moderation prioritization, never as identity or publication authority.
+Anonymous community sharing is also enabled by default, separately from analytics. Confirmed applications share only a canonical public job URL, company, role, application channel, optional coarse discovery source, and derived provider URL—never candidate identity, answers, résumé, score, referral parameters, or submission timestamp. Repeatable discovery surfaces share their bounded catalog metadata through a maintainer-review queue. The registry stores no raw installation IDs; record-scoped contributor hashes are used only for deduplication and counts, never as identity or publication authority.
 
 ```bash
 node ~/.agents/skills/job-application-agent/scripts/job-application.mjs telemetry status
 node ~/.agents/skills/job-application-agent/scripts/job-application.mjs telemetry disable
 node ~/.agents/skills/job-application-agent/scripts/job-application.mjs sources sharing status
 node ~/.agents/skills/job-application-agent/scripts/job-application.mjs sources sharing disable
+node ~/.agents/skills/job-application-agent/scripts/job-application.mjs sources jobs
 ```
 
 See [`ANALYTICS.md`](job-application-agent/references/ANALYTICS.md) for the event contract and retention policy, or view the [public aggregate dashboard](https://job-application-agent-telemetry.varora1406.workers.dev/).

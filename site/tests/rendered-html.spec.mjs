@@ -26,6 +26,7 @@ test("server-renders the focused cloud offer and honest community proof", async 
   assert.match(html, /Reserve 90-day access · \$49/);
   assert.match(html, /Verified facts only/);
   assert.match(html, /Secure checkout by Dodo Payments/);
+  assert.doesNotMatch(html, /class="topbar"/);
   assert.doesNotMatch(html, /Run it locally|Install from GitHub|Join early access|first 50/i);
   assert.doesNotMatch(html, /codex-preview|react-loading-skeleton|Your site is taking shape/i);
 });
@@ -49,8 +50,15 @@ test("server-renders the branded community dashboard", async () => {
   const response = await render("/community-view");
   assert.equal(response.status, 200);
   const html = await response.text();
-  assert.match(html, /Community momentum/);
-  assert.match(html, /Reported activity by day/);
+  assert.match(html, /Aggregate product evidence/);
+  assert.match(html, /See the work the agent is doing/);
+  assert.match(html, /Current adoption and verified execution/);
+  assert.match(html, /Activity over time, with outcomes kept in context/);
+  assert.match(html, /Verified submissions by day/);
+  assert.match(html, /Where the work is concentrated/);
+  assert.match(html, /Role levels discovered/);
+  assert.match(html, /How the evidence is counted/);
+  assert.doesNotMatch(html, /Community job leads|Open job|maintainer-reviewed/i);
   assert.match(html, /Anonymous aggregate telemetry/);
   assert.doesNotMatch(html, /Install agent|Open source on GitHub/i);
 });
