@@ -126,19 +126,6 @@ button, input { font: inherit; }
 .dashboard-metrics article:nth-child(2) span { color: #dbe4ff; }
 .dashboard-grid { margin-top: .8rem; display: grid; grid-template-columns: 1fr 1fr; gap: .8rem; }
 .dashboard-panel { min-width: 0; padding: 1.6rem; border: 1px solid var(--line); border-radius: 1rem; background: var(--surface); }
-.community-jobs { margin-top: .8rem; }
-.community-jobs .panel-heading h2 { margin-top: .45rem; }
-.community-jobs .panel-heading > div { max-width: 48rem; }
-.community-jobs-caution { margin: 1.25rem 0 0; padding: .85rem 1rem; border-radius: .65rem; background: var(--coral-soft); color: var(--text); font-size: .82rem; }
-.community-jobs-caution strong { color: var(--coral); }
-.community-job-list { margin: 1rem 0 0; padding: 0; list-style: none; }
-.community-job-list li { padding: 1rem 0; border-top: 1px solid var(--line); display: flex; align-items: center; justify-content: space-between; gap: 1.5rem; }
-.community-job-copy { min-width: 0; }
-.community-job-copy > span { color: var(--blue); font: 600 .68rem var(--font-plex-mono), monospace; letter-spacing: .06em; text-transform: uppercase; }
-.community-job-copy h3 { margin: .25rem 0; overflow-wrap: anywhere; font-size: 1.05rem; }
-.community-job-copy p { margin: 0; color: var(--muted); font-size: .78rem; text-transform: capitalize; }
-.community-job-actions { flex: 0 0 auto; display: flex; align-items: center; gap: 1rem; }
-.community-jobs-more { margin-top: 1rem; }
 .dashboard-panel-wide { grid-column: 1 / -1; }
 .activity-panel { grid-column: 1 / -1; }
 .panel-heading { display: flex; align-items: start; justify-content: space-between; gap: 1rem; }
