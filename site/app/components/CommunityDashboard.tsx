@@ -25,14 +25,23 @@ export function CommunityDashboard() {
 
   return <main id="main" className="dashboard page-width">
     <section className="dashboard-hero">
-      <div><p className="eyebrow">Community momentum</p><h1>The job search is moving.</h1><p>Anonymous, verified activity from Job Application Agent installations. No names, profiles, résumés, or raw identifiers.</p></div>
-      <div className={`live-status${error ? " live-status-error" : ""}`} role="status"><span />{error ? "Live feed unavailable" : loading ? "Connecting to live aggregate data" : "Live anonymous community data"}</div>
+      <div><p className="eyebrow">Aggregate product evidence</p><h1>See the work the agent is doing.</h1><p>Verified, anonymous activity from Job Application Agent installations. This page shows adoption, execution, and reported outcomes—not job listings or individual profiles.</p></div>
+      <div className="dashboard-hero-meta">
+        <div className={`live-status${error ? " live-status-error" : ""}`} role="status"><span />{error ? "Live feed unavailable" : loading ? "Connecting to live aggregate data" : "Live anonymous community data"}</div>
+        <a className="dashboard-method-link" href="#methodology">How this evidence works ↓</a>
+      </div>
     </section>
 
-    <section className="dashboard-metrics" aria-label="Community totals" aria-busy={loading}>
-      <article><strong>{data ? compactNumber.format(data.metrics.activeInstallations30d) : "—"}</strong><span>Active installations · last 30 days</span></article>
-      <article><strong>{data ? compactNumber.format(data.metrics.applicationsSubmitted) : "—"}</strong><span>Verified applications submitted</span></article>
-      <article><strong>{data ? compactNumber.format(data.metrics.jobsAssessed) : "—"}</strong><span>Jobs assessed</span></article>
+    <section className="dashboard-evidence" aria-labelledby="evidence-heading">
+      <div className="dashboard-section-heading">
+        <div><p className="eyebrow">Evidence at a glance</p><h2 id="evidence-heading">Current adoption and verified execution.</h2></div>
+        <p>Installations show recent activity. Assessed jobs show research volume. Submitted applications require a confirmed employer or ATS success state.</p>
+      </div>
+      <div className="dashboard-metrics" aria-label="Community totals" aria-busy={loading}>
+        <article><strong>{data ? compactNumber.format(data.metrics.activeInstallations30d) : "—"}</strong><span>Active installations · last 30 days</span></article>
+        <article><strong>{data ? compactNumber.format(data.metrics.applicationsSubmitted) : "—"}</strong><span>Verified applications submitted</span></article>
+        <article><strong>{data ? compactNumber.format(data.metrics.jobsAssessed) : "—"}</strong><span>Jobs assessed</span></article>
+      </div>
     </section>
 
     <section className="dashboard-grid">

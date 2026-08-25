@@ -46,7 +46,9 @@ test("server-renders the branded community dashboard", async () => {
   const response = await render("/community-view");
   assert.equal(response.status, 200);
   const html = await response.text();
-  assert.match(html, /Community momentum/);
+  assert.match(html, /Aggregate product evidence/);
+  assert.match(html, /See the work the agent is doing/);
+  assert.match(html, /Current adoption and verified execution/);
   assert.match(html, /Reported activity by day/);
   assert.doesNotMatch(html, /Community job leads|Open job|maintainer-reviewed/i);
   assert.match(html, /Anonymous aggregate telemetry/);
