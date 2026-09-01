@@ -24,6 +24,7 @@ export function validatePaymentConfig(input) {
   }
 }
 
+/** @returns {import("dodopayments/resources/checkout-sessions").CheckoutSessionCreateParams} */
 export function buildCheckoutRequest({ productId, purchaseId, publicSiteUrl }) {
   const base = new URL(publicSiteUrl).origin;
   return {
@@ -33,7 +34,7 @@ export function buildCheckoutRequest({ productId, purchaseId, publicSiteUrl }) {
     metadata: { purchase_id: purchaseId, offer: "founding_90_days" },
     customization: {
       force_language: "en",
-      theme: "light",
+      theme: /** @type {"light" | "dark" | "system"} */ ("light"),
       theme_config: {
         font_primary_url: "https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700&display=swap",
         font_secondary_url: "https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&display=swap",
