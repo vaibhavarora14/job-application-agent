@@ -304,6 +304,74 @@ Run one round of 10. Write down, per channel:
 
 That log chooses Cloudflare Browser Run vs Steel vs Browserbase for the September product. Do not choose from this document alone.
 
+## Scale: 100 users × 100 pending submits
+
+That is **10,000 ledger rows**, not 10,000 open browsers. The personal Fly Machine will not do this. The control plane can, if we treat a browser as a short lease and the pending queue as data.
+
+### What is actually concurrent
+
+| Work | Count at that load | Needs a live browser? |
+|---|---|---|
+| Discovered / scored jobs | tens of thousands | No. HTTP + `scoreJob`. |
+| Fill backlog (agent completing forms) | up to 10,000 in `queued` / `filling` | Yes, only while filling. One tab per in-flight fill. |
+| Waiting for the user to submit | 10,000 in `needs_attention` | **No.** Persist the row. Do not hold Chromium. |
+| User sitting in live view | maybe 5–30 at once | Yes. One tab per active handoff. |
+
+A Chrome context is hundreds of MB. Holding 10,000 tabs would be terabytes of RAM. Holding **~20 fill workers + ~20 handoff workers** is a normal pool.
+
+Pending-to-submit is an inbox. The already-planned refill path (“session died → reopen URL → refill from profile → new live view”) is the scale path, not an error path.
+
+```mermaid
+flowchart LR
+  Q[Per-user fill queue] --> Pool[Browser pool]
+  Pool --> Ready[needs_attention row]
+  Ready --> Inbox[User inbox]
+  Inbox -->|Open one| Lease[Lease browser + refill]
+  Lease --> Live[Live view]
+  Live -->|Submit + confirm| Done[submitted]
+  Live --> Pool
+```
+
+### Capacity sketch
+
+Assumptions: Greenhouse-class fills, ~3–5 minutes each, users submit when they have time.
+
+- **Fill:** 10,000 × 4 min ≈ 670 browser-hours. A pool of 20 fillers clears a full backlog in a bit over a day, then keeps up with daily discovery.
+- **Handoff:** sized to *people in the tab now*, not pending count. 100 users with 100 ready items still only need ~10–30 browsers if they are not all clicking at once.
+- **One Fly Machine (2–4 GB):** one user, one or two tabs. Fine for dogfood. Not this load.
+- **This load:** a browser pool (more Fly Machines, or Steel / Browserbase / Kernel / Cloudflare Browser Run) behind the same `{launch, fill, handoff, heartbeat, close}` adapter. Postgres (or equivalent), not SQLite. One browser **context per user** — never a shared Chrome profile.
+
+Discovery and scoring stay cheap. They are not the bottleneck.
+
+### What the user sees
+
+A person with 100 ready applications does not get 100 live tabs. They get a queue:
+
+1. Open the inbox (ready to submit / login / legal / missing answer).
+2. Click one. We lease a browser, refill, show live view.
+3. They submit or unblock. We confirm, record, release the browser.
+4. Optional “next ready” so they can walk the list.
+
+That is still 100 human submits unless a channel later earns auto-submit. The product win at this scale is “every form is already true,” not “one click empties 100.” Auto-submit, if it ever lands, is per-channel after dogfood — not a way to skip the pool.
+
+### Isolation and abuse
+
+- Tenant boundary: profile, résumé, answers, ledger, attention, and browser context are per user.
+- Same-user fills may reuse that user’s context (cookies they created). **Never** reuse it across users.
+- Stagger fills. One Fly egress IP blasting 10,000 Greenhouse POSTs will look like a botnet. Per-user or small-pool proxies, plus rate limits per channel, become required.
+- D1 is fine for founding checkout. 10,000 applications with JD snapshots and screenshots want Postgres + object storage.
+
+### What we must not paint into a corner in the MVP
+
+The single-user Fly box can keep a tab warm overnight. The APIs should still look like this so the pool can replace it:
+
+- Applications are rows with `queued | filling | needs_attention | submitted | abandoned`.
+- Attention items join to a *session id that may be null*.
+- “Open live session” means *acquire, refill, hand off*, not *attach to a process that has been up for hours*.
+- Browser vendor is behind the adapter.
+
+If we do that on day one, 100 × 100 is an ops and tenancy problem, not a new agent.
+
 ## Path to the public cloud
 
 Only after the personal loop works.

@@ -183,8 +183,13 @@ Do not start this until Phase 8 is done.
 
 - [ ] Extract score / ledger / attention / source-normalization into a shared package
 - [ ] Browser adapter interface; swap VM Playwright without changing assess/queue
-- [ ] Move control plane onto the existing site (D1 or Postgres, R2 for résumés)
+- [ ] Session lease: `needs_attention` does not require a live tab; “Open live session” acquires, refills, hands off, releases
+- [ ] One browser context per user; never share a Chrome profile across tenants
+- [ ] Move control plane onto the existing site (Postgres + object storage once more than one operator; D1 remains for founding checkout)
 - [ ] Auth + founding activation in front of that API
+- [ ] Browser pool sized to concurrent fills + concurrent handoffs, not pending-row count (see [100 × 100](./cloud-mvp.md#scale-100-users--100-pending-submits))
+- [ ] Per-channel rate limits and staggered fills so one egress IP does not look like a botnet
+- [ ] Inbox UX: filter + “next ready,” not 100 open tabs
 - [ ] Scheduled discovery + attention notifications
 - [ ] Explicit cloud privacy controls before any third-party profile is accepted (already promised on the privacy page)
 - [ ] Still no auto-submit until a channel is boringly reliable
@@ -198,9 +203,12 @@ Do not start this until Phase 8 is done.
 | ATS résumé parse clobbers fields | Local runbook already warns | Re-read fields after upload; restore from profile |
 | Bot detection | Worse on hosted browsers than on a residential VM | Dogfood on your VM first; vendor choice is an output of Phase 8 |
 | Confirmation false positive | Ledger would lie | Conservative detector; default to attention |
-| Live view expires | Cloudflare idle 10 min; you are not at the desk | Heartbeat; VM/noVNC for MVP; longer-session vendor later |
+| Live view expires | Cloudflare idle 10 min; you are not at the desk | Heartbeat while *leased*; refill-on-open is the default at scale |
+| Holding a tab per pending submit | 100 users × 100 ready ≈ 10,000 Chromiums | Queue is data; pool ≈ concurrent fills + people in live view |
+| Shared Chrome profile across users | Cookies and résumés leak | One context per user; destroy or freeze after release |
 | Schema drift from the skill | Copied score/ledger rules will rot | Import functions; subprocess writes; extract only in Phase 9 |
-| PII on a public URL | Résumé + authorization in SQLite | Localhost / Tailscale only; no public DNS in Phases 0–8 |
+| PII on a public URL | Résumé + authorization in SQLite | `fly proxy` / WireGuard only; no public DNS in Phases 0–8 |
+| Sharing the Paisewise Machine | Chromium OOMs payroll; deploys kill tabs; untrusted ATS pages sit next to money data | Second Fly app + volume; never attach to `paisewise.com` |
 | Scope creep into LinkedIn / Workday | Session + ToS + detection | Boards that need a login are skipped, not “tried a little” |
 
 ## Out of scope until Phase 9+
