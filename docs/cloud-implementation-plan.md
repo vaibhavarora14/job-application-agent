@@ -231,7 +231,7 @@ When implementation starts, land in this order so each PR stays reviewable:
 1. `cloud/` skeleton + skill bridge + gitignore (Phase 0)
 2. `onboard` / `status` (Phase 1)
 3. `discover` + `boards.json` example (Phase 2)
-4. `assess` + fill queue (Phase 3)
+4. `cloud llm assess` + fill queue (Phase 3)
 5. Greenhouse fill + agent Submit (Phase 4)
 6. Handoff for hard stops + `ledger add` on confirmation (Phase 5)
 7. Localhost operator page (Phase 6)
