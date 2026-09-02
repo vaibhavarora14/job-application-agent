@@ -98,7 +98,8 @@ flowchart TB
   Score --> DB
   Score --> Apply
   Apply --> DB
-  Apply -->|needs human or ready to submit| Live
+  Apply -->|hard stop or review-each| Live
+  Apply -->|gate passes| DB
   Live --> UI
   Live -->|confirmed| DB
 ```
@@ -110,6 +111,72 @@ Three layers, one tenant:
 - **Apply.** A real Chromium session. The agent fills and, when the form is routine and complete, clicks Submit. The operator is pulled in only for hard stops or `review-each`.
 
 Auth is a later gate in front of the same API. For MVP, bind the process to a machine you control and do not expose it publicly.
+
+## End user flow
+
+This is the product as you use it. No queues, no worker names.
+
+```mermaid
+flowchart TD
+  A[Open the app] --> B[Fill your profile once]
+  B --> C[Upload résumé]
+  C --> D[Start a round]
+  D --> E[Close the app and go do something else]
+  E --> F{Phone buzzes?}
+  F -->|Submitted quietly| G[Open History: another job is in]
+  F -->|Needs you| H[Open Inbox]
+  H --> I[One company page is already filled]
+  I --> J[You log in / solve CAPTCHA / answer one thing / press Submit]
+  J --> E
+  G --> E
+```
+
+### Screen 1 — First time only
+
+You open the app (your private page in H0; login later in H1).
+
+You type the facts employers always ask: name, email, phone, location, visa, roles you want, salary floor, LinkedIn. You upload one PDF. You write a short “about me / why I am looking” paragraph once. You pick:
+
+- **Send for me** when the form is straightforward, or
+- **I will press Send** on every job
+
+You are done with setup. You do not hunt for jobs on this screen.
+
+### Screen 2 — Start a round
+
+You tap something like **Find and apply to 10**. The app says “Running” and that is it. You can lock the phone.
+
+You do not watch listings load. You do not watch forms fill.
+
+### Screen 3 — Home, later
+
+When you come back you see three piles:
+
+- **Sent** — the company showed a thank-you page. That is the only “applied” that counts.
+- **Needs you** — a form is stuck on login, CAPTCHA, a legal box, or a question we will not guess.
+- **Working** — still searching or filling. You can ignore this.
+
+Most Greenhouse-style jobs should move from Working → Sent without you.
+
+### Screen 4 — Inbox (only when it buzzes)
+
+A notification: “Acme needs you — sign in.”
+
+You tap it. You see **their** apply page, already filled with your name, email, résumé. You only do the human bit (Google login, CAPTCHA, “I agree”, or Send if you chose review-each). You tap Done. The app goes back to working. You can leave.
+
+You never get 100 tabs. You get the next one that actually needs you.
+
+### Screen 5 — A question, not a page
+
+Sometimes it is not a CAPTCHA. The form asked “salary for this role?” and we do not have a number. The inbox is one field. You type it. We remember it for the next company. No live browser.
+
+### What you never see
+
+Job-board scraping, scoring, “must-have” lists, Ollama, Fly, Playwright. If Ollama is off, apply still runs (hosted model or it waits to score). You are not asked to start a model to use the product.
+
+### One week in a sentence
+
+Monday: set up. Monday evening: start 10. Tuesday–Thursday: two or three “needs you” pings, you spend a minute each. Friday: History shows the ones that really sent.
 
 ## User and system flow
 
