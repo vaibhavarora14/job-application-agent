@@ -246,6 +246,8 @@ Rules carried over unchanged:
 
 ## Personal MVP build order
 
+The sequenced tasks, acceptance checks, and first-commit order live in [docs/cloud-implementation-plan.md](./cloud-implementation-plan.md). This section is the short version.
+
 Keep this small enough to run for yourself before any customer auth.
 
 ### 1. Control plane on one box
