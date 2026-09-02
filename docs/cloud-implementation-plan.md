@@ -2,7 +2,7 @@
 
 **Specification:** [docs/cloud-mvp.md](./cloud-mvp.md)
 
-**Overview.** Build horizon **H0** from [docs/cloud-mvp.md](./cloud-mvp.md): a hosted loop that keeps a truthful search moving and only pulls the candidate in for real decisions. Onboard once, discover Greenhouse / Lever / Ashby over HTTP, score with the existing runbook, fill in Playwright, open a **just-in-time** live view to submit, record `submitted` only after visible confirmation. Auth and multi-tenant isolation stay out of H0. Do not fork scoring or ledger rules. Do not treat “keep the same tab warm” as the goal — that is an H0 convenience. H1/H2 need acquire → refill → release.
+**Overview.** Build horizon **H0** from [docs/cloud-mvp.md](./cloud-mvp.md): a hosted loop that keeps a truthful search moving and only pulls the candidate in for real decisions. Onboard once, discover Greenhouse / Lever / Ashby over HTTP, score with the existing runbook, fill in Playwright, **click Submit when the gate passes**, record `submitted` only after visible confirmation. Live view is for hard stops and `review-each`. Auth and multi-tenant isolation stay out of H0. Do not fork scoring or ledger rules.
 
 ## Technical approach
 
@@ -13,7 +13,7 @@ Reuse the OSS CLI as the source of truth for candidate state. Add a new `cloud/`
 | Profile, résumé, ledger, rounds, attention enums | Existing `job-application.mjs` via import + subprocess | Extract shared package both skill and worker import |
 | Discovered jobs, watched slugs, assessments, browser sessions | New SQLite in `cloud/data/` (gitignored) | D1 / Postgres + R2 |
 | Must-have assessment | LLM (or you) writes the `score --stdin` payload; never invent evidence | Same, with stored prompts and review |
-| Apply | Playwright + Chromium on a **new Fly Machine** (not Paisewise), never click Submit | Browser adapter `{launch, fill, handoff, heartbeat, close}` |
+| Apply | Playwright + Chromium on a **new Fly Machine** (not Paisewise); agent Submit when the gate passes | Browser adapter `{launch, fill, submit, handoff, heartbeat, close}` |
 | Takeover | noVNC / CDP live view URL stored on `browser_sessions` | Cloudflare Browser Run or Steel/Browserbase |
 | Operator UI | One local page, bound to `fly proxy` / WireGuard | Quiet Trust UI on the existing site |
 
@@ -130,26 +130,29 @@ One channel until it is boring.
 - [ ] Upload résumé with `setInputFiles` / file chooser using `resume path` ([BROWSER_UPLOADS.md](../job-application-agent/references/BROWSER_UPLOADS.md))
 - [ ] After ATS parse, restore any verified field the parser changed
 - [ ] Draft “why this company” from [APPLICATION_GUIDANCE.md](../job-application-agent/references/APPLICATION_GUIDANCE.md); do not submit it blindly if the profile is `review-each`
-- [ ] Stop on login, MFA, CAPTCHA, legal, demographic, government-id, unclear compensation/authorization, unverifiable claim
-- [ ] **Never click Submit**
-- [ ] On stop or “ready to submit”, write skill `attention add` plus a `browser_sessions` row
-- [ ] Skip Lever / Ashby / `other` until Greenhouse fill + handoff works end to end
+- [ ] Stop on login, MFA, CAPTCHA, legal, demographic, government-id, unclear compensation/authorization, unverifiable claim, “Apply with LinkedIn”
+- [ ] Implement the submit gate from [cloud-mvp.md](./cloud-mvp.md#when-the-agent-submits)
+- [ ] On a passing gate: screenshot, click Submit, wait for confirmation, `ledger add` with `STANDING AUTHORIZATION`
+- [ ] On a failing gate or `review-each`: `attention add` plus a `browser_sessions` row — do not click
+- [ ] If confirmation is unclear after a click: attention only, never click again
+- [ ] Skip Lever / Ashby / `other` until one Greenhouse agent-submit is confirmed
 
-**Done when:** one real Greenhouse application sits filled, résumé attached, waiting, with no submission recorded.
+**Done when:** one real Greenhouse application is agent-submitted and the ledger row exists only after the thank-you page.
 
-### Phase 5 — Handoff and confirm
+### Phase 5 — Handoff (hard stops and review-each)
 
-You finish in the same tab.
+You finish only what the agent must not.
 
 - [ ] Expose the Playwright page over noVNC or a CDP live-view link
-- [ ] Operator page (or CLI) prints `live_view_url` + instructions (“Review. If truthful, Submit. Wait for thank-you.”)
-- [ ] Heartbeat the browser so the tab survives while you walk over
-- [ ] If the session dies: reopen URL, refill, new attention item. No cookie export
-- [ ] Detect confirmation conservatively (thank-you / application received). If unsure, stay `needs_attention`
-- [ ] Only then `ledger add` with `approval: "APPROVE SUBMIT"` and a private confirmation artifact (URL + screenshot in `cloud/data/`)
+- [ ] Operator page prints `live_view_url` + blocker-specific instructions
+- [ ] Heartbeat while leased; if the session dies, reopen, refill, new attention item. No cookie export
+- [ ] After the operator unblocks, the agent may resume and Submit if the gate now passes
+- [ ] In `review-each`, the operator clicks Submit; the agent still waits for confirmation
+- [ ] Detect confirmation conservatively. If unsure, stay `needs_attention`
+- [ ] `ledger add` uses `STANDING AUTHORIZATION` for agent Submit, `APPROVE SUBMIT` for review-each, plus a private confirmation artifact
 - [ ] `attention resolve` after a confirmed submit or explicit abandon
 
-**Done when:** you can submit from the live tab and the ledger gains a `submitted` row only after the success page.
+**Done when:** a CAPTCHA or legal stop can be finished in live view, after which the agent Submits (routine-auto) or you do (`review-each`), and the ledger moves only after confirmation.
 
 ### Phase 6 — Operator surface and mid-run answers
 
@@ -162,7 +165,7 @@ You finish in the same tab.
 
 ### Phase 7 — Lever + Ashby adapters
 
-- [ ] Copy the Greenhouse fill contract: same stop rules, same no-submit, same confirmation rule
+- [ ] Copy the Greenhouse fill contract: same stop rules, same submit gate, same confirmation rule
 - [ ] Treat each channel’s extra widgets (Ashby steps, Lever custom questions, “Apply with LinkedIn”) as a stop if they are not mapped
 - [ ] Record `friction` for reproducible general failures only (existing enum + no candidate data)
 
@@ -171,7 +174,7 @@ You finish in the same tab.
 ### Phase 8 — Dogfood a round of 10
 
 - [ ] Seed ≥ 20 slugs, start a round of 10
-- [ ] Per application, log: found via API? filled? bot/login block? you submitted? confirmation detected?
+- [ ] Per application, log: found via API? filled? bot/login block? agent submitted or handed off? confirmation detected?
 - [ ] Kill a session on purpose and confirm refill-without-cookies
 - [ ] Decide the September browser: Cloudflare Browser Run vs Steel vs Browserbase vs stay on the VM
 
@@ -192,7 +195,7 @@ Do not start this until Phase 8 is done.
 - [ ] Inbox UX: filter + “next ready,” not 100 open tabs
 - [ ] Scheduled discovery + attention notifications
 - [ ] Explicit cloud privacy controls before any third-party profile is accepted (already promised on the privacy page)
-- [ ] Still no auto-submit until a channel is boringly reliable
+- [ ] Agent Submit only through the documented gate; new channels start watched until one clean confirm
 
 ## Risks
 

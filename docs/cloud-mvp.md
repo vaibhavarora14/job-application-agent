@@ -13,7 +13,7 @@ That is the same promise as the site (“Set the goal. Keep the search moving.�
 Three things must stay true at every horizon:
 
 1. **Facts.** Fills use the verified profile and one canonical résumé. Nothing is invented.
-2. **Judgment.** Login, MFA, CAPTCHA, legal, demographics, government IDs, unclear authorization/compensation, and Submit (until a channel earns auto-submit) stay with the candidate.
+2. **Judgment.** Login, MFA, CAPTCHA, legal, demographics, government IDs, and unclear authorization/compensation stay with the candidate. Submit does **not** — the agent clicks it when the form is routine and complete.
 3. **Ledger.** `submitted` means a visible confirmation. Volume, open tabs, and “probably sent” do not count.
 
 ### Why the earlier wording was weak
@@ -27,9 +27,9 @@ Three things must stay true at every horizon:
 
 | Horizon | Who | Done when |
 |---|---|---|
-| **H0 — Personal dogfood** | You, one new Fly app (not Paisewise) | One Greenhouse (then Lever/Ashby) loop: onboard → discover via API → assess → fill → **just-in-time** live view → you submit → ledger row exists only after the thank-you page. A killed session can be refilled. |
-| **H1 — Founding cloud** | Paying users, after H0 | They set boundaries once, get a scheduled round, and an inbox of pauses. Auth and isolation exist. Same ledger rules. Still no auto-submit. |
-| **H2 — Many inboxes** | ~100 users, ~100 `needs_attention` each | Those 10,000 items are inbox rows. Browser pool ≈ in-flight fills + people in live view. One Chrome context per user. “Open” means acquire → refill → hand off → release. |
+| **H0 — Personal dogfood** | You, one new Fly app (not Paisewise) | One Greenhouse loop: onboard → discover → assess → fill → **agent Submit** on a clean form → ledger row only after the thank-you page. Hard stops still open a live view. A killed session can be refilled. |
+| **H1 — Founding cloud** | Paying users, after H0 | They set boundaries once, including `review-each` vs `routine-auto`. Scheduled rounds. Inbox is only real pauses, not every ready form. Same submit rules as the local skill. |
+| **H2 — Many inboxes** | ~100 users, up to ~100 attention items each | Inbox is hard stops and `review-each` items, not 10,000 “please click Submit.” Browser pool ≈ in-flight fills/submits + people in live view. One Chrome context per user. |
 
 H0 is what we build first. H1 is the 18 September offer. H2 is a capacity and tenancy problem if H0 APIs already treat a session as a lease.
 
@@ -48,7 +48,7 @@ Do not count: forms filled but not confirmed, tabs held open, applications per h
 
 - Application volume as a success metric
 - LinkedIn Easy Apply, X, or other session-gated social apply
-- Auto-submit before a channel is boringly reliable
+- Auto-submit through a hard stop, or on a channel whose confirmation detector is not trusted yet
 - Sharing the Paisewise Machine
 - A second scoring system or a second meaning of `submitted`
 
@@ -107,7 +107,7 @@ Three layers, one tenant:
 
 - **Control plane.** Profile, résumé, jobs, assessments, applications, attention, answers, rounds. SQLite is enough for personal dogfood. Postgres or D1 later.
 - **Discovery.** Prefer HTTP APIs. Use a browser only when the source has no structured feed.
-- **Apply.** A real Chromium session. The agent fills. The operator submits when the form is complete or a hard stop fires.
+- **Apply.** A real Chromium session. The agent fills and, when the form is routine and complete, clicks Submit. The operator is pulled in only for hard stops or `review-each`.
 
 Auth is a later gate in front of the same API. For MVP, bind the process to a machine you control and do not expose it publicly.
 
@@ -115,14 +115,31 @@ Auth is a later gate in front of the same API. For MVP, bind the process to a ma
 
 1. **Onboard.** Collect every field the current CLI already requires, plus the extras that ATS forms ask every week. Upload one canonical résumé. Nothing is inferred.
 2. **Discover.** Pull public ATS boards and the existing catalog. Normalize to `{company, role, url, employerJobId, applicationChannel, discoverySource}`.
-3. **Qualify.** Reuse `score`. Keep `exclude` / `ask` / `skip` / `review` and `autoEligible`. For MVP, `autoEligible` means “safe to fill,” not “safe to submit.”
+3. **Qualify.** Reuse `score`. Keep `exclude` / `ask` / `skip` / `review` and `autoEligible`. `autoEligible` plus `routine-auto` plus a clean page means the agent may Submit.
 4. **Fill.** Open the direct apply URL in the hosted browser. Fill profile facts, upload the résumé, draft narrative answers from `APPLICATION_GUIDANCE.md`.
-5. **Pause.** If a hard stop fires *or* the form is ready to submit, write an attention item and keep the tab alive.
-6. **Handoff.** The operator opens a live view of that same tab, finishes login / CAPTCHA / legal / judgment, and clicks Submit.
-7. **Confirm.** Only after a visible success page does the system write `submitted`. No confirmation, no ledger row.
-8. **Continue.** Other jobs keep moving while one tab waits for you.
+5. **Submit or pause.** If the submit gate below passes, the agent clicks Submit and waits for confirmation. If a hard stop fires or the profile is `review-each`, write an attention item instead.
+6. **Handoff (only when needed).** The operator opens a live view (same tab if it is still up, otherwise acquire + refill) and handles login / CAPTCHA / legal / judgment. They may also Submit in `review-each`.
+7. **Confirm.** Only after a visible success page does the system write `submitted`. No confirmation, no ledger row. Never click Submit a second time if confirmation is unclear — queue attention as `other` / site-error.
+8. **Continue.** Other jobs keep moving while one item waits for you.
 
-This is stricter than local `routine-auto`. The first hosted version should never click Submit. That is the cheapest way to learn which sites we can actually finish.
+### When the agent submits
+
+Same contract as the local skill. Playwright clicking the button is not the hard part. The gate is.
+
+The agent clicks Submit only when **all** of these are true:
+
+- `submissionMode` is `routine-auto` (H0: your own grant)
+- `ledger check` is clean (no hard duplicate; company reapply allowed)
+- Score decision is `review` and `autoEligible` is true — or H0 you have approved that channel as routine
+- Every required field is a verified profile fact, a stored answer, or a guidance-draft the mode allows
+- Canonical résumé is attached; ATS-parsed fields that drifted were restored
+- The page has no login, MFA, CAPTCHA, legal attestation, demographic, government-id, or identity overlay (“Apply with LinkedIn”)
+- Authorization and compensation on the form are unambiguous
+- This ATS is on the submit allowlist, and we have a conservative confirmation detector for it
+
+Otherwise stop and hand off. First Greenhouse dogfood run may still be watched (log the click, screenshot before/after) so a bad detector cannot silently double-apply. After one clean confirmed Greenhouse submit, that channel stays allowlisted until friction says otherwise.
+
+`review-each` is still a first-class mode: fill everything, then live view for the candidate to send.
 
 ## Details to collect
 
@@ -244,14 +261,15 @@ Local attention already names the stops. Cloud adds a live tab.
 | Unclear authorization / compensation | Ask in the UI, then resume | Confirm the stored answer |
 | Unverifiable claim | Stop | Provide evidence or skip the job |
 | Judgment / video | Stop | Write or record |
-| Ready to submit | Verify fields + résumé filename | Click Submit, wait for the success page |
+| Ready to submit, `review-each` | Verify fields + résumé filename, hand off | Click Submit, wait for the success page |
+| Ready to submit, `routine-auto` + gate | Click Submit, wait for confirmation | Only if confirmation is unclear |
 | Site error | Friction row, retry later | Optional live inspect |
 
 Handoff contract for an attention item:
 
 - `applicationId`, canonical `url`, `stage`, `blocker`, `requiredActions` (existing enums)
 - `sessionId` and a short-lived `liveViewUrl`
-- `instructions` (“Review the filled form. If it is truthful, click Submit and wait for the thank-you page.”)
+- `instructions` (hard-stop specific, or “Review and Submit” only in `review-each`)
 - `expiresAt`
 
 The agent watches for either a structured handoff completion (Cloudflare / Steel) or a visible confirmation selector. Only then `ledger add`.
@@ -308,13 +326,12 @@ Keep this small enough to run for yourself before any customer auth.
 - Playwright against local Chromium with a dedicated user-data directory.
 - Résumé upload via `setInputFiles` / file chooser (same as `BROWSER_UPLOADS.md`).
 - Channel adapters in this order: Greenhouse hosted board, Lever hosted, Ashby hosted. Everything else is `other` and skipped.
-- Never click the final Submit.
+- Click Submit when the gate passes; otherwise attention.
 
 ### 4. Takeover
 
-- When the form is complete or a hard stop hits: start noVNC (or Steel/Browserbase live view) and write the attention row.
-- You open the link, submit or unblock, mark done.
-- Worker detects the confirmation page and records `submitted`.
+- Hard stop or `review-each`: live view. After unblock, agent may Submit if the gate now passes.
+- Worker detects the confirmation page and records `submitted`. Never click twice if confirmation is unclear.
 
 ### 5. Operator surface
 
@@ -360,20 +377,23 @@ Pending-to-submit is an inbox. The already-planned refill path (“session died 
 ```mermaid
 flowchart LR
   Q[Per-user fill queue] --> Pool[Browser pool]
-  Pool --> Ready[needs_attention row]
+  Pool -->|gate passes| Submit[Agent Submit]
+  Submit --> Done[submitted]
+  Pool -->|hard stop or review-each| Ready[needs_attention]
   Ready --> Inbox[User inbox]
-  Inbox -->|Open one| Lease[Lease browser + refill]
+  Inbox -->|Open one| Lease[Lease + refill]
   Lease --> Live[Live view]
-  Live -->|Submit + confirm| Done[submitted]
+  Live --> Done
+  Submit --> Pool
   Live --> Pool
 ```
 
 ### Capacity sketch
 
-Assumptions: Greenhouse-class fills, ~3–5 minutes each, users submit when they have time.
+Assumptions: Greenhouse-class fills, ~3–5 minutes each including Submit.
 
-- **Fill:** 10,000 × 4 min ≈ 670 browser-hours. A pool of 20 fillers clears a full backlog in a bit over a day, then keeps up with daily discovery.
-- **Handoff:** sized to *people in the tab now*, not pending count. 100 users with 100 ready items still only need ~10–30 browsers if they are not all clicking at once.
+- **Fill + agent Submit:** 10,000 × 4 min ≈ 670 browser-hours. A pool of 20 workers clears a full backlog in a bit over a day, then keeps up with daily discovery.
+- **Handoff:** sized to *people in the tab now* — hard stops and `review-each`, not every ready form.
 - **One Fly Machine (2–4 GB):** one user, one or two tabs. Fine for dogfood. Not this load.
 - **This load:** a browser pool (more Fly Machines, or Steel / Browserbase / Kernel / Cloudflare Browser Run) behind the same `{launch, fill, handoff, heartbeat, close}` adapter. Postgres (or equivalent), not SQLite. One browser **context per user** — never a shared Chrome profile.
 
@@ -381,14 +401,14 @@ Discovery and scoring stay cheap. They are not the bottleneck.
 
 ### What the user sees
 
-A person with 100 ready applications does not get 100 live tabs. They get a queue:
+A person with 100 scored matches does not get 100 live tabs. Routine Greenhouse-class forms are filled and submitted by the agent. They see an inbox of the rest:
 
-1. Open the inbox (ready to submit / login / legal / missing answer).
+1. Open the inbox (login / CAPTCHA / legal / missing answer / `review-each`).
 2. Click one. We lease a browser, refill, show live view.
-3. They submit or unblock. We confirm, record, release the browser.
-4. Optional “next ready” so they can walk the list.
+3. They unblock (or Submit in `review-each`). We confirm, record, release the browser.
+4. Optional “next ready” so they can walk the pauses.
 
-That is still 100 human submits unless a channel later earns auto-submit. The product win at this scale is “every form is already true,” not “one click empties 100.” Auto-submit, if it ever lands, is per-channel after dogfood — not a way to skip the pool.
+The product win at this scale is that most applications leave the machine without them, and the ones that do not are actually judgment.
 
 ### Isolation and abuse
 
@@ -417,7 +437,7 @@ Only after the personal loop works.
 3. **Put** a browser adapter behind `{launch, fill, handoff, heartbeat, close}`. The rest of the app should not care which vendor is behind it.
 4. **Add** auth and founding activation in front of that API. Paid access already exists; it currently activates nothing product-shaped.
 5. **Schedule** discovery. Reuse rounds. Notify on attention.
-6. **Keep** the same hard stops. `routine-auto` in the cloud still does not click Submit until dogfood says a channel is boringly reliable.
+6. **Keep** the same hard stops. `routine-auto` clicks Submit only when the submit gate passes and the channel’s confirmation detector is trusted.
 
 ## Gaps the first personal run will hit
 
@@ -446,14 +466,14 @@ These are expected. Capture them as friction rows.
 
 **Operator experience**
 
-- You will still do login, MFA, legal, and submit. The win is not “zero clicks.” It is “the form is already true when you arrive.”
+- You will still do login, MFA, legal, and `review-each`. Routine Submit is the agent’s. The win is that you only arrive for judgment.
 - Mid-run questions need a faster loop than email. The first UI should let you answer and resume without losing the tab.
 - Discovery quality depends on the company slug list. Garbage in, garbage out. Start from companies you would actually join.
 
 ## What this MVP will not do
 
 - User accounts, OAuth, or founding-access gating
-- Auto-submit
+- Submit through a hard stop, or a second click when confirmation is unclear
 - LinkedIn Easy Apply, X, or other session-gated social apply
 - Demographic answers, government IDs, or stored passwords
 - Résumé rewriting or per-company résumé variants
@@ -466,8 +486,8 @@ Use this when the personal run is done.
 
 - [ ] Onboarding can represent a complete `profile set` plus résumé.
 - [ ] Discovery from at least 20 ATS slugs produces scored, de-duplicated jobs.
-- [ ] A Greenhouse or Lever application can be filled in a hosted browser from those facts.
-- [ ] Attention items include a live URL; you can submit from that tab.
+- [ ] A Greenhouse application can be filled and agent-submitted; the ledger row exists only after the thank-you page.
+- [ ] A hard stop produces an attention item with a live URL; after unblock the agent or you can finish.
 - [ ] `submitted` rows exist only after a visible confirmation.
 - [ ] A killed session can be reopened and refilled without cookie export.
 - [ ] Notes exist for bot detection, missing questions, and confirmation misses per channel.
