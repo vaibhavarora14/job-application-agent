@@ -1,0 +1,22 @@
+[
+  { "channel": "greenhouse", "slug": "airbnb", "company": "Airbnb" },
+  { "channel": "greenhouse", "slug": "gitlab", "company": "GitLab" },
+  { "channel": "greenhouse", "slug": "figma", "company": "Figma" },
+  { "channel": "greenhouse", "slug": "discord", "company": "Discord" },
+  { "channel": "greenhouse", "slug": "dropbox", "company": "Dropbox" },
+  { "channel": "greenhouse", "slug": "plaid", "company": "Plaid" },
+  { "channel": "greenhouse", "slug": "reddit", "company": "Reddit" },
+  { "channel": "greenhouse", "slug": "twilio", "company": "Twilio" },
+  { "channel": "greenhouse", "slug": "databricks", "company": "Databricks" },
+  { "channel": "greenhouse", "slug": "cloudflare", "company": "Cloudflare" },
+  { "channel": "greenhouse", "slug": "anthropic", "company": "Anthropic" },
+  { "channel": "greenhouse", "slug": "intercom", "company": "Intercom" },
+  { "channel": "greenhouse", "slug": "hashicorp", "company": "HashiCorp" },
+  { "channel": "greenhouse", "slug": "stripe", "company": "Stripe" },
+  { "channel": "lever", "slug": "netflix", "company": "Netflix" },
+  { "channel": "lever", "slug": "palantir", "company": "Palantir" },
+  { "channel": "ashby", "slug": "notion", "company": "Notion" },
+  { "channel": "ashby", "slug": "linear", "company": "Linear" },
+  { "channel": "ashby", "slug": "ramp", "company": "Ramp" },
+  { "channel": "ashby", "slug": "vercel", "company": "Vercel" }
+]

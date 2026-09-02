@@ -208,6 +208,8 @@ Do not start this until Phase 8 is done.
 | Risk | Why it shows up | Mitigation |
 |---|---|---|
 | Assessor invents experience | `scoreJob` will happily score invented `met` evidence | `cloud llm assess` must quote résumé text; no quote → `unclear`; first 20 reviewed; heuristic fallback only |
+| Ollama offline while a round is running | Laptop closed; Fly cannot reach `:11434` | Short probe; `pending_llm`; hosted API fallback; never block the HTTP handler |
+| Ollama on a public bind | Résumé posted to the open internet | Tailscale only; do not advertise `0.0.0.0:11434` |
 | Greenhouse iframe / “Apply with LinkedIn” | Fill script clicks the wrong surface | Prefer the hosted board apply form; stop on LinkedIn overlay |
 | ATS résumé parse clobbers fields | Local runbook already warns | Re-read fields after upload; restore from profile |
 | Bot detection | Worse on hosted browsers than on a residential VM | Dogfood on your VM first; vendor choice is an output of Phase 8 |

@@ -1,0 +1,257 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Job Application Agent</title>
+  <style>
+    :root {
+      --ink: #173f35;
+      --text: #486159;
+      --muted: #526b63;
+      --background: #f2e9d8;
+      --surface: #fffaf0;
+      --line: #d8ccb7;
+      --accent: #63b995;
+      --coral: #9f4d42;
+      --coral-soft: #f4e2dc;
+      --green-soft: #e5f2eb;
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; background: var(--background); color: var(--ink); font: 16px/1.55 ui-sans-serif, system-ui, sans-serif; }
+    header, main { width: min(56rem, calc(100% - 2rem)); margin: 0 auto; }
+    header { padding: 1.5rem 0 1rem; }
+    h1 { margin: 0; font-family: ui-serif, Georgia, serif; font-size: 1.8rem; font-weight: 500; }
+    h1 span { color: #2f755f; font-style: italic; }
+    .eyebrow { color: #2f6f5b; font: 600 .72rem/1.4 ui-monospace, monospace; letter-spacing: .1em; text-transform: uppercase; }
+    .piles { display: grid; grid-template-columns: repeat(3, 1fr); gap: .8rem; margin: 1rem 0 1.5rem; }
+    .pile { background: var(--surface); border: 1px solid var(--line); border-radius: 1rem; padding: 1rem; min-height: 8rem; }
+    .pile.needs { background: var(--coral-soft); }
+    .pile h2 { margin: 0 0 .6rem; font-size: .95rem; }
+    .pile ul { margin: 0; padding: 0; list-style: none; }
+    .pile li { padding: .4rem 0; border-top: 1px solid var(--line); font-size: .85rem; }
+    .card { background: var(--surface); border: 1px solid var(--line); border-radius: 1rem; padding: 1.1rem 1.2rem; margin-bottom: 1rem; }
+    label { display: grid; gap: .25rem; margin: .55rem 0; font-size: .85rem; color: var(--text); }
+    input, select, textarea { width: 100%; padding: .6rem .7rem; border: 1px solid var(--line); border-radius: .5rem; background: #fff; color: var(--ink); font: inherit; }
+    textarea { min-height: 6rem; }
+    .row { display: grid; grid-template-columns: 1fr 1fr; gap: .7rem; }
+    button { min-height: 2.75rem; padding: .6rem 1.1rem; border: 0; border-radius: 999px; background: var(--accent); color: var(--ink); font-weight: 700; cursor: pointer; }
+    button.secondary { background: var(--surface); border: 1px solid var(--line); }
+    .actions { display: flex; flex-wrap: wrap; gap: .6rem; margin-top: .8rem; }
+    .muted { color: var(--muted); font-size: .85rem; }
+    .error { color: var(--coral); }
+    a { color: inherit; }
+    @media (max-width: 720px) {
+      .piles, .row { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <p class="eyebrow">Private operator</p>
+    <h1>Keep the search <span>moving.</span></h1>
+    <p class="muted">Sent only counts after the company shows a thank-you page. This page is for fly proxy / Tailscale — not a public hostname.</p>
+  </header>
+  <main>
+    <section class="piles" id="piles">
+      <article class="pile"><h2>Sent</h2><p class="muted">Loading…</p></article>
+      <article class="pile needs"><h2>Needs you</h2><p class="muted">Loading…</p></article>
+      <article class="pile"><h2>Working</h2><p class="muted">Loading…</p></article>
+    </section>
+
+    <section class="card">
+      <h2>Start a round</h2>
+      <p class="muted" id="status-line">Checking setup…</p>
+      <div class="actions">
+        <label style="max-width:8rem">Count
+          <input id="round-count" type="number" min="1" max="50" value="10" />
+        </label>
+        <button id="start-round" type="button">Find and apply to these</button>
+      </div>
+    </section>
+
+    <section class="card" id="inbox"></section>
+
+    <section class="card">
+      <h2>Setup (once)</h2>
+      <form id="onboard">
+        <div class="row">
+          <label>Name <input name="name" required /></label>
+          <label>Email <input name="email" type="email" required /></label>
+        </div>
+        <div class="row">
+          <label>Phone <input name="phone" required /></label>
+          <label>Location <input name="location" required /></label>
+        </div>
+        <label>Work authorization <input name="workAuthorization" required placeholder="e.g. Indian citizen, no US sponsorship needed" /></label>
+        <div class="row">
+          <label>LinkedIn <input name="linkedin" /></label>
+          <label>GitHub <input name="github" /></label>
+        </div>
+        <div class="row">
+          <label>Portfolio <input name="portfolio" /></label>
+          <label>Availability <input name="availability" placeholder="30 days" /></label>
+        </div>
+        <div class="row">
+          <label>Role families <input name="roleFamilies" value="product-engineering, full-stack, ai-ml" /></label>
+          <label>Seniority <input name="seniority" value="senior, staff" /></label>
+        </div>
+        <div class="row">
+          <label>Target locations <input name="targetLocations" value="Remote, India" /></label>
+          <label>Work modes <input name="workModes" value="remote" /></label>
+        </div>
+        <label>Skills <input name="skills" value="TypeScript, Python, React" /></label>
+        <label>About me / why I am looking
+          <textarea name="motivationBlurb" placeholder="100–150 words you wrote. Used for why-us drafts."></textarea>
+        </label>
+        <div class="row">
+          <label>Send for me?
+            <select name="submissionMode">
+              <option value="routine-auto">Send for me when the form is routine</option>
+              <option value="review-each">I will press Send on every job</option>
+            </select>
+          </label>
+          <label>Authorized without sponsorship
+            <select name="authorizedWithoutSponsorship">
+              <option value="unclear">unclear</option>
+              <option value="yes">yes</option>
+              <option value="no">no</option>
+            </select>
+          </label>
+        </div>
+        <div class="row">
+          <label>Needs sponsorship
+            <select name="needsSponsorship">
+              <option value="unclear">unclear</option>
+              <option value="yes">yes</option>
+              <option value="no">no</option>
+            </select>
+          </label>
+          <label>Willing to relocate
+            <select name="willingToRelocate">
+              <option value="unclear">unclear</option>
+              <option value="yes">yes</option>
+              <option value="no">no</option>
+            </select>
+          </label>
+        </div>
+        <label>Résumé PDF <input name="resume" type="file" accept="application/pdf" /></label>
+        <div class="actions">
+          <button type="submit">Save profile</button>
+        </div>
+        <p class="muted" id="onboard-msg"></p>
+      </form>
+    </section>
+  </main>
+  <script>
+    async function api(path, options) {
+      const res = await fetch(path, options);
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || res.statusText);
+      return data;
+    }
+    function list(items, empty) {
+      if (!items?.length) return `<p class="muted">${empty}</p>`;
+      return `<ul>${items.map((item) => `<li><strong>${item.company || item.job_company || ''}</strong> ${item.role || item.job_title || item.blocker || ''}<br><a href="${item.url || item.job_url || '#'}" target="_blank" rel="noreferrer">${item.url || item.instructions || ''}</a></li>`).join('')}</ul>`;
+    }
+    async function refresh() {
+      const status = await api('/api/status');
+      const piles = status.piles;
+      document.getElementById('piles').innerHTML = `
+        <article class="pile"><h2>Sent (${piles.sent.length})</h2>${list(piles.sent, 'Nothing confirmed yet.')}</article>
+        <article class="pile needs"><h2>Needs you (${piles.needsYou.length})</h2>${list(piles.needsYou, 'Quiet.')}</article>
+        <article class="pile"><h2>Working (${piles.working.length})</h2>${list(piles.working, 'Idle.')}</article>`;
+      const ready = status.profile.configured && status.profile.resumePath;
+      document.getElementById('status-line').textContent = ready
+        ? `Ready. Mode: ${status.profile.submissionMode}. LLM: ${status.llm.ollama ? 'Ollama' : status.llm.hosted ? 'hosted' : 'heuristic'}.`
+        : `Setup needed. Missing: ${(status.profile.missing || []).join(', ') || 'résumé'}.`;
+      document.getElementById('inbox').innerHTML = piles.needsYou.length
+        ? `<h2>Inbox</h2>${piles.needsYou.map((item) => `
+            <p><strong>${item.job_company || ''}</strong> — ${item.blocker}<br>${item.instructions || ''}
+            <br><a href="${item.live_view_url || item.url}" target="_blank" rel="noreferrer">Open the company page</a></p>
+            <div class="actions">
+              <button class="secondary" data-resolve="${item.id}" data-resume="1">I finished — keep going</button>
+              <button class="secondary" data-resolve="${item.id}">Dismiss</button>
+            </div>`).join('')}`
+        : `<h2>Inbox</h2><p class="muted">Nothing needs you.</p>`;
+    }
+    document.getElementById('start-round').onclick = async () => {
+      try {
+        await api('/api/rounds', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ count: Number(document.getElementById('round-count').value || 10) }),
+        });
+        await refresh();
+      } catch (error) {
+        document.getElementById('status-line').textContent = error.message;
+        document.getElementById('status-line').className = 'error';
+      }
+    };
+    document.getElementById('inbox').onclick = async (event) => {
+      const id = event.target.dataset.resolve;
+      if (!id) return;
+      await api(`/api/attention/${id}/resolve`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ resumeFill: event.target.dataset.resume === '1' }),
+      });
+      await refresh();
+    };
+    document.getElementById('onboard').onsubmit = async (event) => {
+      event.preventDefault();
+      const form = event.target;
+      const csv = (value) => String(value || '').split(',').map((s) => s.trim()).filter(Boolean);
+      const profile = {
+        name: form.name.value,
+        email: form.email.value,
+        phone: form.phone.value,
+        location: form.location.value,
+        workAuthorization: form.workAuthorization.value,
+        linkedin: form.linkedin.value || undefined,
+        github: form.github.value || undefined,
+        portfolio: form.portfolio.value || undefined,
+        availability: form.availability.value || undefined,
+        roleFamilies: csv(form.roleFamilies.value),
+        seniority: csv(form.seniority.value),
+        targetLocations: csv(form.targetLocations.value),
+        workModes: csv(form.workModes.value),
+        skills: csv(form.skills.value),
+        submissionMode: form.submissionMode.value,
+        yearsExperience: 10,
+        autoSubmitMinScore: 80,
+        manualReviewMinScore: 70,
+        minMustHaveCoverage: 70,
+      };
+      const extras = {
+        motivationBlurb: form.motivationBlurb.value,
+        howHeard: 'company careers page',
+        authorizedWithoutSponsorship: form.authorizedWithoutSponsorship.value,
+        needsSponsorship: form.needsSponsorship.value,
+        willingToRelocate: form.willingToRelocate.value,
+      };
+      const msg = document.getElementById('onboard-msg');
+      try {
+        await api('/api/onboard', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ profile, extras }),
+        });
+        const file = form.resume.files[0];
+        if (file) {
+          await fetch('/api/resume', { method: 'POST', headers: { 'content-type': 'application/pdf' }, body: file });
+        }
+        msg.textContent = 'Saved.';
+        await refresh();
+      } catch (error) {
+        msg.textContent = error.message;
+        msg.className = 'error';
+      }
+    };
+    refresh().catch((error) => {
+      document.getElementById('status-line').textContent = error.message;
+    });
+    setInterval(() => refresh().catch(() => {}), 8000);
+  </script>
+</body>
+</html>
