@@ -13,9 +13,9 @@ Reuse the OSS CLI as the source of truth for candidate state. Add a new `cloud/`
 | Profile, résumé, ledger, rounds, attention enums | Existing `job-application.mjs` via import + subprocess | Extract shared package both skill and worker import |
 | Discovered jobs, watched slugs, assessments, browser sessions | New SQLite in `cloud/data/` (gitignored) | D1 / Postgres + R2 |
 | Must-have assessment | LLM (or you) writes the `score --stdin` payload; never invent evidence | Same, with stored prompts and review |
-| Apply | Playwright + local Chromium, never click Submit | Browser adapter `{launch, fill, handoff, heartbeat, close}` |
+| Apply | Playwright + Chromium on a **new Fly Machine** (not Paisewise), never click Submit | Browser adapter `{launch, fill, handoff, heartbeat, close}` |
 | Takeover | noVNC / CDP live view URL stored on `browser_sessions` | Cloudflare Browser Run or Steel/Browserbase |
-| Operator UI | One local page, bound to localhost / Tailscale | Quiet Trust UI on the existing site |
+| Operator UI | One local page, bound to `fly proxy` / WireGuard | Quiet Trust UI on the existing site |
 
 **Do not extend `attention.ndjson` with a live-view URL.** The CLI schema is closed. Store `session_id` + `live_view_url` on `browser_sessions` and join by `applicationId`.
 
@@ -49,13 +49,14 @@ cloud/
 
 Must exist before Phase 1 coding:
 
-- A machine you control (laptop is fine; a small VM is better)
-- Node 20+, Chromium for Playwright
+- A **new** Fly app in the same org as Paisewise (`job-application-agent` or similar). Do not reuse the Paisewise Machine, volume, or image.
+- That Machine: ≥2 GB RAM, 2 shared CPUs, 10 GB volume, `auto_stop` off during a round
+- Node 20+, Chromium for Playwright (in that image)
 - Your `profile set` JSON and canonical PDF
 - A `boards.json` seed of companies you would actually join (start with 20 slugs, not 200)
 - An LLM key **only** for assessment, or willingness to assess the first batch by hand
 
-Must **not** be in place: auth, Dodo activation, public DNS, Cloudflare Browser Run, LinkedIn session.
+Must **not** be in place: auth, Dodo activation, public DNS, Cloudflare Browser Run, LinkedIn session, anything running on the Paisewise app.
 
 ## Phases
 
@@ -67,9 +68,11 @@ Keep cloud code out of the published skill.
 - [ ] Leave root `package.json` `files` unchanged so `npx job-application-agent` does not ship this
 - [ ] Gitignore `cloud/data/`, `cloud/.env`, uploaded PDFs
 - [ ] `cloud/src/skill.mjs` can `profile check` against a configured state dir
-- [ ] README: how to point `JOB_APPLICATION_STATE_DIR` at `cloud/data/skill-state`
+- [ ] README: how to point `JOB_APPLICATION_STATE_DIR` at the Fly volume (and local `cloud/data/skill-state` for laptop runs)
+- [ ] Dockerfile + `fly.toml` for the new app only: Chromium/Playwright deps, volume mount, no Paisewise hostname
+- [ ] Document `fly proxy` as the operator path; do not allocate a public IPv4 for the UI
 
-**Done when:** `node cloud/src/cli.mjs status` prints skill profile status without writing candidate data into the repo.
+**Done when:** `node cloud/src/cli.mjs status` prints skill profile status without writing candidate data into the repo, and the Fly app is a separate process from Paisewise.
 
 ### Phase 1 — Onboarding
 

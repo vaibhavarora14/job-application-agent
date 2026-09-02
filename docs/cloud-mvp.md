@@ -182,7 +182,11 @@ The product need is narrow: a Chromium we drive with Playwright, a way to upload
 
 ### Recommendation
 
-**Personal MVP: Playwright on a VM you control.** One persistent Chromium user-data dir, Playwright driving it, and a VNC / Live View tab you open when attention fires. Pair it with SQLite or local Postgres and the existing `score` / `ledger` CLI.
+**Personal MVP: a new Fly app, not the Paisewise Machine.** Paisewise (Founder's Office / payroll) stays on its current Fly Machine. The apply loop gets a second app in the same Fly org, with its own Machine, volume, and sleep settings. Do not share the Paisewise process, volume, or public hostname.
+
+Target size: ≥2 GB RAM, 2 shared CPUs, a 10 GB volume for Chrome profile / SQLite / résumé / ledger, `auto_stop` off while a round is running. Reach it with `fly proxy` or WireGuard, not a public `.fly.dev` URL.
+
+Playwright on that Machine: one persistent Chromium user-data dir, and a VNC / Live View tab you open when attention fires. Pair it with SQLite and the existing `score` / `ledger` CLI.
 
 **If the first week shows takeover is the painful part,** switch the browser host to Steel Cloud or Browserbase. Keep the same control plane.
 
