@@ -152,12 +152,10 @@ Known facts stay deterministic. Accuracy-sensitive reading uses an **LLM CLI** o
 | Step | Who | Why |
 |---|---|---|
 | Name, email, phone, links, résumé, stored answers, ledger “applied here?” | Deterministic adapter (`questions[]` + synonym map + profile) | Fast, no hallucination |
-| Must-haves + evidence, messy labels, eligibility nuance, “why this company” | `cloud llm …` → hosted API | Same judgment quality as the laptop agent |
+| Must-haves + evidence, messy labels, eligibility nuance, “why this company” | `cloud llm …` → first reachable provider | Same judgment quality as the laptop agent |
 | Hard stops (legal, demographics, IDs, CAPTCHA) | Human | Model must not answer |
 
-Heuristic skill-overlap is the **fallback** if the key is missing or the call fails — not the accuracy path.
-
-### LLM CLI (on our Fly Machine, not a local model)
+### LLM CLI and providers
 
 ```text
 cloud llm assess --stdin    # JD + résumé + profile → mustHaves[], eligibility, seniority, workMode
@@ -165,7 +163,17 @@ cloud llm map-fields --stdin  # leftover labels → profile key | stored answer 
 cloud llm draft --stdin     # question + company + résumé → short answer per APPLICATION_GUIDANCE.md
 ```
 
-Implementation: Node `fetch` to Anthropic or OpenAI, or a thin shell-out to an installed `llm` / vendor CLI. Same JSON contract either way. Store the API key as a Fly secret. **Do not run Ollama or another on-box model** — 2 GB cannot hold Chrome and weights, and we want one testable interface.
+Same JSON contract. The worker does **not** block the apply HTTP call on this. Assess is a queue job (see [Async apply](#async-apply)).
+
+Provider order, first success wins:
+
+1. **Ollama on your machine** — when reachable. You run `ollama serve` locally (or on a home box). Fly reaches it over the same Tailscale / WireGuard path as `fly proxy` (`http://<tailnet-host>:11434`). Bind Ollama to the tailnet interface, not public `0.0.0.0`. Résumé text stays on your LAN when this path is up.
+2. **Hosted API** (Anthropic / OpenAI) — Fly secret. Used when Ollama is down or unconfigured so the async loop keeps moving.
+3. **Heuristic** — skill-overlap only. Last resort, not the accuracy path.
+
+`cloud llm` probes Ollama with a short timeout (a couple of seconds). Unreachable → try the next provider. Do **not** install Ollama on the 2 GB Fly Machine next to Chromium.
+
+If nothing is available, the job stays `pending_llm`. Discovery and already-assessed fills continue. When your laptop comes online, a worker drains that queue. Apply never sits in a request handler waiting for you to wake Ollama.
 
 Rules (same as `SKILL.md`):
 
@@ -180,7 +188,31 @@ Running full Codex/Claude Code on the box would also be accurate (that is today�
 
 ### What we still collect at onboard
 
-Structured flags and a `motivationBlurb` remain. They ground the model and fill checkboxes when the LLM is down.
+Structured flags and a `motivationBlurb` remain. They ground the model and fill checkboxes when every LLM provider is down.
+
+## Async apply
+
+Cloud apply is a **background queue**, not a request that holds a browser until Submit.
+
+`POST /rounds` (or `cloud round start`) returns a `roundId` immediately. Workers pull jobs:
+
+| Job | Waits for | Emits |
+|---|---|---|
+| `discover` | nothing | new `jobs` rows |
+| `assess` | a job row + an LLM provider (Ollama or hosted) | `assessments` + fill or `pending_llm` or attention |
+| `fill` | `review` assessment | filled application, or attention |
+| `submit` | passing submit gate | confirmation → ledger, or attention |
+| `handoff` | you opening a live view | resolved attention |
+
+Rules:
+
+- The operator API never calls Playwright or `cloud llm` inline. It enqueues.
+- One fill/submit at a time on the personal Fly Machine; later a pool. Other jobs stay queued.
+- `pending_llm` is a normal state. Ollama appearing later is a wake-up, not a deploy.
+- Attention pings you; it does not stall the rest of the round.
+- Idempotent: the same job id is not filled twice; `ledger check` still runs immediately before Submit.
+
+That is what “100 pending” already assumed. H0 uses the same shape with one worker.
 
 ## Details to collect
 
@@ -329,7 +361,8 @@ resumes             bytes or object-store key, sha256, original filename.
 discovery_sources   packaged + watched ATS slugs.
 jobs                canonical url, employer_job_id, company, role, channel, raw snapshot.
 assessments         score result + must-haves + gates. Private evidence stays here.
-applications        ledger rows. status: queued | filling | needs_attention | submitted | abandoned.
+applications        ledger rows. status: queued | pending_llm | filling | needs_attention | submitted | abandoned.
+work_queue          discover | assess | fill | submit | handoff. Async only.
 answers             reusable question fingerprint → candidate text.
 attention           existing attention event + session_id + live_view_url.
 rounds              requested count, counts, timestamps.

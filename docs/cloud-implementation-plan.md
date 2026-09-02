@@ -2,7 +2,7 @@
 
 **Specification:** [docs/cloud-mvp.md](./cloud-mvp.md)
 
-**Overview.** Build horizon **H0** from [docs/cloud-mvp.md](./cloud-mvp.md): a hosted loop that keeps a truthful search moving and only pulls the candidate in for real decisions. Onboard once, discover Greenhouse / Lever / Ashby over HTTP, score with the existing runbook, fill in Playwright, **click Submit when the gate passes**, record `submitted` only after visible confirmation. Live view is for hard stops and `review-each`. Auth and multi-tenant isolation stay out of H0. Do not fork scoring or ledger rules.
+**Overview.** Build horizon **H0** from [docs/cloud-mvp.md](./cloud-mvp.md): a hosted **async** loop. Onboard once, enqueue a round, workers discover / assess / fill / submit in the background. `cloud llm` prefers local Ollama when the tailnet is up, else a hosted API. Agent Submit when the gate passes. Live view is for hard stops and `review-each`. The HTTP API never holds a browser. Auth stays out of H0.
 
 ## Technical approach
 
@@ -12,9 +12,9 @@ Reuse the OSS CLI as the source of truth for candidate state. Add a new `cloud/`
 |---|---|---|
 | Profile, résumé, ledger, rounds, attention enums | Existing `job-application.mjs` via import + subprocess | Extract shared package both skill and worker import |
 | Discovered jobs, watched slugs, assessments, browser sessions | New SQLite in `cloud/data/` (gitignored) | D1 / Postgres + R2 |
-| Must-have assessment | `cloud llm assess` → hosted API → `mustHaves` + `scoreJob`. Heuristic fallback. Never a local model | Same |
+| Must-have assessment | Async `assess` job: Ollama (if reachable) → hosted API → heuristic, then `scoreJob` | Same |
 | Prefill | Deterministic `questions[]` + synonym map; `cloud llm map-fields` / `draft` for leftovers and essays | Same |
-| Apply | Playwright + Chromium on a **new Fly Machine** (not Paisewise); agent Submit when the gate passes | Browser adapter `{launch, fill, submit, handoff, heartbeat, close}` |
+| Apply | Async `fill` / `submit` jobs on a **new Fly Machine**; never inline in an HTTP handler | Browser adapter + work queue |
 | Takeover | noVNC / CDP live view URL stored on `browser_sessions` | Cloudflare Browser Run or Steel/Browserbase |
 | Operator UI | One local page, bound to `fly proxy` / WireGuard | Quiet Trust UI on the existing site |
 
@@ -40,10 +40,12 @@ cloud/
     db.mjs              # SQLite
     skill.mjs           # import + subprocess bridge
     discover/{greenhouse,lever,ashby,normalize}.mjs
-    llm.mjs             # assess | map-fields | draft → hosted API, JSON only
-    assess.mjs          # llm first, heuristic fallback, then scoreJob
+    llm.mjs             # assess | map-fields | draft; Ollama then hosted API
+    assess.mjs          # enqueue / drain assess jobs, then scoreJob
+    queue.mjs           # work_queue: discover, assess, fill, submit, handoff
     apply/{browser,greenhouse,lever,ashby,handoff}.mjs
-    server.mjs          # localhost API + operator page
+    worker.mjs          # long-running drain loop
+    server.mjs          # enqueue only; no Playwright in the request path
   data/                 # gitignored
 ```
 
@@ -56,7 +58,7 @@ Must exist before Phase 1 coding:
 - Node 20+, Chromium for Playwright (in that image)
 - Your `profile set` JSON and canonical PDF
 - A `boards.json` seed of companies you would actually join (start with 20 slugs, not 200)
-- A hosted LLM API key as a Fly secret (`ANTHROPIC_API_KEY` or equivalent). Used only by `cloud llm`. Heuristic fallback if unset. No on-box model.
+- Optional: Ollama on your laptop, reachable from Fly over Tailscale (`OLLAMA_HOST=http://<tailnet>:11434`). Optional hosted API key as fallback so async apply does not stall when the laptop is closed. Heuristic if neither is up.
 
 Must **not** be in place: auth, Dodo activation, public DNS, Cloudflare Browser Run, LinkedIn session, anything running on the Paisewise app.
 
@@ -73,6 +75,8 @@ Keep cloud code out of the published skill.
 - [ ] README: how to point `JOB_APPLICATION_STATE_DIR` at the Fly volume (and local `cloud/data/skill-state` for laptop runs)
 - [ ] Dockerfile + `fly.toml` for the new app only: Chromium/Playwright deps, volume mount, no Paisewise hostname
 - [ ] Document `fly proxy` as the operator path; do not allocate a public IPv4 for the UI
+- [ ] `work_queue` table + `worker.mjs` drain loop (discover / assess / fill / submit / handoff)
+- [ ] Server routes only enqueue; Playwright and `cloud llm` run in the worker
 
 **Done when:** `node cloud/src/cli.mjs status` prints skill profile status without writing candidate data into the repo, and the Fly app is a separate process from Paisewise.
 
@@ -100,30 +104,31 @@ HTTP only. No browser.
 - [ ] Normalize to `{company, role, title, description, url, employerJobId, applicationChannel, discoverySource, locations, salaryMaximum, salaryCurrency, workMode}`
 - [ ] Upsert `jobs` on canonical URL / employer job id; skip closed
 - [ ] For Greenhouse, persist the `questions` array for pre-flight later
-- [ ] `cloud discover` is idempotent and safe to cron
+- [ ] `cloud discover` enqueues a `discover` job (or runs in the worker on cron). Idempotent.
 
 **Done when:** 20 slugs produce a de-duplicated `jobs` table with direct apply URLs and descriptions. No scoring yet.
 
-### Phase 3 — Assess and queue
+### Phase 3 — Assess (async)
 
-LLM CLI for accuracy; `scoreJob` stays pure.
+LLM CLI for accuracy; `scoreJob` stays pure. Never call this inside an HTTP handler.
 
-- [ ] `cloud llm assess --stdin`: JD + résumé + profile → `mustHaves[]` with quoted evidence, plus eligibility / seniority / workMode
-- [ ] Fail closed: no quote → `unclear`; invalid JSON → heuristic fallback; you can `cloud assess --job` by hand
-- [ ] Call `scoreJob` on that payload; store the full result (and raw model JSON) on `assessments`
-- [ ] Cache by job id + résumé hash so refill does not re-call
-- [ ] `exclude` / `skip` stay out of the fill queue
-- [ ] `ask` becomes an attention item — no browser yet
-- [ ] `review` enters the fill queue; `autoEligible` + `routine-auto` may Submit after fill
-- [ ] `ledger check` before queueing; hard duplicates never enter
+- [ ] New jobs enqueue `assess`. Worker drains when a provider is up
+- [ ] `cloud llm` tries Ollama (`OLLAMA_HOST` on the tailnet, short timeout) then hosted API then heuristic
+- [ ] Unreachable providers: leave the row `pending_llm`; keep discovering and filling already-assessed jobs
+- [ ] `cloud llm assess --stdin`: JD + résumé + profile → `mustHaves[]` with quoted evidence
+- [ ] Fail closed: no quote → `unclear`; invalid JSON → heuristic; `cloud assess --job` by hand
+- [ ] Call `scoreJob`; cache by job id + résumé hash
+- [ ] `exclude` / `skip` stay out of fill; `ask` → attention; `review` → enqueue `fill`
+- [ ] `ledger check` before enqueueing fill
 - [ ] Review the first 20 assess outputs before trusting `autoEligible`
 
-**Done when:** a discover → `cloud llm assess` → `scoreJob` pass leaves a fill queue whose `met` rows quote the résumé. Empty `mustHaves` never reaches fill.
+**Done when:** `cloud round start` returns immediately, a worker assesses in the background, and `pending_llm` drains when Ollama or the hosted API appears. Empty `mustHaves` never reaches fill.
 
-### Phase 4 — Fill (Greenhouse first)
+### Phase 4 — Fill and submit (async, Greenhouse first)
 
-One channel until it is boring.
+Worker jobs only. One Chromium lease at a time on the personal Machine.
 
+- [ ] `fill` / `submit` are queue types; the API never launches Playwright
 - [ ] Playwright launches Chromium with a dedicated `cloud/data/chrome-profile`
 - [ ] Open the job `url`, not a Google/LinkedIn redirect
 - [ ] Prefill known fields from Greenhouse `questions` ids → profile keys; synonym map next
@@ -228,10 +233,10 @@ Do not start this until Phase 8 is done.
 
 When implementation starts, land in this order so each PR stays reviewable:
 
-1. `cloud/` skeleton + skill bridge + gitignore (Phase 0)
+1. `cloud/` skeleton + skill bridge + work queue + gitignore (Phase 0)
 2. `onboard` / `status` (Phase 1)
-3. `discover` + `boards.json` example (Phase 2)
-4. `cloud llm assess` + fill queue (Phase 3)
+3. async `discover` + `boards.json` example (Phase 2)
+4. async `cloud llm assess` (Ollama then hosted) (Phase 3)
 5. Greenhouse fill + agent Submit (Phase 4)
 6. Handoff for hard stops + `ledger add` on confirmation (Phase 5)
 7. Localhost operator page (Phase 6)
