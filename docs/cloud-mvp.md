@@ -116,7 +116,7 @@ Auth is a later gate in front of the same API. For MVP, bind the process to a ma
 1. **Onboard.** Collect every field the current CLI already requires, plus the extras that ATS forms ask every week. Upload one canonical résumé. Nothing is inferred.
 2. **Discover.** Pull public ATS boards and the existing catalog. Normalize to `{company, role, url, employerJobId, applicationChannel, discoverySource}`.
 3. **Qualify.** Reuse `score`. Keep `exclude` / `ask` / `skip` / `review` and `autoEligible`. `autoEligible` plus `routine-auto` plus a clean page means the agent may Submit.
-4. **Fill.** Open the direct apply URL. Prefill from the profile and ATS question schema — no model. Upload the résumé. Narratives use a stored blurb or, optionally, an HTTP LLM. See [Prefill without a model](#prefill-without-a-model).
+4. **Fill.** Open the direct apply URL. Prefill known profile fields from the ATS schema. Use `cloud llm` for leftover labels, must-haves, and drafts. See [Prefill and the LLM CLI](#prefill-and-the-llm-cli).
 5. **Submit or pause.** If the submit gate below passes, the agent clicks Submit and waits for confirmation. If a hard stop fires or the profile is `review-each`, write an attention item instead.
 6. **Handoff (only when needed).** The operator opens a live view (same tab if it is still up, otherwise acquire + refill) and handles login / CAPTCHA / legal / judgment. They may also Submit in `review-each`.
 7. **Confirm.** Only after a visible success page does the system write `submitted`. No confirmation, no ledger row. Never click Submit a second time if confirmation is unclear — queue attention as `other` / site-error.
@@ -141,45 +141,46 @@ Otherwise stop and hand off. First Greenhouse dogfood run may still be watched (
 
 `review-each` is still a first-class mode: fill everything, then live view for the candidate to send.
 
-## Prefill without a model
+## Prefill and the LLM CLI
 
-The local product looks like it “uses AI” because a coding agent reads the page. The CLI itself has **no model**. `scoreJob`, `validateProfile`, and `ledger check` are pure functions. Cloud should keep it that way on the Fly Machine.
+Known facts stay deterministic. Accuracy-sensitive reading uses an **LLM CLI** on the Fly Machine — a small command that calls a hosted model over HTTPS. That is how the local skill is accurate today (a coding agent reads the JD). We keep that accuracy; we do not keep a chat session, and we do not load weights next to Chromium.
 
-**Do not run a local LLM in the CLI or on that box.** A 2 GB Fly Machine cannot host a useful model next to Chromium. If we want generated prose or richer must-haves later, the worker calls a **hosted API** (Anthropic, OpenAI, etc.) over HTTPS. That is optional and off by default for H0.
+`scoreJob`, `validateProfile`, and `ledger check` stay pure. The model only produces structured inputs those functions already accept.
 
-### What fills the form
+### Two layers
 
-| Input | How it gets onto the page | AI? |
+| Step | Who | Why |
 |---|---|---|
-| Name, email, phone, location, links | Profile JSON → Greenhouse/Lever/Ashby `questions` (field id + type) or DOM hints (`type=email`, `autocomplete`, label synonym map) | No |
-| Résumé | `resume path` + `setInputFiles` | No |
-| Work auth / sponsorship / salary | Structured onboarding fields, then exact label match or stored `answers` fingerprint | No |
-| “Have you applied here?” | `ledger check` for that company | No |
-| Must-haves for `scoreJob` | Keyword overlap: JD text vs `profile.skills` / résumé text → `met` / `missing`. Coverage below the floor → `skip` | No |
-| “Why this company” / cover letter | Stored `motivationBlurb` from onboard, or attention if the form requires a long original | No (default) |
-| Richer evidence / company-specific essay | Optional HTTP LLM with résumé + JD; never invent; you review the first batch | API only, not on-box |
+| Name, email, phone, links, résumé, stored answers, ledger “applied here?” | Deterministic adapter (`questions[]` + synonym map + profile) | Fast, no hallucination |
+| Must-haves + evidence, messy labels, eligibility nuance, “why this company” | `cloud llm …` → hosted API | Same judgment quality as the laptop agent |
+| Hard stops (legal, demographics, IDs, CAPTCHA) | Human | Model must not answer |
 
-Greenhouse is the reason this works without a model: `GET /v1/boards/{slug}/jobs/{id}` returns a `questions` array (name, email, phone, resume, custom ids). The adapter maps those ids to profile keys. Lever and Ashby are the same idea with worse schemas; unknown labels become attention, not a guess.
+Heuristic skill-overlap is the **fallback** if the key is missing or the call fails — not the accuracy path.
 
-A synonym map covers the messy DOM case: `["email", "e-mail", "work email"]` → `profile.email`. If nothing matches, stop. Do not ask a model to invent a mapping on the first pass.
+### LLM CLI (on our Fly Machine, not a local model)
 
-### What still runs on the Fly Machine
+```text
+cloud llm assess --stdin    # JD + résumé + profile → mustHaves[], eligibility, seniority, workMode
+cloud llm map-fields --stdin  # leftover labels → profile key | stored answer | unclear
+cloud llm draft --stdin     # question + company + résumé → short answer per APPLICATION_GUIDANCE.md
+```
 
-Node, the existing CLI (`score`, `ledger`, `profile`, `resume`), Playwright, SQLite. That is the whole runtime.
+Implementation: Node `fetch` to Anthropic or OpenAI, or a thin shell-out to an installed `llm` / vendor CLI. Same JSON contract either way. Store the API key as a Fly secret. **Do not run Ollama or another on-box model** — 2 GB cannot hold Chrome and weights, and we want one testable interface.
 
-`assess.mjs` in H0 is a **heuristic**: tokenize the JD, match `profile.skills`, emit `mustHaves`, call `scoreJob`. You can override with `cloud assess --job` by hand. An LLM key is not a dependency.
+Rules (same as `SKILL.md`):
 
-### What we collect so we do not need a model mid-form
+- JSON only. No free-form “looks good.”
+- `met` / `partial` must quote résumé or profile text. No quote → `unclear` → `ask`.
+- Unknown field → `unclear`, not a guess.
+- Drafts adapt `motivationBlurb` + résumé facts to the company; they do not invent stack, scale, or employment.
+- Cache the result on the `assessments` / `answers` row so refill does not pay twice.
+- You review the first 20 assess/draft outputs. After that, `routine-auto` may Submit through the existing gate.
 
-Add these at onboard (structured, not prose):
+Running full Codex/Claude Code on the box would also be accurate (that is today’s loop). Prefer the thin `cloud llm` CLI so scoring and ledger stay unit-testable and we are not paying for a general agent to click the DOM.
 
-- `authorizedWithoutSponsorship` per target country (yes / no / unclear)
-- `needsSponsorship` (yes / no)
-- `willingToRelocate` (yes / no / unclear)
-- `motivationBlurb` — 100–150 words, written by you, reused when a form asks “why us” / cover letter
-- `howHeard` default (“company careers page” / “other”)
+### What we still collect at onboard
 
-Visa and salary stay in your words as today; the booleans are what the checkboxes actually ask.
+Structured flags and a `motivationBlurb` remain. They ground the model and fill checkboxes when the LLM is down.
 
 ## Details to collect
 
@@ -193,7 +194,7 @@ Required today (`REQUIRED_PROFILE` plus résumé):
 - Work authorization in the candidate’s own words
 - Target role families, seniority, years of experience
 - Target locations and work modes
-- Submission mode (`review-each` for the cloud MVP)
+- Submission mode (`routine-auto` or `review-each`)
 - Score floors: `autoSubmitMinScore`, `manualReviewMinScore`, `minMustHaveCoverage`
 - Canonical résumé (PDF)
 
@@ -220,7 +221,7 @@ Typical mid-run prompts:
 - Salary expectation on this requisition
 - “Are you authorized to work in X without sponsorship?”
 - “Have you previously applied / been employed here?”
-- Cover-letter or “why this company” (draft from guidance, confirm if `review-each`)
+- Cover-letter or “why this company” (`motivationBlurb`, or attention if that is not enough)
 - Start date, willingness to relocate, travel percentage
 - How they heard about the role
 - Website / additional links not in the profile
