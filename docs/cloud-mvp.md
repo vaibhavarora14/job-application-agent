@@ -178,6 +178,32 @@ Job-board scraping, scoring, “must-have” lists, Ollama, Fly, Playwright. If 
 
 Monday: set up. Monday evening: start 10. Tuesday–Thursday: two or three “needs you” pings, you spend a minute each. Friday: History shows the ones that really sent.
 
+## How AI helps (and which)
+
+AI is a **reader and writer**, not the applicant. It never logs in, never solves CAPTCHA, never clicks Send on its own authority. `scoreJob` and the form filler stay ordinary code.
+
+It does three jobs:
+
+1. **Fit** — Read this job post against your résumé. List must-haves as met / partial / missing, with a quote from the résumé. That is how we skip a Staff role when you are Senior, or a GraphQL-required role you do not have.
+2. **Weird labels** — The form says “Corporate e-mail” or “Notice (days)”. Map it to a profile field or say “unclear” and ping you. It does not invent a value.
+3. **Short answers** — “Why this company?” It rewrites your saved paragraph so it names that product, still only using résumé facts.
+
+Without AI we can still type name, email, phone, and attach the PDF. We apply to more wrong jobs and write flatter “why us” answers.
+
+### Which AI
+
+One CLI (`cloud llm`). Swap the engine; keep the JSON contract.
+
+| Order | Engine | Where it runs | When |
+|---|---|---|---|
+| 1 | **Ollama** (a model you already pull, e.g. Llama 3.1 or Qwen 2.5) | Your laptop / home box | Tailscale is up. Résumé stays on your LAN. |
+| 2 | **Anthropic Claude Sonnet** (default hosted) | Their API, called from Fly | Ollama is off, so the round still moves. |
+| 3 | Keyword overlap | Fly, no model | Both of the above are down. Worse fit. |
+
+OpenAI is a drop-in second hosted option if we do not want an Anthropic key. We are **not** putting Cursor, Codex, or Claude Code in the cloud to click the page. We are **not** training our own job model. We are **not** running Ollama on the small Fly Machine next to Chrome.
+
+Default for H0: Claude Sonnet on Fly when you are away; Ollama when you leave it on. You review the first 20 fit/draft outputs. If it cannot quote the résumé, it must say unclear — then you get the inbox, not a lie on the form.
+
 ## User and system flow
 
 You do a little, up front and when something is actually a decision. The Fly worker does the rest in the background.
