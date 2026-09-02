@@ -12,7 +12,8 @@ Reuse the OSS CLI as the source of truth for candidate state. Add a new `cloud/`
 |---|---|---|
 | Profile, résumé, ledger, rounds, attention enums | Existing `job-application.mjs` via import + subprocess | Extract shared package both skill and worker import |
 | Discovered jobs, watched slugs, assessments, browser sessions | New SQLite in `cloud/data/` (gitignored) | D1 / Postgres + R2 |
-| Must-have assessment | LLM (or you) writes the `score --stdin` payload; never invent evidence | Same, with stored prompts and review |
+| Must-have assessment | Heuristic: JD tokens vs `profile.skills` / résumé text, then `scoreJob`. Hand override. Optional HTTP LLM later, never a local model | Same |
+| Prefill | ATS `questions` + label synonym map + stored answers. No model | Same |
 | Apply | Playwright + Chromium on a **new Fly Machine** (not Paisewise); agent Submit when the gate passes | Browser adapter `{launch, fill, submit, handoff, heartbeat, close}` |
 | Takeover | noVNC / CDP live view URL stored on `browser_sessions` | Cloudflare Browser Run or Steel/Browserbase |
 | Operator UI | One local page, bound to `fly proxy` / WireGuard | Quiet Trust UI on the existing site |
@@ -39,7 +40,7 @@ cloud/
     db.mjs              # SQLite
     skill.mjs           # import + subprocess bridge
     discover/{greenhouse,lever,ashby,normalize}.mjs
-    assess.mjs          # JD + résumé → score input
+    assess.mjs          # heuristic mustHaves + scoreJob; optional HTTP LLM later
     apply/{browser,greenhouse,lever,ashby,handoff}.mjs
     server.mjs          # localhost API + operator page
   data/                 # gitignored
@@ -54,7 +55,7 @@ Must exist before Phase 1 coding:
 - Node 20+, Chromium for Playwright (in that image)
 - Your `profile set` JSON and canonical PDF
 - A `boards.json` seed of companies you would actually join (start with 20 slugs, not 200)
-- An LLM key **only** for assessment, or willingness to assess the first batch by hand
+- No LLM key. Prefill and `scoreJob` are deterministic. An API key is optional later for essays only — never a local model on the Fly box.
 
 Must **not** be in place: auth, Dodo activation, public DNS, Cloudflare Browser Run, LinkedIn session, anything running on the Paisewise app.
 
@@ -104,21 +105,21 @@ HTTP only. No browser.
 
 ### Phase 3 — Assess and queue
 
-This is the step the coding agent does today by reading the posting.
+No model. The coding agent does this today by reading the posting; on Fly we use a heuristic plus `scoreJob`.
 
 - [ ] For each new job, build a `score --stdin` payload:
   - `postingStatus: active` only after the apply URL still resolves
-  - `eligibility` from authorization / location text; `unclear` if not explicit
-  - `mustHaves[]` from the JD, each `met|partial|missing|unclear` with résumé-backed evidence or no evidence
-- [ ] Default assessor: model + canonical résumé text + JD. Prompt forbids inventing evidence.
-- [ ] Fallback: `cloud assess --job <id>` you fill by hand
+  - `eligibility` from structured onboarding flags + location text; `unclear` if not explicit
+  - `mustHaves[]` from JD token overlap with `profile.skills` and résumé text (`met` / `missing` only — no invented evidence)
 - [ ] Call `scoreJob(job, profile)`; store the full result on `assessments`
+- [ ] `cloud assess --job <id>` lets you override a heuristic by hand
 - [ ] `exclude` / `skip` stay out of the fill queue
-- [ ] `ask` becomes an attention item (`ambiguous-authorization`, `ambiguous-compensation`, or `unverifiable-claim`) — no browser yet
-- [ ] `review` (and `autoEligible`) enter the fill queue. `autoEligible` means fill, not submit
+- [ ] `ask` becomes an attention item — no browser yet
+- [ ] `review` enters the fill queue; `autoEligible` + `routine-auto` may Submit after fill
 - [ ] `ledger check` before queueing; hard duplicates never enter
+- [ ] Do not add an on-box LLM. An HTTP assessor is a later optional adapter behind the same `mustHaves` shape.
 
-**Done when:** a discover → assess pass leaves a fill queue of `review` jobs and a separate list of questions for you. Empty `mustHaves` never reaches fill.
+**Done when:** a discover → assess pass leaves a fill queue of `review` jobs using only Node + the existing CLI. Empty `mustHaves` never reaches fill.
 
 ### Phase 4 — Fill (Greenhouse first)
 
@@ -126,10 +127,10 @@ One channel until it is boring.
 
 - [ ] Playwright launches Chromium with a dedicated `cloud/data/chrome-profile`
 - [ ] Open the job `url`, not a Google/LinkedIn redirect
-- [ ] Fill name, email, phone, location, links, work authorization, compensation from profile only
+- [ ] Prefill from Greenhouse `questions` ids → profile keys; fall back to a label synonym map; unknown required field → attention
 - [ ] Upload résumé with `setInputFiles` / file chooser using `resume path` ([BROWSER_UPLOADS.md](../job-application-agent/references/BROWSER_UPLOADS.md))
 - [ ] After ATS parse, restore any verified field the parser changed
-- [ ] Draft “why this company” from [APPLICATION_GUIDANCE.md](../job-application-agent/references/APPLICATION_GUIDANCE.md); do not submit it blindly if the profile is `review-each`
+- [ ] Narratives: paste `motivationBlurb` or stop. No on-box draft model.
 - [ ] Stop on login, MFA, CAPTCHA, legal, demographic, government-id, unclear compensation/authorization, unverifiable claim, “Apply with LinkedIn”
 - [ ] Implement the submit gate from [cloud-mvp.md](./cloud-mvp.md#when-the-agent-submits)
 - [ ] On a passing gate: screenshot, click Submit, wait for confirmation, `ledger add` with `STANDING AUTHORIZATION`
@@ -201,7 +202,7 @@ Do not start this until Phase 8 is done.
 
 | Risk | Why it shows up | Mitigation |
 |---|---|---|
-| Assessor invents experience | `scoreJob` will happily score invented `met` evidence | Prompt + store evidence text; you review the first 20; `unclear` → `ask` |
+| Assessor invents experience | `scoreJob` will happily score invented `met` evidence | H0 heuristic only marks `met` on explicit skill overlap; hand override; no on-box model |
 | Greenhouse iframe / “Apply with LinkedIn” | Fill script clicks the wrong surface | Prefer the hosted board apply form; stop on LinkedIn overlay |
 | ATS résumé parse clobbers fields | Local runbook already warns | Re-read fields after upload; restore from profile |
 | Bot detection | Worse on hosted browsers than on a residential VM | Dogfood on your VM first; vendor choice is an output of Phase 8 |
@@ -231,8 +232,8 @@ When implementation starts, land in this order so each PR stays reviewable:
 2. `onboard` / `status` (Phase 1)
 3. `discover` + `boards.json` example (Phase 2)
 4. `assess` + fill queue (Phase 3)
-5. Greenhouse fill, no submit (Phase 4)
-6. Handoff + `ledger add` on confirmation (Phase 5)
+5. Greenhouse fill + agent Submit (Phase 4)
+6. Handoff for hard stops + `ledger add` on confirmation (Phase 5)
 7. Localhost operator page (Phase 6)
 
 Lever/Ashby and the public-cloud move are their own PRs after a real Greenhouse submission.

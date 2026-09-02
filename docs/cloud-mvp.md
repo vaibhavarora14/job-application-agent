@@ -116,7 +116,7 @@ Auth is a later gate in front of the same API. For MVP, bind the process to a ma
 1. **Onboard.** Collect every field the current CLI already requires, plus the extras that ATS forms ask every week. Upload one canonical résumé. Nothing is inferred.
 2. **Discover.** Pull public ATS boards and the existing catalog. Normalize to `{company, role, url, employerJobId, applicationChannel, discoverySource}`.
 3. **Qualify.** Reuse `score`. Keep `exclude` / `ask` / `skip` / `review` and `autoEligible`. `autoEligible` plus `routine-auto` plus a clean page means the agent may Submit.
-4. **Fill.** Open the direct apply URL in the hosted browser. Fill profile facts, upload the résumé, draft narrative answers from `APPLICATION_GUIDANCE.md`.
+4. **Fill.** Open the direct apply URL. Prefill from the profile and ATS question schema — no model. Upload the résumé. Narratives use a stored blurb or, optionally, an HTTP LLM. See [Prefill without a model](#prefill-without-a-model).
 5. **Submit or pause.** If the submit gate below passes, the agent clicks Submit and waits for confirmation. If a hard stop fires or the profile is `review-each`, write an attention item instead.
 6. **Handoff (only when needed).** The operator opens a live view (same tab if it is still up, otherwise acquire + refill) and handles login / CAPTCHA / legal / judgment. They may also Submit in `review-each`.
 7. **Confirm.** Only after a visible success page does the system write `submitted`. No confirmation, no ledger row. Never click Submit a second time if confirmation is unclear — queue attention as `other` / site-error.
@@ -140,6 +140,46 @@ The agent clicks Submit only when **all** of these are true:
 Otherwise stop and hand off. First Greenhouse dogfood run may still be watched (log the click, screenshot before/after) so a bad detector cannot silently double-apply. After one clean confirmed Greenhouse submit, that channel stays allowlisted until friction says otherwise.
 
 `review-each` is still a first-class mode: fill everything, then live view for the candidate to send.
+
+## Prefill without a model
+
+The local product looks like it “uses AI” because a coding agent reads the page. The CLI itself has **no model**. `scoreJob`, `validateProfile`, and `ledger check` are pure functions. Cloud should keep it that way on the Fly Machine.
+
+**Do not run a local LLM in the CLI or on that box.** A 2 GB Fly Machine cannot host a useful model next to Chromium. If we want generated prose or richer must-haves later, the worker calls a **hosted API** (Anthropic, OpenAI, etc.) over HTTPS. That is optional and off by default for H0.
+
+### What fills the form
+
+| Input | How it gets onto the page | AI? |
+|---|---|---|
+| Name, email, phone, location, links | Profile JSON → Greenhouse/Lever/Ashby `questions` (field id + type) or DOM hints (`type=email`, `autocomplete`, label synonym map) | No |
+| Résumé | `resume path` + `setInputFiles` | No |
+| Work auth / sponsorship / salary | Structured onboarding fields, then exact label match or stored `answers` fingerprint | No |
+| “Have you applied here?” | `ledger check` for that company | No |
+| Must-haves for `scoreJob` | Keyword overlap: JD text vs `profile.skills` / résumé text → `met` / `missing`. Coverage below the floor → `skip` | No |
+| “Why this company” / cover letter | Stored `motivationBlurb` from onboard, or attention if the form requires a long original | No (default) |
+| Richer evidence / company-specific essay | Optional HTTP LLM with résumé + JD; never invent; you review the first batch | API only, not on-box |
+
+Greenhouse is the reason this works without a model: `GET /v1/boards/{slug}/jobs/{id}` returns a `questions` array (name, email, phone, resume, custom ids). The adapter maps those ids to profile keys. Lever and Ashby are the same idea with worse schemas; unknown labels become attention, not a guess.
+
+A synonym map covers the messy DOM case: `["email", "e-mail", "work email"]` → `profile.email`. If nothing matches, stop. Do not ask a model to invent a mapping on the first pass.
+
+### What still runs on the Fly Machine
+
+Node, the existing CLI (`score`, `ledger`, `profile`, `resume`), Playwright, SQLite. That is the whole runtime.
+
+`assess.mjs` in H0 is a **heuristic**: tokenize the JD, match `profile.skills`, emit `mustHaves`, call `scoreJob`. You can override with `cloud assess --job` by hand. An LLM key is not a dependency.
+
+### What we collect so we do not need a model mid-form
+
+Add these at onboard (structured, not prose):
+
+- `authorizedWithoutSponsorship` per target country (yes / no / unclear)
+- `needsSponsorship` (yes / no)
+- `willingToRelocate` (yes / no / unclear)
+- `motivationBlurb` — 100–150 words, written by you, reused when a form asks “why us” / cover letter
+- `howHeard` default (“company careers page” / “other”)
+
+Visa and salary stay in your words as today; the booleans are what the checkboxes actually ask.
 
 ## Details to collect
 
@@ -168,6 +208,8 @@ Collect on the same screen even though some are optional in the CLI. They appear
 - Citizenship / visa status as free text (“Indian citizen, no US sponsorship needed” / “Need H-1B transfer”) — stored as `workAuthorization`, never as a government ID
 - Preferred name, pronouns only if the candidate volunteers them
 - How they want to hear about pauses (email is enough for MVP)
+- Structured flags so forms do not need a model: `authorizedWithoutSponsorship`, `needsSponsorship`, `willingToRelocate`
+- `motivationBlurb` (100–150 words, written by you) and a default `howHeard`
 
 ### Ask when a form requires it
 
