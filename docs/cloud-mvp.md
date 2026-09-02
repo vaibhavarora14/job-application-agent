@@ -111,6 +111,78 @@ Three layers, one tenant:
 
 Auth is a later gate in front of the same API. For MVP, bind the process to a machine you control and do not expose it publicly.
 
+## User and system flow
+
+You do a little, up front and when something is actually a decision. The Fly worker does the rest in the background.
+
+```mermaid
+sequenceDiagram
+  actor You
+  participant UI as Operator UI
+  participant Q as Work queue
+  participant W as Fly worker
+  participant LLM as cloud llm
+  participant ATS as ATS board / apply page
+
+  You->>UI: Onboard profile + résumé + blurb
+  You->>UI: Start round of N
+  UI->>Q: enqueue discover
+  UI-->>You: roundId immediately
+
+  loop Background
+    W->>ATS: list jobs HTTP
+    W->>Q: enqueue assess per new job
+    W->>LLM: Ollama if up else hosted API
+    LLM-->>W: mustHaves JSON
+    W->>W: scoreJob + ledger check
+    alt skip exclude or ask
+      W->>UI: attention or drop
+    else review
+      W->>Q: enqueue fill
+      W->>ATS: Playwright prefill + résumé
+      alt submit gate passes
+        W->>ATS: click Submit
+        ATS-->>W: thank-you page
+        W->>UI: submitted in ledger
+      else hard stop or review-each
+        W->>UI: attention + live view
+        You->>ATS: unblock or Submit
+        W->>UI: submitted after confirm
+      end
+    end
+  end
+```
+
+### You (candidate)
+
+| When | What you do | What you do not do |
+|---|---|---|
+| Once | Onboard: profile, résumé, flags, `motivationBlurb`, `routine-auto` or `review-each`. Optionally start Ollama on the tailnet. | Sit in a browser while jobs are found |
+| Start a search | “Round of 10.” Get a `roundId` back immediately | Wait for fills to finish |
+| Optional | Leave Ollama running so assess is local; or leave it off and hosted API / `pending_llm` takes over | Keep the laptop open for apply to work |
+| When pinged | Open the inbox. Live view only for login, CAPTCHA, legal, ID, judgment, or `review-each` | Click Submit on every Greenhouse-class form |
+| Anytime | Answer a queued question, record an outcome, look at the ledger | Drive discovery or scoring |
+
+### System (Fly worker + CLI)
+
+| Job | System does | Stops and asks you |
+|---|---|---|
+| `discover` | Pull Greenhouse / Lever / Ashby JSON. Dedupe. Enqueue `assess` | Never |
+| `assess` | `cloud llm` (Ollama → hosted → heuristic) → `scoreJob` → `ledger check` | `ask` (unclear visa/pay/evidence). `pending_llm` if no provider — not a ping, a wait |
+| `fill` | Open apply URL. Map `questions[]` + profile. Upload résumé. Restore parser drift. `map-fields` / `draft` if needed | Unknown required field, LinkedIn overlay |
+| `submit` | If gate passes: screenshot, click Submit, wait for thank-you, `ledger add` | Hard stop, `review-each`, unclear confirmation (never click twice) |
+| `handoff` | Keep or re-acquire a tab, give you a live URL, resume after you mark done | You must be in the tab |
+
+### What a day looks like
+
+1. You onboard once (or already did).
+2. You start a round. UI returns. You close the laptop if you want.
+3. Worker discovers, assesses (Ollama if your tailnet is up), fills, Submits routine Greenhouse jobs.
+4. You get a ping only for a pause. You open one live view, unblock, go away again.
+5. Ledger shows confirmed rows only. Inbox is the leftover human work.
+
+H1/H2 are the same flow with auth in front of the UI and more workers behind the same queue.
+
 ## The application loop
 
 1. **Onboard.** Collect every field the current CLI already requires, plus the extras that ATS forms ask every week. Upload one canonical résumé. Nothing is inferred.
