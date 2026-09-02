@@ -6,15 +6,51 @@ The public site already promises cloud access on 18 September 2026: scheduled di
 
 ## Goal
 
-One operator (you) can:
+**Keep a truthful search moving while the candidate is away. Pull them in only for real decisions. Record a submission only when the employer visibly confirms it.**
 
-1. Enter a verified profile and canonical résumé once.
-2. Search for matching, still-open roles.
-3. Have a hosted browser fill the application from those facts.
-4. Take over that same browser when a human is required — especially to submit.
-5. See every lead, pause, and confirmed submission in one database.
+That is the same promise as the site (“Set the goal. Keep the search moving.”) and the local skill. Cloud does not get a different goal. It gets a hosted loop that can survive the candidate closing the laptop.
 
-Success for this MVP is not volume. It is a complete, inspectable loop on Greenhouse / Lever / Ashby public apply pages, with every confirmed row as trustworthy as the local ledger is today.
+Three things must stay true at every horizon:
+
+1. **Facts.** Fills use the verified profile and one canonical résumé. Nothing is invented.
+2. **Judgment.** Login, MFA, CAPTCHA, legal, demographics, government IDs, unclear authorization/compensation, and Submit (until a channel earns auto-submit) stay with the candidate.
+3. **Ledger.** `submitted` means a visible confirmation. Volume, open tabs, and “probably sent” do not count.
+
+### Why the earlier wording was weak
+
+- It described a **mechanism** (“take over that same browser”) instead of an outcome. Warm tabs do not scale and are not the point.
+- It optimized for **one operator’s session**, so 100 users × 100 pending submits looked like a new product.
+- It said success is “not volume” but did not say what **is** success, so the September launch and the 10,000-row inbox had no finish line.
+- It mixed **dogfood**, **founding access**, and **multi-tenant load** into one list.
+
+### Horizons
+
+| Horizon | Who | Done when |
+|---|---|---|
+| **H0 — Personal dogfood** | You, one new Fly app (not Paisewise) | One Greenhouse (then Lever/Ashby) loop: onboard → discover via API → assess → fill → **just-in-time** live view → you submit → ledger row exists only after the thank-you page. A killed session can be refilled. |
+| **H1 — Founding cloud** | Paying users, after H0 | They set boundaries once, get a scheduled round, and an inbox of pauses. Auth and isolation exist. Same ledger rules. Still no auto-submit. |
+| **H2 — Many inboxes** | ~100 users, ~100 `needs_attention` each | Those 10,000 items are inbox rows. Browser pool ≈ in-flight fills + people in live view. One Chrome context per user. “Open” means acquire → refill → hand off → release. |
+
+H0 is what we build first. H1 is the 18 September offer. H2 is a capacity and tenancy problem if H0 APIs already treat a session as a lease.
+
+### What we measure (and what we do not)
+
+Count:
+
+- Confirmed unique submissions (visible employer/ATS success)
+- Attention items by blocker, and time from “ready” to “opened”
+- Fills that had to be refilled after a dead session
+- False or skipped confirmations (should be ~0)
+
+Do not count: forms filled but not confirmed, tabs held open, applications per hour, or “autoEligible” as a submit.
+
+### Non-goals (all horizons)
+
+- Application volume as a success metric
+- LinkedIn Easy Apply, X, or other session-gated social apply
+- Auto-submit before a channel is boringly reliable
+- Sharing the Paisewise Machine
+- A second scoring system or a second meaning of `submitted`
 
 ## What we already have
 

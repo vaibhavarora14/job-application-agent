@@ -2,7 +2,7 @@
 
 **Specification:** [docs/cloud-mvp.md](./cloud-mvp.md)
 
-**Overview.** Build a single-tenant hosted loop you can run for yourself: onboard once, discover Greenhouse / Lever / Ashby jobs over HTTP, score with the existing runbook, fill in a Playwright browser, and hand you the live tab to submit. Auth, multi-tenant isolation, and founding-access gating stay out. Do not fork scoring or ledger rules.
+**Overview.** Build horizon **H0** from [docs/cloud-mvp.md](./cloud-mvp.md): a hosted loop that keeps a truthful search moving and only pulls the candidate in for real decisions. Onboard once, discover Greenhouse / Lever / Ashby over HTTP, score with the existing runbook, fill in Playwright, open a **just-in-time** live view to submit, record `submitted` only after visible confirmation. Auth and multi-tenant isolation stay out of H0. Do not fork scoring or ledger rules. Do not treat “keep the same tab warm” as the goal — that is an H0 convenience. H1/H2 need acquire → refill → release.
 
 ## Technical approach
 
