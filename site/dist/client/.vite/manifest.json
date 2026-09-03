@@ -1,0 +1,168 @@
+{
+  "_app-elements-Drg5O4vw.js": {
+    "file": "_next/static/chunks/app-elements-Drg5O4vw.js",
+    "name": "app-elements",
+    "imports": [
+      "_rolldown-runtime-C60lm6uB.js",
+      "_framework-BaE7mD_r.js",
+      "_hash-D0ldriCF.js",
+      "_record-BdkTR7AP.js"
+    ]
+  },
+  "_app-rsc-cache-busting-Byf4TqyX.js": {
+    "file": "_next/static/chunks/app-rsc-cache-busting-Byf4TqyX.js",
+    "name": "app-rsc-cache-busting",
+    "imports": [
+      "_rolldown-runtime-C60lm6uB.js",
+      "_app-rsc-render-mode-IDJu5NEE.js",
+      "_headers-CeAbe3am.js",
+      "_deployment-id-DFhHa9wO.js",
+      "_hash-D0ldriCF.js"
+    ]
+  },
+  "_app-rsc-render-mode-IDJu5NEE.js": {
+    "file": "_next/static/chunks/app-rsc-render-mode-IDJu5NEE.js",
+    "name": "app-rsc-render-mode",
+    "imports": [
+      "_rolldown-runtime-C60lm6uB.js"
+    ]
+  },
+  "_deployment-id-DFhHa9wO.js": {
+    "file": "_next/static/chunks/deployment-id-DFhHa9wO.js",
+    "name": "deployment-id"
+  },
+  "_framework-BaE7mD_r.js": {
+    "file": "_next/static/chunks/framework-BaE7mD_r.js",
+    "name": "framework",
+    "imports": [
+      "_rolldown-runtime-C60lm6uB.js"
+    ]
+  },
+  "_hash-D0ldriCF.js": {
+    "file": "_next/static/chunks/hash-D0ldriCF.js",
+    "name": "hash"
+  },
+  "_headers-CeAbe3am.js": {
+    "file": "_next/static/chunks/headers-CeAbe3am.js",
+    "name": "headers",
+    "imports": [
+      "_rolldown-runtime-C60lm6uB.js",
+      "_protocol-headers-URL33uU5.js"
+    ]
+  },
+  "_navigation-errors-wvgRKjB-.js": {
+    "file": "_next/static/chunks/navigation-errors-wvgRKjB-.js",
+    "name": "navigation-errors",
+    "imports": [
+      "_rolldown-runtime-C60lm6uB.js",
+      "_framework-BaE7mD_r.js"
+    ]
+  },
+  "_protocol-headers-URL33uU5.js": {
+    "file": "_next/static/chunks/protocol-headers-URL33uU5.js",
+    "name": "protocol-headers"
+  },
+  "_query-DDhZxhdQ.js": {
+    "file": "_next/static/chunks/query-DDhZxhdQ.js",
+    "name": "query"
+  },
+  "_record-BdkTR7AP.js": {
+    "file": "_next/static/chunks/record-BdkTR7AP.js",
+    "name": "record"
+  },
+  "_rolldown-runtime-C60lm6uB.js": {
+    "file": "_next/static/chunks/rolldown-runtime-C60lm6uB.js",
+    "name": "rolldown-runtime"
+  },
+  "app/components/FoundingSignup.tsx": {
+    "file": "_next/static/chunks/FoundingSignup-D67iQYFf.js",
+    "name": "FoundingSignup",
+    "src": "app/components/FoundingSignup.tsx",
+    "isDynamicEntry": true,
+    "imports": [
+      "_rolldown-runtime-C60lm6uB.js",
+      "_framework-BaE7mD_r.js"
+    ]
+  },
+  "app/components/PaymentReturnStatus.tsx": {
+    "file": "_next/static/chunks/PaymentReturnStatus-D0xlGcki.js",
+    "name": "PaymentReturnStatus",
+    "src": "app/components/PaymentReturnStatus.tsx",
+    "isDynamicEntry": true,
+    "imports": [
+      "_rolldown-runtime-C60lm6uB.js",
+      "_framework-BaE7mD_r.js",
+      "node_modules/vinext/dist/shims/link.js"
+    ]
+  },
+  "node_modules/vinext/dist/shims/internal/hybrid-client-route-owner.js": {
+    "file": "_next/static/chunks/hybrid-client-route-owner-Cal5lygl.js",
+    "name": "hybrid-client-route-owner",
+    "src": "node_modules/vinext/dist/shims/internal/hybrid-client-route-owner.js",
+    "isDynamicEntry": true,
+    "imports": [
+      "virtual:vinext-app-browser-entry",
+      "_protocol-headers-URL33uU5.js",
+      "_query-DDhZxhdQ.js"
+    ]
+  },
+  "node_modules/vinext/dist/shims/layout-segment-context.js": {
+    "file": "_next/static/chunks/layout-segment-context-CzrSFxkw.js",
+    "name": "layout-segment-context",
+    "src": "node_modules/vinext/dist/shims/layout-segment-context.js",
+    "isDynamicEntry": true,
+    "imports": [
+      "_rolldown-runtime-C60lm6uB.js",
+      "virtual:vinext-app-browser-entry",
+      "_framework-BaE7mD_r.js",
+      "_navigation-errors-wvgRKjB-.js"
+    ]
+  },
+  "node_modules/vinext/dist/shims/link.js": {
+    "file": "_next/static/chunks/link-DwQcZHfd.js",
+    "name": "link",
+    "src": "node_modules/vinext/dist/shims/link.js",
+    "isDynamicEntry": true,
+    "imports": [
+      "_rolldown-runtime-C60lm6uB.js",
+      "virtual:vinext-app-browser-entry",
+      "_framework-BaE7mD_r.js",
+      "_deployment-id-DFhHa9wO.js",
+      "_protocol-headers-URL33uU5.js",
+      "_query-DDhZxhdQ.js",
+      "_record-BdkTR7AP.js"
+    ],
+    "dynamicImports": [
+      "node_modules/vinext/dist/shims/internal/hybrid-client-route-owner.js",
+      "virtual:vinext-app-browser-entry",
+      "_app-elements-Drg5O4vw.js",
+      "_app-rsc-cache-busting-Byf4TqyX.js",
+      "_app-rsc-render-mode-IDJu5NEE.js",
+      "_headers-CeAbe3am.js"
+    ]
+  },
+  "virtual:vinext-app-browser-entry": {
+    "file": "_next/static/chunks/index-ZxW2Essj.js",
+    "name": "index",
+    "src": "virtual:vinext-app-browser-entry",
+    "isEntry": true,
+    "imports": [
+      "_rolldown-runtime-C60lm6uB.js",
+      "_framework-BaE7mD_r.js",
+      "_app-elements-Drg5O4vw.js",
+      "_app-rsc-cache-busting-Byf4TqyX.js",
+      "_headers-CeAbe3am.js",
+      "_navigation-errors-wvgRKjB-.js",
+      "_hash-D0ldriCF.js",
+      "_record-BdkTR7AP.js"
+    ],
+    "dynamicImports": [
+      "node_modules/vinext/dist/shims/internal/hybrid-client-route-owner.js",
+      "virtual:vinext-app-browser-entry",
+      "node_modules/vinext/dist/shims/layout-segment-context.js",
+      "app/components/FoundingSignup.tsx",
+      "node_modules/vinext/dist/shims/link.js",
+      "app/components/PaymentReturnStatus.tsx"
+    ]
+  }
+}

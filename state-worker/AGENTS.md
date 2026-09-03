@@ -1,0 +1,1 @@
+Cloud state is source of truth. Before work: `node state-worker/bin/sync.mjs pull`. After writes: `push`. Cloud agents: `GET /v1/profile`, `GET /v1/files/*`, download `resume.pdf` to workspace, path-based ATS upload, `POST /v1/ledgers/*` after success. Token in `~/Library/Application Support/job-application-agent-cloud/config.json` — never in git.
