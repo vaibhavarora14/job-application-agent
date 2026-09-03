@@ -1,8 +1,10 @@
 import { spawn } from 'node:child_process';
+import { existsSync } from 'node:fs';
 import { copyFile, mkdir } from 'node:fs/promises';
 import { join } from 'node:path';
 
 import { scoreJob, validateLedgerEntry, validateProfile, profileStatus } from '../../job-application-agent/scripts/job-application.mjs';
+import { createSecretStore, resolveStateDir } from '../../job-application-agent/scripts/secret-store.mjs';
 import { nowIso, openDb } from './db.mjs';
 import { SKILL_CLI, ensureDataDirs, skillStateDir } from './paths.mjs';
 
@@ -77,6 +79,50 @@ export async function storeResume(sourcePath, env = process.env) {
     // Headless boxes may lack a keyring; the copied PDF is enough for Playwright.
   }
   return dest;
+}
+
+export function hostSkillEnv(env = process.env) {
+  const host = { ...env };
+  delete host.JOB_APPLICATION_AGENT_STATE_DIR;
+  delete host.CLOUD_DATA_DIR;
+  delete host.CLOUD_DB_PATH;
+  return host;
+}
+
+export async function importLocalCandidate({
+  profile,
+  resumePath = null,
+  extras = {},
+  env = process.env,
+} = {}) {
+  if (!profile) throw new Error('No profile to import.');
+  const saved = saveProfile(profile, extrasFromBody({ ...profile, ...extras }), null, env);
+  let copiedResume = null;
+  if (resumePath && existsSync(resumePath)) copiedResume = await storeResume(resumePath, env);
+  return { ...saved, resumePath: copiedResume || saved.resumePath, imported: true };
+}
+
+export async function importFromLocalSkill(env = process.env, {
+  readProfile = null,
+  resumePath = null,
+} = {}) {
+  const host = hostSkillEnv(env);
+  let profile;
+  try {
+    const raw = readProfile
+      ? readProfile()
+      : createSecretStore({ env: host }).readProfile();
+    profile = typeof raw === 'string' ? JSON.parse(raw) : raw;
+  } catch (error) {
+    throw new Error(`Could not read the laptop skill profile. ${error.message}`);
+  }
+  const resume = resumePath || join(resolveStateDir({ env: host }), 'resume.pdf');
+  return importLocalCandidate({
+    profile,
+    extras: extrasFromBody(profile),
+    resumePath: existsSync(resume) ? resume : null,
+    env,
+  });
 }
 
 export async function runSkill(args, stdinObject = null, env = process.env) {

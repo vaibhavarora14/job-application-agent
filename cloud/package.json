@@ -8,6 +8,7 @@
   },
   "scripts": {
     "start": "node src/server.mjs",
+    "local": "node src/local.mjs",
     "worker": "node src/worker.mjs",
     "cli": "node src/cli.mjs",
     "test": "node --test tests/*.test.mjs"

@@ -1,61 +1,44 @@
-# Cloud apply (H0 personal dogfood)
+# Cloud apply (H0)
 
-Hosted loop around the existing Agent Skill. Onboard once, start a round, leave. The worker discovers public ATS boards, scores with `scoreJob`, fills Greenhouse, and clicks Submit only when the routine-auto gate passes. `submitted` is written only after a visible thank-you page.
+Same apply loop as the skill, running as a local app on your laptop. Onboard once, start a round, leave. The worker discovers public ATS boards, scores with `scoreJob`, fills Greenhouse, and clicks Submit only when the routine-auto gate passes. `submitted` is written only after a visible thank-you page.
 
 This package is `private: true` and is **not** in the root npm `files` list. `npx job-application-agent` does not ship it.
 
-## What this is not
+## Run it on your laptop
 
-- Not the Paisewise / Founder's Office Machine. Deploy a **new** Fly app.
-- Not a public website. Bind `127.0.0.1` and reach it with `fly proxy`, Tailscale, or WireGuard.
-- Not a second scoring system. Import `scoreJob` / `validateProfile` / `validateLedgerEntry`.
-
-## Local
+Node 22+. From the repo root:
 
 ```bash
+git checkout cursor/cloud-mvp-plan-b6ff
 cd cloud
 npm install
-cp .env.example .env
-# Point state at ./data (gitignored). Do not write candidate data into the repo.
-export CLOUD_DATA_DIR="$PWD/data"
-export JOB_APPLICATION_AGENT_STATE_DIR="$PWD/data/skill-state"
-export HOST=127.0.0.1
-export PORT=8787
-export CLOUD_EMBED_WORKER=1
-
-node src/cli.mjs onboard --profile ./profile.json --resume ./resume.pdf
-node src/cli.mjs status
-node src/server.mjs
+npx playwright install chromium
+cp .env.example .env          # optional: add ANTHROPIC_API_KEY or leave blank for heuristic / Ollama
+npm run local
 ```
 
-Open `http://127.0.0.1:8787`. Tap **Find and apply to these**. The HTTP handler only enqueues; Playwright and `cloud llm` run in the worker.
+Or from the repo root after `cd cloud && npm install`: `npm run local`.
+
+Open **http://127.0.0.1:8787**. If you already onboarded the Agent Skill on this machine, click **Use my laptop skill profile**. Otherwise fill setup once and upload the PDF. Tap **Find and apply to these**.
+
+State stays in `cloud/data/` (gitignored). Chromium is local Playwright, not Fly.
 
 CLI:
 
 ```bash
-node src/cli.mjs discover
+node src/cli.mjs onboard --from-skill
+node src/cli.mjs status
 node src/cli.mjs round start --count 10
 node src/cli.mjs attention
-node src/cli.mjs llm assess --stdin < job.json
 ```
 
-`JOB_APPLICATION_AGENT_STATE_DIR` is the skill's state dir (résumé copy, optional ledger files). Linux `secret-tool` will not work on a headless Fly box; SQLite is the profile source of truth.
+Watch the browser: `PLAYWRIGHT_HEADLESS=0 npm run local`.
 
-## LLM
+Ollama on this machine is used automatically when `ollama serve` is running (`OLLAMA_HOST=http://127.0.0.1:11434`). Otherwise a hosted API key, otherwise the heuristic.
 
-Tried in order, first success wins:
+## Fly (optional later)
 
-1. Ollama on your laptop — `OLLAMA_HOST=http://<tailnet-host>:11434`. Bind Ollama to the tailnet, not `0.0.0.0`.
-2. Hosted API — `ANTHROPIC_API_KEY` (default) or `OPENAI_API_KEY`.
-3. Keyword-overlap heuristic if no provider is configured.
-
-If a provider is configured but unreachable, the job stays `pending_llm` and the rest of the round continues.
-
-Do not install Ollama on the 2 GB Fly Machine.
-
-## Fly
-
-Create a **new** app and volume. Do not reuse the Paisewise app, volume, or image.
+A **new** Fly app, not the Paisewise Machine. Bind `127.0.0.1` and use `fly proxy` — no public IPv4.
 
 ```bash
 fly apps create job-application-agent
@@ -63,8 +46,6 @@ fly volumes create cloud_data --size 10 --app job-application-agent
 fly deploy --config cloud/fly.toml --app job-application-agent
 fly proxy 8787:8787 -a job-application-agent
 ```
-
-Do not allocate a public IPv4 for the UI. Machine size: 2 shared CPUs, 2 GB RAM, `auto_stop` off while a round is running.
 
 After reviewing the first 20 assess outputs, you may set `CLOUD_ROUTINE_CHANNELS=greenhouse` so a `review` decision can Submit on that channel without `autoEligible`.
 

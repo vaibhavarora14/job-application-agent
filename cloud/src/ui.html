@@ -50,7 +50,7 @@
   <header>
     <p class="eyebrow">Private operator</p>
     <h1>Keep the search <span>moving.</span></h1>
-    <p class="muted">Sent only counts after the company shows a thank-you page. This page is for fly proxy / Tailscale — not a public hostname.</p>
+    <p class="muted">Runs on this computer at 127.0.0.1. Sent only counts after the company shows a thank-you page.</p>
   </header>
   <main>
     <section class="piles" id="piles">
@@ -74,6 +74,11 @@
 
     <section class="card">
       <h2>Setup (once)</h2>
+      <p class="muted">If you already onboarded the Agent Skill on this laptop, import that profile and résumé. Otherwise fill the form below.</p>
+      <div class="actions">
+        <button id="import-skill" class="secondary" type="button">Use my laptop skill profile</button>
+      </div>
+      <p class="muted" id="import-msg"></p>
       <form id="onboard">
         <div class="row">
           <label>Name <input name="name" required /></label>
@@ -197,6 +202,18 @@
         body: JSON.stringify({ resumeFill: event.target.dataset.resume === '1' }),
       });
       await refresh();
+    };
+    document.getElementById('import-skill').onclick = async () => {
+      const msg = document.getElementById('import-msg');
+      try {
+        await api('/api/onboard/from-skill', { method: 'POST' });
+        msg.textContent = 'Imported from this laptop’s skill profile.';
+        msg.className = 'muted';
+        await refresh();
+      } catch (error) {
+        msg.textContent = error.message;
+        msg.className = 'error';
+      }
     };
     document.getElementById('onboard').onsubmit = async (event) => {
       event.preventDefault();

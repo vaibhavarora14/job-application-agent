@@ -8,7 +8,7 @@ import { saveAnswer } from './answers.mjs';
 import { markSubmitted } from './apply/applications.mjs';
 import { enqueue } from './queue.mjs';
 import { startRound } from './round.mjs';
-import { extrasFromBody, getProfile, saveProfile, storeResume } from './skill.mjs';
+import { extrasFromBody, getProfile, importFromLocalSkill, saveProfile, storeResume } from './skill.mjs';
 import { cloudStatus } from './status.mjs';
 import { openDb } from './db.mjs';
 import { ensureDataDirs, skillStateDir } from './paths.mjs';
@@ -56,6 +56,10 @@ async function handle(req, res, env) {
     const body = await readJson(req);
     const saved = saveProfile(body.profile, extrasFromBody(body.extras || body), null, env);
     json(res, 200, { ok: true, configured: saved.configured, missing: saved.missing });
+    return;
+  }
+  if (req.method === 'POST' && url.pathname === '/api/onboard/from-skill') {
+    json(res, 200, await importFromLocalSkill(env));
     return;
   }
   if (req.method === 'POST' && url.pathname === '/api/resume') {

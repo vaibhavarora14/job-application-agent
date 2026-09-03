@@ -7,12 +7,13 @@ import { listOpenAttention, resolveAttention } from './attention.mjs';
 import { assessJob, draftAnswer, mapFields, resumeTextFromProfile } from './llm.mjs';
 import { enqueue } from './queue.mjs';
 import { startRound } from './round.mjs';
-import { extrasFromBody, getProfile, saveProfile, storeResume } from './skill.mjs';
+import { extrasFromBody, getProfile, importFromLocalSkill, saveProfile, storeResume } from './skill.mjs';
 import { cloudStatus } from './status.mjs';
 
 function usage() {
   return `Usage:
   node src/cli.mjs status
+  node src/cli.mjs onboard --from-skill
   node src/cli.mjs onboard --profile <file.json> --resume <file.pdf>
   node src/cli.mjs discover
   node src/cli.mjs round start [--count N]
@@ -37,9 +38,10 @@ export async function runCli(argv, env = process.env) {
   const [cmd, sub] = argv;
   if (cmd === 'status' || !cmd) return cloudStatus(env);
   if (cmd === 'onboard') {
+    if (argv.includes('--from-skill')) return importFromLocalSkill(env);
     const profilePath = arg('--profile', argv);
     const resumePath = arg('--resume', argv);
-    if (!profilePath) throw new Error('onboard requires --profile');
+    if (!profilePath) throw new Error('onboard requires --from-skill or --profile');
     const raw = JSON.parse(await readFile(resolve(profilePath), 'utf8'));
     const extras = extrasFromBody(raw);
     const saved = saveProfile(raw, extras, null, env);

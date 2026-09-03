@@ -57,6 +57,7 @@ test('operator API onboards, starts a round, and never calls Playwright inline',
     const html = await (await fetch(`${base}/`)).text();
     assert.match(html, /Needs you/);
     assert.match(html, /Find and apply/);
+    assert.match(html, /Use my laptop skill profile/);
   });
 });
 
