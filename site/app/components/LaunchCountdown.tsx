@@ -56,7 +56,7 @@ export function LaunchCountdown({ releaseAt }: LaunchCountdownProps) {
 
     <div className="launch-target">
       <span>Scheduled start</span>
-      <time dateTime={releaseAt}>September 18, 2026 · 12:00 AM IST</time>
+      <time dateTime={releaseAt}>October 1, 2026 · 12:00 AM IST</time>
     </div>
 
     <div className="launch-sequence" aria-label="Launch readiness">
