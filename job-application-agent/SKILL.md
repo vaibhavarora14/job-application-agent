@@ -20,7 +20,7 @@ Use `scripts/job-application.mjs` for private state and deterministic checks. Re
 1. Ask for a local PDF or read-only Google Docs resume URL. Import it without modifying the source.
 2. Run `profile check`. If it reports missing or legacy fields, collect only facts that cannot be preserved or defaulted, then run `profile migrate --stdin`. Use `profile set --stdin` for a new profile.
 3. Preserve identity fields during migration. Map legacy `salaryPreference` to `targetCompensation`. Add `compensationFloor` only when the candidate provides an amount, currency, and annual comparison basis.
-4. Store the profile in OS-backed profile storage (macOS Keychain, or Windows Credential Manager with a DPAPI-protected local file). Store the canonical resume and append-only ledgers in the owner-only state directory.
+4. Store the profile in OS-backed profile storage (macOS Keychain, Windows Credential Manager with a DPAPI-protected local file, or Linux Secret Service via `secret-tool`). Store the canonical resume and append-only ledgers in the owner-only state directory.
 5. Use `review-each` for per-application approval. Use `routine-auto` only when the current request authorizes the destination or batch and every automatic-eligibility condition passes.
 6. When the candidate explicitly grants continuing autonomy, read [references/AUTONOMY.md](references/AUTONOMY.md) and persist it with `autonomy grant --stdin`. Do not repeat skill-level upload or submission approval prompts while the active grant and profile both use `routine-auto`.
 7. Obey browser and tool confirmation requirements regardless of the stored mode or autonomy grant.

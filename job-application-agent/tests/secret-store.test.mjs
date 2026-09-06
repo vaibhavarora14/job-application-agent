@@ -8,10 +8,11 @@ import {
   createSecretStore,
   DEFAULT_SECRET_SERVICE,
   LEGACY_SECRET_SERVICE,
-  LINUX_PROFILE_ERROR,
+  LINUX_SECRET_MAX_BYTES,
   migrateLegacyStateDir,
   PROFILE_ACCOUNT,
   resolveStateDir,
+  UNSUPPORTED_PLATFORM_ERROR,
 } from '../scripts/secret-store.mjs';
 
 const sampleProfile = {
@@ -132,8 +133,115 @@ test('windows store keeps a wrapping key small and a profile larger than 2560 by
   assert.ok(files.get(profileFile).length > 2560);
 });
 
-test('linux store rejects secure profile storage with a clear error', () => {
-  const store = createSecretStore({ platform: 'linux' });
-  assert.throws(() => store.readProfile(), { message: LINUX_PROFILE_ERROR });
-  assert.throws(() => store.writeProfile('{}'), { message: LINUX_PROFILE_ERROR });
+test('linux store writes and reads the profile via Secret Service', () => {
+  const secrets = new Map();
+  const exec = (command, args, options) => {
+    assert.equal(command, 'secret-tool');
+    if (args[0] === 'lookup') {
+      const service = args[args.indexOf('service') + 1];
+      const account = args[args.indexOf('account') + 1];
+      if (!secrets.has(`${service}/${account}`)) throw new Error('not found');
+      return `${secrets.get(`${service}/${account}`)}\n`;
+    }
+    if (args[0] === 'store') {
+      const service = args[args.indexOf('service') + 1];
+      const account = args[args.indexOf('account') + 1];
+      secrets.set(`${service}/${account}`, options.input);
+      return '';
+    }
+    throw new Error(`unexpected secret-tool args: ${args.join(' ')}`);
+  };
+  const store = createSecretStore({ platform: 'linux', execFileSync: exec });
+  store.writeProfile(JSON.stringify(sampleProfile));
+  assert.equal(store.readProfile(), JSON.stringify(sampleProfile));
+});
+
+test('linux store reports a clear error when secret-tool is not installed', () => {
+  const exec = () => { throw Object.assign(new Error('spawn secret-tool ENOENT'), { code: 'ENOENT' }); };
+  const store = createSecretStore({ platform: 'linux', execFileSync: exec });
+  assert.throws(() => store.writeProfile(JSON.stringify(sampleProfile)), /libsecret-tools/);
+  assert.throws(() => store.readProfile(), /libsecret-tools/);
+});
+
+test('linux store reports a clear error when keyring storage fails', () => {
+  const exec = (command, args) => {
+    assert.equal(command, 'secret-tool');
+    if (args[0] === 'lookup') throw new Error('not found');
+    throw new Error('keyring locked');
+  };
+  const store = createSecretStore({ platform: 'linux', execFileSync: exec });
+  assert.throws(() => store.writeProfile(JSON.stringify(sampleProfile)), /could not store the profile/);
+  assert.throws(() => store.readProfile(), /missing or unreadable/);
+});
+
+test('linux store treats a successful empty lookup as a missing profile', () => {
+  const store = createSecretStore({ platform: 'linux', execFileSync: () => '' });
+  assert.throws(() => store.readProfile(), /missing or unreadable/);
+});
+
+test('linux store rejects profiles that secret-tool would silently truncate', () => {
+  const stored = [];
+  const exec = (command, args, options) => {
+    assert.equal(command, 'secret-tool');
+    assert.equal(args[0], 'store');
+    stored.push(options.input);
+    return '';
+  };
+  const store = createSecretStore({ platform: 'linux', execFileSync: exec });
+
+  store.writeProfile('x'.repeat(LINUX_SECRET_MAX_BYTES));
+  assert.equal(stored[0].length, LINUX_SECRET_MAX_BYTES);
+  assert.throws(
+    () => store.writeProfile('x'.repeat(LINUX_SECRET_MAX_BYTES + 1)),
+    /too large for Linux Secret Service storage/,
+  );
+  assert.throws(
+    () => store.writeProfile('é'.repeat((LINUX_SECRET_MAX_BYTES + 1) / 2)),
+    /too large for Linux Secret Service storage/,
+  );
+  assert.equal(stored.length, 1);
+});
+
+test('linux store distinguishes an unavailable Secret Service from a missing profile', () => {
+  const exec = () => {
+    throw Object.assign(new Error('secret-tool exited with status 1'), {
+      stderr: 'secret-tool: Cannot autolaunch D-Bus without X11 $DISPLAY\n',
+    });
+  };
+  const store = createSecretStore({ platform: 'linux', execFileSync: exec });
+
+  assert.throws(() => store.readProfile(), /Secret Service could not read the profile/);
+});
+
+test('linux store keeps a prior profile readable when a later write fails', () => {
+  const secrets = new Map();
+  let failWrites = false;
+  const exec = (command, args, options) => {
+    assert.equal(command, 'secret-tool');
+    if (args[0] === 'lookup') {
+      const service = args[args.indexOf('service') + 1];
+      const account = args[args.indexOf('account') + 1];
+      if (!secrets.has(`${service}/${account}`)) throw new Error('not found');
+      return `${secrets.get(`${service}/${account}`)}\n`;
+    }
+    if (args[0] === 'store') {
+      if (failWrites) throw new Error('keyring locked');
+      const service = args[args.indexOf('service') + 1];
+      const account = args[args.indexOf('account') + 1];
+      secrets.set(`${service}/${account}`, options.input);
+      return '';
+    }
+    throw new Error(`unexpected secret-tool args: ${args.join(' ')}`);
+  };
+  const store = createSecretStore({ platform: 'linux', execFileSync: exec });
+  store.writeProfile(JSON.stringify(sampleProfile));
+  failWrites = true;
+  assert.throws(() => store.writeProfile(JSON.stringify({ ...sampleProfile, name: 'Overwrite' })), /could not store the profile/);
+  assert.equal(store.readProfile(), JSON.stringify(sampleProfile));
+});
+
+test('unsupported platforms retain an explicit profile storage error', () => {
+  const store = createSecretStore({ platform: 'freebsd' });
+  assert.throws(() => store.readProfile(), { message: UNSUPPORTED_PLATFORM_ERROR });
+  assert.throws(() => store.writeProfile('{}'), { message: UNSUPPORTED_PLATFORM_ERROR });
 });
