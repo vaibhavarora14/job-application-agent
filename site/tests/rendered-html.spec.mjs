@@ -73,6 +73,20 @@ test("publishes crawler guidance and a canonical sitemap", async () => {
   assert.match(sitemapXml, /https:\/\/stats\.jobappagent\.com/);
 });
 
+test("provides an unlisted, non-indexable published jobs page", async () => {
+  const response = await render("/jobs");
+  assert.equal(response.status, 200);
+  const html = await response.text();
+  assert.match(html, /Published jobs/);
+  assert.match(html, /name="robots" content="noindex, nofollow"/);
+  assert.match(html, /Loading published jobs/);
+  assert.match(html, /not placements or jobs secured/);
+  for (const path of ["/", "/community-view", "/sitemap.xml"]) {
+    const publicHtml = await (await render(path)).text();
+    assert.doesNotMatch(publicHtml, /(?:href="[^"]*\/jobs(?:"|\?)|<loc>[^<]*\/jobs<)/);
+  }
+});
+
 test("reports storage healthy only when the database probe responds", async () => {
   const healthyDb = { prepare: () => ({ first: async () => ({ ok: 1 }) }) };
   const unhealthyDb = { prepare: () => ({ first: async () => { throw new Error("unavailable"); } }) };
