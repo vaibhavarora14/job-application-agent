@@ -21,3 +21,13 @@
 .srOnly { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 .page a:focus-visible, .page button:focus-visible { outline: 2px solid var(--ink); outline-offset: 4px; }
 @media (max-width: 600px) { .job { flex-direction: column; gap: .75rem; } .header { padding-top: 2rem; } }
+.filters { padding: 1.5rem; background: var(--surface); border: 1px solid var(--line); border-radius: .5rem; }
+.filters label { display: flex; flex-direction: column; gap: .5rem; min-width: 0; font-size: .8rem; color: var(--ink); font-weight: 600; }
+.filters input, .filters select { width: 100%; min-width: 0; min-height: 48px; padding: .75rem; border: 1px solid var(--line); border-radius: .25rem; background: var(--background); color: var(--ink); font: 400 1rem var(--font-body), sans-serif; }
+.filters input:focus-visible, .filters select:focus-visible { outline: 2px solid var(--ink); outline-offset: 3px; }
+.filters :disabled { opacity: .6; }
+.filterRow { display: grid; grid-template-columns: 1.2fr 1fr 1fr; gap: 1rem; margin-top: 1rem; }
+.hint { color: var(--muted); font-size: .8rem; margin: 1rem 0 0; }
+.summary { display: flex; align-items: center; justify-content: space-between; gap: 1rem; min-height: 4.5rem; }
+.clear { background: transparent; border: 0; color: var(--ink); font: inherit; text-decoration: underline; cursor: pointer; min-height: 44px; padding: .5rem; }
+@media (max-width: 600px) { .filterRow { grid-template-columns: 1fr; } .filters { padding: 1rem; } }
