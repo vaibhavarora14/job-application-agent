@@ -1,4 +1,5 @@
 import { validateCommunityJobs } from './community-jobs.mjs';
+import { locationText } from './job-locations.mjs';
 export async function loadPublishedJobs(fetcher, signal) {
   const jobs = new Map();
   const cursors = new Set();
@@ -18,11 +19,16 @@ export async function loadPublishedJobs(fetcher, signal) {
   }
   throw new Error('Jobs page limit exceeded');
 }
-export function searchJobs(jobs, { query = '', company = '', channel = '', sort = 'newest' } = {}) {
+export function searchJobs(jobs, { query = '', company = '', channel = '', sort = 'newest', location = '', country = '', workplace = '' } = {}) {
   const terms = query.toLowerCase().trim().split(/\s+/).filter(Boolean);
   return jobs.filter(job => {
-    const text = `${job.role} ${job.company} ${new URL(job.url).hostname}`.toLowerCase();
-    return (!company || job.company === company) && (!channel || job.applicationChannel === channel) && terms.every(term => text.includes(term));
+    const place = locationText(job.location).toLowerCase();
+    const text = `${job.role} ${job.company} ${new URL(job.url).hostname} ${place}`.toLowerCase();
+    return (!company || job.company === company) && (!channel || job.applicationChannel === channel)
+      && (!country || job.location?.countries.includes(country))
+      && (!workplace || (job.location?.workplace ?? 'unknown') === workplace)
+      && location.trim().toLowerCase().split(/\s+/).filter(Boolean).every(term => place.includes(term))
+      && terms.every(term => text.includes(term));
   }).sort((a, b) => {
     const order = sort === 'company' ? a.company.localeCompare(b.company) || a.role.localeCompare(b.role)
       : sort === 'oldest' ? a.firstSeenAt.localeCompare(b.firstSeenAt) : b.firstSeenAt.localeCompare(a.firstSeenAt);

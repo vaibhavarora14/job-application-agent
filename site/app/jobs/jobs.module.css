@@ -31,3 +31,4 @@
 .summary { display: flex; align-items: center; justify-content: space-between; gap: 1rem; min-height: 4.5rem; }
 .clear { background: transparent; border: 0; color: var(--ink); font: inherit; text-decoration: underline; cursor: pointer; min-height: 44px; padding: .5rem; }
 @media (max-width: 600px) { .filterRow { grid-template-columns: 1fr; } .filters { padding: 1rem; } }
+.location { margin: .5rem 0 0; color: var(--text); font-size: .9rem; overflow-wrap: anywhere; }

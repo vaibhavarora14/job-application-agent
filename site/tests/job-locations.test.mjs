@@ -21,12 +21,18 @@ test('Greenhouse uses location label without inventing a country or workplace', 
   assert.equal(result.label, 'San Francisco; New York');
   assert.deepEqual(result.countries, []);
   assert.equal(result.workplace, 'unknown');
+  assert.equal(extractLocation(gh, { id:42, title:'Engineer', absolute_url:gh.url, location:{name:'Remote - US'} }).workplace, 'remote');
 });
 test('joins evidence only to unchanged jobs and expires stale evidence', () => {
   const record = { ...job, label: 'London', cities: ['London'], countries: ['GB'], workplace: 'hybrid', checkedAt: '2026-09-07T00:00:00.000Z' };
   const index = { records: [record] };
   const now = Date.parse('2026-09-08T00:00:00.000Z');
   assert.equal(attachLocations([job], index, now)[0].location.label, 'London');
+  assert.deepEqual(attachLocations([job], index, now)[0].location.countries, ['United Kingdom']);
   assert.equal(attachLocations([{...job, role:'Designer'}], index, now)[0].location, null);
   assert.equal(attachLocations([job], index, now + 40 * 86400000)[0].location, null);
+});
+test('rejects a different destination and ignores malformed location text', () => {
+  assert.equal(extractLocation(job, { jobs: [{ id:'123', title:'Engineer', jobUrl:'https://evil.example/123', location:'London' }] }), null);
+  assert.equal(extractLocation(job, { jobs: [{ id:'123', title:'Engineer', jobUrl:job.url, location:'<script>oops</script>' }] }), null);
 });

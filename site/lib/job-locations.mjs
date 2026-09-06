@@ -1,5 +1,15 @@
-const label = value => typeof value === 'string' && value.trim().length <= 240 && !/[<>\x00-\x1f]/.test(value) ? value.trim() : '';
+const label = value => typeof value === 'string' && value.trim().length <= 240 && !/[<>]/.test(value) && ![...value].some(char => char.charCodeAt(0) < 32) ? value.trim() : '';
 const unique = values => [...new Set(values.filter(Boolean))];
+export function countryLabel(value) {
+  if (['USA', 'United States of America'].includes(value)) return 'United States';
+  if (value === 'UK') return 'United Kingdom';
+  if (!/^[A-Za-z]{2}$/.test(value)) return value;
+  return new Intl.DisplayNames(['en'], { type: 'region' }).of(value.toUpperCase()) ?? value;
+}
+export function locationText(location) {
+  if (!location) return '';
+  return [location.label, ...location.cities, ...location.countries, ...location.countries.map(countryLabel)].join(' ');
+}
 const title = value => label(value).toLowerCase().replace(/[^\p{L}\p{N}]+/gu, ' ').trim();
 const canonical = value => { try { const url = new URL(value); return `${url.origin}${url.pathname.replace(/\/apply\/?$/, '').replace(/\/$/, '')}`; } catch { return ''; } };
 
@@ -32,6 +42,9 @@ export function extractLocation(job, data) {
     entry = data;
     if (String(entry.id) !== target.id || title(entry.title) !== title(job.role) || canonical(entry.absolute_url).replace('://boards.greenhouse.io/', '://job-boards.greenhouse.io/') !== canonical(job.url).replace('://boards.greenhouse.io/', '://job-boards.greenhouse.io/')) return null;
     names = [label(entry.location?.name)];
+    // Only explicit, unambiguous arrangement labels; a city alone never implies on-site.
+    const types = names[0].match(/\b(remote|hybrid|on-site|onsite)\b/gi) ?? [];
+    if (types.length === 1 && /^(remote|hybrid|on-site|onsite)(?:$|\s|,|\()/i.test(names[0])) workplace = types[0].toLowerCase().replace('on-site', 'onsite');
   } else {
     entry = data;
     if (entry.id !== target.id || title(entry.text) !== title(job.role) || canonical(entry.hostedUrl) !== canonical(job.url)) return null;
@@ -50,6 +63,6 @@ export function attachLocations(jobs, index, now = Date.now()) {
     const record = records.get(job.jobId);
     const age = now - Date.parse(record?.checkedAt);
     const valid = record && record.url === job.url && record.role === job.role && record.company === job.company && age >= 0 && age <= 30 * 86400000;
-    return { ...job, location: valid ? record : null };
+    return { ...job, location: valid ? { ...record, countries: unique(record.countries.map(countryLabel)) } : null };
   });
 }

@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { PublishedJobs } from "./PublishedJobs";
+import locations from "../../data/job-locations.json";
 
 export const metadata: Metadata = {
   title: "Published jobs",
@@ -9,5 +10,5 @@ export const metadata: Metadata = {
 };
 
 export default function JobsPage() {
-  return <PublishedJobs />;
+  return <PublishedJobs locationIndex={{ collectedAt: locations.collectedAt, records: locations.records }} />;
 }
