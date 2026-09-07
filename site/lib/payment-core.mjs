@@ -26,7 +26,8 @@ export function validatePaymentConfig(input) {
 
 export function buildCheckoutRequest({ productId, purchaseId, publicSiteUrl }) {
   const base = new URL(publicSiteUrl).origin;
-  return {
+  // Validate the SDK contract without widening its literal customization options.
+  return /** @satisfies {import("dodopayments/resources/checkout-sessions").CheckoutSessionCreateParams} */ ({
     product_cart: [{ product_id: productId, quantity: 1 }],
     return_url: `${base}/checkout/return?purchase_id=${purchaseId}`,
     cancel_url: `${base}/#founding`,
@@ -61,7 +62,7 @@ export function buildCheckoutRequest({ productId, purchaseId, publicSiteUrl }) {
         },
       },
     },
-  };
+  });
 }
 
 export function canonicalCheckoutReturnUrl(searchParams) {
