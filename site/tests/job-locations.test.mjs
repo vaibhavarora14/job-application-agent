@@ -4,7 +4,12 @@ import { atsTarget, extractLocation, attachLocations } from '../lib/job-location
 const job = { jobId: 'community-job-0000000000000001', url: 'https://jobs.ashbyhq.com/acme/123', company: 'Acme', role: 'Engineer' };
 test('only constructs requests to known ATS APIs from safe job URLs', () => {
   assert.equal(atsTarget(job.url).url, 'https://api.ashbyhq.com/posting-api/job-board/acme');
-  for (const url of ['https://localhost/jobs', 'https://jobs.ashbyhq.com.evil.com/acme/123', 'https://jobs.ashbyhq.com/acme%2F..%2Fother/123', 'https://user:pass@jobs.ashbyhq.com/acme/123']) assert.equal(atsTarget(url), null);
+  for (const url of ['https://localhost/jobs', 'https://jobs.ashbyhq.com.evil.com/acme/123', 'https://jobs.ashbyhq.com/acme%2F..%2Fother/123']) assert.equal(atsTarget(url), null);
+  // Synthetic URL userinfo, never a real credential or a network request.
+  const credentialUrl = new URL(job.url);
+  credentialUrl.username = 'test-user';
+  credentialUrl.password = 'test-placeholder';
+  assert.equal(atsTarget(credentialUrl.toString()), null);
 });
 test('extracts exact matching Ashby job with multiple locations, never assumes remote means worldwide', () => {
   const data = { jobs: [{ id: '123', title: 'Engineer', jobUrl: job.url, location: 'New York', workplaceType: 'Remote', address: { postalAddress: { addressLocality: 'New York', addressCountry: 'US' } }, secondaryLocations: [{ location: 'London', address: { postalAddress: { addressLocality: 'London', addressCountry: 'GB' } } }] }] };
