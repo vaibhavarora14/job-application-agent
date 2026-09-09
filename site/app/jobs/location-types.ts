@@ -4,10 +4,10 @@ export type JobSalary = {
   annualMin: number;
   annualMax: number;
   currency: string;
-  period: "year" | "month" | "hour";
+  period: "year" | "month" | "hour" | string;
   label: string;
   isEstimated: boolean;
-  source: "employer" | "market-benchmark";
+  source: "employer" | "market-benchmark" | string;
 };
 
 export type JobLocation = {

@@ -1,0 +1,29 @@
+{
+  "$schema": "https://raw.githubusercontent.com/cloudflare/workers-sdk/main/packages/wrangler/config-schema.json",
+  "name": "job-application-agent-site",
+  "account_id": "69814bd80d183fa809d383323587163f",
+  "main": "dist/server/index.js",
+  "compatibility_date": "2026-05-15",
+  "compatibility_flags": ["nodejs_compat"],
+  "workers_dev": true,
+  "assets": {
+    "directory": "dist/client",
+    "binding": "ASSETS"
+  },
+  "vars": {
+    "PUBLIC_SITE_URL": "https://jobappagent.com",
+    "COMMUNITY_STATS_UPSTREAM": "https://job-application-agent-telemetry.varora1406.workers.dev/api/public-stats",
+    "COMMUNITY_JOBS_UPSTREAM": "https://job-application-agent-telemetry.varora1406.workers.dev/v1/jobs"
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "job-application-agent-public-stats",
+      "database_id": "a763216d-064e-4b31-a518-5a978065b879",
+      "migrations_dir": "drizzle"
+    }
+  ],
+  "observability": {
+    "enabled": false
+  }
+}
