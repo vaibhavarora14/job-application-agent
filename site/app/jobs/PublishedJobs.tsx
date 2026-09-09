@@ -6,7 +6,7 @@ import { usePublishedJobs } from "./usePublishedJobs";
 import { searchJobs } from "../../lib/jobs-search.mjs";
 import { jobPagination } from "../../lib/jobs-pagination.mjs";
 import type { CommunityJob } from "../components/useCommunityJobs";
-import { attachLocations, countryLabel, estimateBenchmarkSalary, extractEmploymentType, extractExperienceLevel } from "../../lib/job-locations.mjs";
+import { attachLocations, countryLabel, extractEmploymentType, extractExperienceLevel } from "../../lib/job-locations.mjs";
 import type { JobLocation, LocationIndex } from "./location-types";
 import styles from "./jobs.module.css";
 
@@ -644,7 +644,7 @@ export function PublishedJobs({ locationIndex }: { locationIndex: LocationIndex 
               const hostname = getHostname(job.url);
               const firstInitial = job.company.trim().charAt(0).toUpperCase() || "●";
               const avatarStyle = getAvatarStyle(job.company);
-              const salary = job.location?.salary || estimateBenchmarkSalary(job.role, job.location?.countries?.[0]);
+              const salary = job.location?.salary;
               const jobEmployment = job.location?.employmentType || extractEmploymentType(job.role);
               const jobExperience = job.location?.experienceLevel || extractExperienceLevel(job.role);
 
@@ -687,10 +687,9 @@ export function PublishedJobs({ locationIndex }: { locationIndex: LocationIndex 
                       )}
                       {salary && (
                         <span
-                          className={`${styles.badge} ${salary.isEstimated ? styles.badgeSalaryEstimated : styles.badgeSalaryVerified}`}
-                          title={salary.isEstimated ? "Estimated market range based on role, level, and location benchmarks" : "Verified salary stated by employer in posting"}
+                          className={`${styles.badge} ${styles.badgeSalaryVerified}`}
+                          title="Salary stated by employer in application"
                         >
-                          <span aria-hidden="true">{salary.isEstimated ? "~" : "$"} </span>
                           {salary.label}
                         </span>
                       )}

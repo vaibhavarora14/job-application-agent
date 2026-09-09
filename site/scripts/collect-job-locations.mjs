@@ -1,7 +1,7 @@
 // Owner-run, read-only network collection. No job moderation or production writes.
 import { mkdir, writeFile, rename } from 'node:fs/promises';
 import { loadPublishedJobs } from '../lib/jobs-search.mjs';
-import { atsTarget, extractLocation, estimateBenchmarkSalary, extractEmploymentType, extractExperienceLevel } from '../lib/job-locations.mjs';
+import { atsTarget, extractLocation, extractEmploymentType, extractExperienceLevel } from '../lib/job-locations.mjs';
 
 const feed = 'https://job-application-agent-telemetry.varora1406.workers.dev';
 const snapshot = await loadPublishedJobs((path, options) => fetch(`${feed}${path.replace('/api/community-jobs', '/v1/jobs')}`, { ...options, redirect: 'error', signal: AbortSignal.timeout(20000) }));
@@ -35,8 +35,7 @@ await Promise.all(Array.from({ length: 4 }, async () => {
     try {
       const location = target ? extractLocation(job, await readJson(target.url)) : null;
       if (location) {
-        const primaryCountry = (location.countries || [])[0];
-        const salary = location.salary || estimateBenchmarkSalary(job.role, primaryCountry);
+        const salary = location.salary || null;
         const employmentType = location.employmentType || extractEmploymentType(job.role);
         const experienceLevel = location.experienceLevel || extractExperienceLevel(job.role);
         records.push({
