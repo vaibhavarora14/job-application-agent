@@ -87,7 +87,7 @@ jobs:
           tar -tzf "$package_file" > "$package_listing"
           grep -q '^package/bin/job-application-agent.mjs$' "$package_listing"
           grep -q '^package/job-application-agent/SKILL.md$' "$package_listing"
-          if grep -Eq 'applications\.ndjson|resume\.pdf|profile\.json|telemetry-worker/' "$package_listing"; then
+          if grep -Eq 'applications\.ndjson|resume\.pdf|profile\.json|telemetry-worker/|state-worker/' "$package_listing"; then
             echo 'npm package contains private state or server-only code.' >&2
             exit 1
           fi

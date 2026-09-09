@@ -19,19 +19,43 @@ export async function loadPublishedJobs(fetcher, signal) {
   }
   throw new Error('Jobs page limit exceeded');
 }
-export function searchJobs(jobs, { query = '', company = '', channel = '', sort = 'newest', location = '', country = '', workplace = '' } = {}) {
+export function searchJobs(jobs, { query = '', company = '', channel = '', sort = 'newest', location = '', country = '', workplace = '', salaryMin = 0, employmentType = '', experienceLevel = '' } = {}) {
   const terms = query.toLowerCase().trim().split(/\s+/).filter(Boolean);
+  const minSalaryNum = Number(salaryMin) || 0;
   return jobs.filter(job => {
     const place = locationText(job.location).toLowerCase();
     const text = `${job.role} ${job.company} ${new URL(job.url).hostname} ${place}`.toLowerCase();
-    return (!company || job.company === company) && (!channel || job.applicationChannel === channel)
+    const annualMax = job.location?.salary?.annualMax ?? 0;
+    const jobEmployment = job.location?.employmentType ?? '';
+    const jobExperience = job.location?.experienceLevel ?? '';
+
+    return (!company || job.company === company)
+      && (!channel || job.applicationChannel === channel)
       && (!country || job.location?.countries.includes(country))
       && (!workplace || (job.location?.workplace ?? 'unknown') === workplace)
+      && (!minSalaryNum || annualMax >= minSalaryNum)
+      && (!employmentType || jobEmployment === employmentType)
+      && (!experienceLevel || jobExperience === experienceLevel)
       && location.trim().toLowerCase().split(/\s+/).filter(Boolean).every(term => place.includes(term))
       && terms.every(term => text.includes(term));
   }).sort((a, b) => {
-    const order = sort === 'company' ? a.company.localeCompare(b.company) || a.role.localeCompare(b.role)
-      : sort === 'oldest' ? a.firstSeenAt.localeCompare(b.firstSeenAt) : b.firstSeenAt.localeCompare(a.firstSeenAt);
-    return order || a.jobId.localeCompare(b.jobId);
+    let order = 0;
+    if (sort === 'salary-high') {
+      const aVal = a.location?.salary?.annualMax ?? 0;
+      const bVal = b.location?.salary?.annualMax ?? 0;
+      order = bVal - aVal;
+    } else if (sort === 'salary-low') {
+      const aVal = a.location?.salary?.annualMin ?? 999999999;
+      const bVal = b.location?.salary?.annualMin ?? 999999999;
+      order = aVal - bVal;
+    } else if (sort === 'company') {
+      order = a.company.localeCompare(b.company) || a.role.localeCompare(b.role);
+    } else if (sort === 'oldest') {
+      order = a.firstSeenAt.localeCompare(b.firstSeenAt);
+    } else {
+      order = b.firstSeenAt.localeCompare(a.firstSeenAt);
+    }
+    return order || b.firstSeenAt.localeCompare(a.firstSeenAt) || a.jobId.localeCompare(b.jobId);
   });
 }
+

@@ -6,7 +6,7 @@ import { usePublishedJobs } from "./usePublishedJobs";
 import { searchJobs } from "../../lib/jobs-search.mjs";
 import { jobPagination } from "../../lib/jobs-pagination.mjs";
 import type { CommunityJob } from "../components/useCommunityJobs";
-import { attachLocations, countryLabel } from "../../lib/job-locations.mjs";
+import { attachLocations, countryLabel, estimateBenchmarkSalary, extractEmploymentType, extractExperienceLevel } from "../../lib/job-locations.mjs";
 import type { JobLocation, LocationIndex } from "./location-types";
 import styles from "./jobs.module.css";
 
@@ -77,6 +77,9 @@ export function PublishedJobs({ locationIndex }: { locationIndex: LocationIndex 
   const [location, setLocation] = useState("");
   const [country, setCountry] = useState("");
   const [workplace, setWorkplace] = useState("");
+  const [salaryMin, setSalaryMin] = useState("");
+  const [employmentType, setEmploymentType] = useState("");
+  const [experienceLevel, setExperienceLevel] = useState("");
   const [showAdvancedFilters, setShowAdvancedFilters] = useState(false);
 
   useEffect(() => {
@@ -103,8 +106,19 @@ export function PublishedJobs({ locationIndex }: { locationIndex: LocationIndex 
   const countries = useMemo(() => [...new Set(jobs.flatMap(job => job.location?.countries ?? []))].sort((a, b) => countryLabel(a).localeCompare(countryLabel(b))), [jobs]);
   const companies = useMemo(() => [...new Set(jobs.map(job => job.company))].sort(), [jobs]);
   const channels = useMemo(() => [...new Set(jobs.map(job => job.applicationChannel))].sort(), [jobs]);
-  const results: typeof jobs = useMemo(() => searchJobs(jobs, { query, company, channel, sort, location, country, workplace }), [jobs, query, company, channel, sort, location, country, workplace]);
-  const filtered = Boolean(query || company || channel || location || country || workplace);
+  const results: typeof jobs = useMemo(() => searchJobs(jobs, {
+    query,
+    company,
+    channel,
+    sort,
+    location,
+    country,
+    workplace,
+    salaryMin: salaryMin ? Number(salaryMin) : 0,
+    employmentType,
+    experienceLevel
+  }), [jobs, query, company, channel, sort, location, country, workplace, salaryMin, employmentType, experienceLevel]);
+  const filtered = Boolean(query || company || channel || location || country || workplace || salaryMin || employmentType || experienceLevel);
   const pagination = jobPagination(results.length, page);
 
   const changePage = (number: number) => {
@@ -120,6 +134,9 @@ export function PublishedJobs({ locationIndex }: { locationIndex: LocationIndex 
     setLocation("");
     setCountry("");
     setWorkplace("");
+    setSalaryMin("");
+    setEmploymentType("");
+    setExperienceLevel("");
     setPage(1);
   };
 
@@ -133,7 +150,21 @@ export function PublishedJobs({ locationIndex }: { locationIndex: LocationIndex 
     setPage(1);
   };
 
+  const toggleSalaryPill = (val: string) => {
+    setSalaryMin(current => current === val ? "" : val);
+    setPage(1);
+  };
+
+  const toggleEmploymentPill = (val: string) => {
+    setEmploymentType(current => current === val ? "" : val);
+    setPage(1);
+  };
+
+  const advancedActiveCount = (location ? 1 : 0) + (country ? 1 : 0) + (company ? 1 : 0) + (sort !== "newest" ? 1 : 0) + (salaryMin ? 1 : 0) + (employmentType ? 1 : 0) + (experienceLevel ? 1 : 0);
+  const isAdvancedOpen = showAdvancedFilters || advancedActiveCount > 0;
+
   const verifiedLocationsCount = jobs.filter(job => job.location).length;
+
 
   return (
     <div className={styles.container}>
@@ -243,6 +274,20 @@ export function PublishedJobs({ locationIndex }: { locationIndex: LocationIndex 
             >
               Lever
             </button>
+            <button
+              type="button"
+              className={`${styles.quickPill} ${salaryMin === "150000" ? styles.quickPillActive : ""}`}
+              onClick={() => toggleSalaryPill("150000")}
+            >
+              $150k+ salary
+            </button>
+            <button
+              type="button"
+              className={`${styles.quickPill} ${employmentType === "internship" ? styles.quickPillActive : ""}`}
+              onClick={() => toggleEmploymentPill("internship")}
+            >
+              Internships
+            </button>
           </div>
 
           <div className={styles.filtersToggleRow}>
@@ -250,17 +295,17 @@ export function PublishedJobs({ locationIndex }: { locationIndex: LocationIndex 
               type="button"
               className={styles.filterToggleBtn}
               onClick={() => setShowAdvancedFilters(prev => !prev)}
-              aria-expanded={showAdvancedFilters || (location ? 1 : 0) + (country ? 1 : 0) + (company ? 1 : 0) + (sort !== "newest" ? 1 : 0) > 0}
+              aria-expanded={isAdvancedOpen}
               aria-controls="advanced-filters"
             >
-              <span>{showAdvancedFilters || (location ? 1 : 0) + (country ? 1 : 0) + (company ? 1 : 0) + (sort !== "newest" ? 1 : 0) > 0 ? "Fewer filters" : "More filters"}</span>
-              {(location ? 1 : 0) + (country ? 1 : 0) + (company ? 1 : 0) + (sort !== "newest" ? 1 : 0) > 0 && (
+              <span>{isAdvancedOpen ? "Fewer filters" : "More filters"}</span>
+              {advancedActiveCount > 0 && (
                 <span className={styles.filterToggleBadge}>
-                  {(location ? 1 : 0) + (country ? 1 : 0) + (company ? 1 : 0) + (sort !== "newest" ? 1 : 0)}
+                  {advancedActiveCount}
                 </span>
               )}
               <svg
-                className={`${styles.toggleChevron} ${showAdvancedFilters || (location ? 1 : 0) + (country ? 1 : 0) + (company ? 1 : 0) + (sort !== "newest" ? 1 : 0) > 0 ? styles.toggleChevronOpen : ""}`}
+                className={`${styles.toggleChevron} ${isAdvancedOpen ? styles.toggleChevronOpen : ""}`}
                 viewBox="0 0 16 16"
                 fill="currentColor"
                 aria-hidden="true"
@@ -270,7 +315,7 @@ export function PublishedJobs({ locationIndex }: { locationIndex: LocationIndex 
             </button>
           </div>
 
-          {(showAdvancedFilters || (location ? 1 : 0) + (country ? 1 : 0) + (company ? 1 : 0) + (sort !== "newest" ? 1 : 0) > 0) && (
+          {isAdvancedOpen && (
             <div id="advanced-filters" className={styles.filterGrid}>
               <div className={styles.filterField}>
                 <label htmlFor="filter-location" className={styles.fieldLabel}>Location</label>
@@ -317,6 +362,59 @@ export function PublishedJobs({ locationIndex }: { locationIndex: LocationIndex 
                 </select>
               </div>
               <div className={styles.filterField}>
+                <label htmlFor="filter-salary" className={styles.fieldLabel}>Min compensation</label>
+                <select
+                  id="filter-salary"
+                  className={styles.selectInput}
+                  aria-label="Min compensation"
+                  value={salaryMin}
+                  disabled={loading || error}
+                  onChange={event => { setSalaryMin(event.target.value); setPage(1); }}
+                >
+                  <option value="">Any compensation</option>
+                  <option value="100000">$100,000+ / yr</option>
+                  <option value="150000">$150,000+ / yr</option>
+                  <option value="200000">$200,000+ / yr</option>
+                  <option value="250000">$250,000+ / yr</option>
+                </select>
+              </div>
+              <div className={styles.filterField}>
+                <label htmlFor="filter-level" className={styles.fieldLabel}>Experience level</label>
+                <select
+                  id="filter-level"
+                  className={styles.selectInput}
+                  aria-label="Experience level"
+                  value={experienceLevel}
+                  disabled={loading || error}
+                  onChange={event => { setExperienceLevel(event.target.value); setPage(1); }}
+                >
+                  <option value="">All experience levels</option>
+                  <option value="intern">Intern / Student</option>
+                  <option value="entry">Entry / Junior</option>
+                  <option value="mid">Mid-level</option>
+                  <option value="senior">Senior / Lead</option>
+                  <option value="staff">Staff / Principal</option>
+                  <option value="executive">Executive / Director</option>
+                </select>
+              </div>
+              <div className={styles.filterField}>
+                <label htmlFor="filter-type" className={styles.fieldLabel}>Employment type</label>
+                <select
+                  id="filter-type"
+                  className={styles.selectInput}
+                  aria-label="Employment type"
+                  value={employmentType}
+                  disabled={loading || error}
+                  onChange={event => { setEmploymentType(event.target.value); setPage(1); }}
+                >
+                  <option value="">All employment types</option>
+                  <option value="full-time">Full-time</option>
+                  <option value="contract">Contract</option>
+                  <option value="internship">Internship</option>
+                  <option value="part-time">Part-time</option>
+                </select>
+              </div>
+              <div className={styles.filterField}>
                 <label htmlFor="filter-company" className={styles.fieldLabel}>Company</label>
                 <select
                   id="filter-company"
@@ -355,6 +453,8 @@ export function PublishedJobs({ locationIndex }: { locationIndex: LocationIndex 
                 >
                   <option value="newest">Newest first seen</option>
                   <option value="oldest">Oldest first seen</option>
+                  <option value="salary-high">Highest compensation</option>
+                  <option value="salary-low">Lowest compensation</option>
                   <option value="company">Company A–Z</option>
                 </select>
               </div>
@@ -413,6 +513,36 @@ export function PublishedJobs({ locationIndex }: { locationIndex: LocationIndex 
                   Workplace: <strong>{workplace === "onsite" ? "On-site" : workplace === "unknown" ? "Not specified" : workplace.charAt(0).toUpperCase() + workplace.slice(1)}</strong> <span className={styles.chipIcon} aria-hidden="true">×</span>
                 </button>
               )}
+              {salaryMin && (
+                <button
+                  type="button"
+                  className={styles.chip}
+                  onClick={() => { setSalaryMin(""); setPage(1); }}
+                  aria-label={`Remove salary filter $${Number(salaryMin)/1000}k+`}
+                >
+                  Salary: <strong>${Number(salaryMin)/1000}k+/yr</strong> <span className={styles.chipIcon} aria-hidden="true">×</span>
+                </button>
+              )}
+              {experienceLevel && (
+                <button
+                  type="button"
+                  className={styles.chip}
+                  onClick={() => { setExperienceLevel(""); setPage(1); }}
+                  aria-label={`Remove experience level filter ${experienceLevel}`}
+                >
+                  Level: <strong>{experienceLevel.charAt(0).toUpperCase() + experienceLevel.slice(1)}</strong> <span className={styles.chipIcon} aria-hidden="true">×</span>
+                </button>
+              )}
+              {employmentType && (
+                <button
+                  type="button"
+                  className={styles.chip}
+                  onClick={() => { setEmploymentType(""); setPage(1); }}
+                  aria-label={`Remove employment type filter ${employmentType}`}
+                >
+                  Type: <strong>{employmentType.charAt(0).toUpperCase() + employmentType.slice(1)}</strong> <span className={styles.chipIcon} aria-hidden="true">×</span>
+                </button>
+              )}
               {company && (
                 <button
                   type="button"
@@ -439,6 +569,7 @@ export function PublishedJobs({ locationIndex }: { locationIndex: LocationIndex 
             </div>
           </div>
         )}
+
 
         <div ref={summaryRef} tabIndex={-1} className={styles.summaryBar} role="status" aria-live="polite">
           <span className={styles.summaryCounts}>
@@ -513,6 +644,9 @@ export function PublishedJobs({ locationIndex }: { locationIndex: LocationIndex 
               const hostname = getHostname(job.url);
               const firstInitial = job.company.trim().charAt(0).toUpperCase() || "●";
               const avatarStyle = getAvatarStyle(job.company);
+              const salary = job.location?.salary || estimateBenchmarkSalary(job.role, job.location?.countries?.[0]);
+              const jobEmployment = job.location?.employmentType || extractEmploymentType(job.role);
+              const jobExperience = job.location?.experienceLevel || extractExperienceLevel(job.role);
 
               return (
                 <li key={job.jobId} className={styles.jobCard}>
@@ -551,6 +685,35 @@ export function PublishedJobs({ locationIndex }: { locationIndex: LocationIndex 
                           {workplaceInfo.label}
                         </span>
                       )}
+                      {salary && (
+                        <span
+                          className={`${styles.badge} ${salary.isEstimated ? styles.badgeSalaryEstimated : styles.badgeSalaryVerified}`}
+                          title={salary.isEstimated ? "Estimated market range based on role, level, and location benchmarks" : "Verified salary stated by employer in posting"}
+                        >
+                          <span aria-hidden="true">{salary.isEstimated ? "~" : "$"} </span>
+                          {salary.label}
+                        </span>
+                      )}
+                      {jobExperience === "staff" && (
+                        <span className={`${styles.badge} ${styles.badgeStaff}`}>
+                          Staff / Principal
+                        </span>
+                      )}
+                      {jobExperience === "executive" && (
+                        <span className={`${styles.badge} ${styles.badgeStaff}`}>
+                          Executive / Lead
+                        </span>
+                      )}
+                      {jobEmployment === "internship" && (
+                        <span className={`${styles.badge} ${styles.badgeInternship}`}>
+                          Internship
+                        </span>
+                      )}
+                      {jobEmployment === "contract" && (
+                        <span className={`${styles.badge} ${styles.badgeContract}`}>
+                          Contract
+                        </span>
+                      )}
                       {job.location?.label && (
                         <span className={styles.locationTag} title={job.location.label}>
                           <svg className={styles.pinIcon} viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
@@ -570,9 +733,10 @@ export function PublishedJobs({ locationIndex }: { locationIndex: LocationIndex 
                       {job.location ? (
                         <>Location checked <time dateTime={job.location.checkedAt}>{job.location.checkedAt.slice(0, 10)}</time></>
                       ) : (
-                        <span>Direct ATS requisition</span>
+                        <span>Direct ATS listing</span>
                       )}
                     </div>
+
                     <div className={styles.cardActions}>
                       <button
                         type="button"

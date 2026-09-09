@@ -1,0 +1,1 @@
+import{A as e,P as t,S as n}from"../../index.js";var r=t(e(),1),i=new Map;function a(e,t){return e?{...e,...t}:t}function o({providerId:e,segmentMap:t,children:o}){let s=(0,r.useRef)(null),c=n(),l=a(s.current??(e?i.get(e)??null:null),t);return(0,r.useEffect)(()=>{s.current=l,e&&i.set(e,l)},[l,e]),c?(0,r.createElement)(c.Provider,{value:l},o):o}export{o as LayoutSegmentProvider};

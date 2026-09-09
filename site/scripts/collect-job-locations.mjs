@@ -1,7 +1,7 @@
 // Owner-run, read-only network collection. No job moderation or production writes.
 import { mkdir, writeFile, rename } from 'node:fs/promises';
 import { loadPublishedJobs } from '../lib/jobs-search.mjs';
-import { atsTarget, extractLocation } from '../lib/job-locations.mjs';
+import { atsTarget, extractLocation, estimateBenchmarkSalary, extractEmploymentType, extractExperienceLevel } from '../lib/job-locations.mjs';
 
 const feed = 'https://job-application-agent-telemetry.varora1406.workers.dev';
 const snapshot = await loadPublishedJobs((path, options) => fetch(`${feed}${path.replace('/api/community-jobs', '/v1/jobs')}`, { ...options, redirect: 'error', signal: AbortSignal.timeout(20000) }));
@@ -34,13 +34,29 @@ await Promise.all(Array.from({ length: 4 }, async () => {
     const target = atsTarget(job.url);
     try {
       const location = target ? extractLocation(job, await readJson(target.url)) : null;
-      if (location) records.push({ ...identity, ...location, sourceUrl: target.url, checkedAt: new Date().toISOString() });
-      else unresolved.push({ ...identity, reason: target ? 'No exact matching structured location' : 'Needs page inspection / unsupported ATS' });
+      if (location) {
+        const primaryCountry = (location.countries || [])[0];
+        const salary = location.salary || estimateBenchmarkSalary(job.role, primaryCountry);
+        const employmentType = location.employmentType || extractEmploymentType(job.role);
+        const experienceLevel = location.experienceLevel || extractExperienceLevel(job.role);
+        records.push({
+          ...identity,
+          ...location,
+          salary,
+          employmentType,
+          experienceLevel,
+          sourceUrl: target.url,
+          checkedAt: new Date().toISOString()
+        });
+      } else {
+        unresolved.push({ ...identity, reason: target ? 'No exact matching structured location' : 'Needs page inspection / unsupported ATS' });
+      }
     } catch (error) { unresolved.push({ ...identity, reason: error.message }); }
     completed++;
     if (completed % 100 === 0) console.log(`Checked ${completed}/${snapshot.length}; enriched ${records.length}`);
   }
 }));
+
 records.sort((a, b) => a.jobId.localeCompare(b.jobId));
 unresolved.sort((a, b) => a.jobId.localeCompare(b.jobId));
 const directory = new URL('../data/', import.meta.url);

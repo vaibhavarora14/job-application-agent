@@ -1,0 +1,1 @@
+import{n as e,t}from"./root-params-BxYFMfiK.js";async function n(n){return e(t(n.params,n.rootParamNamesByPattern[n.pattern]),()=>n.fn({params:n.params}))}export{n as t};
