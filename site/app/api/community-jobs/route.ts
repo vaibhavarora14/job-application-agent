@@ -14,7 +14,10 @@ export async function GET(request: Request) {
   catch { return Response.json({ error: "invalid_job_query" }, { status: 400, headers: { "cache-control": "no-store" } }); }
 
   try {
-    const response = await fetch(upstream, { headers: { accept: "application/json" } });
+    const fetcher = (env as unknown as { TELEMETRY?: { fetch: typeof fetch } }).TELEMETRY?.fetch?.bind(
+      (env as unknown as { TELEMETRY?: { fetch: typeof fetch } }).TELEMETRY,
+    ) ?? fetch;
+    const response = await fetcher(new Request(upstream, { headers: { accept: "application/json" } }));
     if (!response.ok) throw new Error("upstream unavailable");
     const raw = await response.text();
     if (new TextEncoder().encode(raw).byteLength > MAX_UPSTREAM_BYTES) throw new Error("upstream response too large");

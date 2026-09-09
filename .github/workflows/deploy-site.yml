@@ -38,6 +38,9 @@ jobs:
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
       - name: Verify site deployment
         run: |
+          curl --fail --silent --show-error --retry 6 --retry-all-errors --retry-delay 2 --retry-max-time 30 "$SITE_WORKER_URL/api/health"
+          curl --fail --silent --show-error --retry 6 --retry-all-errors --retry-delay 2 --retry-max-time 30 "$SITE_WORKER_URL/api/community-stats"
+          curl --fail --silent --show-error --retry 6 --retry-all-errors --retry-delay 2 --retry-max-time 30 "$SITE_WORKER_URL/api/community-jobs?limit=1"
           curl --fail --silent --show-error --retry 6 --retry-all-errors --retry-delay 2 --retry-max-time 30 "$SITE_WORKER_URL/jobs" > /dev/null
         env:
           SITE_WORKER_URL: https://job-application-agent-site.varora1406.workers.dev
