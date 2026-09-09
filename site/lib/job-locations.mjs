@@ -80,17 +80,21 @@ export function atsTarget(value) {
   return null;
 }
 
+const HTML_ENTITIES = {
+  '&amp;': '&',
+  '&lt;': '<',
+  '&gt;': '>',
+  '&quot;': '"',
+  '&#39;': "'",
+  '&nbsp;': ' ',
+  '&mdash;': '—',
+  '&ndash;': '–'
+};
+
 export function parseSalaryDetails(text) {
   if (!text || typeof text !== 'string') return null;
   const clean = text
-    .replace(/&amp;/g, '&')
-    .replace(/&lt;/g, '<')
-    .replace(/&gt;/g, '>')
-    .replace(/&quot;/g, '"')
-    .replace(/&#39;/g, "'")
-    .replace(/&nbsp;/g, ' ')
-    .replace(/&mdash;/g, '—')
-    .replace(/&ndash;/g, '–')
+    .replace(/&(?:amp|lt|gt|quot|#39|nbsp|mdash|ndash);/g, match => HTML_ENTITIES[match] || match)
     .replace(/<[^>]+>/g, ' ');
 
   const rangeRegex = /(?:([$€£]|CAD\s*\$|USD\s*\$)\s*)?([\d,]+(?:\.\d+)?)\s*([kK])?\s*(?:[-–—]|to)\s*([$€£]|CAD\s*\$|USD\s*\$)?\s*([\d,]+(?:\.\d+)?)\s*([kK])?\s*(USD|EUR|GBP|CAD)?(?:\s*(?:\/|\bper\b)\s*(year|yr|annum|annual|month|mo|hour|hr))?/i;
@@ -270,7 +274,14 @@ export function extractLocation(job, data) {
   } else if (target.kind === 'greenhouse') {
     entry = data;
     if (String(entry.id) !== target.id || !titlesMatch(entry.title, job.role)) return null;
-    if (entry.absolute_url && entry.absolute_url.includes('greenhouse.io') && canonical(entry.absolute_url).replace('://boards.greenhouse.io/', '://job-boards.greenhouse.io/') !== canonical(job.url).replace('://boards.greenhouse.io/', '://job-boards.greenhouse.io/')) return null;
+    let isGreenhouseHost = false;
+    if (entry.absolute_url) {
+      try {
+        const host = new URL(entry.absolute_url).hostname;
+        isGreenhouseHost = host === 'greenhouse.io' || host.endsWith('.greenhouse.io');
+      } catch {}
+    }
+    if (isGreenhouseHost && canonical(entry.absolute_url).replace('://boards.greenhouse.io/', '://job-boards.greenhouse.io/') !== canonical(job.url).replace('://boards.greenhouse.io/', '://job-boards.greenhouse.io/')) return null;
 
     names = [label(entry.location?.name)];
     if (Array.isArray(entry.offices)) {
