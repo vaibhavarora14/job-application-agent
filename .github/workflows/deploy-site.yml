@@ -28,7 +28,7 @@ jobs:
       - name: Run site tests
         run: npm --prefix site test
       - name: Run site lint and typecheck
-        run: npm --prefix site run lint && npx tsc --project site/tsconfig.json --noEmit
+        run: npm --prefix site run lint && npm --prefix site run typecheck
       - name: Build site
         run: npm --prefix site run build
       - name: Deploy Worker
