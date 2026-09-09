@@ -6,19 +6,33 @@ import { installScheduler, removeScheduler } from './scheduler.mjs';
 
 export const CONFIG_FILENAME = 'install.json';
 export const SKILL_NAME = 'job-application-agent';
+export const VENDOR_SKILL_DIRS = ['.codex/skills', '.claude/skills', '.cursor/skills', '.copilot/skills', '.gemini/skills'];
 
-function pathsFor(codexHome) {
-  const managerDir = path.join(codexHome, SKILL_NAME);
+export function resolveAgentHome(homeDir = os.homedir()) {
+  return process.env.JOB_APPLICATION_AGENT_HOME || path.join(homeDir, '.agents');
+}
+
+export function resolveLegacyCodexHome(homeDir = os.homedir()) {
+  return process.env.CODEX_HOME || path.join(homeDir, '.codex');
+}
+
+function pathsFor(agentHome) {
+  const managerDir = path.join(agentHome, SKILL_NAME);
   return {
+    agentHome,
     managerDir,
     configPath: path.join(managerDir, CONFIG_FILENAME),
-    target: path.join(codexHome, 'skills', SKILL_NAME),
+    target: path.join(agentHome, 'skills', SKILL_NAME),
     previous: path.join(managerDir, 'previous'),
   };
 }
 
 async function exists(filePath) {
   try { await lstat(filePath); return true; } catch (error) { if (error.code === 'ENOENT') return false; throw error; }
+}
+
+async function isDirectory(filePath) {
+  try { return (await lstat(filePath)).isDirectory(); } catch (error) { if (error.code === 'ENOENT') return false; throw error; }
 }
 
 async function validatePackagedSkill(source) {
@@ -34,27 +48,89 @@ async function writeConfig(configPath, config) {
   await chmod(configPath, 0o600);
 }
 
-export async function readInstallStatus({ codexHome = process.env.CODEX_HOME || path.join(os.homedir(), '.codex') } = {}) {
-  const paths = pathsFor(codexHome);
+async function readConfigFile(configPath) {
   try {
-    return JSON.parse(await readFile(paths.configPath, 'utf8'));
+    return JSON.parse(await readFile(configPath, 'utf8'));
   } catch (error) {
-    if (error.code === 'ENOENT') return { installed: false, automaticUpdates: false };
+    if (error.code === 'ENOENT') return null;
     throw error;
   }
+}
+
+export async function migrateLegacyCodexInstall({
+  homeDir = os.homedir(),
+  agentHome = resolveAgentHome(homeDir),
+  legacyHome = resolveLegacyCodexHome(homeDir),
+} = {}) {
+  const paths = pathsFor(agentHome);
+  const legacy = pathsFor(legacyHome);
+  if (path.resolve(paths.agentHome) === path.resolve(legacy.agentHome)) return { migratedSkill: false, migratedConfig: false };
+
+  let migratedSkill = false;
+  let migratedConfig = false;
+  if (!(await exists(paths.target)) && await exists(legacy.target)) {
+    await mkdir(path.dirname(paths.target), { recursive: true });
+    await cp(legacy.target, paths.target, { recursive: true });
+    migratedSkill = true;
+  }
+  if (!(await exists(paths.configPath)) && await exists(legacy.configPath)) {
+    await mkdir(paths.managerDir, { recursive: true });
+    await cp(legacy.configPath, paths.configPath);
+    migratedConfig = true;
+  }
+  return { migratedSkill, migratedConfig };
+}
+
+export async function syncVendorSkillCopies({ homeDir = os.homedir(), sourceSkillDir }) {
+  const copied = [];
+  const canonical = path.resolve(sourceSkillDir);
+  for (const relative of VENDOR_SKILL_DIRS) {
+    const skillsDir = path.join(homeDir, ...relative.split('/'));
+    if (!(await isDirectory(skillsDir))) continue;
+    const dest = path.join(skillsDir, SKILL_NAME);
+    if (path.resolve(dest) === canonical) continue;
+    await rm(dest, { recursive: true, force: true });
+    await cp(sourceSkillDir, dest, { recursive: true, force: true });
+    copied.push(dest);
+  }
+  return copied;
+}
+
+export async function readInstallStatus({
+  homeDir = os.homedir(),
+  agentHome,
+  codexHome,
+} = {}) {
+  const home = agentHome || codexHome || resolveAgentHome(homeDir);
+  const current = await readConfigFile(pathsFor(home).configPath);
+  if (current) return current;
+  const legacyHome = resolveLegacyCodexHome(homeDir);
+  if (path.resolve(legacyHome) !== path.resolve(home)) {
+    const legacy = await readConfigFile(pathsFor(legacyHome).configPath);
+    if (legacy) return legacy;
+  }
+  return { installed: false, automaticUpdates: false };
+}
+
+function defaultCommand(agentHome, platform = process.platform) {
+  return path.join(agentHome, SKILL_NAME, platform === 'win32' ? 'update.cmd' : 'update');
 }
 
 export async function installSkill({
   packageRoot,
   packageVersion,
   homeDir = os.homedir(),
-  codexHome = process.env.CODEX_HOME || path.join(homeDir, '.codex'),
+  agentHome,
+  codexHome,
+  legacyHome,
   platform = process.platform,
   scheduler = true,
-  command = path.join(codexHome, SKILL_NAME, process.platform === 'win32' ? 'update.cmd' : 'update'),
+  command,
 } = {}) {
+  const home = agentHome || codexHome || resolveAgentHome(homeDir);
+  const paths = pathsFor(home);
   const source = path.join(packageRoot, SKILL_NAME);
-  const paths = pathsFor(codexHome);
+  await migrateLegacyCodexInstall({ homeDir, agentHome: home, legacyHome: legacyHome || resolveLegacyCodexHome(homeDir) });
   await validatePackagedSkill(source);
   await mkdir(path.dirname(paths.target), { recursive: true });
   await mkdir(paths.managerDir, { recursive: true });
@@ -75,7 +151,7 @@ export async function installSkill({
     throw error;
   }
 
-  const prior = await readInstallStatus({ codexHome });
+  const prior = await readInstallStatus({ homeDir, agentHome: home });
   const config = {
     installed: true,
     installedVersion: packageVersion,
@@ -84,27 +160,33 @@ export async function installSkill({
     updatedAt: new Date().toISOString(),
   };
   await writeConfig(paths.configPath, config);
-  if (scheduler && config.automaticUpdates) await installScheduler({ platform, homeDir, command });
+  await syncVendorSkillCopies({ homeDir, sourceSkillDir: paths.target });
+  const updateCommand = command || defaultCommand(home, platform);
+  if (scheduler && config.automaticUpdates) await installScheduler({ platform, homeDir, agentHome: home, command: updateCommand });
   return config;
 }
 
 export const updateSkill = installSkill;
 
 export async function setAutomaticUpdates(enabled, {
-  codexHome = process.env.CODEX_HOME || path.join(os.homedir(), '.codex'),
   homeDir = os.homedir(),
+  agentHome,
+  codexHome,
   platform = process.platform,
   scheduler = true,
-  command = path.join(codexHome, SKILL_NAME, process.platform === 'win32' ? 'update.cmd' : 'update'),
+  command,
 } = {}) {
-  const paths = pathsFor(codexHome);
-  const current = await readInstallStatus({ codexHome });
+  const home = agentHome || codexHome || resolveAgentHome(homeDir);
+  await migrateLegacyCodexInstall({ homeDir, agentHome: home });
+  const paths = pathsFor(home);
+  const current = await readInstallStatus({ homeDir, agentHome: home });
   if (!current.installed) throw new Error('The skill is not installed.');
   const next = { ...current, automaticUpdates: enabled, updatedAt: new Date().toISOString() };
   await writeConfig(paths.configPath, next);
   if (scheduler) {
-    if (enabled) await installScheduler({ platform, homeDir, command });
-    else await removeScheduler({ platform, homeDir });
+    const updateCommand = command || defaultCommand(home, platform);
+    if (enabled) await installScheduler({ platform, homeDir, agentHome: home, command: updateCommand });
+    else await removeScheduler({ platform, homeDir, agentHome: home });
   }
   return next;
 }

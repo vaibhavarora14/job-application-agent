@@ -4,8 +4,9 @@ import { mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
+import { fileURLToPath } from 'node:url';
 
-import { buildReview, commandCategory, durationBucket, migrateProfile, profileStatus, scoreJob, telemetryJobAssessed, validateLedgerEntry, validateProfile, validateSubmissionTelemetry } from '../scripts/job-application.mjs';
+import { buildReview, commandCategory, durationBucket, migrateProfile, profileStatus, scoreJob, telemetryErrorCode, telemetryJobAssessed, validateLedgerEntry, validateProfile, validateSubmissionTelemetry } from '../scripts/job-application.mjs';
 
 const target = {
   name: 'Test Candidate',
@@ -47,9 +48,17 @@ const matchingJob = {
   ],
 };
 
-function runCli(script, args, input, env) {
+function isolatedCliEnv(directory) {
+  return {
+    ...process.env,
+    JOB_APPLICATION_AGENT_STATE_DIR: directory,
+    JOB_APPLICATION_AGENT_SOURCE_COMMUNITY_URL: 'http://127.0.0.1:9',
+  };
+}
+
+function runCli(script, args, input, env, runtimeArgs = []) {
   return new Promise((resolve) => {
-    const child = spawn(process.execPath, [script, ...args], { env, stdio: ['pipe', 'pipe', 'pipe'] });
+    const child = spawn(process.execPath, [...runtimeArgs, script, ...args], { env, stdio: ['pipe', 'pipe', 'pipe'] });
     let stdout = '';
     let stderr = '';
     child.stdout.on('data', (chunk) => { stdout += chunk; });
@@ -63,6 +72,57 @@ test('validates a candidate-defined target profile', () => {
   assert.equal(validateProfile(target).name, 'Test Candidate');
   assert.throws(() => validateProfile({ ...target, roleFamilies: [] }), /non-empty/);
   assert.throws(() => validateProfile({ ...target, submissionMode: 'always' }), /review-each/);
+});
+
+test('returns the canonical resume path for direct browser uploads', async (t) => {
+  const directory = await mkdtemp(join(tmpdir(), 'public-job-agent-resume-path-'));
+  t.after(() => rm(directory, { recursive: true, force: true }));
+  const script = fileURLToPath(new URL('../scripts/job-application.mjs', import.meta.url));
+  const resume = join(directory, 'resume.pdf');
+  await writeFile(join(directory, 'telemetry.json'), JSON.stringify({ version: 1, enabled: false, disclosed: true, graceConsumed: true, installationEventPending: false }));
+  await writeFile(resume, '%PDF-1.7\ncanonical resume fixture');
+  const env = isolatedCliEnv(directory);
+
+  const result = JSON.parse(execFileSync(process.execPath, [script, 'resume', 'path'], { env, encoding: 'utf8' }));
+
+  assert.deepEqual(result, { path: resume });
+});
+
+test('preserves the Linux secret-tool install error for profile-dependent commands', async (t) => {
+  const directory = await mkdtemp(join(tmpdir(), 'job-agent-linux-profile-error-'));
+  t.after(() => rm(directory, { recursive: true, force: true }));
+  const script = fileURLToPath(new URL('../scripts/job-application.mjs', import.meta.url));
+  await writeFile(join(directory, 'telemetry.json'), JSON.stringify({ version: 1, enabled: false, disclosed: true, graceConsumed: true, installationEventPending: false }));
+  const platformOverride = `data:text/javascript,${encodeURIComponent("Object.defineProperty(process, 'platform', { value: 'linux' });")}`;
+  const env = { ...isolatedCliEnv(directory), PATH: '' };
+
+  const result = await runCli(script, ['profile', 'field', 'name'], undefined, env, ['--import', platformOverride]);
+
+  assert.equal(result.code, 1);
+  assert.match(result.stderr, /secret-tool is not installed/);
+  assert.doesNotMatch(result.stderr, /profile needs migration/i);
+});
+
+test('preserves an unavailable Linux Secret Service error for profile-dependent commands', {
+  skip: process.platform === 'win32',
+}, async (t) => {
+  const directory = await mkdtemp(join(tmpdir(), 'job-agent-linux-service-error-'));
+  const toolDirectory = await mkdtemp(join(tmpdir(), 'job-agent-secret-tool-'));
+  t.after(() => rm(directory, { recursive: true, force: true }));
+  t.after(() => rm(toolDirectory, { recursive: true, force: true }));
+  const script = fileURLToPath(new URL('../scripts/job-application.mjs', import.meta.url));
+  const toolPath = join(toolDirectory, 'secret-tool');
+  const toolSource = '#!/bin/sh\nprintf "%s\\n" "secret-tool: Secret Service is unavailable" >&2\nexit 1\n';
+  await writeFile(toolPath, toolSource, { mode: 0o755 });
+  await writeFile(join(directory, 'telemetry.json'), JSON.stringify({ version: 1, enabled: false, disclosed: true, graceConsumed: true, installationEventPending: false }));
+  const platformOverride = `data:text/javascript,${encodeURIComponent("Object.defineProperty(process, 'platform', { value: 'linux' });")}`;
+  const env = { ...isolatedCliEnv(directory), PATH: toolDirectory };
+
+  const result = await runCli(script, ['profile', 'field', 'name'], undefined, env, ['--import', platformOverride]);
+
+  assert.equal(result.code, 1);
+  assert.match(result.stderr, /Secret Service could not read the profile/);
+  assert.doesNotMatch(result.stderr, /profile needs migration/i);
 });
 
 test('migrates a legacy profile without discarding identity or salary preference', () => {
@@ -93,6 +153,7 @@ test('scores a matching role from candidate preferences', () => {
   assert.equal(result.autoEligible, true);
   assert.equal(result.mustHaveCoverage, 83);
   assert.ok(result.score >= 80);
+  assert.equal(scoreJob({ ...matchingJob, discoverySourceId: 'community-abcdef1234567890' }, target).decision, 'review');
 });
 
 test('applies posting, eligibility, work-mode, seniority and evidence gates before auto-submit', () => {
@@ -224,13 +285,13 @@ test('requires review at each ten confirmed submissions', () => {
 test('deduplicates ledger entries by normalized URL', async (t) => {
   const directory = await mkdtemp(join(tmpdir(), 'public-job-agent-'));
   t.after(() => rm(directory, { recursive: true, force: true }));
-  const script = new URL('../scripts/job-application.mjs', import.meta.url).pathname;
+  const script = fileURLToPath(new URL('../scripts/job-application.mjs', import.meta.url));
   const entry = {
     id: 'example-role-1', company: 'Example', role: 'Senior Product Engineer', url: 'https://jobs.example.com/123?utm_source=x', source: 'company', score: 80, status: 'submitted', submittedAt: '2026-01-15T10:00:00Z', approval: 'STANDING AUTHORIZATION', answers: {},
     telemetry: { durationBucket: '5-15m', fieldsFilled: 14, shortAnswerCount: 2, resumeUploaded: true },
   };
   await writeFile(join(directory, 'telemetry.json'), JSON.stringify({ version: 1, enabled: false, disclosed: true, graceConsumed: true, installationEventPending: false }));
-  const env = { ...process.env, JOB_APPLICATION_AGENT_STATE_DIR: directory };
+  const env = isolatedCliEnv(directory);
   execFileSync(process.execPath, [script, 'ledger', 'add', '--stdin'], { input: JSON.stringify(entry), env, encoding: 'utf8' });
   const duplicate = JSON.parse(execFileSync(process.execPath, [script, 'ledger', 'check', '--stdin'], { input: JSON.stringify({ id: 'different', url: 'https://jobs.example.com/123?ref=friend' }), env, encoding: 'utf8' }));
   assert.equal(duplicate.duplicate, true);
@@ -239,15 +300,15 @@ test('deduplicates ledger entries by normalized URL', async (t) => {
   }));
   assert.equal(relabelled.duplicate, true);
   assert.equal((await readFile(join(directory, 'applications.ndjson'), 'utf8')).includes('telemetry'), false);
-  assert.equal((await stat(join(directory, 'applications.ndjson'))).mode & 0o777, 0o600);
+  if (process.platform !== 'win32') assert.equal((await stat(join(directory, 'applications.ndjson'))).mode & 0o777, 0o600);
 });
 
 test('warns on same-company role matches and serializes concurrent duplicate submissions', async (t) => {
   const directory = await mkdtemp(join(tmpdir(), 'public-job-agent-dedup-'));
   t.after(() => rm(directory, { recursive: true, force: true }));
-  const script = new URL('../scripts/job-application.mjs', import.meta.url).pathname;
+  const script = fileURLToPath(new URL('../scripts/job-application.mjs', import.meta.url));
   await writeFile(join(directory, 'telemetry.json'), JSON.stringify({ version: 1, enabled: false, disclosed: true, graceConsumed: true, installationEventPending: false }));
-  const env = { ...process.env, JOB_APPLICATION_AGENT_STATE_DIR: directory };
+  const env = isolatedCliEnv(directory);
   const base = {
     company: 'Example', role: 'Senior Product Engineer', url: 'https://jobs.example.com/123', source: 'company', score: 88,
     status: 'submitted', submittedAt: '2026-01-15T10:00:00Z', approval: 'STANDING AUTHORIZATION', answers: {}, employerJobId: 'example:123',
@@ -269,13 +330,13 @@ test('warns on same-company role matches and serializes concurrent duplicate sub
 test('records structured outcomes idempotently without duplicate rows', async (t) => {
   const directory = await mkdtemp(join(tmpdir(), 'public-job-agent-outcomes-'));
   t.after(() => rm(directory, { recursive: true, force: true }));
-  const script = new URL('../scripts/job-application.mjs', import.meta.url).pathname;
+  const script = fileURLToPath(new URL('../scripts/job-application.mjs', import.meta.url));
   await writeFile(join(directory, 'telemetry.json'), JSON.stringify({ version: 1, enabled: false, disclosed: true, graceConsumed: true, installationEventPending: false }));
   await writeFile(join(directory, 'applications.ndjson'), `${JSON.stringify({
     id: 'example-role-1', company: 'Example', role: 'Senior Product Engineer', url: 'https://jobs.example.com/123', source: 'company', score: 88,
     status: 'submitted', submittedAt: '2026-01-15T10:00:00Z', approval: 'STANDING AUTHORIZATION', answers: {},
   })}\n`);
-  const env = { ...process.env, JOB_APPLICATION_AGENT_STATE_DIR: directory };
+  const env = isolatedCliEnv(directory);
   const outcome = { id: 'example-role-1', status: 'rejected', occurredAt: '2026-01-20T09:00:00Z', note: 'No sponsorship' };
   const enriched = { ...outcome, reasons: [{ category: 'eligibility', evidence: 'explicit' }] };
   const first = JSON.parse(execFileSync(process.execPath, [script, 'ledger', 'outcome', '--stdin'], { input: JSON.stringify(outcome), env, encoding: 'utf8' }));
@@ -292,13 +353,13 @@ test('records structured outcomes idempotently without duplicate rows', async (t
 test('records bounded interview quality and failure-point enrichment idempotently', async (t) => {
   const directory = await mkdtemp(join(tmpdir(), 'public-job-agent-interview-quality-'));
   t.after(() => rm(directory, { recursive: true, force: true }));
-  const script = new URL('../scripts/job-application.mjs', import.meta.url).pathname;
+  const script = fileURLToPath(new URL('../scripts/job-application.mjs', import.meta.url));
   await writeFile(join(directory, 'telemetry.json'), JSON.stringify({ version: 1, enabled: false, disclosed: true, graceConsumed: true, installationEventPending: false }));
   await writeFile(join(directory, 'applications.ndjson'), `${JSON.stringify({
     id: 'example-role-1', company: 'Example', role: 'Staff Product Engineer', url: 'https://jobs.example.com/123', source: 'company', score: 91,
     status: 'submitted', submittedAt: '2026-01-15T10:00:00Z', approval: 'STANDING AUTHORIZATION', answers: {},
   })}\n`);
-  const env = { ...process.env, JOB_APPLICATION_AGENT_STATE_DIR: directory };
+  const env = isolatedCliEnv(directory);
   const base = { id: 'example-role-1', status: 'interview', occurredAt: '2026-01-20T09:00:00Z' };
   const enriched = { ...base, interviewQuality: 'weak', failurePoint: 'role-scope' };
   const first = JSON.parse(execFileSync(process.execPath, [script, 'ledger', 'outcome', '--stdin'], { input: JSON.stringify(base), env, encoding: 'utf8' }));
@@ -377,14 +438,14 @@ test('preserves interview quality after a later final outcome', () => {
 test('acknowledges a generated review only through the explicit CLI command', async (t) => {
   const directory = await mkdtemp(join(tmpdir(), 'public-job-agent-review-'));
   t.after(() => rm(directory, { recursive: true, force: true }));
-  const script = new URL('../scripts/job-application.mjs', import.meta.url).pathname;
+  const script = fileURLToPath(new URL('../scripts/job-application.mjs', import.meta.url));
   await writeFile(join(directory, 'telemetry.json'), JSON.stringify({ version: 1, enabled: false, disclosed: true, graceConsumed: true, installationEventPending: false }));
   const entries = Array.from({ length: 10 }, (_, index) => ({
     id: `role-${index}`, company: `Company ${index}`, role: 'Senior Engineer', url: `https://jobs.example.com/${index}`,
     source: 'company', score: 80, status: 'submitted', submittedAt: '2026-01-01T10:00:00Z', approval: 'STANDING AUTHORIZATION', answers: {},
   }));
   await writeFile(join(directory, 'applications.ndjson'), `${entries.map(JSON.stringify).join('\n')}\n`);
-  const env = { ...process.env, JOB_APPLICATION_AGENT_STATE_DIR: directory };
+  const env = isolatedCliEnv(directory);
   const before = JSON.parse(execFileSync(process.execPath, [script, 'ledger', 'review'], { env, encoding: 'utf8' }));
   assert.equal(before.reviewDue, true);
   assert.equal(await readFile(join(directory, 'reviews.ndjson'), 'utf8').catch(() => ''), '');
@@ -400,9 +461,12 @@ test('maps commands and durations to bounded telemetry categories', () => {
   assert.equal(commandCategory(['ledger', 'add', '--stdin']), 'apply');
   assert.equal(commandCategory(['ledger', 'outcome', '--stdin']), 'outcome');
   assert.equal(commandCategory(['score', '--stdin']), 'assess');
+  assert.equal(commandCategory(['sources', 'list']), 'search');
   assert.equal(durationBucket(700), 'under-1s');
   assert.equal(durationBucket(70_000), '1-2m');
   assert.equal(durationBucket(2_000_000), '15m-plus');
+  assert.equal(telemetryErrorCode(new Error('Secret Service could not read the profile.')), 'authentication_required');
+  assert.equal(telemetryErrorCode(new Error('secret-tool is not installed.')), 'authentication_required');
 });
 
 test('builds a structured assessment event without description or candidate profile data', async () => {
@@ -422,11 +486,11 @@ test('builds a structured assessment event without description or candidate prof
 test('telemetry CLI controls are private and reset removes anonymous credentials', async (t) => {
   const directory = await mkdtemp(join(tmpdir(), 'public-job-agent-telemetry-'));
   t.after(() => rm(directory, { recursive: true, force: true }));
-  const script = new URL('../scripts/job-application.mjs', import.meta.url).pathname;
+  const script = fileURLToPath(new URL('../scripts/job-application.mjs', import.meta.url));
   const env = { ...process.env, JOB_APPLICATION_AGENT_STATE_DIR: directory, JOB_APPLICATION_AGENT_TELEMETRY_URL: 'https://relay.invalid' };
   const disabled = JSON.parse(execFileSync(process.execPath, [script, 'telemetry', 'disable'], { env, encoding: 'utf8' }));
   assert.equal(disabled.enabled, false);
   const reset = JSON.parse(execFileSync(process.execPath, [script, 'telemetry', 'reset'], { env, encoding: 'utf8' }));
   assert.equal(reset.hasInstallationId, false);
-  assert.equal((await stat(join(directory, 'telemetry.json'))).mode & 0o777, 0o600);
+  if (process.platform !== 'win32') assert.equal((await stat(join(directory, 'telemetry.json'))).mode & 0o777, 0o600);
 });

@@ -9,7 +9,7 @@ export const TELEMETRY_MAX_BYTES = 4096;
 
 const values = (...items) => new Set(items);
 const ATS = values('linkedin', 'greenhouse', 'lever', 'ashby', 'workable', 'comeet', 'workday', 'rippling', 'smartrecruiters', 'google-form', 'company', 'email', 'other');
-const SOURCES = values('linkedin', 'x', 'hacker-news', 'yc', 'aggregator', 'company', 'email', 'referral', 'other');
+const SOURCES = values('direct-company', 'linkedin', 'x', 'hacker-news', 'yc', 'job-board', 'aggregator', 'company', 'email', 'referral', 'user-supplied', 'web-search', 'other');
 const DURATIONS = values('under-1s', '1-5s', '5-30s', '30-60s', '1-2m', '2-5m', '5-15m', '15m-plus');
 const COMMANDS = values('onboard', 'search', 'assess', 'apply', 'batch', 'round', 'outcome', 'review', 'resume', 'profile', 'telemetry', 'other');
 const RESULTS = values('success', 'paused', 'skipped', 'abandoned', 'error');

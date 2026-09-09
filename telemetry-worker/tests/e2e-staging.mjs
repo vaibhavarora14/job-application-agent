@@ -1,4 +1,7 @@
 import assert from 'node:assert/strict';
+import { appendFile } from 'node:fs/promises';
+
+import { stagingSourceBaseUrl } from './staging-source-fixture.mjs';
 
 const endpoint = process.env.TELEMETRY_STAGING_URL?.replace(/\/$/, '');
 if (!endpoint) throw new Error('TELEMETRY_STAGING_URL is required.');
@@ -68,5 +71,107 @@ const rejected = await fetch(`${endpoint}/v1/events`, {
   }),
 });
 assert.equal(rejected.status, 400);
+
+const stagingJobRunId = String(process.env.GITHUB_RUN_ID ?? 'local-contract')
+  .replace(/\d/g, (digit) => String.fromCharCode('k'.charCodeAt(0) + Number(digit)));
+const stagingJob = {
+  url: `https://jobs.fixture.example/staging-fixture-community-job-${stagingJobRunId}?ref=private-staging-value#apply`,
+  company: 'Staging Fixture Company',
+  role: 'Community Job Contract Engineer',
+  applicationChannel: 'company',
+  discoverySource: 'other',
+};
+const contributedJob = await fetch(`${endpoint}/v1/jobs`, {
+  method: 'POST',
+  headers: { 'content-type': 'application/json' },
+  body: JSON.stringify({ schemaVersion: 1, skillVersion: '3.2.0-staging', installationId: identity.installationId, token: identity.token, job: stagingJob }),
+});
+assert.equal(contributedJob.status, 202);
+const contributedJobBody = await contributedJob.json();
+assert.match(contributedJobBody.jobId, /^community-job-[0-9a-f]{16}$/);
+const expectedJobId = process.env.STAGING_EXPECT_JOB_ID;
+const expectedJobStatus = process.env.STAGING_EXPECT_JOB_STATUS ?? 'pending';
+if (expectedJobId) assert.equal(contributedJobBody.jobId, expectedJobId);
+assert.equal(contributedJobBody.publicationStatus, expectedJobStatus);
+assert.ok(contributedJobBody.contributionCount >= 1);
+
+const communityJobs = await fetch(`${endpoint}/v1/jobs?limit=100`);
+assert.equal(communityJobs.status, 200);
+const communityJobsBody = await communityJobs.json();
+const publicJob = communityJobsBody.jobs.find((entry) => entry.jobId === contributedJobBody.jobId);
+if (expectedJobStatus === 'published') {
+  assert.ok(publicJob);
+  assert.equal(publicJob.url, stagingJob.url.split('?')[0]);
+  assert.equal(publicJob.providerUrl, 'https://jobs.fixture.example');
+  assert.equal('publicationStatus' in publicJob, false);
+} else {
+  assert.equal(publicJob, undefined);
+}
+assert.equal(JSON.stringify(communityJobsBody).includes('private-staging-value'), false);
+assert.equal(JSON.stringify(communityJobsBody).includes(identity.installationId), false);
+if (process.env.GITHUB_OUTPUT && !expectedJobId) await appendFile(process.env.GITHUB_OUTPUT, `community_job_id=${contributedJobBody.jobId}\n`);
+
+const rejectedJob = await fetch(`${endpoint}/v1/jobs`, {
+  method: 'POST',
+  headers: { 'content-type': 'application/json' },
+  body: JSON.stringify({ schemaVersion: 1, skillVersion: '3.2.0-staging', installationId: identity.installationId, token: identity.token, job: { ...stagingJob, answers: { private: true } } }),
+});
+assert.equal(rejectedJob.status, 400);
+
+const expectedSourceId = process.env.STAGING_EXPECT_SOURCE_ID;
+if (expectedSourceId) {
+  assert.match(expectedSourceId, /^community-[0-9a-f]{16}$/);
+  const community = await fetch(`${endpoint}/v1/sources`);
+  assert.equal(community.status, 200);
+  const communityBody = await community.json();
+  const source = communityBody.sources.find((entry) => entry.sourceId === expectedSourceId);
+  if (process.env.STAGING_EXPECT_REJECTED === 'true') {
+    assert.equal(source, undefined);
+  } else {
+    assert.ok(source);
+    assert.equal(source.registryStatus, 'community-reviewed');
+    assert.equal(JSON.stringify(source).includes('contributor'), false);
+  }
+} else {
+  const stagingSource = {
+    name: 'Staging Engineering Board',
+    baseUrl: stagingSourceBaseUrl(),
+    kind: 'job-board',
+    regions: ['global'],
+    roleFamilies: ['engineering'],
+    requiresSession: false,
+  };
+  const contributed = await fetch(`${endpoint}/v1/sources`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ schemaVersion: 1, skillVersion: '3.1.1-staging', installationId: identity.installationId, token: identity.token, source: stagingSource }),
+  });
+  assert.equal(contributed.status, 202);
+  const contributedBody = await contributed.json();
+  assert.equal(contributedBody.publicationStatus, 'pending');
+  assert.equal(contributedBody.uniqueContributors, 1);
+
+  const secondInstall = await fetch(`${endpoint}/v1/install`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' });
+  const secondIdentity = await secondInstall.json();
+  const secondContribution = await fetch(`${endpoint}/v1/sources`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      schemaVersion: 1, skillVersion: '3.1.1-staging', installationId: secondIdentity.installationId, token: secondIdentity.token,
+      source: { ...stagingSource, name: 'Untrusted staging rewrite', regions: ['private-region'], requiresSession: true },
+    }),
+  });
+  const secondBody = await secondContribution.json();
+  assert.equal(secondBody.publicationStatus, 'pending');
+  assert.equal(secondBody.uniqueContributors, 2);
+
+  const pendingCommunity = await (await fetch(`${endpoint}/v1/sources`)).json();
+  const canonicalSourceUrl = stagingSource.baseUrl.split('?')[0];
+  assert.equal(pendingCommunity.sources.some((source) => source.baseUrl === canonicalSourceUrl), false);
+  assert.equal(JSON.stringify(pendingCommunity).includes('private=removed'), false);
+  assert.equal(JSON.stringify(pendingCommunity).includes(identity.installationId), false);
+  assert.equal(JSON.stringify(pendingCommunity).includes(secondIdentity.installationId), false);
+  if (process.env.GITHUB_OUTPUT) await appendFile(process.env.GITHUB_OUTPUT, `community_source_id=${contributedBody.sourceId}\n`);
+}
 
 process.stdout.write('Staging relay contract passed.\n');

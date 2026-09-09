@@ -13,10 +13,11 @@ jobs:
     environment: telemetry-production
 
     steps:
-      - uses: actions/checkout@v5
-      - uses: actions/setup-node@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
         with:
           node-version: 24
+      - run: npm ci
       - run: npm run check && npm test && npm run privacy-audit
       - name: Apply aggregate database migrations
         run: npx --yes wrangler@4.122.0 d1 migrations apply job-application-agent-public-stats --remote --config telemetry-worker/wrangler.jsonc
@@ -35,8 +36,10 @@ jobs:
           POSTHOG_PROJECT_TOKEN: ${{ secrets.POSTHOG_PROJECT_TOKEN }}
       - name: Verify production health
         run: |
-          curl --fail --silent --show-error "$TELEMETRY_PRODUCTION_URL/healthz"
-          curl --fail --silent --show-error "$TELEMETRY_PRODUCTION_URL/api/public-stats"
-          curl --fail --silent --show-error "$TELEMETRY_PRODUCTION_URL/"
+          curl --fail --silent --show-error --retry 6 --retry-all-errors --retry-delay 2 --retry-max-time 30 "$TELEMETRY_PRODUCTION_URL/healthz"
+          curl --fail --silent --show-error --retry 6 --retry-all-errors --retry-delay 2 --retry-max-time 30 "$TELEMETRY_PRODUCTION_URL/api/public-stats"
+          curl --fail --silent --show-error --retry 6 --retry-all-errors --retry-delay 2 --retry-max-time 30 "$TELEMETRY_PRODUCTION_URL/v1/sources"
+          curl --fail --silent --show-error --retry 6 --retry-all-errors --retry-delay 2 --retry-max-time 30 "$TELEMETRY_PRODUCTION_URL/v1/jobs?limit=1"
+          curl --fail --silent --show-error --retry 6 --retry-all-errors --retry-delay 2 --retry-max-time 30 "$TELEMETRY_PRODUCTION_URL/"
         env:
           TELEMETRY_PRODUCTION_URL: https://job-application-agent-telemetry.varora1406.workers.dev

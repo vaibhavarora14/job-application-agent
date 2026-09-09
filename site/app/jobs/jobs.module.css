@@ -1,0 +1,39 @@
+.page { max-width: 60rem; padding-block: 2rem 4rem; }
+.back { display: inline-block; padding-block: .5rem; color: var(--text); font-size: .9rem; }
+.header { padding-block: 3rem 2rem; max-width: 46rem; }
+.header h1 { margin: .75rem 0 1.25rem; font: 400 clamp(2.5rem, 6vw, 4rem)/1.1 var(--font-display), serif; letter-spacing: -.04em; }
+.header > p:last-child { color: var(--text); margin: 0; }
+.summary { padding-block: 1rem; border-bottom: 1px solid var(--ink); font: .8rem var(--font-mono), monospace; color: var(--text); }
+.list { list-style: none; margin: 0; padding: 0; }
+.job { display: flex; justify-content: space-between; align-items: start; gap: 1rem; padding: 1.5rem 0; border-bottom: 1px solid var(--line); }
+.job > div { min-width: 0; }
+.company { margin: 0 0 .4rem; color: var(--text); font-size: .85rem; }
+.job h2 { margin: 0; font-size: 1.15rem; line-height: 1.5; overflow-wrap: anywhere; }
+.job h2 a { text-decoration: none; }
+.job h2 a:hover { text-decoration: underline; text-underline-offset: .25rem; }
+.meta { margin: .6rem 0 0; color: var(--muted); font-size: .75rem; overflow-wrap: anywhere; }
+.channel { flex-shrink: 0; border: 1px solid var(--line); border-radius: .25rem; padding: .25rem .5rem; font: .7rem/1.5 var(--font-mono), monospace; color: var(--text); }
+.notice { padding: 1.5rem; background: var(--surface); border: 1px solid var(--line); }
+.actions { padding-block: 1.5rem; }
+.pagination { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem; }
+.pagination button { min-width: 44px; min-height: 44px; padding: .5rem .75rem; border: 1px solid var(--line); border-radius: .25rem; background: var(--surface); color: var(--ink); font: inherit; cursor: pointer; }
+.pagination button[aria-current="page"] { background: var(--ink); color: var(--surface); border-color: var(--ink); font-weight: 700; }
+.pagination button:disabled { opacity: .5; cursor: default; }
+.summary { flex-wrap: wrap; scroll-margin-top: 1rem; }
+.summary:focus-visible { outline: 2px solid var(--ink); outline-offset: 4px; }
+.footer { padding-top: 1rem; border-top: 1px solid var(--line); color: var(--muted); font-size: .8rem; }
+.skeleton > div { height: 7rem; margin-block: .75rem; background: var(--surface); border-radius: .25rem; }
+.srOnly { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+.page a:focus-visible, .page button:focus-visible { outline: 2px solid var(--ink); outline-offset: 4px; }
+@media (max-width: 600px) { .job { flex-direction: column; gap: .75rem; } .header { padding-top: 2rem; } }
+.filters { padding: 1.5rem; background: var(--surface); border: 1px solid var(--line); border-radius: .5rem; }
+.filters label { display: flex; flex-direction: column; gap: .5rem; min-width: 0; font-size: .8rem; color: var(--ink); font-weight: 600; }
+.filters input, .filters select { width: 100%; min-width: 0; min-height: 48px; padding: .75rem; border: 1px solid var(--line); border-radius: .25rem; background: var(--background); color: var(--ink); font: 400 1rem var(--font-body), sans-serif; }
+.filters input:focus-visible, .filters select:focus-visible { outline: 2px solid var(--ink); outline-offset: 3px; }
+.filters :disabled { opacity: .6; }
+.filterRow { display: grid; grid-template-columns: 1.2fr 1fr 1fr; gap: 1rem; margin-top: 1rem; }
+.hint { color: var(--muted); font-size: .8rem; margin: 1rem 0 0; }
+.summary { display: flex; align-items: center; justify-content: space-between; gap: 1rem; min-height: 4.5rem; }
+.clear { background: transparent; border: 0; color: var(--ink); font: inherit; text-decoration: underline; cursor: pointer; min-height: 44px; padding: .5rem; }
+@media (max-width: 600px) { .filterRow { grid-template-columns: 1fr; } .filters { padding: 1rem; } }
+.location { margin: .5rem 0 0; color: var(--text); font-size: .9rem; overflow-wrap: anywhere; }
