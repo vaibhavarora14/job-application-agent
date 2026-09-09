@@ -190,70 +190,6 @@ export function extractEmploymentType(role, atsType) {
   return 'full-time';
 }
 
-export function estimateBenchmarkSalary(role, country) {
-  const r = role.toLowerCase();
-  let family = 'software-eng';
-  if (/\b(ai|ml|machine\s+learning|deep\s+learning|llm|nlp|research\s+scientist|computer\s+vision)\b/.test(r)) {
-    family = 'ai-ml';
-  } else if (/\b(devops|sre|site\s+reliability|infrastructure|cloud|platform\s+engineer|security|cyber)\b/.test(r)) {
-    family = 'infra-sre-security';
-  } else if (/\b(data\s+engineer|data\s+analyst|analytics|business\s+intelligence)\b/.test(r)) {
-    family = 'data';
-  } else if (/\b(product\s+manager|product\s+lead|designer|product\s+design|ux|ui)\b/.test(r)) {
-    family = 'product-design';
-  } else if (/\b(sales|account\s+executive|bdr|sdr|marketing|growth|customer\s+success)\b/.test(r)) {
-    family = 'gtm-sales-marketing';
-  }
-
-  const level = extractExperienceLevel(role);
-
-  const benchmarks = {
-    'ai-ml': {
-      intern: [55000, 95000], entry: [125000, 175000], mid: [160000, 225000],
-      senior: [200000, 285000], staff: [260000, 380000], executive: [300000, 450000]
-    },
-    'software-eng': {
-      intern: [40000, 80000], entry: [105000, 145000], mid: [135000, 185000],
-      senior: [170000, 235000], staff: [220000, 320000], executive: [260000, 380000]
-    },
-    'infra-sre-security': {
-      intern: [40000, 75000], entry: [100000, 140000], mid: [130000, 180000],
-      senior: [165000, 230000], staff: [215000, 300000], executive: [250000, 360000]
-    },
-    'data': {
-      intern: [35000, 70000], entry: [90000, 130000], mid: [120000, 165000],
-      senior: [155000, 215000], staff: [200000, 280000], executive: [240000, 340000]
-    },
-    'product-design': {
-      intern: [35000, 70000], entry: [95000, 135000], mid: [130000, 175000],
-      senior: [165000, 225000], staff: [210000, 290000], executive: [250000, 360000]
-    },
-    'gtm-sales-marketing': {
-      intern: [30000, 60000], entry: [60000, 90000], mid: [90000, 140000],
-      senior: [130000, 190000], staff: [160000, 230000], executive: [200000, 320000]
-    }
-  };
-
-  const [baseMin, baseMax] = benchmarks[family][level];
-  let currency = 'USD';
-  let factor = 1.0;
-  if (country === 'United Kingdom' || country === 'GB') {
-    currency = 'GBP';
-    factor = 0.65;
-  } else if (['Germany', 'France', 'Netherlands', 'Spain', 'Italy', 'Ireland', 'Sweden', 'DE', 'FR', 'NL', 'ES', 'IT', 'IE', 'SE'].includes(country)) {
-    currency = 'EUR';
-    factor = 0.65;
-  } else if (country === 'Canada' || country === 'CA') {
-    currency = 'CAD';
-    factor = 1.05;
-  } else if (country && !['United States', 'USA', 'US'].includes(country)) {
-    factor = 0.60;
-  }
-
-  const min = Math.round((baseMin * factor) / 5000) * 5000;
-  const max = Math.round((baseMax * factor) / 5000) * 5000;
-  return formatSalary(min, max, currency, 'year', true, 'market-benchmark');
-}
 
 export function extractLocation(job, data) {
   const target = atsTarget(job.url);
@@ -351,7 +287,7 @@ export function attachLocations(jobs, index, now = Date.now()) {
     if (!valid) return { ...job, location: null };
 
     const countries = unique((record.countries || []).map(countryLabel));
-    const salary = record.salary || estimateBenchmarkSalary(job.role, countries[0]);
+    const salary = (record.salary && !record.salary.isEstimated) ? record.salary : null;
     const employmentType = record.employmentType || extractEmploymentType(job.role);
     const experienceLevel = record.experienceLevel || extractExperienceLevel(job.role);
 
