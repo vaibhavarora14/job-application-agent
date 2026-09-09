@@ -23,6 +23,12 @@
       "migrations_dir": "drizzle"
     }
   ],
+  "services": [
+    {
+      "binding": "TELEMETRY",
+      "service": "job-application-agent-telemetry"
+    }
+  ],
   "observability": {
     "enabled": false
   }
