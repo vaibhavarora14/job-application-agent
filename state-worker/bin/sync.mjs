@@ -12,9 +12,12 @@ async function readStdin() {
   return Buffer.concat(chunks).toString("utf8");
 }
 
-const stdinText = await readStdin();
+const argv = process.argv.slice(2);
+const command = argv[0];
+const needsStdin = command === "enable" && (!argv.includes("--url") || !argv.includes("--token"));
+const stdinText = needsStdin ? await readStdin() : "";
 
-main(process.argv.slice(2), { stdinText })
+main(argv, { stdinText })
   .then((result) => {
     if (result !== undefined) {
       console.log(JSON.stringify(result, null, 2));
