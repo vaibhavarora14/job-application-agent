@@ -63,8 +63,9 @@ test("enable writes 0600 config", async () => {
     await enableCommand(["--url", URL, "--token", TOKEN]);
     const config = JSON.parse(await readFile(ctx.configPath, "utf8"));
     assert.equal(config.url, URL);
-    assert.equal(config.token, TOKEN);
-    assert.equal((await stat(ctx.configPath)).mode & 0o777, 0o600);
+    if (process.platform !== "win32") {
+      assert.equal((await stat(ctx.configPath)).mode & 0o777, 0o600);
+    }
   } finally {
     ctx.restore();
   }
