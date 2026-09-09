@@ -600,6 +600,46 @@
   font-size: 0.75rem;
 }
 
+.badgeSalaryVerified {
+  background: #eefaf2;
+  color: #14532d;
+  border: 1px solid #bbf7d0;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+.badgeSalaryEstimated {
+  background: #f8fafc;
+  color: #334155;
+  border: 1px solid #cbd5e1;
+  font-weight: 500;
+}
+
+.badgeInternship {
+  background: #fef3c7;
+  color: #92400e;
+  border: 1px solid #fde68a;
+  font-weight: 600;
+  font-size: 0.775rem;
+}
+
+.badgeStaff {
+  background: #f3e8ff;
+  color: #6b21a8;
+  border: 1px solid #e9d5ff;
+  font-weight: 600;
+  font-size: 0.775rem;
+}
+
+.badgeContract {
+  background: #f1f5f9;
+  color: #475569;
+  border: 1px solid #e2e8f0;
+  font-weight: 500;
+  font-size: 0.775rem;
+}
+
+
 .locationTag {
   display: inline-flex;
   align-items: center;
