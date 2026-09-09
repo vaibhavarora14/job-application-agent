@@ -279,7 +279,9 @@ export function extractLocation(job, data) {
       try {
         const host = new URL(entry.absolute_url).hostname;
         isGreenhouseHost = host === 'greenhouse.io' || host.endsWith('.greenhouse.io');
-      } catch {}
+      } catch {
+        isGreenhouseHost = false;
+      }
     }
     if (isGreenhouseHost && canonical(entry.absolute_url).replace('://boards.greenhouse.io/', '://job-boards.greenhouse.io/') !== canonical(job.url).replace('://boards.greenhouse.io/', '://job-boards.greenhouse.io/')) return null;
 

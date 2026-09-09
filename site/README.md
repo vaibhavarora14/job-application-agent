@@ -60,10 +60,10 @@ D1 health probe.
 
 ## Data and deployment
 
+- Automated deployment on every commit merge to `main` is handled by `.github/workflows/deploy-site.yml`.
+- Builds with `vinext build` and deploys using `wrangler deploy --config site/wrangler.jsonc` to Cloudflare Workers.
+- Uses `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` repository secrets with the `site-production` environment.
 - `.openai/hosting.json` binds D1 as `DB`.
 - Drizzle migrations live in `drizzle/`.
 - The worker also creates the rate-limit table defensively before the first
   public write, so a missing migration cannot leave anonymous endpoints open.
-- Runtime secrets belong in Sites environment variables, never in this repo.
-- Deploy privately, verify checkout and payment in Dodo test mode, then
-  change access to public and repeat anonymous production smoke tests.
