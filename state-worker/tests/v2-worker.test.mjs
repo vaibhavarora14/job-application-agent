@@ -39,6 +39,13 @@ test('v2 authenticates separate revocable clients without exposing hashes', asyn
   assert.equal((await worker.fetch(request('/v2/status', { token: TOKEN_B }), env)).status, 401);
 });
 
+test('health check is public and exposes no private state', async () => {
+  const env = await setup();
+  const response = await worker.fetch(request('/healthz', { token: null }), env);
+  assert.equal(response.status, 200);
+  assert.deepEqual(await response.json(), { ok: true });
+});
+
 test('documents use revisions and reject stale updates', async () => {
   const env = await setup();
   const first = await worker.fetch(request('/v2/documents/profile', { method: 'PUT', body: { value: { name: 'Ada' } }, headers: { 'if-match': '0' } }), env);
@@ -93,6 +100,30 @@ test('resume is stored privately in R2 and verified by checksum', async () => {
   assert.equal(put.status, 201);
   const get = await worker.fetch(request('/v2/files/resume.pdf', { token: TOKEN_B }), env);
   assert.equal(get.status, 200);
+  assert.equal(Buffer.from(await get.arrayBuffer()).equals(bytes), true);
+  assert.equal(get.headers.get('x-sha256'), sha256Hex(bytes));
+});
+
+test('resume storage works through the existing Workers KV fallback', async () => {
+  const env = await setup();
+  delete env.STATE;
+  const entries = new Map();
+  env.STATE_KV = {
+    async getWithMetadata(key, type) {
+      const found = entries.get(key);
+      if (!found) return { value: null, metadata: null };
+      return { value: type === 'arrayBuffer' ? found.bytes.buffer.slice(found.bytes.byteOffset, found.bytes.byteOffset + found.bytes.byteLength) : new TextDecoder().decode(found.bytes), metadata: found.metadata };
+    },
+    async put(key, value, options = {}) {
+      const bytes = value instanceof Uint8Array ? value.slice() : new Uint8Array(value);
+      entries.set(key, { bytes, metadata: options.metadata ?? {} });
+    },
+    async delete(key) { entries.delete(key); },
+  };
+  const bytes = Buffer.from('%PDF-1.7\nsynthetic-kv-pdf-content');
+  const put = await worker.fetch(request('/v2/files/resume.pdf', { method: 'PUT', body: bytes, headers: { 'content-type': 'application/pdf', 'if-match': '0', 'x-content-sha256': sha256Hex(bytes) } }), env);
+  assert.equal(put.status, 201);
+  const get = await worker.fetch(request('/v2/files/resume.pdf', { token: TOKEN_B }), env);
   assert.equal(Buffer.from(await get.arrayBuffer()).equals(bytes), true);
   assert.equal(get.headers.get('x-sha256'), sha256Hex(bytes));
 });

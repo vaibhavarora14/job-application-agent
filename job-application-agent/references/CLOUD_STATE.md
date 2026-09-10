@@ -15,3 +15,5 @@ The owner-only configuration file stores the token with mode `0600`. The server 
 Browser sessions, Gmail credentials, passwords, verification codes, CAPTCHA responses, demographic responses, legal answers, and device-specific telemetry credentials never enter private cloud state.
 
 Normal profile, résumé, ledger, outcome, round, attention, review, and friction commands automatically reconcile through the configured backend. `cloud export` creates an owner-only JSON archive. During a cloud outage, continue cached research and drafts but do not transmit a new application.
+
+For a shared Linux host where Codex and another agent need separate credentials, follow [`VPS_CLIENTS.md`](VPS_CLIENTS.md). Keep a single scheduler and rely on the D1 lease—not local process assumptions—to enforce the one-writer rule.

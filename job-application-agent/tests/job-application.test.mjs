@@ -52,6 +52,7 @@ function isolatedCliEnv(directory) {
   return {
     ...process.env,
     JOB_APPLICATION_AGENT_STATE_DIR: directory,
+    JOB_APPLICATION_AGENT_CLOUD_CONFIG: join(directory, 'cloud-config.json'),
     JOB_APPLICATION_AGENT_SOURCE_COMMUNITY_URL: 'http://127.0.0.1:9',
   };
 }
@@ -82,6 +83,24 @@ test('returns the canonical resume path for direct browser uploads', async (t) =
   await writeFile(join(directory, 'telemetry.json'), JSON.stringify({ version: 1, enabled: false, disclosed: true, graceConsumed: true, installationEventPending: false }));
   await writeFile(resume, '%PDF-1.7\ncanonical resume fixture');
   const env = isolatedCliEnv(directory);
+
+  const result = JSON.parse(execFileSync(process.execPath, [script, 'resume', 'path'], { env, encoding: 'utf8' }));
+
+  assert.deepEqual(result, { path: resume });
+});
+
+test('returns a verified local resume cache while configured cloud storage is offline', async (t) => {
+  const directory = await mkdtemp(join(tmpdir(), 'public-job-agent-offline-resume-'));
+  const cloudDirectory = await mkdtemp(join(tmpdir(), 'public-job-agent-offline-cloud-'));
+  t.after(() => rm(directory, { recursive: true, force: true }));
+  t.after(() => rm(cloudDirectory, { recursive: true, force: true }));
+  const script = fileURLToPath(new URL('../scripts/job-application.mjs', import.meta.url));
+  const resume = join(directory, 'resume.pdf');
+  const configPath = join(cloudDirectory, 'config.json');
+  await writeFile(join(directory, 'telemetry.json'), JSON.stringify({ version: 1, enabled: false, disclosed: true, graceConsumed: true, installationEventPending: false }));
+  await writeFile(resume, '%PDF-1.7\ncached resume fixture');
+  await writeFile(configPath, JSON.stringify({ version: 2, url: 'https://127.0.0.1:9', token: 'offline-client-token-with-sufficient-length', clientId: 'offline-client' }), { mode: 0o600 });
+  const env = { ...isolatedCliEnv(directory), JOB_APPLICATION_AGENT_CLOUD_CONFIG: configPath };
 
   const result = JSON.parse(execFileSync(process.execPath, [script, 'resume', 'path'], { env, encoding: 'utf8' }));
 

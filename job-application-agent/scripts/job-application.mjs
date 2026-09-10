@@ -951,7 +951,14 @@ async function importResume(source) {
 
 async function canonicalResumePath() {
   const target = join(await ensureStateDir(), 'resume.pdf');
-  if (await cloudState.configured()) await cloudState.fetchResume();
+  if (await cloudState.configured()) {
+    try { await cloudState.fetchResume(); }
+    catch (error) {
+      // Cached research and browser preparation remain usable during an
+      // outage. Integrity, authentication, and checksum failures still stop.
+      if (!/^Cloud state unavailable:/.test(error.message)) throw error;
+    }
+  }
   try {
     const details = await stat(target);
     if (!details.isFile()) throw new Error('Canonical resume path is not a file. Import the resume again.');
@@ -1310,9 +1317,16 @@ async function ledgerReviewAcknowledge(input) {
 
 async function prepareCloudState(area, action) {
   if (!await cloudState.configured() || area === 'cloud') return;
-  await cloudState.reconcile({ dryRun: false, provenance: 'automatic-recovery' });
-  try { await cloudState.refreshProfileCache(); }
-  catch (error) { if (!/\(404\)/.test(error.message)) throw error; }
+  try {
+    await cloudState.reconcile({ dryRun: false, provenance: 'automatic-recovery' });
+    try { await cloudState.refreshProfileCache(); }
+    catch (error) { if (!/\(404\)/.test(error.message)) throw error; }
+  } catch (error) {
+    // New submissions still fail closed because lease and intent operations
+    // call the cloud directly. Local checks, research, and observed-result
+    // ledger appends can continue and queue their idempotent recovery writes.
+    if (!/^Cloud state unavailable:/.test(error.message)) throw error;
+  }
 }
 
 async function cloudCommand(action, value) {

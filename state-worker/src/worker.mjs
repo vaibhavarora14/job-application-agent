@@ -36,6 +36,7 @@ const NO_STORE = { "cache-control": "no-store" };
 const PRIVATE_STREAMS = new Set([
   "applications", "outcomes", "rounds", "attention", "reviews", "friction",
   "approved-answers", "profile-corrections", "preferences-corrections",
+  "connectivity-tests",
 ]);
 const PRIVATE_DOCUMENTS = new Set(["profile", "preferences", "autonomy", "review-policy", "postal-address"]);
 const PRIVATE_FILES = new Set(["resume.pdf", "resume.json"]);
@@ -683,6 +684,13 @@ export async function handleRequest(request, env) {
   const { pathname } = url;
   const method = request.method;
 
+  // This endpoint intentionally reveals only process liveness. Keeping it
+  // public lets deploy checks distinguish an unavailable Worker from an
+  // authentication problem without exposing storage or client metadata.
+  if (method === "GET" && pathname === "/healthz") {
+    return jsonResponse({ ok: true });
+  }
+
   if (pathname.startsWith("/v2/admin/")) {
     const createMatch = pathname.match(/^\/v2\/admin\/clients(?:\/([^/]+))?$/);
     if (createMatch && method === "POST" && !createMatch[1]) return adminClient(request, env, null, "create");
@@ -726,10 +734,6 @@ export async function handleRequest(request, env) {
   }
 
   if (!checkAuth(request, env)) return unauthorized();
-
-  if (method === "GET" && pathname === "/healthz") {
-    return jsonResponse({ ok: true });
-  }
 
   if (method === "GET" && pathname === "/v1/manifest") {
     const manifest = await buildManifest(stateBucket(env));
