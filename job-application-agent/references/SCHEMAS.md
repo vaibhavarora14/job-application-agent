@@ -131,7 +131,7 @@ Add only after visible success confirmation.
 
 Use `duplicateOverride` only for a verified distinct requisition after a possible-duplicate warning. Use `companyReapplyOverride` only when the candidate explicitly approves a different-role reapplication during the cooldown or after a recorded outcome. Both override phrases and `telemetry` are transient. An accepted company reapplication override stores only `reapplicationApproval: "candidate-explicit"` in the private ledger. Use approval `APPROVE SUBMIT` for per-application approval or `STANDING AUTHORIZATION` when the current request authorizes routine batch submission.
 
-`discoverySource`, `discoverySourceId`, `applicationChannel`, and `roundId` are optional for backward compatibility and should be supplied for new resumable rounds. `discoverySourceId` accepts stable packaged and `community-…` source IDs; it remains local and is not included in telemetry. After a visibly confirmed submission, `ledger add` automatically contributes only the canonical public URL, company, role, application channel, optional coarse discovery source, and derived provider URL to the pending community job registry. Existing installations receive a one-command disclosure grace period before historical backfill; `sources sharing disable` opts out. The private answers, score, submission time, IDs, and round remain local, and no job appears publicly before maintainer review. `ledger check` returns hard duplicate status, bounded same-company history, and the same `companyReapply` decision enforced by `ledger add` while holding the application lock.
+`discoverySource`, `discoverySourceId`, `applicationChannel`, and `roundId` are optional for backward compatibility and should be supplied for new resumable rounds. `discoverySourceId` accepts stable packaged and `community-…` source IDs; per-application attribution remains local. Separate source-coverage events may include packaged source IDs, while community IDs are collapsed to `community`. After a visibly confirmed submission, `ledger add` automatically contributes only the canonical public URL, company, role, application channel, optional coarse discovery source, and derived provider URL to the pending community job registry. Existing installations receive a one-command disclosure grace period before historical backfill; `sources sharing disable` opts out. The private answers, score, submission time, IDs, and round remain local, and no job appears publicly before maintainer review. `ledger check` returns hard duplicate status, bounded same-company history, and the same `companyReapply` decision enforced by `ledger add` while holding the application lock.
 
 ## Autonomy grant input
 
@@ -145,11 +145,13 @@ The owner-only `autonomy.json` stores the fixed routine scopes, grant time, and 
 
 ## Round input
 
+Use `round source --stdin` for per-source search/blocker reports and optional attribution of existing confirmed application IDs. The exact coverage and concentration contracts, completion requirements, and examples are in [RUNS.md](RUNS.md#discovery-coverage). Evidence remains local; only allowlisted packaged source IDs and bounded coverage metrics enter analytics.
+
 ```json
 { "requestedCount": 30 }
 ```
 
-`round start --stdin` appends a `started` event to owner-only `rounds.ndjson` and returns a generated `roundId`. Add that ID to every confirmed ledger entry. `round complete --stdin` accepts `{ "roundId": "round-..." }` and appends a completion event only after the target count is present in the ledger.
+`round start --stdin` appends a `started` event to owner-only `rounds.ndjson` and returns a generated `roundId`. Add that ID to every confirmed ledger entry. `round complete --stdin` accepts `{ "roundId": "round-..." }`, plus concentration reason and evidence when required, and appends a completion event only after the target count, source coverage, attribution, and concentration requirements are satisfied.
 
 ## Attention input
 

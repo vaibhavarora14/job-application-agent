@@ -28,6 +28,16 @@ const baseJob = {
   ats: 'greenhouse',
 };
 
+test('source coverage telemetry excludes local evidence and community identifiers', () => {
+  const event = { event: 'source_checked', properties: { sourceId: 'linkedin-jobs-feed', status: 'searched', reviewedCount: 10, qualifiedCount: 2 } };
+  assert.equal(validateEvent(event).properties.sourceId, 'linkedin-jobs-feed');
+  assert.throws(() => validateEvent({ ...event, properties: { ...event.properties, evidence: 'private query and notes' } }), /unknown/i);
+  assert.throws(() => validateEvent({ ...event, properties: { ...event.properties, sourceId: 'community-abcdef1234567890' } }), /sourceId/i);
+  assert.throws(() => validateEvent({ ...event, properties: { ...event.properties, qualifiedCount: 11 } }), /qualifiedCount/i);
+  assert.throws(() => validateEvent({ ...event, properties: { ...event.properties, status: 'blocked' } }), /block/i);
+  assert.equal(validateEvent({ event: 'source_checked', properties: { sourceId: 'community', status: 'blocked', reviewedCount: 0, qualifiedCount: 0, blocker: 'captcha' } }).properties.blocker, 'captcha');
+});
+
 test('canonicalizes job URLs and hashes the destination without query data', async () => {
   assert.equal(canonicalizeJobUrl('https://Jobs.Example.com/role/123/?utm_source=x#apply'), 'https://jobs.example.com/role/123');
   const first = await jobIdentity('https://jobs.example.com/role/123?ref=friend');

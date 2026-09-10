@@ -31,6 +31,9 @@ const FAILURE_POINTS = values('role-scope', 'company-problem', 'constraints', 'i
 const ERROR_CODES = values('invalid_input', 'network_failure', 'relay_unavailable', 'authentication_required', 'site_changed', 'upload_failed', 'submission_unconfirmed', 'rate_limited', 'internal_error');
 const MATCH_TAGS = values('role_family', 'seniority', 'skills', 'industry', 'location', 'remote', 'salary', 'ai', 'product', 'leadership', 'authorization');
 const GAP_TAGS = values('role_family', 'seniority', 'skills', 'industry', 'location', 'salary_unknown', 'salary_below', 'authorization_unclear', 'sponsorship', 'experience', 'domain', 'other');
+const DISCOVERY_SOURCE_KEYS = values('direct-company-careers', 'linkedin-jobs-feed', 'x-hiring-feed', 'yc-work-at-a-startup', 'yc-company-directory', 'hacker-news-who-is-hiring', 'we-work-remotely', 'a16z-build-jobs', 'engg-space', 'js-guru-jobs', 'linux-careers', 'indeed', 'recruiter-inbound', 'user-supplied-leads', 'community');
+const DISCOVERY_BLOCKERS = values('login', 'mfa', 'captcha', 'site-error', 'access-unavailable');
+const CONCENTRATION_REASONS = values('stronger-fit', 'alternatives-exhausted', 'access-blocked', 'candidate-directed');
 
 const text = (max, identitySafe = false) => ({ kind: 'text', max, identitySafe });
 const integer = (min, max) => ({ kind: 'integer', min, max });
@@ -43,6 +46,7 @@ const JOB = {
 };
 
 export const EVENT_SCHEMAS = {
+  source_checked: { required: { sourceId: enumValue(DISCOVERY_SOURCE_KEYS), status: enumValue(values('searched', 'blocked')), reviewedCount: integer(0, 10000), qualifiedCount: integer(0, 10000) }, optional: { blocker: enumValue(DISCOVERY_BLOCKERS) } },
   installation_started: { required: { osFamily: enumValue(values('macos', 'linux', 'windows', 'other')), nodeMajor: integer(20, 99), submissionMode: enumValue(SUBMISSION_MODES) } },
   command_completed: { required: { command: enumValue(COMMANDS), result: enumValue(RESULTS), durationBucket: enumValue(DURATIONS) } },
   job_discovered: { required: { ...JOB, source: enumValue(SOURCES), jobCountry: text(80, true), workMode: enumValue(WORK_MODES), seniority: enumValue(SENIORITIES), employmentType: enumValue(EMPLOYMENT), roleFamily: enumValue(ROLE_FAMILIES) }, optional: { salaryCurrency: { kind: 'currency' }, salaryMin: integer(0, 10000000), salaryMax: integer(0, 10000000) } },
@@ -52,7 +56,7 @@ export const EVENT_SCHEMAS = {
   application_paused: { required: { jobHash: { kind: 'hash' }, ats: enumValue(ATS), stage: enumValue(STAGES), reason: enumValue(PAUSE_REASONS) } },
   application_skipped: { required: { jobHash: { kind: 'hash' }, reason: enumValue(SKIP_REASONS), fitScore: integer(0, 100), eligibility: enumValue(ELIGIBILITY) } },
   application_submitted: { required: { ...JOB, durationBucket: enumValue(DURATIONS), fieldsFilled: integer(0, 500), shortAnswerCount: integer(0, 100), resumeUploaded: boolean, approvalMode: enumValue(APPROVAL_MODES) } },
-  round_completed: { required: { requestedCount: integer(1, 1000), submittedCount: integer(0, 1000), assessedCount: integer(0, 10000), skippedCount: integer(0, 10000), pausedCount: integer(0, 10000), errorCount: integer(0, 10000), durationBucket: enumValue(DURATIONS) } },
+  round_completed: { required: { requestedCount: integer(1, 1000), submittedCount: integer(0, 1000), assessedCount: integer(0, 10000), skippedCount: integer(0, 10000), pausedCount: integer(0, 10000), errorCount: integer(0, 10000), durationBucket: enumValue(DURATIONS) }, optional: { attemptedSourceCount: integer(0, 10000), searchedSourceCount: integer(0, 10000), blockedSourceCount: integer(0, 10000), maxSourceSharePercent: integer(0, 100), concentrationReason: enumValue(CONCENTRATION_REASONS) } },
   outcome_recorded: {
     required: { ...JOB, outcome: enumValue(OUTCOMES), daysSinceSubmission: integer(0, 3650) },
     optional: { interviewQuality: enumValue(INTERVIEW_QUALITIES), failurePoint: enumValue(FAILURE_POINTS) },
@@ -118,6 +122,11 @@ export function validateEvent(input) {
   }
   for (const [name, rule] of Object.entries(schema.optional ?? {})) if (name in input.properties) properties[name] = validateProperty(name, input.properties[name], rule);
   if (input.event === 'outcome_recorded' && properties.failurePoint && !properties.interviewQuality) throw new Error('failurePoint requires interviewQuality.');
+  if (input.event === 'source_checked') {
+    if (properties.qualifiedCount > properties.reviewedCount) throw new Error('qualifiedCount cannot exceed reviewedCount.');
+    if (properties.status === 'blocked' && (!properties.blocker || properties.reviewedCount !== 0 || properties.qualifiedCount !== 0)) throw new Error('Blocked sources require a blocker and zero counts.');
+    if (properties.status === 'searched' && properties.blocker) throw new Error('Searched sources cannot have a blocker.');
+  }
   const result = { event: input.event, properties };
   if (new TextEncoder().encode(JSON.stringify(result)).length > TELEMETRY_MAX_BYTES) throw new Error('Telemetry event exceeds 4 KB.');
   return result;

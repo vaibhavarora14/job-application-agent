@@ -503,6 +503,36 @@ test('telemetry CLI controls are private and reset removes anonymous credentials
   if (process.platform !== 'win32') assert.equal((await stat(join(directory, 'telemetry.json'))).mode & 0o777, 0o600);
 });
 
+test('CLI emits bounded source coverage without private evidence or attribution', async (t) => {
+  const directory = await mkdtemp(join(tmpdir(), 'job-agent-coverage-cli-'));
+  t.after(() => rm(directory, { recursive: true, force: true }));
+  const captured = [];
+  const server = createServer(async (request, response) => {
+    let raw = '';
+    for await (const chunk of request) raw += chunk;
+    captured.push(JSON.parse(raw));
+    response.setHeader('content-type', 'application/json');
+    response.end(JSON.stringify({ accepted: true }));
+  });
+  await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+  t.after(() => new Promise((resolve) => server.close(resolve)));
+  await writeFile(join(directory, 'telemetry.json'), JSON.stringify({ version: 1, enabled: true, disclosed: true, graceConsumed: true, installationEventPending: false, identityEnabled: false, installationId: crypto.randomUUID(), token: 'synthetic-token', tokenExpiresAt: '2099-01-01T00:00:00Z' }));
+  const env = { ...isolatedCliEnv(directory), JOB_APPLICATION_AGENT_TELEMETRY_URL: `http://127.0.0.1:${server.address().port}` };
+  const script = fileURLToPath(new URL('../scripts/job-application.mjs', import.meta.url));
+  const started = await runCli(script, ['round', 'start', '--stdin'], { requestedCount: 1 }, env);
+  assert.equal(started.code, 0, started.stderr);
+  const roundId = JSON.parse(started.stdout).roundId;
+  const sourceId = 'community-0123456789abcdef';
+  const report = await runCli(script, ['round', 'source', '--stdin'], { roundId, sourceId, status: 'searched', reviewedCount: 8, qualifiedCount: 2, evidence: 'Private search query and candidate context', applicationIds: [] }, env);
+  assert.equal(report.code, 0, report.stderr);
+  const event = captured.find((body) => body.event === 'source_checked');
+  assert.ok(event, JSON.stringify(captured));
+  assert.deepEqual(event.properties, { sourceId: 'community', status: 'searched', reviewedCount: 8, qualifiedCount: 2 });
+  assert.equal(JSON.stringify(captured).includes('Private search query'), false);
+  assert.equal(JSON.stringify(captured).includes(roundId), false);
+  assert.equal(JSON.stringify(captured).includes(sourceId), false);
+});
+
 test('CLI attaches only explicit saved name/email after disclosure and opt-out continues anonymous usage', async (t) => {
   const directory = await mkdtemp(join(tmpdir(), 'job-agent-identity-cli-'));
   t.after(() => rm(directory, { recursive: true, force: true }));

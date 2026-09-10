@@ -37,6 +37,10 @@ const SOURCE_CATALOG_URL = new URL('../references/SOURCES.json', import.meta.url
 const SOURCE_CATALOG = JSON.parse(readFileSync(SOURCE_CATALOG_URL, 'utf8'));
 if (!Array.isArray(SOURCE_CATALOG)) throw new Error('The packaged source catalog is invalid.');
 const SOURCE_CATALOG_IDS = new Set(SOURCE_CATALOG.map((source) => sourceId(source.id, 'source catalog id')));
+const MIN_DISCOVERY_SOURCES = 3;
+const CONCENTRATION_THRESHOLD = 60;
+const SOURCE_BLOCKERS = new Set(['login', 'mfa', 'captcha', 'site-error', 'access-unavailable']);
+const CONCENTRATION_REASONS = new Set(['stronger-fit', 'alternatives-exhausted', 'access-blocked', 'candidate-directed']);
 const COMMUNITY_SOURCE_ID = /^community-[0-9a-f]{16}$/;
 const REQUIRED_PROFILE = ['name', 'email', 'phone', 'location', 'workAuthorization', 'roleFamilies', 'seniority', 'targetLocations', 'workModes', 'submissionMode', 'yearsExperience', 'autoSubmitMinScore', 'manualReviewMinScore', 'minMustHaveCoverage'];
 const STRING_PROFILE_FIELDS = new Set(['name', 'email', 'phone', 'location', 'workAuthorization', 'linkedin', 'github', 'portfolio', 'availability', 'currentCompensation', 'targetCompensation', 'submissionMode']);
@@ -1065,7 +1069,82 @@ async function roundStart(input) {
     occurredAt: isoDate(value.startedAt, 'round.startedAt'),
   };
   await appendPrivateEvent('rounds', event);
-  return { roundId: event.roundId, requestedCount: event.requestedCount, startedAt: event.occurredAt, completed: false };
+  return { roundId: event.roundId, requestedCount: event.requestedCount, startedAt: event.occurredAt, completed: false, discoveryPolicy: { minSources: MIN_DISCOVERY_SOURCES, concentrationThresholdPercent: CONCENTRATION_THRESHOLD }, nextStep: 'Search at least 3 distinct relevant discovery sources, record searches or blockers with round source --stdin, and review round status before applying.' };
+}
+
+function discoveryGroup(id) {
+  // Two views of the same hiring network do not demonstrate independent coverage.
+  if (['yc-work-at-a-startup', 'yc-company-directory'].includes(id)) return 'yc';
+  return id;
+}
+
+function discoverySummary(events, applications, completion) {
+  const latest = new Map();
+  const searchedIds = new Set();
+  const attribution = new Map();
+  for (const event of events.filter((item) => item.type === 'source-checked')) {
+    latest.set(event.sourceId, event);
+    if (event.status === 'searched') searchedIds.add(event.sourceId);
+    for (const id of event.applicationIds ?? []) attribution.set(id, event.sourceId);
+  }
+  const sources = [...latest.values()];
+  const eligible = sources.filter((item) => !['recruiter-inbound', 'user-supplied-leads'].includes(item.sourceId));
+  const attempted = new Set(eligible.map((item) => discoveryGroup(item.sourceId)));
+  const searched = new Set(eligible.filter((item) => searchedIds.has(item.sourceId)).map((item) => discoveryGroup(item.sourceId)));
+  const distribution = new Map();
+  let unattributedCount = 0;
+  for (const entry of applications) {
+    const source = entry.discoverySourceId ?? attribution.get(entry.id);
+    if (!source || !searchedIds.has(source)) { unattributedCount++; continue; }
+    const group = discoveryGroup(source);
+    distribution.set(group, (distribution.get(group) ?? 0) + 1);
+  }
+  const maxCount = Math.max(0, ...distribution.values());
+  const maxSourceSharePercent = applications.length ? Math.round(maxCount / applications.length * 100) : 0;
+  return {
+    minSources: MIN_DISCOVERY_SOURCES,
+    attemptedSourceCount: attempted.size,
+    searchedSourceCount: searched.size,
+    blockedSourceCount: [...attempted].filter((id) => !searched.has(id)).length,
+    coverageSatisfied: attempted.size >= MIN_DISCOVERY_SOURCES && searched.size > 0,
+    sources: sources.map(({ sourceId, status, reviewedCount, qualifiedCount, blocker, evidence }) => ({ sourceId, status, searchedDuringRound: searchedIds.has(sourceId), reviewedCount, qualifiedCount, ...(blocker ? { blocker } : {}), evidence })),
+    submissionDistribution: [...distribution].map(([sourceId, count]) => ({ sourceId, count })),
+    unattributedCount,
+    maxSourceSharePercent,
+    concentrationNeedsExplanation: applications.length > 0 && maxCount / applications.length * 100 > CONCENTRATION_THRESHOLD,
+    ...(completion?.concentrationReason ? { concentrationReason: completion.concentrationReason, concentrationEvidence: completion.concentrationEvidence } : {}),
+  };
+}
+
+async function roundSource(input) {
+  const value = object(input, 'source coverage');
+  const allowed = new Set(['roundId', 'sourceId', 'status', 'reviewedCount', 'qualifiedCount', 'blocker', 'evidence', 'applicationIds']);
+  for (const key of Object.keys(value)) if (!allowed.has(key)) throw new Error(`Unknown source coverage property: ${key}.`);
+  const sourceId = knownDiscoverySourceId(value.sourceId, 'coverage.sourceId');
+  const status = string(value.status, 'coverage.status', 20);
+  if (!['searched', 'blocked'].includes(status)) throw new Error('coverage.status must be searched or blocked.');
+  const reviewedCount = integer(value.reviewedCount, 'coverage.reviewedCount', 0, 10000);
+  const qualifiedCount = integer(value.qualifiedCount, 'coverage.qualifiedCount', 0, reviewedCount);
+  const blocker = value.blocker == null ? null : string(value.blocker, 'coverage.blocker', 40);
+  if (status === 'blocked' && (!SOURCE_BLOCKERS.has(blocker) || reviewedCount !== 0 || qualifiedCount !== 0)) throw new Error('Blocked sources require a documented blocker and zero counts.');
+  if (status === 'searched' && blocker != null) throw new Error('Searched sources cannot have a blocker.');
+  const evidence = string(value.evidence, 'coverage.evidence', 2000);
+  const applicationIds = value.applicationIds == null ? [] : [...new Set(stringArray(value.applicationIds, 'coverage.applicationIds'))];
+  if (applicationIds.length > 1000 || (status === 'blocked' && applicationIds.length)) throw new Error('Invalid coverage.applicationIds.');
+  return withStateLock('rounds', async (dir) => {
+    const round = await roundStatus(string(value.roundId, 'coverage.roundId', 180));
+    if (round.completed) throw new Error('Cannot record coverage for a completed round.');
+    const applications = await jsonLines(join(dir, 'applications.ndjson'));
+    for (const id of applicationIds) {
+      const entry = applications.find((item) => item.id === id && item.roundId === round.roundId && item.status === 'submitted');
+      if (!entry || (entry.discoverySourceId && entry.discoverySourceId !== sourceId)) throw new Error('Coverage attribution must match a confirmed application in this round and its saved source.');
+    }
+    const event = { type: 'source-checked', roundId: round.roundId, sourceId, status, reviewedCount, qualifiedCount, evidence, applicationIds, ...(blocker ? { blocker } : {}), occurredAt: new Date().toISOString() };
+    const file = join(dir, 'rounds.ndjson');
+    await appendFile(file, `${JSON.stringify(event)}\n`, { mode: 0o600 });
+    await chmod(file, 0o600);
+    return event;
+  });
 }
 
 function replayAttention(events, roundId = null) {
@@ -1135,7 +1214,8 @@ async function roundStatus(roundId = null) {
   if (!id) throw new Error('No application round has been started.');
   const started = starts.find((event) => event.roundId === id);
   if (!started) throw new Error('Application round was not found.');
-  const applications = (await jsonLines(join(dir, 'applications.ndjson'))).filter((entry) => entry.roundId === id && entry.status === 'submitted');
+  const matching = (await jsonLines(join(dir, 'applications.ndjson'))).filter((entry) => entry.roundId === id && entry.status === 'submitted');
+  const applications = [...new Map(matching.map((entry, index) => [canonicalApplicationKey(entry, String(index)), entry])).values()];
   const confirmedCount = new Set(applications.map((entry, index) => canonicalApplicationKey(entry, String(index)))).size;
   const attention = await attentionList(id);
   const completion = events.find((event) => event.type === 'completed' && event.roundId === id);
@@ -1146,6 +1226,7 @@ async function roundStatus(roundId = null) {
     remainingCount: Math.max(0, started.requestedCount - confirmedCount),
     blockedCount: attention.count,
     completed: Boolean(completion),
+    discovery: discoverySummary(events.filter((event) => event.roundId === id), applications, completion),
     startedAt: started.occurredAt,
     ...(completion ? { completedAt: completion.occurredAt } : {}),
   };
@@ -1153,14 +1234,26 @@ async function roundStatus(roundId = null) {
 
 async function roundComplete(input) {
   const value = object(input, 'round completion');
-  const allowed = new Set(['roundId', 'completedAt']);
+  const allowed = new Set(['roundId', 'completedAt', 'concentrationReason', 'concentrationEvidence']);
   for (const key of Object.keys(value)) if (!allowed.has(key)) throw new Error(`Unknown round completion property: ${key}.`);
-  const status = await roundStatus(string(value.roundId, 'round.roundId', 180));
-  if (status.completed) return status;
-  if (status.confirmedCount < status.requestedCount) throw new Error(`Round requires ${status.requestedCount} confirmed submissions before completion.`);
-  const event = { type: 'completed', roundId: status.roundId, occurredAt: isoDate(value.completedAt, 'round.completedAt') };
-  await appendPrivateEvent('rounds', event);
-  return { ...status, completed: true, completedAt: event.occurredAt };
+  // Use the same lock order as ledger writes so completion cannot race a confirmed submission.
+  return withStateLock('applications', () => withStateLock('rounds', async (dir) => {
+    const status = await roundStatus(string(value.roundId, 'round.roundId', 180));
+    if (status.completed) return { ...status, completionRecorded: false };
+    if (status.confirmedCount < status.requestedCount) throw new Error(`Round requires ${status.requestedCount} confirmed submissions before completion.`);
+    if (!status.discovery.coverageSatisfied) throw new Error('Round requires attempts across at least 3 distinct discovery sources, including at least one searched source. Record coverage and blockers with round source --stdin.');
+    if (status.discovery.unattributedCount) throw new Error('Round requires discovery source attribution for every confirmed submission. Supply missing attribution using round source applicationIds; do not rewrite the ledger.');
+    let explanation = {};
+    if (status.discovery.concentrationNeedsExplanation || value.concentrationReason != null || value.concentrationEvidence != null) {
+      if (!CONCENTRATION_REASONS.has(value.concentrationReason)) throw new Error('Source concentration requires a documented concentrationReason and private concentrationEvidence.');
+      explanation = { concentrationReason: value.concentrationReason, concentrationEvidence: string(value.concentrationEvidence, 'round.concentrationEvidence', 2000) };
+    }
+    const event = { type: 'completed', roundId: status.roundId, occurredAt: isoDate(value.completedAt, 'round.completedAt'), ...explanation };
+    const file = join(dir, 'rounds.ndjson');
+    await appendFile(file, `${JSON.stringify(event)}\n`, { mode: 0o600 });
+    await chmod(file, 0o600);
+    return { ...status, discovery: { ...status.discovery, ...explanation }, completed: true, completionRecorded: true, completedAt: event.occurredAt };
+  }));
 }
 
 async function frictionRecord(input) {
@@ -1309,6 +1402,11 @@ function roundCompletedTelemetry(round) {
       pausedCount: round.blockedCount,
       errorCount: 0,
       durationBucket: durationBucket(Math.max(0, Date.parse(round.completedAt) - Date.parse(round.startedAt))),
+      attemptedSourceCount: round.discovery.attemptedSourceCount,
+      searchedSourceCount: round.discovery.searchedSourceCount,
+      blockedSourceCount: round.discovery.blockedSourceCount,
+      maxSourceSharePercent: round.discovery.maxSourceSharePercent,
+      ...(round.discovery.concentrationReason ? { concentrationReason: round.discovery.concentrationReason } : {}),
     },
   };
 }
@@ -1356,10 +1454,18 @@ async function executeCommand([area, action, value], telemetry, session, communi
   else if (area === 'autonomy' && action === 'preview' && value == null) result = await autonomyStatus();
   else if (area === 'autonomy' && action === 'revoke' && value == null) result = await autonomyRevoke();
   else if (area === 'round' && action === 'start' && value === '--stdin') result = await roundStart(await jsonStdin());
+  else if (area === 'round' && action === 'source' && value === '--stdin') {
+    result = await roundSource(await jsonStdin());
+    domainEvents.push({ event: 'source_checked', properties: {
+      sourceId: result.sourceId.startsWith('community-') ? 'community' : result.sourceId,
+      status: result.status, reviewedCount: result.reviewedCount, qualifiedCount: result.qualifiedCount,
+      ...(result.blocker ? { blocker: result.blocker } : {}),
+    } });
+  }
   else if (area === 'round' && action === 'status') result = await roundStatus(value ?? null);
   else if (area === 'round' && action === 'complete' && value === '--stdin') {
     result = await roundComplete(await jsonStdin());
-    domainEvents.push(roundCompletedTelemetry(result));
+    if (result.completionRecorded) domainEvents.push(roundCompletedTelemetry(result));
   } else if (area === 'sources' && action === 'list' && value == null) {
     await syncAllCommunityData(community);
     result = await sourcesList({}, await community.list());
@@ -1382,7 +1488,7 @@ async function executeCommand([area, action, value], telemetry, session, communi
   else if (area === 'attention' && action === 'resolve' && value === '--stdin') result = await attentionResolve(await jsonStdin());
   else if (area === 'friction' && action === 'record' && value === '--stdin') result = await frictionRecord(await jsonStdin());
   else if (area === 'friction' && action === 'list' && value == null) result = await frictionList();
-  else throw new Error('Usage: profile set|migrate --stdin; profile check|field <name>; resume import <url-or-pdf>|path; score --stdin; ledger check|add|outcome|review-ack --stdin; ledger review; autonomy grant --stdin|status|preview|revoke; round start|complete --stdin|status [round-id]; sources list [--stdin]|jobs [--stdin]|suggest --stdin|pending|sync|sharing status|enable|disable|reset; attention add|resolve --stdin|list; friction record --stdin|list; telemetry status|enable|disable|reset|preview --stdin|record --stdin');
+  else throw new Error('Usage: profile set|migrate --stdin; profile check|field <name>; resume import <url-or-pdf>|path; score --stdin; ledger check|add|outcome|review-ack --stdin; ledger review; autonomy grant --stdin|status|preview|revoke; round start|source|complete --stdin|status [round-id]; sources list [--stdin]|jobs [--stdin]|suggest --stdin|pending|sync|sharing status|enable|disable|reset; attention add|resolve --stdin|list; friction record --stdin|list; telemetry status|enable|disable|reset|preview --stdin|record --stdin');
   for (const event of domainEvents) await telemetry.record(event, session);
   return result;
 }

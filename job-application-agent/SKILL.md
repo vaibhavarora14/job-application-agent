@@ -33,6 +33,7 @@ Never store passwords, MFA codes, government IDs, demographic data, CAPTCHA answ
 Read [references/SOURCES.md](references/SOURCES.md) before the first discovery pass in a workflow.
 
 1. Run `sources jobs` for recently confirmed direct job links and `sources list` (optionally filtered) for the highest-signal packaged and maintainer-reviewed discovery sources. Resolve every lead to the direct employer or ATS page.
+   For each round, select at least three distinct relevant discovery sources before applying. Search across them before working deeply through one feed; include alternatives to the previous round's dominant source. Record each actual search, including zero suitable results, or an observed access blocker with `round source --stdin`. Two YC views count as one network; recruiter inboxes and user-supplied links supplement discovery but do not satisfy the three-source minimum. Do not claim that listing the catalog means a board was searched. Keep a blocked source in the report and continue to accessible alternatives.
 2. Attribute the lead with coarse `discoverySource`, stable packaged or community `discoverySourceId` when known, and independent `applicationChannel`. Treat a one-off user link as `user-supplied`. Whenever a user or agent discovers a repeatable public board, feed, directory, or careers index that is not already listed, run `sources suggest --stdin`; the CLI contributes its sanitized metadata by default unless community sharing has been disabled.
 3. Verify the application channel immediately before assessment. Mark it `active`, `closed`, or `unclear`.
 4. Classify eligibility only after checking residence, location, work authorization, sponsorship, schedule, and employment type.
@@ -51,6 +52,7 @@ Do not lower seniority, compensation, location, work mode, or evidence threshold
 ## Apply
 
 For batches, scheduled work, or resumable handoffs, read [references/RUNS.md](references/RUNS.md), create a round ID, and use the attention and friction queues.
+Check `round status` after the initial discovery pass and before submitting. Preserve source attribution independently of the ATS. A round cannot complete without recorded coverage and attribution; if one discovery source supplies more than 60% of confirmed submissions, explain why using the reviewed alternatives and their fit or access results. Do not submit weaker matches to balance source percentages. Report searched sources, blockers, source mix, and any concentration explanation when handing off or completing a round.
 
 1. Recheck employer, title, direct domain, posting status, eligibility, and `autoEligible` immediately before submission.
 2. Run `ledger check --stdin` with the internal ledger ID, canonical URL, employer job ID, company, and role when available. Review both requisition duplicate status and same-company history.
@@ -95,7 +97,7 @@ node scripts/job-application.mjs ledger review
 node scripts/job-application.mjs ledger review-ack --stdin
 node scripts/job-application.mjs autonomy grant --stdin
 node scripts/job-application.mjs autonomy status|preview|revoke
-node scripts/job-application.mjs round start|complete --stdin
+node scripts/job-application.mjs round start|source|complete --stdin
 node scripts/job-application.mjs round status [round-id]
 node scripts/job-application.mjs sources list [--stdin]
 node scripts/job-application.mjs sources jobs [--stdin]

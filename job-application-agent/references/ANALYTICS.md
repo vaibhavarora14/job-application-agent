@@ -45,7 +45,7 @@ Opt-out prevents future identity collection; it does not delete or anonymize pre
 
 Structured job context may include company, role title, canonical destination domain, a SHA-256 hash of the job URL after removing query parameters and fragments, bounded discovery source, ATS/application channel, job country, work mode, employment type, seniority, role family, published salary band, fit score, match/gap categories, workflow stages, field categories, pause reasons, submission result, outcome, bounded interview quality, and bounded interview failure point.
 
-The more specific local `discoverySourceId` catalog attribution is not transmitted in v1.
+Per-application `discoverySourceId` attribution is not transmitted. Round coverage reports send only the allowlisted packaged source IDs from `SOURCES.json`; custom/community IDs are collapsed to `community`. Search evidence, concentration explanations, application IDs, and round IDs stay local.
 
 Local attention details and friction evidence are never transmitted. Analytics may receive only their already-documented bounded stage, ATS, pause reason, result, and aggregate count fields.
 
@@ -57,6 +57,7 @@ Company and title values are bounded and rejected when they resemble an email, p
 |---|---|
 | `installation_started` | OS family, Node major version, submission mode |
 | `command_completed` | Command category, result, duration bucket |
+| `source_checked` | Allowlisted packaged source ID or `community`, searched/blocked status, reviewed/qualified counts, optional bounded blocker |
 | `job_discovered` | Company, title, job hash/domain, ATS/source, job country, work mode, seniority, employment type, role family, published salary band |
 | `job_assessed` | Company, title, job hash/domain, ATS, fit score, eligibility, decision, match/gap tags |
 | `application_started` | Job hash, ATS, approval mode, required-field count, resume/cover-letter/referral requirements |
@@ -64,7 +65,7 @@ Company and title values are bounded and rejected when they resemble an email, p
 | `application_paused` | Job hash, ATS, stage, bounded reason |
 | `application_skipped` | Job hash, bounded reason, fit score, eligibility |
 | `application_submitted` | Company, title, job hash/domain, ATS, duration, fields filled, short-answer count, resume-upload Boolean, approval mode |
-| `round_completed` | Requested/submitted/assessed/skipped/paused/error counts, duration bucket |
+| `round_completed` | Requested/submitted/assessed/skipped/paused/error counts, duration bucket; optional attempted/searched/blocked source counts, maximum source share percentage, bounded concentration reason |
 | `outcome_recorded` | Company, title, job hash/domain, ATS, outcome, days since submission, optional bounded interview quality/failure point |
 | `review_generated` | Canonical unique-submission and outcome counts, review-due Boolean |
 | `skill_error` | Stable error code, workflow stage, ATS/job hash when available, recoverable Boolean |

@@ -108,6 +108,8 @@ The bundled CLI handles private profile storage, résumé import, scoring, dupli
 
 Discovery combines the reviewed [`SOURCES.json`](job-application-agent/references/SOURCES.json) catalog with an anonymous community registry. Every confirmed application automatically contributes its canonical public job URL, company, role, application channel, and provider; prior confirmed ledger entries backfill during later commands after a one-command disclosure grace period. Jobs, repeatable boards, and feeds are logged pending and become visible in the public dashboard or CLI only after maintainer review. Disable both forms of community sharing independently from analytics with `sources sharing disable`.
 
+Rounds require recorded attempts across at least three distinct discovery sources, including a successful search, and source attribution for confirmed submissions. If more than 60% of submissions come from one source, the agent must explain the concentration. Blockers and empty results are reported; fit requirements never change to meet a source quota. See [round coverage](job-application-agent/references/RUNS.md#discovery-coverage).
+
 ## 🔐 Privacy
 
 | Data | Where it stays |

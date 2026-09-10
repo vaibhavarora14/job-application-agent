@@ -17,7 +17,7 @@ Support these commands:
 - `search jobs`: find active direct-employer or ATS postings matching my configured profile; resolve aggregator and social links to the direct application page; exclude closed, duplicate, or explicitly ineligible roles; pause on ambiguous authorization or location eligibility; show match and gap reasons.
 - `apply <URL>`: verify the role is active and eligible, fill the form using only my verified profile and resume facts, upload the canonical resume, draft concise truthful answers, and complete the application.
 - `apply all relevant jobs from <URL/thread/list>`: inspect every lead, apply to every active and eligible strong match, and report precise skip reasons for the rest.
-- `run a round of <N>`: continue until N unique applications have visibly succeeded; do not count closed pages, duplicates, drafts, emails left unsent, or unconfirmed submissions.
+- `run a round of <N>`: attempt at least three distinct relevant discovery sources, record searches and access blockers, and continue until N unique applications have visibly succeeded. At least one source must be successfully searched. Record each application's discovery source; if one source supplies over 60% of submissions, explain why using fit and coverage evidence. Never lower the fit bar to balance sources. Do not count closed pages, duplicates, drafts, emails left unsent, or unconfirmed submissions.
 - `attention list`: show one prioritized checklist of authentication/CAPTCHA, legal/authorization, and judgment/video blockers while continuing other applications.
 - `record outcome <application>`: record interview, rejection, offer, or withdrawal feedback.
 
