@@ -10,7 +10,7 @@ node scripts/job-application.mjs cloud status
 node scripts/job-application.mjs cloud reconcile --dry-run
 ```
 
-The owner-only configuration file stores the token with mode `0600`. The server stores only its SHA-256 hash. D1 stores revisioned documents, append-only records, application intents, and the single-writer lease. R2 stores the canonical résumé, migration snapshots, and 30-day backups.
+The owner-only configuration file stores the token with mode `0600`. The server stores only its SHA-256 hash. D1 stores revisioned documents, append-only records, application intents, and the single-writer lease. R2 stores the canonical résumé, migration snapshots, and 30-day backups when enabled; an existing private Workers KV namespace is supported as a compatible blob fallback.
 
 Browser sessions, Gmail credentials, passwords, verification codes, CAPTCHA responses, demographic responses, legal answers, and device-specific telemetry credentials never enter private cloud state.
 

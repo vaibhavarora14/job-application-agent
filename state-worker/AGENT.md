@@ -1,6 +1,6 @@
 # Job Application Agent — private cloud state
 
-The v2 Worker/live protocol uses private D1 for structured records and private R2 for the canonical résumé and backups. It is separate from telemetry and the public community registry.
+The v2 Worker/live protocol uses private D1 for structured records and private R2 for the canonical résumé and backups when the account has R2 enabled. It also supports the existing private Workers KV namespace as a blob fallback. It is separate from telemetry and the public community registry.
 
 Each Mac/VPS agent has a distinct revocable bearer token. Only SHA-256 token hashes are stored in D1. Use the packaged CLI rather than calling the API directly:
 

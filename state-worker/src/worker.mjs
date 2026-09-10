@@ -261,6 +261,31 @@ async function streamAppend(request, env, client, stream) {
   return jsonResponse({ stream, sequence: row.sequence, recordKey: row.record_key, duplicate: !result.meta?.changes, value: JSON.parse(row.payload_json), occurredAt: row.occurred_at, receivedAt: row.received_at, clientId: row.client_id, provenance: row.provenance }, result.meta?.changes ? 201 : 200);
 }
 
+async function streamBatchAppend(request, env, client, stream) {
+  if (!PRIVATE_STREAMS.has(stream)) return notFound("stream not allowlisted");
+  let body;
+  try { body = await jsonBody(request, 2 * 1024 * 1024); } catch (error) { return badRequest(error.message); }
+  if (!Array.isArray(body.records) || body.records.length < 1 || body.records.length > 100) return badRequest("records must contain 1 to 100 items");
+  const receivedAt = new Date().toISOString();
+  const statements = [];
+  try {
+    for (const item of body.records) {
+      if (!item || typeof item !== "object" || Array.isArray(item)) throw new Error("each record must be an object");
+      const recordKey = typeof item.recordKey === "string" && item.recordKey.length <= 300 ? item.recordKey : null;
+      const idempotencyKey = typeof item.idempotencyKey === "string" && item.idempotencyKey.length <= 300 ? item.idempotencyKey : null;
+      if (!recordKey || !idempotencyKey || !("value" in item)) throw new Error("each record requires recordKey, idempotencyKey, and value");
+      if (containsForbiddenObjectKey(item.value)) throw new Error("body contains rejected content");
+      const occurredAt = validIso(item.occurredAt);
+      const provenance = typeof item.provenance === "string" ? item.provenance.slice(0, 80) : "live";
+      statements.push(env.DB.prepare("INSERT OR IGNORE INTO records (stream, record_key, idempotency_key, payload_json, occurred_at, received_at, client_id, provenance) VALUES (?, ?, ?, ?, ?, ?, ?, ?)")
+        .bind(stream, recordKey, idempotencyKey, JSON.stringify(item.value), occurredAt, receivedAt, client.id, provenance));
+    }
+  } catch (error) { return badRequest(error.message); }
+  const results = await env.DB.batch(statements);
+  const inserted = results.reduce((sum, result) => sum + Number(result.meta?.changes ?? 0), 0);
+  return jsonResponse({ stream, attempted: statements.length, inserted, duplicates: statements.length - inserted }, inserted ? 201 : 200);
+}
+
 async function leaseAction(request, env, client) {
   let body;
   try { body = await jsonBody(request); } catch (error) { return badRequest(error.message); }
@@ -295,7 +320,9 @@ async function privateFileGet(env, name) {
   if (!PRIVATE_FILES.has(name)) return notFound("file not allowlisted");
   const meta = await env.DB.prepare("SELECT revision, sha256, size, updated_at FROM files WHERE name = ?").bind(name).first();
   if (!meta) return notFound("file not found");
-  const object = await env.STATE.get(`private/${name}`);
+  const bucket = stateBucket(env);
+  if (!bucket) return errorResponse("private blob storage is unavailable", 503);
+  const object = await bucket.get(`private/${name}`);
   if (!object) return errorResponse("file metadata exists but object is unavailable", 503);
   const bytes = await object.arrayBuffer();
   return new Response(bytes, { status: 200, headers: { ...NO_STORE, etag: String(meta.revision), "x-sha256": meta.sha256, "content-type": name.endsWith(".pdf") ? "application/pdf" : "application/json" } });
@@ -315,7 +342,9 @@ async function privateFilePut(request, env, client, name) {
   if (expected !== currentRevision) return conflict("revision mismatch");
   const revision = currentRevision + 1;
   const now = new Date().toISOString();
-  await env.STATE.put(`private/${name}`, bytes, { customMetadata: { sha256: hash } });
+  const bucket = stateBucket(env);
+  if (!bucket) return errorResponse("private blob storage is unavailable", 503);
+  await bucket.put(`private/${name}`, bytes, { customMetadata: { sha256: hash } });
   if (current) {
     const result = await env.DB.prepare("UPDATE files SET revision = ?, sha256 = ?, size = ?, updated_at = ?, updated_by = ? WHERE name = ? AND revision = ?")
       .bind(revision, hash, bytes.length, now, client.id, name, currentRevision).run();
@@ -384,7 +413,8 @@ async function v2Status(env, client) {
   const files = await env.DB.prepare("SELECT name, revision, sha256, updated_at FROM files ORDER BY name").all();
   const lease = await env.DB.prepare("SELECT holder_client_id, lease_id, renewed_at, expires_at FROM leases WHERE name = 'application-run'").first();
   const counts = await env.DB.prepare("SELECT stream, COUNT(*) AS rows, COUNT(DISTINCT record_key) AS unique_records, MAX(sequence) AS latest_revision FROM records GROUP BY stream ORDER BY stream").all();
-  return jsonResponse({ backend: "cloudflare-d1-r2", apiVersion: 2, client, documents: revisions.results, files: files.results, streams: counts.results, lease: lease && Date.parse(lease.expires_at) > Date.now() ? { holderClientId: lease.holder_client_id, renewedAt: lease.renewed_at, expiresAt: lease.expires_at, heldByThisClient: lease.holder_client_id === client.id } : null });
+  const blobBackend = env.STATE ? "r2" : env.STATE_KV ? "kv" : "unavailable";
+  return jsonResponse({ backend: `cloudflare-d1-${blobBackend}`, apiVersion: 2, client, documents: revisions.results, files: files.results, streams: counts.results, lease: lease && Date.parse(lease.expires_at) > Date.now() ? { holderClientId: lease.holder_client_id, renewedAt: lease.renewed_at, expiresAt: lease.expires_at, heldByThisClient: lease.holder_client_id === client.id } : null });
 }
 
 async function adminClient(request, env, clientId, action) {
@@ -418,6 +448,46 @@ export async function getObject(bucket, key) {
 
 export async function putObject(bucket, key, body, customMetadata = {}) {
   return bucket.put(key, body, { customMetadata });
+}
+
+function kvBucket(namespace) {
+  return {
+    async head(key) {
+      const entry = await namespace.getWithMetadata(key, 'arrayBuffer');
+      if (!entry?.value) return null;
+      return {
+        etag: entry.metadata?.etag ?? entry.metadata?.sha256 ?? null,
+        size: entry.value.byteLength,
+        uploaded: entry.metadata?.updatedAt ?? null,
+        customMetadata: entry.metadata ?? {},
+      };
+    },
+    async get(key) {
+      const entry = await namespace.getWithMetadata(key, 'arrayBuffer');
+      if (!entry?.value) return null;
+      const bytes = entry.value;
+      return {
+        etag: entry.metadata?.etag ?? entry.metadata?.sha256 ?? null,
+        customMetadata: entry.metadata ?? {},
+        async arrayBuffer() { return bytes; },
+        async text() { return new TextDecoder().decode(bytes); },
+      };
+    },
+    async put(key, body, options = {}) {
+      const bytes = body instanceof Uint8Array ? body : typeof body === 'string' ? new TextEncoder().encode(body) : new Uint8Array(body);
+      const metadata = { ...(options.customMetadata ?? {}), updatedAt: new Date().toISOString() };
+      metadata.etag = metadata.sha256 ?? sha256Hex(bytes);
+      await namespace.put(key, bytes, { metadata });
+      return { etag: metadata.etag };
+    },
+    async delete(key) { return namespace.delete(key); },
+  };
+}
+
+function stateBucket(env) {
+  if (env.STATE) return env.STATE;
+  if (env.STATE_KV) return kvBucket(env.STATE_KV);
+  return null;
 }
 
 export function metadataFromHead(head) {
@@ -632,6 +702,8 @@ export async function handleRequest(request, env) {
       if (method === "PUT") return documentPut(request, env, client, name);
     }
 
+    const streamBatchMatch = pathname.match(/^\/v2\/streams\/([^/]+)\/batch$/);
+    if (streamBatchMatch && method === "POST") return streamBatchAppend(request, env, client, decodeURIComponent(streamBatchMatch[1]));
     const streamMatch = pathname.match(/^\/v2\/streams\/([^/]+)$/);
     if (streamMatch) {
       const stream = decodeURIComponent(streamMatch[1]);
@@ -660,26 +732,26 @@ export async function handleRequest(request, env) {
   }
 
   if (method === "GET" && pathname === "/v1/manifest") {
-    const manifest = await buildManifest(env.STATE);
+    const manifest = await buildManifest(stateBucket(env));
     return jsonResponse(manifest);
   }
 
   const fileMatch = pathname.match(/^\/v1\/files\/([^/]+)$/);
   if (fileMatch) {
     const name = decodeURIComponent(fileMatch[1]);
-    if (method === "GET") return handleGetFile(env.STATE, name);
-    if (method === "PUT") return env.LEGACY_WRITES_DISABLED === "1" ? gone("legacy replacement writes are disabled") : handlePutFile(env.STATE, name, request);
+    if (method === "GET") return handleGetFile(stateBucket(env), name);
+    if (method === "PUT") return env.LEGACY_WRITES_DISABLED === "1" ? gone("legacy replacement writes are disabled") : handlePutFile(stateBucket(env), name, request);
   }
 
   const ledgerMatch = pathname.match(/^\/v1\/ledgers\/([^/]+)$/);
   if (ledgerMatch && method === "POST") {
     const name = decodeURIComponent(ledgerMatch[1]);
-    return env.LEGACY_WRITES_DISABLED === "1" ? gone("legacy ledger writes are disabled") : handlePostLedger(env.STATE, name, request);
+    return env.LEGACY_WRITES_DISABLED === "1" ? gone("legacy ledger writes are disabled") : handlePostLedger(stateBucket(env), name, request);
   }
 
   if (pathname === "/v1/profile") {
-    if (method === "GET") return handleGetProfile(env.STATE);
-    if (method === "PUT") return env.LEGACY_WRITES_DISABLED === "1" ? gone("legacy profile writes are disabled") : handlePutProfile(env.STATE, request);
+    if (method === "GET") return handleGetProfile(stateBucket(env));
+    if (method === "PUT") return env.LEGACY_WRITES_DISABLED === "1" ? gone("legacy profile writes are disabled") : handlePutProfile(stateBucket(env), request);
   }
 
   return notFound();
@@ -690,17 +762,18 @@ export default {
     return handleRequest(request, env);
   },
   async scheduled(_controller, env) {
-    if (!env.DB || !env.STATE) return;
+    const bucket = stateBucket(env);
+    if (!env.DB || !bucket) return;
     const generatedAt = new Date().toISOString();
     const bytes = Buffer.from(JSON.stringify(await createBackup(env.DB, generatedAt)));
     const date = generatedAt.slice(0, 10);
     const objectKey = `backups/${date}.json`;
     const hash = sha256Hex(bytes);
-    await env.STATE.put(objectKey, bytes, { customMetadata: { sha256: hash, expiresAt: new Date(Date.now() + 30 * 86_400_000).toISOString() } });
+    await bucket.put(objectKey, bytes, { customMetadata: { sha256: hash, expiresAt: new Date(Date.now() + 30 * 86_400_000).toISOString() } });
     await env.DB.prepare("INSERT OR REPLACE INTO exports (export_id, object_key, sha256, created_at, expires_at, created_by) VALUES (?, ?, ?, ?, ?, 'system')")
       .bind(`daily-${date}`, objectKey, hash, generatedAt, new Date(Date.now() + 30 * 86_400_000).toISOString()).run();
     const expired = await env.DB.prepare("SELECT export_id, object_key FROM exports WHERE expires_at < ?").bind(generatedAt).all();
-    for (const item of expired.results) await env.STATE.delete(item.object_key);
+    for (const item of expired.results) await bucket.delete(item.object_key);
     await env.DB.prepare("DELETE FROM exports WHERE expires_at < ?").bind(generatedAt).run();
   },
 };

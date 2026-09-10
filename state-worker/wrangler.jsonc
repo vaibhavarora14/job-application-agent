@@ -25,10 +25,10 @@
       "database_id": "cd0ea283-b4b7-4dfa-a50e-5bf6d176d3a8"
     }
   ],
-  "r2_buckets": [
+  "kv_namespaces": [
     {
-      "binding": "STATE",
-      "bucket_name": "job-application-agent-state"
+      "binding": "STATE_KV",
+      "id": "e0620459b6984471ac4534952ea2cb1f"
     }
   ],
   "env": {
@@ -44,7 +44,7 @@
           "database_id": "605a1c97-3492-4fba-aef2-bdf0cddc0d8e"
         }
       ],
-      "r2_buckets": []
+      "kv_namespaces": []
     }
   }
 }

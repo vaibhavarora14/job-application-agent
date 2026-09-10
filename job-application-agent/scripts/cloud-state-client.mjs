@@ -211,6 +211,12 @@ export class CloudStateClient {
     }
   }
 
+  async appendRecordBatch(stream, records) {
+    if (!Array.isArray(records) || records.length < 1 || records.length > 100) throw new Error('Cloud record batch must contain 1 to 100 records.');
+    const response = await this.request(`/v2/streams/${encodeURIComponent(stream)}/batch`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ records }) });
+    return response.json();
+  }
+
   async queueWrite(event) {
     await ensurePrivateDirectory(this.stateDir);
     const path = join(this.stateDir, 'cloud-pending.ndjson');
@@ -292,10 +298,16 @@ export class CloudStateClient {
       const cloudOnly = multisetDifference(cloud, localCounts);
       report.streams[stream] = { localRows: local.length, cloudRows: cloud.length, localOnly: localOnly.length, cloudOnly: cloudOnly.length, unionRows: local.length + cloudOnly.length };
       if (!dryRun) {
-        for (const { value, index } of localOnly) {
-          const key = value?.id ?? value?.roundId ?? value?.applicationId ?? `${stream}-${index}`;
-          const result = await this.appendRecord(stream, value, { recordKey: key, idempotencyKey: `reconcile:${hash(JSON.stringify(value))}:${index}`, provenance });
-          if (!result.duplicate) report.imported += 1;
+        const prepared = localOnly.map(({ value, index }) => ({
+          recordKey: String(value?.id ?? value?.roundId ?? value?.applicationId ?? `${stream}-${index}`),
+          idempotencyKey: `reconcile:${hash(JSON.stringify(value))}:${index}`,
+          occurredAt: value?.occurredAt ?? value?.submittedAt ?? new Date().toISOString(),
+          provenance,
+          value,
+        }));
+        for (let offset = 0; offset < prepared.length; offset += 100) {
+          const result = await this.appendRecordBatch(stream, prepared.slice(offset, offset + 100));
+          report.imported += result.inserted;
         }
         if (cloudOnly.length) {
           await ensurePrivateDirectory(this.stateDir);

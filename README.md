@@ -49,7 +49,7 @@ On Linux, profile storage uses the Secret Service via the `secret-tool` CLI. Ins
 
 Unlike macOS Keychain or Windows Credential Manager, the Linux Secret Service has no always-running system daemon: a keyring daemon (GNOME Keyring, KWallet, or similar) must be running in the user session for `secret-tool` to store or read the profile. On a desktop login this is normally already the case; on headless servers, containers, or SSH-only sessions, start one explicitly (e.g. `gnome-keyring-daemon --unlock --components=secrets`) before first use.
 
-For one person's agents across several trusted hosts, an optional private Cloudflare D1 + R2 backend shares profile, résumé, application, outcome, round, answer, and attention state. Each host receives a separate revocable credential, and one renewable lease ensures only one host submits applications at a time. See [`CLOUD_STATE.md`](job-application-agent/references/CLOUD_STATE.md).
+For one person's agents across several trusted hosts, an optional private Cloudflare D1 backend with R2 (or a private Workers KV blob fallback) shares profile, résumé, application, outcome, round, answer, and attention state. Each host receives a separate revocable credential, and one renewable lease ensures only one host submits applications at a time. See [`CLOUD_STATE.md`](job-application-agent/references/CLOUD_STATE.md).
 
 ## ✨ What it does
 
@@ -115,7 +115,7 @@ Discovery combines the reviewed [`SOURCES.json`](job-application-agent/reference
 | Data | Where it stays |
 |---|---|
 | Profile | OS credential store, or private D1 with an owner-only local cache |
-| Résumé and ledgers | Owner-only local state, or private D1 + R2 when configured |
+| Résumé and ledgers | Owner-only local state, or private D1 plus private blob storage when configured |
 | Browser login | Existing browser session |
 | Community-sharing preference and delivery receipts | Owner-only local state directory |
 | Skill code | Version-controlled installation directory |

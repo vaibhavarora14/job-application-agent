@@ -1309,7 +1309,7 @@ async function ledgerReviewAcknowledge(input) {
 }
 
 async function prepareCloudState(area, action) {
-  if (!await cloudState.configured() || (area === 'cloud' && action === 'configure')) return;
+  if (!await cloudState.configured() || area === 'cloud') return;
   await cloudState.reconcile({ dryRun: false, provenance: 'automatic-recovery' });
   try { await cloudState.refreshProfileCache(); }
   catch (error) { if (!/\(404\)/.test(error.message)) throw error; }

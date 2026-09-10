@@ -64,6 +64,16 @@ test('record appends are idempotent and visible across clients', async () => {
   assert.deepEqual(body.records[0].value, payload.value);
 });
 
+test('batch record import is bounded and idempotent', async () => {
+  const env = await setup();
+  const records = [1, 2].map((number) => ({ recordKey: `app-${number}`, idempotencyKey: `batch-${number}`, occurredAt: '2026-01-01T00:00:00.000Z', value: { id: `app-${number}` }, provenance: 'cutover' }));
+  const first = await worker.fetch(request('/v2/streams/applications/batch', { method: 'POST', body: { records } }), env);
+  assert.equal(first.status, 201);
+  assert.deepEqual(await first.json(), { stream: 'applications', attempted: 2, inserted: 2, duplicates: 0 });
+  const retry = await worker.fetch(request('/v2/streams/applications/batch', { method: 'POST', body: { records } }), env);
+  assert.equal((await retry.json()).duplicates, 2);
+});
+
 test('one application lease excludes other clients and expires safely', async () => {
   const env = await setup();
   const acquired = await worker.fetch(request('/v2/leases/application-run', { method: 'POST', body: { action: 'acquire' } }), env);
