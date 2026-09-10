@@ -17,7 +17,7 @@ async function setup() {
     .bind('client-mac', 'Mac Codex', sha256Hex(TOKEN_A), now).run();
   await DB.prepare('INSERT INTO clients (client_id, name, token_hash, created_at) VALUES (?, ?, ?, ?)')
     .bind('client-vps', 'VPS Codex', sha256Hex(TOKEN_B), now).run();
-  return { DB, STATE: createMemoryR2(), STATE_TOKEN: 'legacy-token', LEGACY_WRITES_DISABLED: '1' };
+  return { DB, STATE: createMemoryR2(), STATE_TOKEN: 'legacy-token', STATE_ADMIN_TOKEN: 'admin-token-with-sufficient-length-aaaa', LEGACY_WRITES_DISABLED: '1' };
 }
 
 function request(path, { method = 'GET', token = TOKEN_A, body, headers = {} } = {}) {
@@ -69,6 +69,24 @@ test('record appends are idempotent and visible across clients', async () => {
   const body = await list.json();
   assert.equal(body.records.length, 1);
   assert.deepEqual(body.records[0].value, payload.value);
+});
+
+test('owner corrections preserve bad rows while removing them from reads and counts', async () => {
+  const env = await setup();
+  const payload = { recordKey: 'fixture-1', idempotencyKey: 'fixture-1', occurredAt: '2026-01-01T00:00:00.000Z', value: { id: 'fixture-1', company: 'Synthetic Fixture' } };
+  const appended = await worker.fetch(request('/v2/streams/applications', { method: 'POST', body: payload }), env);
+  const sequence = (await appended.json()).sequence;
+
+  const corrected = await worker.fetch(request('/v2/admin/record-corrections', { method: 'POST', token: 'admin-token-with-sufficient-length-aaaa', body: { records: [{ sequence, reason: 'test-fixture' }] } }), env);
+  assert.equal(corrected.status, 201);
+  assert.deepEqual(await corrected.json(), { attempted: 1, inserted: 1, duplicates: 0 });
+
+  const list = await worker.fetch(request('/v2/streams/applications', { token: TOKEN_B }), env);
+  assert.equal((await list.json()).records.length, 0);
+  const status = await worker.fetch(request('/v2/status'), env);
+  assert.equal((await status.json()).streams.some((row) => row.stream === 'applications'), false);
+  assert.equal((await env.DB.prepare('SELECT COUNT(*) AS count FROM records WHERE sequence = ?').bind(sequence).first()).count, 1);
+  assert.equal((await env.DB.prepare('SELECT reason FROM record_corrections WHERE record_sequence = ?').bind(sequence).first()).reason, 'test-fixture');
 });
 
 test('batch record import is bounded and idempotent', async () => {

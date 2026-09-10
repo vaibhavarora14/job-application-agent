@@ -2,6 +2,7 @@ const TABLES = Object.freeze({
   clients: ['client_id', 'name', 'token_hash', 'created_at', 'last_seen_at', 'revoked_at'],
   documents: ['name', 'revision', 'payload_json', 'sha256', 'updated_at', 'updated_by'],
   records: ['sequence', 'stream', 'record_key', 'idempotency_key', 'payload_json', 'occurred_at', 'received_at', 'client_id', 'provenance'],
+  record_corrections: ['correction_id', 'record_sequence', 'reason', 'created_at', 'created_by'],
   files: ['name', 'revision', 'sha256', 'size', 'updated_at', 'updated_by'],
   application_intents: ['intent_id', 'application_id', 'round_id', 'canonical_url', 'status', 'payload_json', 'client_id', 'created_at', 'updated_at'],
 });

@@ -235,7 +235,7 @@ async function streamList(url, env, stream) {
   const after = Math.max(0, Number(url.searchParams.get("after") ?? 0) || 0);
   const limit = Math.max(1, Math.min(1000, Number(url.searchParams.get("limit") ?? 500) || 500));
   const rows = await env.DB.prepare(
-    "SELECT sequence, record_key, idempotency_key, payload_json, occurred_at, received_at, client_id, provenance FROM records WHERE stream = ? AND sequence > ? ORDER BY sequence ASC LIMIT ?",
+    "SELECT r.sequence, r.record_key, r.idempotency_key, r.payload_json, r.occurred_at, r.received_at, r.client_id, r.provenance FROM records r LEFT JOIN record_corrections c ON c.record_sequence = r.sequence WHERE r.stream = ? AND r.sequence > ? AND c.record_sequence IS NULL ORDER BY r.sequence ASC LIMIT ?",
   ).bind(stream, after, limit).all();
   const records = rows.results.map((row) => ({ sequence: row.sequence, recordKey: row.record_key, idempotencyKey: row.idempotency_key, value: JSON.parse(row.payload_json), occurredAt: row.occurred_at, receivedAt: row.received_at, clientId: row.client_id, provenance: row.provenance }));
   return jsonResponse({ stream, records, nextCursor: records.at(-1)?.sequence ?? after });
@@ -363,7 +363,7 @@ async function createIntent(request, env, client) {
   for (const key of ["applicationId", "canonicalUrl", "leaseId"]) if (typeof body[key] !== "string" || !body[key]) return badRequest(`${key} is required`);
   const lease = await env.DB.prepare("SELECT lease_id, holder_client_id, expires_at FROM leases WHERE name = 'application-run'").first();
   if (!lease || lease.lease_id !== body.leaseId || lease.holder_client_id !== client.id || Date.parse(lease.expires_at) <= Date.now()) return conflict("active application lease required");
-  const duplicate = await env.DB.prepare("SELECT sequence FROM records WHERE stream = 'applications' AND record_key = ? LIMIT 1").bind(body.applicationId).first();
+  const duplicate = await env.DB.prepare("SELECT r.sequence FROM records r LEFT JOIN record_corrections c ON c.record_sequence = r.sequence WHERE r.stream = 'applications' AND r.record_key = ? AND c.record_sequence IS NULL LIMIT 1").bind(body.applicationId).first();
   if (duplicate) return conflict("application already recorded");
   const open = await env.DB.prepare("SELECT intent_id, status FROM application_intents WHERE application_id = ? AND status IN ('prepared', 'sent-unverified') LIMIT 1").bind(body.applicationId).first();
   if (open) return conflict(`application already has ${open.status} intent`);
@@ -413,7 +413,7 @@ async function v2Status(env, client) {
   const revisions = await env.DB.prepare("SELECT name, revision, updated_at FROM documents ORDER BY name").all();
   const files = await env.DB.prepare("SELECT name, revision, sha256, updated_at FROM files ORDER BY name").all();
   const lease = await env.DB.prepare("SELECT holder_client_id, lease_id, renewed_at, expires_at FROM leases WHERE name = 'application-run'").first();
-  const counts = await env.DB.prepare("SELECT stream, COUNT(*) AS rows, COUNT(DISTINCT record_key) AS unique_records, MAX(sequence) AS latest_revision FROM records GROUP BY stream ORDER BY stream").all();
+  const counts = await env.DB.prepare("SELECT r.stream, COUNT(*) AS rows, COUNT(DISTINCT r.record_key) AS unique_records, MAX(r.sequence) AS latest_revision FROM records r LEFT JOIN record_corrections c ON c.record_sequence = r.sequence WHERE c.record_sequence IS NULL GROUP BY r.stream ORDER BY r.stream").all();
   const blobBackend = env.STATE ? "r2" : env.STATE_KV ? "kv" : "unavailable";
   return jsonResponse({ backend: `cloudflare-d1-${blobBackend}`, apiVersion: 2, client, documents: revisions.results, files: files.results, streams: counts.results, lease: lease && Date.parse(lease.expires_at) > Date.now() ? { holderClientId: lease.holder_client_id, renewedAt: lease.renewed_at, expiresAt: lease.expires_at, heldByThisClient: lease.holder_client_id === client.id } : null });
 }
@@ -437,6 +437,26 @@ async function adminClient(request, env, clientId, action) {
     return jsonResponse({ clientId, revokedAt: now });
   }
   return notFound();
+}
+
+async function adminCorrectRecords(request, env) {
+  if (!checkAdminAuth(request, env)) return unauthorized();
+  let body;
+  try { body = await jsonBody(request); } catch (error) { return badRequest(error.message); }
+  if (!Array.isArray(body.records) || body.records.length < 1 || body.records.length > 100) return badRequest("records must contain 1 to 100 corrections");
+  const now = new Date().toISOString();
+  const statements = [];
+  for (const item of body.records) {
+    const sequence = Number(item?.sequence);
+    const reason = item?.reason;
+    if (!Number.isSafeInteger(sequence) || sequence < 1) return badRequest("each correction requires a positive integer sequence");
+    if (!["test-fixture", "migration-error", "operator-correction"].includes(reason)) return badRequest("invalid correction reason");
+    statements.push(env.DB.prepare("INSERT OR IGNORE INTO record_corrections (correction_id, record_sequence, reason, created_at, created_by) SELECT ?, sequence, ?, ?, 'system' FROM records WHERE sequence = ?")
+      .bind(`correction-${sequence}`, reason, now, sequence));
+  }
+  const results = await env.DB.batch(statements);
+  const inserted = results.reduce((sum, result) => sum + Number(result.meta?.changes ?? 0), 0);
+  return jsonResponse({ attempted: statements.length, inserted, duplicates: statements.length - inserted }, inserted ? 201 : 200);
 }
 
 export async function headObject(bucket, key) {
@@ -692,6 +712,7 @@ export async function handleRequest(request, env) {
   }
 
   if (pathname.startsWith("/v2/admin/")) {
+    if (pathname === "/v2/admin/record-corrections" && method === "POST") return adminCorrectRecords(request, env);
     const createMatch = pathname.match(/^\/v2\/admin\/clients(?:\/([^/]+))?$/);
     if (createMatch && method === "POST" && !createMatch[1]) return adminClient(request, env, null, "create");
     if (createMatch && method === "DELETE" && createMatch[1]) return adminClient(request, env, decodeURIComponent(createMatch[1]), "revoke");
