@@ -34,3 +34,7 @@ coverage/
 *.tmp
 *.swp
 .gstack/
+
+# Cloud operator state (résumé, sqlite, chrome profile)
+cloud/data/
+cloud/.env

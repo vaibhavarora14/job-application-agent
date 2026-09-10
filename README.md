@@ -49,6 +49,17 @@ On Linux, profile storage uses the Secret Service via the `secret-tool` CLI. Ins
 
 Unlike macOS Keychain or Windows Credential Manager, the Linux Secret Service has no always-running system daemon: a keyring daemon (GNOME Keyring, KWallet, or similar) must be running in the user session for `secret-tool` to store or read the profile. On a desktop login this is normally already the case; on headless servers, containers, or SSH-only sessions, start one explicitly (e.g. `gnome-keyring-daemon --unlock --components=secrets`) before first use.
 
+### Laptop apply loop (this branch)
+
+The `cloud/` app on this branch runs the apply loop on your machine: discover → assess → fill → submit, with a page at `http://127.0.0.1:8787`.
+
+```bash
+cd cloud && npm install && npx playwright install chromium
+npm run local
+```
+
+Open the page, import your existing skill profile, start a round of 10. Details: [`cloud/README.md`](cloud/README.md).
+
 ## ✨ What it does
 
 | Stage | Behavior |

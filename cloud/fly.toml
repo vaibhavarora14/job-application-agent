@@ -1,0 +1,27 @@
+# New Fly app for the cloud apply loop. Do not attach this to Paisewise
+# (no shared Machine, volume, image, or hostname).
+app = "job-application-agent"
+primary_region = "iad"
+
+[build]
+  dockerfile = "Dockerfile"
+
+[env]
+  HOST = "127.0.0.1"
+  PORT = "8787"
+  CLOUD_DATA_DIR = "/data"
+  JOB_APPLICATION_AGENT_STATE_DIR = "/data/skill-state"
+  CLOUD_EMBED_WORKER = "1"
+  PLAYWRIGHT_HEADLESS = "1"
+
+[mounts]
+  source = "cloud_data"
+  destination = "/data"
+
+[[vm]]
+  size = "shared-cpu-2x"
+  memory = "2gb"
+
+# No [[http_service]] and no public IPv4. Operator path:
+#   fly proxy 8787:8787 -a job-application-agent
+# then open http://127.0.0.1:8787
