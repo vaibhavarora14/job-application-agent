@@ -1,4 +1,12 @@
-import { DatabaseSync } from 'node:sqlite';
+let DatabaseSync;
+
+try {
+  ({ DatabaseSync } = await import('node:sqlite'));
+} catch (error) {
+  if (error?.code !== 'ERR_UNKNOWN_BUILTIN_MODULE') throw error;
+}
+
+export const hasNodeSqlite = Boolean(DatabaseSync);
 
 function resultRows(statement) {
   const rows = statement.all();
@@ -6,6 +14,7 @@ function resultRows(statement) {
 }
 
 export function createMemoryD1(schema = '') {
+  if (!DatabaseSync) throw new Error('The in-memory D1 test adapter requires node:sqlite (Node.js 22.5 or newer)');
   const database = new DatabaseSync(':memory:');
   database.exec(schema);
   return {

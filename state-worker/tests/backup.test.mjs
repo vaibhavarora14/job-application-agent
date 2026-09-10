@@ -3,11 +3,11 @@ import { readFile } from 'node:fs/promises';
 import test from 'node:test';
 
 import { createBackup, restoreBackup } from '../src/backup.mjs';
-import { createMemoryD1 } from './d1-mock.mjs';
+import { createMemoryD1, hasNodeSqlite } from './d1-mock.mjs';
 
 const schema = await readFile(new URL('../migrations/0001_private_state.sql', import.meta.url), 'utf8');
 
-test('private export restores into a separate empty database without losing provenance', async () => {
+test('private export restores into a separate empty database without losing provenance', { skip: !hasNodeSqlite }, async () => {
   const source = createMemoryD1(schema);
   await source.prepare('INSERT INTO clients (client_id, name, token_hash, created_at) VALUES (?, ?, ?, ?)').bind('mac', 'Mac', 'hash', '2026-01-01T00:00:00.000Z').run();
   await source.prepare('INSERT INTO records (stream, record_key, idempotency_key, payload_json, occurred_at, received_at, client_id, provenance) VALUES (?, ?, ?, ?, ?, ?, ?, ?)')

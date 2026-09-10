@@ -3,11 +3,12 @@ import { readFile } from 'node:fs/promises';
 import test from 'node:test';
 
 import worker, { sha256Hex } from '../src/worker.mjs';
-import { createMemoryD1 } from './d1-mock.mjs';
+import { createMemoryD1, hasNodeSqlite } from './d1-mock.mjs';
 import { createMemoryR2 } from './r2-mock.mjs';
 
 const TOKEN_A = 'mac-client-token-with-sufficient-length-aaaa';
 const TOKEN_B = 'vps-client-token-with-sufficient-length-bbbb';
+const sqliteTest = hasNodeSqlite ? test : test.skip;
 
 async function setup() {
   const schema = await readFile(new URL('../migrations/0001_private_state.sql', import.meta.url), 'utf8');
@@ -27,7 +28,7 @@ function request(path, { method = 'GET', token = TOKEN_A, body, headers = {} } =
   return new Request(`https://state.example.com${path}`, { method, headers: next, body: requestBody });
 }
 
-test('v2 authenticates separate revocable clients without exposing hashes', async () => {
+sqliteTest('v2 authenticates separate revocable clients without exposing hashes', async () => {
   const env = await setup();
   const response = await worker.fetch(request('/v2/status', { token: TOKEN_B }), env);
   assert.equal(response.status, 200);
@@ -39,14 +40,14 @@ test('v2 authenticates separate revocable clients without exposing hashes', asyn
   assert.equal((await worker.fetch(request('/v2/status', { token: TOKEN_B }), env)).status, 401);
 });
 
-test('health check is public and exposes no private state', async () => {
+sqliteTest('health check is public and exposes no private state', async () => {
   const env = await setup();
   const response = await worker.fetch(request('/healthz', { token: null }), env);
   assert.equal(response.status, 200);
   assert.deepEqual(await response.json(), { ok: true });
 });
 
-test('documents use revisions and reject stale updates', async () => {
+sqliteTest('documents use revisions and reject stale updates', async () => {
   const env = await setup();
   const first = await worker.fetch(request('/v2/documents/profile', { method: 'PUT', body: { value: { name: 'Ada' } }, headers: { 'if-match': '0' } }), env);
   assert.equal(first.status, 201);
@@ -57,7 +58,7 @@ test('documents use revisions and reject stale updates', async () => {
   assert.deepEqual((await get.json()).value, { name: 'Ada' });
 });
 
-test('record appends are idempotent and visible across clients', async () => {
+sqliteTest('record appends are idempotent and visible across clients', async () => {
   const env = await setup();
   const payload = { recordKey: 'app-1', idempotencyKey: 'migration:app-1', occurredAt: '2026-01-01T00:00:00.000Z', value: { id: 'app-1', company: 'Example' }, provenance: 'mac-migration' };
   const first = await worker.fetch(request('/v2/streams/applications', { method: 'POST', body: payload }), env);
@@ -71,7 +72,7 @@ test('record appends are idempotent and visible across clients', async () => {
   assert.deepEqual(body.records[0].value, payload.value);
 });
 
-test('owner corrections preserve bad rows while removing them from reads and counts', async () => {
+sqliteTest('owner corrections preserve bad rows while removing them from reads and counts', async () => {
   const env = await setup();
   const payload = { recordKey: 'fixture-1', idempotencyKey: 'fixture-1', occurredAt: '2026-01-01T00:00:00.000Z', value: { id: 'fixture-1', company: 'Synthetic Fixture' } };
   const appended = await worker.fetch(request('/v2/streams/applications', { method: 'POST', body: payload }), env);
@@ -89,7 +90,7 @@ test('owner corrections preserve bad rows while removing them from reads and cou
   assert.equal((await env.DB.prepare('SELECT reason FROM record_corrections WHERE record_sequence = ?').bind(sequence).first()).reason, 'test-fixture');
 });
 
-test('batch record import is bounded and idempotent', async () => {
+sqliteTest('batch record import is bounded and idempotent', async () => {
   const env = await setup();
   const records = [1, 2].map((number) => ({ recordKey: `app-${number}`, idempotencyKey: `batch-${number}`, occurredAt: '2026-01-01T00:00:00.000Z', value: { id: `app-${number}` }, provenance: 'cutover' }));
   const first = await worker.fetch(request('/v2/streams/applications/batch', { method: 'POST', body: { records } }), env);
@@ -99,7 +100,7 @@ test('batch record import is bounded and idempotent', async () => {
   assert.equal((await retry.json()).duplicates, 2);
 });
 
-test('one application lease excludes other clients and expires safely', async () => {
+sqliteTest('one application lease excludes other clients and expires safely', async () => {
   const env = await setup();
   const acquired = await worker.fetch(request('/v2/leases/application-run', { method: 'POST', body: { action: 'acquire' } }), env);
   assert.equal(acquired.status, 201);
@@ -111,7 +112,7 @@ test('one application lease excludes other clients and expires safely', async ()
   assert.ok(Date.parse((await renewed.json()).expiresAt) > Date.now());
 });
 
-test('resume is stored privately in R2 and verified by checksum', async () => {
+sqliteTest('resume is stored privately in R2 and verified by checksum', async () => {
   const env = await setup();
   const bytes = Buffer.from('%PDF-1.7\nsynthetic-test-pdf-content');
   const put = await worker.fetch(request('/v2/files/resume.pdf', { method: 'PUT', body: bytes, headers: { 'content-type': 'application/pdf', 'if-match': '0', 'x-content-sha256': sha256Hex(bytes) } }), env);
@@ -122,7 +123,7 @@ test('resume is stored privately in R2 and verified by checksum', async () => {
   assert.equal(get.headers.get('x-sha256'), sha256Hex(bytes));
 });
 
-test('resume storage works through the existing Workers KV fallback', async () => {
+sqliteTest('resume storage works through the existing Workers KV fallback', async () => {
   const env = await setup();
   delete env.STATE;
   const entries = new Map();
@@ -146,7 +147,7 @@ test('resume storage works through the existing Workers KV fallback', async () =
   assert.equal(get.headers.get('x-sha256'), sha256Hex(bytes));
 });
 
-test('legacy reads remain available but whole-ledger writes are disabled', async () => {
+sqliteTest('legacy reads remain available but whole-ledger writes are disabled', async () => {
   const env = await setup();
   const legacyRead = await worker.fetch(request('/v1/manifest', { token: 'legacy-token' }), env);
   assert.equal(legacyRead.status, 200);
@@ -154,13 +155,13 @@ test('legacy reads remain available but whole-ledger writes are disabled', async
   assert.equal(legacyWrite.status, 410);
 });
 
-test('forbidden credential-like fields are rejected from structured storage', async () => {
+sqliteTest('forbidden credential-like fields are rejected from structured storage', async () => {
   const env = await setup();
   const response = await worker.fetch(request('/v2/streams/attention', { method: 'POST', body: { recordKey: 'x', idempotencyKey: 'x', value: { password: 'do-not-store' } } }), env);
   assert.equal(response.status, 400);
 });
 
-test('submission intent requires the lease and confirmation atomically records application and round', async () => {
+sqliteTest('submission intent requires the lease and confirmation atomically records application and round', async () => {
   const env = await setup();
   const lease = await (await worker.fetch(request('/v2/leases/application-run', { method: 'POST', body: { action: 'acquire' } }), env)).json();
   const preparedResponse = await worker.fetch(request('/v2/intents', { method: 'POST', body: { applicationId: 'app-2', roundId: 'round-1', canonicalUrl: 'https://jobs.example/app-2', leaseId: lease.leaseId } }), env);
@@ -178,7 +179,7 @@ test('submission intent requires the lease and confirmation atomically records a
   assert.equal(rounds.records[0].value.applicationId, 'app-2');
 });
 
-test('intent is rejected without a live lease and an uncertain intent prevents retry', async () => {
+sqliteTest('intent is rejected without a live lease and an uncertain intent prevents retry', async () => {
   const env = await setup();
   assert.equal((await worker.fetch(request('/v2/intents', { method: 'POST', body: { applicationId: 'app-3', canonicalUrl: 'https://jobs.example/app-3', leaseId: 'missing' } }), env)).status, 409);
   const lease = await (await worker.fetch(request('/v2/leases/application-run', { method: 'POST', body: { action: 'acquire' } }), env)).json();
