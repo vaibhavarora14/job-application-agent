@@ -108,11 +108,14 @@ The bundled CLI handles private profile storage, résumé import, scoring, dupli
 
 Discovery combines the reviewed [`SOURCES.json`](job-application-agent/references/SOURCES.json) catalog with an anonymous community registry. Every confirmed application automatically contributes its canonical public job URL, company, role, application channel, and provider; prior confirmed ledger entries backfill during later commands after a one-command disclosure grace period. Jobs, repeatable boards, and feeds are logged pending and become visible in the public dashboard or CLI only after maintainer review. Disable both forms of community sharing independently from analytics with `sources sharing disable`.
 
+Rounds require recorded attempts across at least three distinct discovery sources, including a successful search, and source attribution for confirmed submissions. If more than 60% of submissions come from one source, the agent must explain the concentration. Blockers and empty results are reported; fit requirements never change to meet a source quota. See [round coverage](job-application-agent/references/RUNS.md#discovery-coverage).
+
 ## 🔐 Privacy
 
 | Data | Where it stays |
 |---|---|
 | Profile | macOS Keychain, Windows Credential Manager, or Linux Secret Service (libsecret) |
+| Analytics name and email (unless opted out) | Private PostHog events after disclosure; local sharing preference in owner-only state |
 | Résumé and ledgers | Owner-only local state directory |
 | Browser login | Existing browser session |
 | Community-sharing preference and delivery receipts | Owner-only local state directory |
@@ -120,12 +123,13 @@ Discovery combines the reviewed [`SOURCES.json`](job-application-agent/reference
 
 Candidate data, résumés, application history, credentials, and browser sessions are never committed to this repository.
 
-Anonymous structured analytics are enabled by default to improve the agent. They may include job and workflow categories, but never candidate identity, résumé content, prompts, answers, browser data, IP addresses, or raw errors.
+Structured usage analytics and name/email sharing are enabled by default for support and product improvement. After a disclosure command with no identity transmission, subsequent commands include the name and email explicitly saved in the candidate profile in the maintainer's private PostHog analytics. No résumé content, other profile fields, prompts, answers, browser data, IP addresses, or raw errors are sent. `telemetry identity disable` stops identity sharing and rotates the analytics UUID so future usage is anonymous; `telemetry disable` stops all analytics. Previously collected events remain subject to the retention policy.
 
 Anonymous community sharing is also enabled by default, separately from analytics. Confirmed applications share only a canonical public job URL, company, role, application channel, optional coarse discovery source, and derived provider URL—never candidate identity, answers, résumé, score, referral parameters, or submission timestamp. Repeatable discovery surfaces share their bounded catalog metadata through a maintainer-review queue. The registry stores no raw installation IDs; record-scoped contributor hashes are used only for deduplication and counts, never as identity or publication authority.
 
 ```bash
 node ~/.agents/skills/job-application-agent/scripts/job-application.mjs telemetry status
+node ~/.agents/skills/job-application-agent/scripts/job-application.mjs telemetry identity disable
 node ~/.agents/skills/job-application-agent/scripts/job-application.mjs telemetry disable
 node ~/.agents/skills/job-application-agent/scripts/job-application.mjs sources sharing status
 node ~/.agents/skills/job-application-agent/scripts/job-application.mjs sources sharing disable

@@ -1,5 +1,6 @@
-import { execFile } from 'node:child_process';
-import { mkdtemp, readFile, rm, stat } from 'node:fs/promises';
+import assert from 'node:assert/strict';
+import { execFile, execFileSync } from 'node:child_process';
+import { mkdir, mkdtemp, readFile, realpath, rm, stat, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { promisify } from 'node:util';
@@ -33,6 +34,28 @@ try {
   if (!skill.includes('# Job Application Agent')) throw new Error('Packed skill did not install correctly.');
   if (config.installedVersion !== packageManifest.version || config.automaticUpdates !== true) throw new Error('Packed installer state is incorrect.');
   if (process.platform !== 'win32' && ((await stat(path.join(agentHome, 'job-application-agent', 'install.json'))).mode & 0o777) !== 0o600) throw new Error('Install configuration permissions are not private.');
+
+  // Exercise the installed npm artifact with synthetic state, never the user's profile.
+  const stateDir = path.join(temp, 'coverage-state');
+  await mkdir(stateDir, { mode: 0o700 });
+  await writeFile(path.join(stateDir, 'telemetry.json'), JSON.stringify({ version: 1, enabled: false, disclosed: true, graceConsumed: true, installationEventPending: false }), { mode: 0o600 });
+  const installedCli = await realpath(path.join(agentHome, 'skills', 'job-application-agent', 'scripts', 'job-application.mjs'));
+  const run = (args, input) => JSON.parse(execFileSync(process.execPath, [installedCli, ...args], {
+    cwd: temp,
+    encoding: 'utf8',
+    input: input === undefined ? undefined : JSON.stringify(input),
+    env: { ...process.env, JOB_APPLICATION_AGENT_STATE_DIR: stateDir, JOB_APPLICATION_AGENT_SOURCE_COMMUNITY_URL: 'http://127.0.0.1:9' },
+  }));
+  const round = run(['round', 'start', '--stdin'], { requestedCount: 1 });
+  assert.equal(round.discoveryPolicy.minSources, 3);
+  assert.equal(round.discoveryPolicy.concentrationThresholdPercent, 60);
+  assert.equal(run(['round', 'status', round.roundId]).discovery.coverageSatisfied, false);
+  for (const sourceId of ['linkedin-jobs-feed', 'indeed', 'hacker-news-who-is-hiring']) {
+    run(['round', 'source', '--stdin'], { roundId: round.roundId, sourceId, status: 'searched', reviewedCount: 0, qualifiedCount: 0, evidence: 'Synthetic package verification: no matching results.' });
+  }
+  const coverage = run(['round', 'status', round.roundId]).discovery;
+  assert.equal(coverage.coverageSatisfied, true);
+  assert.equal(coverage.searchedSourceCount, 3);
   process.stdout.write('Packed npm installation smoke test passed.\n');
 } finally {
   if (tarball) await rm(tarball, { force: true });

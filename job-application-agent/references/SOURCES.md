@@ -30,7 +30,7 @@ Store three independent attribution fields when available:
 - `discoverySourceId`: stable packaged or community ID such as `yc-work-at-a-startup` or `community-abcdef1234567890`.
 - `applicationChannel`: actual submission channel such as `greenhouse`, `ashby`, `lever`, `company`, or `email`.
 
-`discoverySourceId` remains local in v1 and is not transmitted by telemetry.
+Per-application `discoverySourceId` remains local. Round coverage analytics may send allowlisted packaged source IDs; all community source IDs are collapsed to `community`. See [RUNS.md](RUNS.md) for the required discovery coverage, blocker reports, and concentration explanations.
 
 ## Community sharing
 

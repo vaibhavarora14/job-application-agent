@@ -112,7 +112,12 @@ async function events(request, env) {
     distinct_id: envelope.installationId,
     uuid: eventId,
     timestamp: new Date().toISOString(),
-    properties: { ...envelope.properties, schemaVersion: envelope.schemaVersion, skillVersion: envelope.skillVersion, $process_person_profile: false, $geoip_disable: true },
+    properties: {
+      ...envelope.properties,
+      ...(envelope.identity?.name ? { candidateName: envelope.identity.name } : {}),
+      ...(envelope.identity?.email ? { candidateEmail: envelope.identity.email } : {}),
+      schemaVersion: envelope.schemaVersion, skillVersion: envelope.skillVersion, $process_person_profile: false, $geoip_disable: true,
+    },
   };
   const fetchFn = env.POSTHOG_FETCH ?? fetch;
   let upstream;
@@ -122,7 +127,9 @@ async function events(request, env) {
     return response({ error: 'upstream_unavailable' }, 503);
   }
   if (!upstream.ok) return response({ error: 'upstream_unavailable' }, 503);
-  try { await recordPublicAggregate(env.PUBLIC_STATS_DB, envelope, env.SIGNING_SECRET); } catch { /* Public aggregates are best effort. */ }
+  try {
+    await recordPublicAggregate(env.PUBLIC_STATS_DB, { event: envelope.event, properties: envelope.properties, installationId: envelope.installationId }, env.SIGNING_SECRET);
+  } catch { /* Public aggregates are best effort. */ }
   return response({ accepted: true, eventId }, 202);
 }
 

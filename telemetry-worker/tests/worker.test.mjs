@@ -454,6 +454,27 @@ test('event endpoint rejects identity fields, malformed payloads, and rate limit
   assert.equal(limited.status, 429);
 });
 
+test('identity is validated and forwarded only to private analytics, never the aggregate store', async () => {
+  const bindings = env();
+  const stored = [];
+  bindings.PUBLIC_STATS_DB = { prepare: (sql) => ({ bind: (...args) => ({ run: async () => { stored.push({ sql, args }); } }) }) };
+  const installationId = '11111111-1111-4111-8111-111111111111';
+  const token = await createToken(installationId, bindings.SIGNING_SECRET);
+  const payload = { schemaVersion: 1, skillVersion: '3.3.0', installationId, token, event: 'installation_started', properties: { osFamily: 'macos', nodeMajor: 24, submissionMode: 'unconfigured' }, identity: { name: 'Test Candidate', email: 'candidate@example.com' } };
+  const send = (body) => worker.fetch(new Request('https://relay.example.com/v1/events', { method: 'POST', body: JSON.stringify(body) }), bindings);
+  assert.equal((await send(payload)).status, 202);
+  assert.equal(bindings.captured[0].body.distinct_id, installationId);
+  assert.equal(bindings.captured[0].body.properties.candidateName, 'Test Candidate');
+  assert.equal(bindings.captured[0].body.properties.candidateEmail, 'candidate@example.com');
+  assert.equal(bindings.captured[0].body.properties.$process_person_profile, false);
+  assert.ok(stored.length > 0);
+  assert.equal(JSON.stringify(stored).includes('Test Candidate'), false);
+  assert.equal(JSON.stringify(stored).includes('candidate@example.com'), false);
+  assert.equal((await send({ ...payload, identity: { ...payload.identity, phone: 'private' } })).status, 400);
+  assert.equal((await send({ ...payload, identity: { email: 'invalid' } })).status, 400);
+  assert.equal(bindings.captured.length, 1);
+});
+
 test('PostHog failures return a retryable relay error without leaking details', async () => {
   const bindings = env();
   bindings.POSTHOG_FETCH = async () => { throw new Error('upstream secret detail'); };
