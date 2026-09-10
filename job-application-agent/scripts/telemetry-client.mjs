@@ -1,13 +1,14 @@
 import { chmod, mkdir, readFile, readdir, rename, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
-import { createTelemetryEnvelope, jobIdentity, validateEvent } from './telemetry-schema.mjs';
+import { createTelemetryEnvelope, jobIdentity, validateEvent, validateTelemetryIdentity } from './telemetry-schema.mjs';
 import { SKILL_VERSION } from './version.mjs';
 
 export { SKILL_VERSION };
 
 export const DEFAULT_TELEMETRY_ENDPOINT = process.env.JOB_APPLICATION_AGENT_TELEMETRY_URL ?? 'https://job-application-agent-telemetry.varora1406.workers.dev';
-export const TELEMETRY_NOTICE = 'Anonymous usage analytics are enabled by default. They include structured job and workflow metrics, but never your identity, resume, prompts, form answers, browser data, or candidate profile. Run `telemetry disable` to opt out or `telemetry preview` to inspect an event.\n';
+export const TELEMETRY_NOTICE = 'Usage analytics are enabled by default. They include structured job and workflow metrics. Name and email sharing has a separate disclosure and opt-out. Resume content, other profile fields, prompts, form answers, browser data, and raw errors are never sent. Run `telemetry disable` to stop all analytics or `telemetry preview` to inspect an event.\n';
+export const IDENTITY_NOTICE = 'Name and email sharing is enabled by default. Starting with the next command, JobAgent shares the name and email explicitly saved in your candidate profile with the maintainer through private PostHog usage analytics for support and product improvement. Run `telemetry identity disable` to keep future analytics anonymous, or `telemetry disable` to stop all analytics. Opting out rotates the analytics ID; previously collected data is retained under the analytics retention policy.\n';
 
 const CONFIG_VERSION = 1;
 const CONFIG_FILE = 'telemetry.json';
@@ -38,13 +39,14 @@ async function writePrivate(file, value) {
 }
 
 export class TelemetryClient {
-  constructor({ stateDir, endpoint = DEFAULT_TELEMETRY_ENDPOINT, fetch: fetchFn = globalThis.fetch, stderr = (value) => process.stderr.write(value), now = () => new Date(), timeoutMs = Number(process.env.JOB_APPLICATION_AGENT_TELEMETRY_TIMEOUT_MS ?? 3000) }) {
+  constructor({ stateDir, endpoint = DEFAULT_TELEMETRY_ENDPOINT, fetch: fetchFn = globalThis.fetch, stderr = (value) => process.stderr.write(value), now = () => new Date(), timeoutMs = Number(process.env.JOB_APPLICATION_AGENT_TELEMETRY_TIMEOUT_MS ?? 3000), readIdentity = () => undefined }) {
     this.stateDir = stateDir;
     this.endpoint = endpoint.replace(/\/$/, '');
     this.fetch = fetchFn;
     this.stderr = stderr;
     this.now = now;
     this.timeoutMs = timeoutMs;
+    this.readIdentity = readIdentity;
   }
 
   get configPath() { return join(this.stateDir, CONFIG_FILE); }
@@ -57,7 +59,7 @@ export class TelemetryClient {
   async readConfig() {
     try {
       const value = JSON.parse(await readFile(this.configPath, 'utf8'));
-      return { version: CONFIG_VERSION, enabled: value.enabled !== false, disclosed: value.disclosed === true, graceConsumed: value.graceConsumed === true, installationEventPending: value.installationEventPending === true, installationId: value.installationId ?? null, token: value.token ?? null, tokenExpiresAt: value.tokenExpiresAt ?? null };
+      return { version: CONFIG_VERSION, enabled: value.enabled !== false, disclosed: value.disclosed === true, graceConsumed: value.graceConsumed === true, installationEventPending: value.installationEventPending === true, installationId: value.installationId ?? null, token: value.token ?? null, tokenExpiresAt: value.tokenExpiresAt ?? null, identityEnabled: value.identityEnabled !== false, identityDisclosed: value.identityDisclosed === true };
     } catch (error) {
       if (error.code === 'ENOENT') return null;
       return { version: CONFIG_VERSION, enabled: false, disclosed: true, graceConsumed: true, installationEventPending: false, installationId: null, token: null, tokenExpiresAt: null };
@@ -101,7 +103,13 @@ export class TelemetryClient {
       config.graceConsumed = true;
       await this.saveConfig(config);
     }
-    return { command, enabled: config.enabled, allowSend: config.enabled && allowSend, installationEventPending: config.installationEventPending === true };
+    const allowIdentity = config.identityEnabled !== false && config.identityDisclosed === true;
+    if (config.enabled && config.identityEnabled !== false && !config.identityDisclosed) {
+      this.stderr(IDENTITY_NOTICE);
+      config.identityDisclosed = true;
+      await this.saveConfig(config);
+    }
+    return { command, enabled: config.enabled, allowSend: config.enabled && allowSend, allowIdentity, installationEventPending: config.installationEventPending === true };
   }
 
   async credentials(config) {
@@ -128,13 +136,17 @@ export class TelemetryClient {
       if (session.unavailable) return { sent: false, reason: 'unavailable' };
       let config = await this.readConfig();
       if (!config?.enabled) return { sent: false, reason: 'disabled' };
+      let identity;
+      if (session.allowIdentity === true && config.identityEnabled !== false && config.identityDisclosed === true) {
+        try { identity = validateTelemetryIdentity(await this.readIdentity()); } catch { /* Missing or invalid identity never blocks anonymous analytics. */ }
+      }
       config = await this.credentials(config);
-      const payload = createTelemetryEnvelope({ installationId: config.installationId, token: config.token, event, skillVersion: SKILL_VERSION });
+      const payload = createTelemetryEnvelope({ installationId: config.installationId, token: config.token, event, skillVersion: SKILL_VERSION, identity });
       let response = await this.fetch(`${this.endpoint}/v1/events`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(payload), signal: AbortSignal.timeout(this.timeoutMs) });
       if (response.status === 401) {
         config.tokenExpiresAt = null;
         config = await this.credentials(config);
-        response = await this.fetch(`${this.endpoint}/v1/events`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(createTelemetryEnvelope({ installationId: config.installationId, token: config.token, event, skillVersion: SKILL_VERSION })), signal: AbortSignal.timeout(this.timeoutMs) });
+        response = await this.fetch(`${this.endpoint}/v1/events`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(createTelemetryEnvelope({ installationId: config.installationId, token: config.token, event, skillVersion: SKILL_VERSION, identity })), signal: AbortSignal.timeout(this.timeoutMs) });
       }
       if (!response.ok) {
         session.unavailable = true;
@@ -154,7 +166,22 @@ export class TelemetryClient {
 
   async status() {
     const config = await this.readConfig();
-    return { enabled: config?.enabled ?? true, disclosed: config?.disclosed ?? false, hasInstallationId: Boolean(config?.installationId), endpoint: this.endpoint, schemaVersion: 1 };
+    return { enabled: config?.enabled ?? true, disclosed: config?.disclosed ?? false, hasInstallationId: Boolean(config?.installationId), installationId: config?.installationId ?? null, identityEnabled: config?.identityEnabled ?? true, identityDisclosed: config?.identityDisclosed ?? false, endpoint: this.endpoint, schemaVersion: 1 };
+  }
+
+  async configureIdentity(action) {
+    if (action === 'status') return this.status();
+    if (!['enable', 'disable'].includes(action)) throw new Error('Identity action must be status, enable, or disable.');
+    const current = await this.readConfig() ?? { version: CONFIG_VERSION, enabled: true, disclosed: false, graceConsumed: true, installationEventPending: true };
+    const enabled = action === 'enable';
+    // Rotate at both boundaries to avoid identifying an earlier anonymous period.
+    if (enabled !== (current.identityEnabled !== false)) {
+      Object.assign(current, { installationId: null, token: null, tokenExpiresAt: null });
+    }
+    if (enabled && current.identityEnabled === false) current.identityDisclosed = false;
+    current.identityEnabled = enabled;
+    await this.saveConfig(current);
+    return this.status();
   }
 
   async configure(action) {

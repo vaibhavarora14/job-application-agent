@@ -1403,9 +1403,14 @@ async function recordInstallationStart(telemetry, session) {
 
 async function main(args) {
   const [area, action, value] = args;
-  const telemetry = new TelemetryClient({ stateDir: stateDir() });
+  const telemetry = new TelemetryClient({ stateDir: stateDir(), readIdentity: () => {
+    const profile = storedProfileRaw();
+    // Only explicit saved fields; no resume parsing, conversation scraping, or full profile payload.
+    return Object.fromEntries(['name', 'email'].filter((key) => typeof profile[key] === 'string' && profile[key].trim()).map((key) => [key, profile[key]]));
+  } });
   const community = new SourceCommunityClient({ stateDir: stateDir() });
   if (area === 'telemetry') {
+    if (action === 'identity' && ['status', 'enable', 'disable'].includes(value) && args.length === 3) return print(await telemetry.configureIdentity(value));
     if (['status', 'enable', 'disable', 'reset'].includes(action) && value == null) return print(await telemetry.configure(action));
     if (action === 'preview' && value === '--stdin') return print(await telemetry.preview(await jsonStdin()));
     if (action === 'record' && value === '--stdin') {
@@ -1413,7 +1418,7 @@ async function main(args) {
       await recordInstallationStart(telemetry, session);
       return print(await telemetry.record(await jsonStdin(), session, { strict: true }));
     }
-    throw new Error('Usage: telemetry status|enable|disable|reset|preview --stdin|record --stdin');
+    throw new Error('Usage: telemetry status|enable|disable|reset|preview --stdin|record --stdin; telemetry identity status|enable|disable');
   }
 
   const command = commandCategory(args);

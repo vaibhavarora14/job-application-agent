@@ -142,19 +142,37 @@ export async function jobIdentity(value) {
   return { jobHash: [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, '0')).join(''), domain: new URL(canonical).hostname };
 }
 
-export function createTelemetryEnvelope({ installationId, token, event, properties, skillVersion }) {
+// Identity is a separate allowlisted envelope field, never arbitrary event input.
+export function validateTelemetryIdentity(input) {
+  if (!input || Array.isArray(input) || typeof input !== 'object') throw new Error('Telemetry identity must be an object.');
+  for (const key of Object.keys(input)) if (!['name', 'email'].includes(key)) throw new Error('Unknown telemetry identity property.');
+  const identity = {};
+  for (const [key, max] of [['name', 160], ['email', 254]]) {
+    if (!(key in input)) continue;
+    const value = input[key];
+    if (typeof value !== 'string' || !value.trim() || value.length > max || /[\x00-\x1f\x7f]/.test(value)) throw new Error('Invalid telemetry identity field.');
+    const normalized = value.trim();
+    if (key === 'email' && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalized)) throw new Error('Invalid telemetry identity email.');
+    identity[key] = normalized;
+  }
+  if (!Object.keys(identity).length) throw new Error('Telemetry identity must include name or email.');
+  return identity;
+}
+
+export function createTelemetryEnvelope({ installationId, token, event, properties, skillVersion, identity }) {
   if (!UUID.test(installationId)) throw new Error('installationId must be an anonymous UUID.');
   if (typeof token !== 'string' || token.length < 8 || token.length > 2048) throw new Error('token is invalid.');
   if (typeof skillVersion !== 'string' || !VERSION.test(skillVersion)) throw new Error('skillVersion is invalid.');
   const safe = validateEvent(typeof event === 'string' ? { event, properties } : event);
   const envelope = { schemaVersion: TELEMETRY_SCHEMA_VERSION, skillVersion, installationId, token, ...safe };
+  if (identity !== undefined) envelope.identity = validateTelemetryIdentity(identity);
   if (new TextEncoder().encode(JSON.stringify(envelope)).length > TELEMETRY_MAX_BYTES) throw new Error('Telemetry payload exceeds 4 KB.');
   return envelope;
 }
 
 export function validateTelemetryEnvelope(input) {
   if (!input || Array.isArray(input) || typeof input !== 'object') throw new Error('Telemetry payload must be an object.');
-  const allowed = new Set(['schemaVersion', 'skillVersion', 'installationId', 'token', 'event', 'properties']);
+  const allowed = new Set(['schemaVersion', 'skillVersion', 'installationId', 'token', 'event', 'properties', 'identity']);
   for (const key of Object.keys(input)) if (!allowed.has(key)) throw new Error(`Unknown telemetry envelope property: ${key}.`);
   if (input.schemaVersion !== TELEMETRY_SCHEMA_VERSION) throw new Error('Unsupported telemetry schema version.');
   return createTelemetryEnvelope(input);

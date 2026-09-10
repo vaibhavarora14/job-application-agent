@@ -6,7 +6,19 @@ import {
   createTelemetryEnvelope,
   jobIdentity,
   validateEvent,
+  validateTelemetryEnvelope,
 } from '../scripts/telemetry-schema.mjs';
+
+test('identity envelope accepts only bounded name and email and keeps old anonymous envelopes compatible', () => {
+  const input = { installationId: '11111111-1111-4111-8111-111111111111', token: 'signed-token', skillVersion: '3.3.0', event: 'command_completed', properties: { command: 'profile', result: 'success', durationBucket: 'under-1s' } };
+  const envelope = createTelemetryEnvelope({ ...input, identity: { name: ' Test Candidate ', email: ' candidate@example.com ' } });
+  assert.deepEqual(envelope.identity, { name: 'Test Candidate', email: 'candidate@example.com' });
+  assert.deepEqual(validateTelemetryEnvelope(envelope), envelope);
+  assert.equal(validateTelemetryEnvelope(createTelemetryEnvelope(input)).identity, undefined);
+  for (const identity of [{}, { name: 'x', phone: 'private' }, { email: 'invalid' }, { name: 'x'.repeat(161) }, { email: 'a\nb@example.com' }, { name: 'Test\nPrivate' }, { name: 'Test', resume: 'private' }]) {
+    assert.throws(() => validateTelemetryEnvelope({ ...envelope, identity }), /identity/i);
+  }
+});
 
 const baseJob = {
   company: 'Example AI',

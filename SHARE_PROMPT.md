@@ -10,7 +10,7 @@ Start with onboarding. Ask me for my canonical resume and every factual field ne
 
 Use my unchanged canonical resume as the only default resume. Keep private profile information in secure OS-backed storage when available, keep browser authentication only in the browser session, and keep an owner-only local application ledger.
 
-If the installed skill includes default-enabled structured usage analytics, disclose it before collection and support status, disable, enable, reset, and preview controls. Never include my identity, profile, resume, prompts, answers, browser data, or raw errors in analytics.
+If the installed skill includes default-enabled structured usage analytics and name/email sharing, disclose both before collection and explain `telemetry identity disable` (keep future usage anonymous) and `telemetry disable` (stop all analytics). Relay the CLI disclosure to me before running another command. Only my explicit saved profile name and email may accompany usage after the disclosure grace command; never include other profile fields, resume content, prompts, answers, browser data, or raw errors. Honor any opt-out immediately.
 
 Support these commands:
 
