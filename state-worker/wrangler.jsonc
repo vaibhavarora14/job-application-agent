@@ -3,6 +3,7 @@
   "account_id": "69814bd80d183fa809d383323587163f",
   "main": "src/worker.mjs",
   "compatibility_date": "2026-08-01",
+  "compatibility_flags": ["nodejs_compat"],
   "workers_dev": true,
   "preview_urls": false,
   "observability": {
@@ -11,10 +12,39 @@
       "enabled": false
     }
   },
-  "r2_buckets": [
+  "vars": {
+    "LEGACY_WRITES_DISABLED": "1"
+  },
+  "triggers": {
+    "crons": ["17 1 * * *"]
+  },
+  "d1_databases": [
     {
-      "binding": "STATE",
-      "bucket_name": "job-application-agent-state"
+      "binding": "DB",
+      "database_name": "job-application-agent-private-state",
+      "database_id": "cd0ea283-b4b7-4dfa-a50e-5bf6d176d3a8"
     }
-  ]
+  ],
+  "kv_namespaces": [
+    {
+      "binding": "STATE_KV",
+      "id": "e0620459b6984471ac4534952ea2cb1f"
+    }
+  ],
+  "env": {
+    "staging": {
+      "name": "job-application-agent-state-staging",
+      "vars": {
+        "LEGACY_WRITES_DISABLED": "1"
+      },
+      "d1_databases": [
+        {
+          "binding": "DB",
+          "database_name": "job-application-agent-private-state-staging",
+          "database_id": "605a1c97-3492-4fba-aef2-bdf0cddc0d8e"
+        }
+      ],
+      "kv_namespaces": []
+    }
+  }
 }

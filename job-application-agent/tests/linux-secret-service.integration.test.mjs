@@ -18,6 +18,7 @@ test('Linux Secret Service supports the real profile CLI lifecycle', { skip: !en
   const env = {
     ...process.env,
     JOB_APPLICATION_AGENT_KEYCHAIN_SERVICE: service,
+    JOB_APPLICATION_AGENT_CLOUD_CONFIG: join(directory, 'cloud-config.json'),
     JOB_APPLICATION_AGENT_SOURCE_COMMUNITY_URL: 'http://127.0.0.1:9',
     JOB_APPLICATION_AGENT_STATE_DIR: directory,
   };

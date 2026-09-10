@@ -1,23 +1,15 @@
-# Job Application Agent — cloud state sidecar
+# Job Application Agent — private cloud state
 
-Cloud is the source of truth. Local cache: `~/Library/Application Support/job-application-agent`.
+The v2 Worker/live protocol uses private D1 for structured records and private R2 for the canonical résumé and backups when the account has R2 enabled. It also supports the existing private Workers KV namespace as a blob fallback. It is separate from telemetry and the public community registry.
 
-## Local workflow
+Each Mac/VPS agent has a distinct revocable bearer token. Only SHA-256 token hashes are stored in D1. Use the packaged CLI rather than calling the API directly:
 
 ```text
-node state-worker/bin/sync.mjs pull   # before resume, profile, or ledger work
-node state-worker/bin/sync.mjs push   # after local writes
-node state-worker/bin/sync.mjs status
-node state-worker/bin/sync.mjs enable --url <url> --token <token>
+node scripts/job-application.mjs cloud status
+node scripts/job-application.mjs cloud reconcile --dry-run
+node scripts/job-application.mjs cloud lease-acquire
 ```
 
-Bearer token lives in `~/Library/Application Support/job-application-agent-cloud/config.json` (mode `0600`). Never commit the token.
+The application-run lease lasts 15 minutes and must be renewed every five minutes. Create an intent before transmission. Mark uncertain sends `sent-unverified`; never retry them solely because a lease expired.
 
-## Cloud / computer-use agents
-
-1. `GET /v1/profile` and `GET /v1/files/*` for ledgers and resume metadata.
-2. Download `resume.pdf` to a workspace path (e.g. `./job-app-state/resume.pdf`).
-3. Use path-based ATS upload (`setInputFiles`) — do not drive a visible file picker.
-4. `POST /v1/ledgers/:name` only after visible submit success.
-
-Auth: `Authorization: Bearer <token>` on every request.
+Legacy `/v1` reads remain authenticated for cutover recovery. Legacy whole-file writes return `410` after cutover. Daily private R2 exports retain 30 days and can be restored into a separate D1 database with the tested backup module.

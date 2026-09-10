@@ -44,7 +44,12 @@ try {
     cwd: temp,
     encoding: 'utf8',
     input: input === undefined ? undefined : JSON.stringify(input),
-    env: { ...process.env, JOB_APPLICATION_AGENT_STATE_DIR: stateDir, JOB_APPLICATION_AGENT_SOURCE_COMMUNITY_URL: 'http://127.0.0.1:9' },
+    env: {
+      ...process.env,
+      JOB_APPLICATION_AGENT_STATE_DIR: stateDir,
+      JOB_APPLICATION_AGENT_CLOUD_CONFIG: path.join(temp, 'no-live-cloud-config.json'),
+      JOB_APPLICATION_AGENT_SOURCE_COMMUNITY_URL: 'http://127.0.0.1:9',
+    },
   }));
   const round = run(['round', 'start', '--stdin'], { requestedCount: 1 });
   assert.equal(round.discoveryPolicy.minSources, 3);

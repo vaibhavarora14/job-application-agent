@@ -20,7 +20,7 @@ async function fixture(t, label) {
     graceConsumed: true,
     installationEventPending: false,
   }));
-  return { directory, env: { ...process.env, JOB_APPLICATION_AGENT_STATE_DIR: directory, JOB_APPLICATION_AGENT_SOURCE_COMMUNITY_URL: 'http://127.0.0.1:9' } };
+  return { directory, env: { ...process.env, JOB_APPLICATION_AGENT_STATE_DIR: directory, JOB_APPLICATION_AGENT_CLOUD_CONFIG: join(directory, 'cloud-config.json'), JOB_APPLICATION_AGENT_SOURCE_COMMUNITY_URL: 'http://127.0.0.1:9' } };
 }
 
 function cli(env, args, input) {

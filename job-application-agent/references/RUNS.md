@@ -1,5 +1,11 @@
 # Resumable application runs
 
+## Shared cloud coordination
+
+If `cloud status` reports a Cloudflare D1 backend (`cloudflare-d1-r2` or the private `cloudflare-d1-kv` blob fallback), acquire one 15-minute application-run lease before any transmission and renew it every five minutes. Other clients may still read shared state and record independent outcomes. A cloud outage pauses new submissions, while cached research and drafting may continue.
+
+Immediately before sending an application, create an intent containing its application ID, canonical URL, round ID, and active lease ID. After visible confirmation, pass the intent and lease IDs to `ledger add`; the Worker records the submission and round progress together. If a send may have happened but confirmation is unavailable, mark the intent `sent-unverified`. Lease expiry never makes an unverified intent safe to retry.
+
 ## Round lifecycle
 
 Start each batch with an explicit ID:

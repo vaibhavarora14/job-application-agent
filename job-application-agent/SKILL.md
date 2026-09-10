@@ -20,7 +20,7 @@ Use `scripts/job-application.mjs` for private state and deterministic checks. Re
 1. Ask for a local PDF or read-only Google Docs resume URL. Import it without modifying the source.
 2. Run `profile check`. If it reports missing or legacy fields, collect only facts that cannot be preserved or defaulted, then run `profile migrate --stdin`. Use `profile set --stdin` for a new profile.
 3. Preserve identity fields during migration. Map legacy `salaryPreference` to `targetCompensation`. Add `compensationFloor` only when the candidate provides an amount, currency, and annual comparison basis.
-4. Store the profile in OS-backed profile storage (macOS Keychain, Windows Credential Manager with a DPAPI-protected local file, or Linux Secret Service via `secret-tool`). Store the canonical resume and append-only ledgers in the owner-only state directory.
+4. Store the profile in OS-backed profile storage (macOS Keychain, Windows Credential Manager with a DPAPI-protected local file, or Linux Secret Service via `secret-tool`). Store the canonical resume and append-only ledgers in the owner-only state directory. When private cloud state is configured, read and write the profile, résumé, and structured records through the v2 adapter instead. Owner-only local caches support browser uploads on macOS and Linux without Keychain access.
 5. Use `review-each` for per-application approval. Use `routine-auto` only when the current request authorizes the destination or batch and every automatic-eligibility condition passes.
 6. When the candidate explicitly grants continuing autonomy, read [references/AUTONOMY.md](references/AUTONOMY.md) and persist it with `autonomy grant --stdin`. Do not repeat skill-level upload or submission approval prompts while the active grant and profile both use `routine-auto`.
 7. Obey browser and tool confirmation requirements regardless of the stored mode or autonomy grant.
@@ -54,19 +54,21 @@ Do not lower seniority, compensation, location, work mode, or evidence threshold
 For batches, scheduled work, or resumable handoffs, read [references/RUNS.md](references/RUNS.md), create a round ID, and use the attention and friction queues.
 Check `round status` after the initial discovery pass and before submitting. Preserve source attribution independently of the ATS. A round cannot complete without recorded coverage and attribution; if one discovery source supplies more than 60% of confirmed submissions, explain why using the reviewed alternatives and their fit or access results. Do not submit weaker matches to balance source percentages. Report searched sources, blockers, source mix, and any concentration explanation when handing off or completing a round.
 
-1. Recheck employer, title, direct domain, posting status, eligibility, and `autoEligible` immediately before submission.
-2. Run `ledger check --stdin` with the internal ledger ID, canonical URL, employer job ID, company, and role when available. Review both requisition duplicate status and same-company history.
-3. Stop on a hard ledger-ID, canonical-URL, employer-job-ID, or requisition duplicate. Treat a same-company/same-role alias as a possible duplicate. Use `duplicateOverride: "NEW REQUISITION CONFIRMED"` only after verifying it is a distinct requisition.
-4. For a genuinely different role at a previously applied company, follow `companyReapply`: proceed automatically only when it returns `eligible-after-cooldown` (15 full days since the latest company application and no recorded outcome). `cooldown-active` and `follow-up-present` require the candidate's explicit approval and `companyReapplyOverride: "CANDIDATE APPROVED EARLY REAPPLICATION"`.
-5. Keep authentication in the existing browser session. Never inspect cookies, local storage, passwords, or session files.
-6. Fill only explicit profile fields, candidate-provided answers, or facts verified in the canonical resume.
-7. Follow [references/APPLICATION_GUIDANCE.md](references/APPLICATION_GUIDANCE.md) for narrative answers.
-8. Upload only the canonical resume unless the candidate explicitly provides another attachment. Resolve its absolute path with `resume path`, then follow [references/BROWSER_UPLOADS.md](references/BROWSER_UPLOADS.md). Use the browser's privileged path-based upload capability first; treat a visible native file picker as a fallback.
-9. Do not answer demographic questions. Stop for login/SSO/MFA, CAPTCHA, legal attestations, unclear authorization or compensation, sensitive identifiers, and judgment-only questions.
-10. Verify every required field, answer, attachment, and disclosure. Submit when the current request or active autonomy grant authorizes it.
-11. Record `submitted` only after visible success confirmation, using independent `discoverySource`, `discoverySourceId`, `applicationChannel`, and `roundId` values. `ledger add` automatically shares the sanitized public job metadata and durably retries on relay failure; do not run a separate manual contribution. Record no submission when confirmation is missing or ambiguous.
-12. Record workflow telemetry with `telemetry record --stdin`. Let `ledger add` emit `application_submitted`; do not emit it twice. Pass job URLs and structured metrics only through documented transient fields.
-13. Queue hard stops with `attention add --stdin` and continue elsewhere. Record reproducible general-purpose failures with `friction record --stdin`; improvement work must never delay application work.
+1. When private cloud state is configured, run `cloud status`, acquire the application-run lease with `cloud lease-acquire`, and renew it at least every five minutes. A client without the live lease may research and draft but must not submit.
+2. Recheck employer, title, direct domain, posting status, eligibility, and `autoEligible` immediately before submission.
+3. Run `ledger check --stdin` with the internal ledger ID, canonical URL, employer job ID, company, and role when available. Review both requisition duplicate status and same-company history.
+4. Stop on a hard ledger-ID, canonical-URL, employer-job-ID, or requisition duplicate. Treat a same-company/same-role alias as a possible duplicate. Use `duplicateOverride: "NEW REQUISITION CONFIRMED"` only after verifying it is a distinct requisition.
+5. For a genuinely different role at a previously applied company, follow `companyReapply`: proceed automatically only when it returns `eligible-after-cooldown` (15 full days since the latest company application and no recorded outcome). `cooldown-active` and `follow-up-present` require the candidate's explicit approval and `companyReapplyOverride: "CANDIDATE APPROVED EARLY REAPPLICATION"`.
+6. Keep authentication in the existing browser session. Never inspect cookies, local storage, passwords, or session files.
+7. Fill only explicit profile fields, candidate-provided answers, or facts verified in the canonical resume.
+8. Follow [references/APPLICATION_GUIDANCE.md](references/APPLICATION_GUIDANCE.md) for narrative answers.
+9. Upload only the canonical resume unless the candidate explicitly provides another attachment. Resolve its absolute path with `resume path`, then follow [references/BROWSER_UPLOADS.md](references/BROWSER_UPLOADS.md). Use the browser's privileged path-based upload capability first; treat a visible native file picker as a fallback.
+10. Do not answer demographic questions. Stop for login/SSO/MFA, CAPTCHA, legal attestations, unclear authorization or compensation, sensitive identifiers, and judgment-only questions.
+11. In cloud mode, create an application intent with `cloud intent-prepare --stdin` immediately before transmission. It rechecks the active lease and cloud duplicate history. If transmission occurs but confirmation is ambiguous, mark it with `cloud intent-sent --stdin`; never retry that application until the ATS or sent email is verified.
+12. Verify every required field, answer, attachment, and disclosure. Submit when the current request or active autonomy grant authorizes it.
+13. Record `submitted` only after visible success confirmation, using independent `discoverySource`, `discoverySourceId`, `applicationChannel`, and `roundId` values. In cloud mode include the returned `cloudIntentId` and active `cloudLeaseId` in `ledger add`; confirmation atomically records the application and round progress. `ledger add` automatically shares the sanitized public job metadata and durably retries on relay failure; do not run a separate manual contribution. Record no submission when confirmation is missing or ambiguous.
+14. Record workflow telemetry with `telemetry record --stdin`. Let `ledger add` emit `application_submitted`; do not emit it twice. Pass job URLs and structured metrics only through documented transient fields.
+15. Queue hard stops with `attention add --stdin` and continue elsewhere. Record reproducible general-purpose failures with `friction record --stdin`; improvement work must never delay application work.
 
 ## Outcomes and reviews
 
@@ -83,6 +85,12 @@ Check `round status` after the initial discovery pass and before submitting. Pre
 ## Commands
 
 ```text
+node scripts/job-application.mjs cloud configure --stdin
+node scripts/job-application.mjs cloud status
+node scripts/job-application.mjs cloud reconcile [--dry-run]
+node scripts/job-application.mjs cloud export [owner-only-path]
+node scripts/job-application.mjs cloud lease-acquire|lease-renew|lease-release
+node scripts/job-application.mjs cloud intent-prepare|intent-sent|intent-confirm --stdin
 node scripts/job-application.mjs profile set --stdin
 node scripts/job-application.mjs profile migrate --stdin
 node scripts/job-application.mjs profile check
