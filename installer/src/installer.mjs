@@ -35,11 +35,26 @@ async function isDirectory(filePath) {
   try { return (await lstat(filePath)).isDirectory(); } catch (error) { if (error.code === 'ENOENT') return false; throw error; }
 }
 
-async function validatePackagedSkill(source) {
+async function packagedCapabilities(source) {
+  try {
+    const value = JSON.parse(await readFile(path.join(source, 'capabilities.json'), 'utf8'));
+    return Array.isArray(value.capabilities) ? value.capabilities.filter((item) => typeof item === 'string') : [];
+  } catch (error) {
+    if (error.code === 'ENOENT') return [];
+    throw new Error('Invalid packaged skill: capabilities.json is malformed.');
+  }
+}
+
+async function validatePackagedSkill(source, requiredCapabilities = []) {
   const skillFile = path.join(source, 'SKILL.md');
   const content = await readFile(skillFile, 'utf8').catch(() => '');
   if (!content.trim()) throw new Error('Invalid packaged skill: SKILL.md is missing or empty.');
   await stat(path.join(source, 'scripts', 'job-application.mjs')).catch(() => { throw new Error('Invalid packaged skill: application CLI is missing.'); });
+  const capabilities = await packagedCapabilities(source);
+  for (const required of requiredCapabilities) {
+    if (!capabilities.includes(required)) throw new Error(`Invalid packaged skill: required capability ${required} is missing.`);
+  }
+  return capabilities;
 }
 
 async function writeConfig(configPath, config) {
@@ -131,12 +146,13 @@ export async function installSkill({
   const paths = pathsFor(home);
   const source = path.join(packageRoot, SKILL_NAME);
   await migrateLegacyCodexInstall({ homeDir, agentHome: home, legacyHome: legacyHome || resolveLegacyCodexHome(homeDir) });
-  await validatePackagedSkill(source);
+  const prior = await readInstallStatus({ homeDir, agentHome: home });
+  const capabilities = await validatePackagedSkill(source, prior.requiredCapabilities ?? []);
   await mkdir(path.dirname(paths.target), { recursive: true });
   await mkdir(paths.managerDir, { recursive: true });
   const staging = path.join(paths.managerDir, `staging-${Date.now()}-${Math.random().toString(16).slice(2)}`);
   await cp(source, staging, { recursive: true, force: true });
-  await validatePackagedSkill(staging);
+  await validatePackagedSkill(staging, prior.requiredCapabilities ?? []);
 
   const hadTarget = await exists(paths.target);
   if (hadTarget) {
@@ -151,13 +167,14 @@ export async function installSkill({
     throw error;
   }
 
-  const prior = await readInstallStatus({ homeDir, agentHome: home });
   const config = {
     installed: true,
     installedVersion: packageVersion,
     automaticUpdates: prior.installed ? prior.automaticUpdates !== false : true,
     installedAt: prior.installedAt || new Date().toISOString(),
     updatedAt: new Date().toISOString(),
+    capabilities,
+    ...(prior.requiredCapabilities ? { requiredCapabilities: prior.requiredCapabilities } : {}),
   };
   await writeConfig(paths.configPath, config);
   await syncVendorSkillCopies({ homeDir, sourceSkillDir: paths.target });

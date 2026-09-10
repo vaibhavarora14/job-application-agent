@@ -49,6 +49,8 @@ On Linux, profile storage uses the Secret Service via the `secret-tool` CLI. Ins
 
 Unlike macOS Keychain or Windows Credential Manager, the Linux Secret Service has no always-running system daemon: a keyring daemon (GNOME Keyring, KWallet, or similar) must be running in the user session for `secret-tool` to store or read the profile. On a desktop login this is normally already the case; on headless servers, containers, or SSH-only sessions, start one explicitly (e.g. `gnome-keyring-daemon --unlock --components=secrets`) before first use.
 
+For one person's agents across several trusted hosts, an optional private Cloudflare D1 + R2 backend shares profile, résumé, application, outcome, round, answer, and attention state. Each host receives a separate revocable credential, and one renewable lease ensures only one host submits applications at a time. See [`CLOUD_STATE.md`](job-application-agent/references/CLOUD_STATE.md).
+
 ## ✨ What it does
 
 | Stage | Behavior |
@@ -112,13 +114,15 @@ Discovery combines the reviewed [`SOURCES.json`](job-application-agent/reference
 
 | Data | Where it stays |
 |---|---|
-| Profile | macOS Keychain, Windows Credential Manager, or Linux Secret Service (libsecret) |
-| Résumé and ledgers | Owner-only local state directory |
+| Profile | OS credential store, or private D1 with an owner-only local cache |
+| Résumé and ledgers | Owner-only local state, or private D1 + R2 when configured |
 | Browser login | Existing browser session |
 | Community-sharing preference and delivery receipts | Owner-only local state directory |
 | Skill code | Version-controlled installation directory |
 
 Candidate data, résumés, application history, credentials, and browser sessions are never committed to this repository.
+
+Private cloud state is opt-in and isolated from public analytics/community services. Client tokens remain in owner-only host configuration, only token hashes are stored server-side, and browser/Gmail credentials never enter the backend.
 
 Anonymous structured analytics are enabled by default to improve the agent. They may include job and workflow categories, but never candidate identity, résumé content, prompts, answers, browser data, IP addresses, or raw errors.
 

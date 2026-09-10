@@ -1,12 +1,7 @@
 # Job Application Agent cloud state
 
-When working on this candidate's job applications, resume, profile, or ledgers:
+Use the installed `job-application-agent` CLI for all profile, résumé, ledger, outcome, round, and attention operations. When `cloud status` reports the v2 backend, commands reconcile authenticated record operations automatically; never use the retired whole-file push/pull flow.
 
-1. Pull cloud state before the work:
-   `node /Users/vaibhavarora/Coding/job-application-agent/state-worker/bin/sync.mjs pull`
-2. Use the installed job-application-agent skill against `~/Library/Application Support/job-application-agent`. Do not patch that skill; npm auto-updates it.
-3. Push after writes:
-   `node /Users/vaibhavarora/Coding/job-application-agent/state-worker/bin/sync.mjs push`
-4. Cloud computer-use agents: `GET /v1/files/resume.pdf` into a workspace path, then use that path for ATS upload (`setInputFiles` / file-chooser). Never send resume, profile, or ledgers to the telemetry worker.
+Acquire the shared application-run lease before browser transmission, create an intent immediately before submission, and confirm it only after visible ATS success. Download the canonical résumé through `resume path` and upload by direct absolute path. Never send private state to the telemetry or community Workers.
 
-Bearer token lives in `~/Library/Application Support/job-application-agent-cloud/config.json` (mode 0600). Worker: `https://job-application-agent-state.varora1406.workers.dev`. Full protocol: `state-worker/AGENT.md`.
+The per-host bearer token is owner-only local configuration. Full protocol: `state-worker/AGENT.md`.

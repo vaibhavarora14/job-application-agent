@@ -89,6 +89,22 @@ test('a failed staged install leaves the current skill untouched', async () => {
   assert.equal(await readFile(path.join(f.agentHome, 'skills', 'job-application-agent', 'SKILL.md'), 'utf8'), '# Version one\n');
 });
 
+test('an updater cannot replace a cloud-enabled installation with a package lacking cloud support', async () => {
+  const f = await fixture();
+  await writeFile(path.join(f.skillSource, 'capabilities.json'), '{"capabilities":["cloud-state-v2"]}\n');
+  await installSkill({ packageRoot: f.packageRoot, packageVersion: '3.3.1', homeDir: f.homeDir, agentHome: f.agentHome, platform: 'test', scheduler: false });
+  const configPath = path.join(f.agentHome, 'job-application-agent', CONFIG_FILENAME);
+  const config = JSON.parse(await readFile(configPath, 'utf8'));
+  await writeFile(configPath, `${JSON.stringify({ ...config, requiredCapabilities: ['cloud-state-v2'] })}\n`);
+  await writeFile(path.join(f.skillSource, 'capabilities.json'), '{"capabilities":[]}\n');
+
+  await assert.rejects(
+    updateSkill({ packageRoot: f.packageRoot, packageVersion: '3.4.0', homeDir: f.homeDir, agentHome: f.agentHome, platform: 'test', scheduler: false }),
+    /required capability.*cloud-state-v2/i,
+  );
+  assert.match(await readFile(path.join(f.agentHome, 'skills', 'job-application-agent', 'capabilities.json'), 'utf8'), /cloud-state-v2/);
+});
+
 test('copies the skill into an existing vendor skills directory and skips missing vendor homes', async () => {
   const f = await fixture();
   const cursorSkills = path.join(f.homeDir, '.cursor', 'skills');

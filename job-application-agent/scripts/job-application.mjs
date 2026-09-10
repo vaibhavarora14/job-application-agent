@@ -12,6 +12,7 @@ import { SourceCommunityClient } from './source-community-client.mjs';
 import { normalizeCommunityJob, normalizeCommunitySource } from './source-community-schema.mjs';
 import { TelemetryClient } from './telemetry-client.mjs';
 import { jobIdentity } from './telemetry-schema.mjs';
+import { CloudStateClient, defaultCloudConfigPath, enableCloudUpdateGuard, saveCloudConfig } from './cloud-state-client.mjs';
 
 const SOURCES = new Set(['linkedin', 'greenhouse', 'lever', 'ashby', 'workable', 'comeet', 'workday', 'rippling', 'smartrecruiters', 'google-form', 'company', 'email', 'other']);
 const DISCOVERY_SOURCES = new Set(['direct-company', 'linkedin', 'x', 'yc', 'hacker-news', 'job-board', 'email', 'user-supplied', 'web-search', 'other']);
@@ -63,6 +64,17 @@ function stateDir() {
 }
 
 const secretStore = createSecretStore({ stateDir });
+const cloudState = new CloudStateClient({ stateDir: stateDir(), configPath: process.env.JOB_APPLICATION_AGENT_CLOUD_CONFIG ?? defaultCloudConfigPath() });
+
+function cachedCloudProfileRaw() {
+  try {
+    const config = JSON.parse(readFileSync(process.env.JOB_APPLICATION_AGENT_CLOUD_CONFIG ?? defaultCloudConfigPath(), 'utf8'));
+    if (config.version !== 2) return null;
+    return object(JSON.parse(readFileSync(join(stateDir(), 'cloud-profile-cache.json'), 'utf8')), 'profile');
+  } catch {
+    return null;
+  }
+}
 
 export function durationBucket(milliseconds) {
   if (milliseconds < 1_000) return 'under-1s';
@@ -600,6 +612,8 @@ export function buildReview(entries, outcomeEntries = [], acknowledgements = [],
 }
 
 function storedProfileRaw() {
+  const cloudProfile = cachedCloudProfileRaw();
+  if (cloudProfile) return cloudProfile;
   try { return object(JSON.parse(secretStore.readProfile()), 'profile'); } catch (error) {
     if (/missing or unreadable|could not read|could not store|Windows profile storage|not supported on this platform|secret-tool is not installed/i.test(error.message)) throw error;
     throw new Error('The stored profile is missing or unreadable. Run profile set again.');
@@ -874,8 +888,14 @@ async function autonomyRevoke() {
 
 async function storeProfile(profileInput) {
   const profile = validateProfile(profileInput);
-  if (process.platform === 'win32') await ensureStateDir();
-  secretStore.writeProfile(JSON.stringify(profile));
+  if (await cloudState.configured()) {
+    const dir = await ensureStateDir();
+    await writePrivateJson(join(dir, 'cloud-profile-cache.json'), profile);
+    await cloudState.putDocumentCurrent('profile', profile);
+  } else {
+    if (process.platform === 'win32') await ensureStateDir();
+    secretStore.writeProfile(JSON.stringify(profile));
+  }
   return profile;
 }
 
@@ -922,11 +942,16 @@ async function importResume(source) {
   await chmod(target, 0o600);
   const metadata = { source: sourceLabel, importedAt: new Date().toISOString(), sha256: createHash('sha256').update(bytes).digest('hex'), bytes: bytes.length };
   await writeFile(join(dir, 'resume.json'), `${JSON.stringify(metadata, null, 2)}\n`, { mode: 0o600 });
+  if (await cloudState.configured()) {
+    await cloudState.putFileCurrent('resume.pdf', bytes);
+    await cloudState.putFileCurrent('resume.json', Buffer.from(JSON.stringify(metadata)));
+  }
   return { path: target, sha256: metadata.sha256, bytes: metadata.bytes };
 }
 
 async function canonicalResumePath() {
   const target = join(await ensureStateDir(), 'resume.pdf');
+  if (await cloudState.configured()) await cloudState.fetchResume();
   try {
     const details = await stat(target);
     if (!details.isFile()) throw new Error('Canonical resume path is not a file. Import the resume again.');
@@ -1005,7 +1030,7 @@ async function ledgerCheck(candidate) {
   return duplicateResult(entries, candidate, outcomes);
 }
 
-async function ledgerAdd(entryInput, duplicateOverride, companyReapplyOverride) {
+async function ledgerAdd(entryInput, duplicateOverride, companyReapplyOverride, cloudIntent = null) {
   const entry = validateLedgerEntry(entryInput);
   return withStateLock('applications', async (dir) => {
     const file = join(dir, 'applications.ndjson');
@@ -1035,7 +1060,15 @@ async function ledgerAdd(entryInput, duplicateOverride, companyReapplyOverride) 
       await appendFile(roundsFile, `${JSON.stringify({ type: 'submission-confirmed', roundId: entry.roundId, applicationId: entry.id, occurredAt: entry.submittedAt })}\n`, { mode: 0o600 });
       await chmod(roundsFile, 0o600);
     }
-    return { recorded: storedEntry.id, review: buildReview([...entries, storedEntry]) };
+    if (await cloudState.configured()) {
+      if (cloudIntent?.intentId && cloudIntent?.leaseId) {
+        await cloudState.confirmIntent(cloudIntent.intentId, storedEntry, cloudIntent.leaseId, `application:${storedEntry.id}:${storedEntry.submittedAt}`);
+      } else {
+        await cloudState.appendRecord('applications', storedEntry, { recordKey: storedEntry.id, idempotencyKey: `application:${storedEntry.id}:${storedEntry.submittedAt}`, occurredAt: storedEntry.submittedAt, queueOnFailure: true });
+        if (entry.roundId) await cloudState.appendRecord('rounds', { type: 'submission-confirmed', roundId: entry.roundId, applicationId: entry.id, occurredAt: entry.submittedAt }, { recordKey: entry.roundId, idempotencyKey: `round-confirmation:${entry.roundId}:${entry.id}`, occurredAt: entry.submittedAt, queueOnFailure: true });
+      }
+    }
+    return { recorded: storedEntry.id, review: buildReview([...entries, storedEntry]), ...(cloudIntent ? { cloudIntent: cloudIntent.intentId } : {}) };
   });
 }
 
@@ -1044,6 +1077,10 @@ async function appendPrivateEvent(name, event) {
     const file = join(dir, `${name}.ndjson`);
     await appendFile(file, `${JSON.stringify(event)}\n`, { mode: 0o600 });
     await chmod(file, 0o600);
+    if (await cloudState.configured() && ['rounds', 'attention', 'friction'].includes(name)) {
+      const key = event.id ?? event.roundId ?? event.applicationId ?? randomUUID();
+      await cloudState.appendRecord(name, event, { recordKey: key, idempotencyKey: `${name}:${createHash('sha256').update(JSON.stringify(event)).digest('hex')}`, occurredAt: event.occurredAt, queueOnFailure: true });
+    }
     return event;
   });
 }
@@ -1237,6 +1274,14 @@ async function ledgerOutcome(outcomeInput) {
     return { stored: true, enriched };
   });
   const applications = await jsonLines(join(await ensureStateDir(), 'applications.ndjson'));
+  if (storage.stored && await cloudState.configured()) {
+    await cloudState.appendRecord('outcomes', event, {
+      recordKey: event.id,
+      idempotencyKey: `outcome:${event.id}:${event.status}:${event.occurredAt}:${createHash('sha256').update(JSON.stringify(event)).digest('hex')}`,
+      occurredAt: event.occurredAt,
+      queueOnFailure: true,
+    });
+  }
   return { result: { recorded: storage.stored, duplicate: !storage.stored, enriched: storage.enriched, recordedOutcome: event.id, status }, application: applications.find((entry) => entry.id === event.id) ?? null, event };
 }
 
@@ -1259,7 +1304,54 @@ async function ledgerReviewAcknowledge(input) {
     await appendFile(file, `${JSON.stringify(event)}\n`, { mode: 0o600 });
     await chmod(file, 0o600);
   });
+  if (await cloudState.configured()) await cloudState.appendRecord('reviews', event, { recordKey: reviewedAt, idempotencyKey: `review:${reviewedAt}`, occurredAt: reviewedAt, queueOnFailure: true });
   return { acknowledged: true, ...event };
+}
+
+async function prepareCloudState(area, action) {
+  if (!await cloudState.configured() || (area === 'cloud' && action === 'configure')) return;
+  await cloudState.reconcile({ dryRun: false, provenance: 'automatic-recovery' });
+  try { await cloudState.refreshProfileCache(); }
+  catch (error) { if (!/\(404\)/.test(error.message)) throw error; }
+}
+
+async function cloudCommand(action, value) {
+  if (action === 'configure' && value === '--stdin') {
+    const configured = await saveCloudConfig(await jsonStdin(), { configPath: process.env.JOB_APPLICATION_AGENT_CLOUD_CONFIG ?? defaultCloudConfigPath() });
+    const updateGuard = await enableCloudUpdateGuard();
+    return { configured: true, url: configured.url, clientId: configured.clientId ?? null, clientName: configured.clientName ?? null, token: configured.token, updateGuard };
+  }
+  if (action === 'status' && value == null) return cloudState.status();
+  if (action === 'reconcile' && value === '--dry-run') return cloudState.reconcile({ dryRun: true });
+  if (action === 'reconcile' && value == null) return cloudState.reconcile({ dryRun: false });
+  if (action === 'export') return cloudState.exportTo(value ?? null);
+  if (action === 'lease-acquire' && value == null) {
+    const lease = await cloudState.acquireLease();
+    await writePrivateJson(join(await ensureStateDir(), 'cloud-lease.json'), lease);
+    return lease;
+  }
+  if (action === 'lease-renew' && value == null) {
+    const lease = await readPrivateJson(join(await ensureStateDir(), 'cloud-lease.json'), null);
+    if (!lease?.leaseId) throw new Error('No local cloud lease is recorded. Run cloud lease-acquire.');
+    const renewed = await cloudState.renewLease(lease.leaseId);
+    await writePrivateJson(join(await ensureStateDir(), 'cloud-lease.json'), renewed);
+    return renewed;
+  }
+  if (action === 'lease-release' && value == null) {
+    const lease = await readPrivateJson(join(await ensureStateDir(), 'cloud-lease.json'), null);
+    if (!lease?.leaseId) throw new Error('No local cloud lease is recorded.');
+    return cloudState.releaseLease(lease.leaseId);
+  }
+  if (action === 'intent-prepare' && value === '--stdin') return cloudState.createIntent(await jsonStdin());
+  if (action === 'intent-sent' && value === '--stdin') {
+    const input = await jsonStdin();
+    return cloudState.markIntentSentUnverified(string(input.intentId, 'intentId', 200), string(input.leaseId, 'leaseId', 200));
+  }
+  if (action === 'intent-confirm' && value === '--stdin') {
+    const input = await jsonStdin();
+    return cloudState.confirmIntent(string(input.intentId, 'intentId', 200), object(input.application, 'application'), string(input.leaseId, 'leaseId', 200), input.idempotencyKey);
+  }
+  throw new Error('Usage: cloud status|configure --stdin|reconcile [--dry-run]|export [path]|lease-acquire|lease-renew|lease-release|intent-prepare --stdin|intent-sent --stdin|intent-confirm --stdin');
 }
 
 function print(value) {
@@ -1316,7 +1408,8 @@ function roundCompletedTelemetry(round) {
 async function executeCommand([area, action, value], telemetry, session, community) {
   const domainEvents = [];
   let result;
-  if (area === 'profile' && action === 'set' && value === '--stdin') {
+  if (area === 'cloud') result = await cloudCommand(action, value);
+  else if (area === 'profile' && action === 'set' && value === '--stdin') {
     const profile = await jsonStdin();
     result = await profileSet(profile);
   } else if (area === 'profile' && action === 'migrate' && value === '--stdin') {
@@ -1338,7 +1431,7 @@ async function executeCommand([area, action, value], telemetry, session, communi
     const input = await jsonStdin();
     const telemetryDetails = validateSubmissionTelemetry(input.telemetry);
     const entry = validateLedgerEntry(input);
-    result = await ledgerAdd(entry, input.duplicateOverride, input.companyReapplyOverride);
+    result = await ledgerAdd(entry, input.duplicateOverride, input.companyReapplyOverride, input.cloudIntentId && input.cloudLeaseId ? { intentId: input.cloudIntentId, leaseId: input.cloudLeaseId } : null);
     result.communityJob = await communityJobsSync(community, { limit: 1, applicationIds: [entry.id] });
     domainEvents.push(await telemetryApplicationSubmitted(entry, telemetryDetails));
   } else if (area === 'ledger' && action === 'outcome' && value === '--stdin') {
@@ -1382,7 +1475,7 @@ async function executeCommand([area, action, value], telemetry, session, communi
   else if (area === 'attention' && action === 'resolve' && value === '--stdin') result = await attentionResolve(await jsonStdin());
   else if (area === 'friction' && action === 'record' && value === '--stdin') result = await frictionRecord(await jsonStdin());
   else if (area === 'friction' && action === 'list' && value == null) result = await frictionList();
-  else throw new Error('Usage: profile set|migrate --stdin; profile check|field <name>; resume import <url-or-pdf>|path; score --stdin; ledger check|add|outcome|review-ack --stdin; ledger review; autonomy grant --stdin|status|preview|revoke; round start|complete --stdin|status [round-id]; sources list [--stdin]|jobs [--stdin]|suggest --stdin|pending|sync|sharing status|enable|disable|reset; attention add|resolve --stdin|list; friction record --stdin|list; telemetry status|enable|disable|reset|preview --stdin|record --stdin');
+  else throw new Error('Usage: cloud status|configure --stdin|reconcile [--dry-run]|export [path]|lease-acquire|lease-renew|lease-release|intent-prepare --stdin|intent-sent --stdin|intent-confirm --stdin; profile set|migrate --stdin; profile check|field <name>; resume import <url-or-pdf>|path; score --stdin; ledger check|add|outcome|review-ack --stdin; ledger review; autonomy grant --stdin|status|preview|revoke; round start|complete --stdin|status [round-id]; sources list [--stdin]|jobs [--stdin]|suggest --stdin|pending|sync|sharing status|enable|disable|reset; attention add|resolve --stdin|list; friction record --stdin|list; telemetry status|enable|disable|reset|preview --stdin|record --stdin');
   for (const event of domainEvents) await telemetry.record(event, session);
   return result;
 }
@@ -1415,6 +1508,8 @@ async function main(args) {
     }
     throw new Error('Usage: telemetry status|enable|disable|reset|preview --stdin|record --stdin');
   }
+
+  await prepareCloudState(area, action);
 
   const command = commandCategory(args);
   const session = await telemetry.beginCommand(command);
