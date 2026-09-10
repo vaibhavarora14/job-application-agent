@@ -24,7 +24,7 @@ Use `scripts/job-application.mjs` for private state and deterministic checks. Re
 5. Use `review-each` for per-application approval. Use `routine-auto` only when the current request authorizes the destination or batch and every automatic-eligibility condition passes.
 6. When the candidate explicitly grants continuing autonomy, read [references/AUTONOMY.md](references/AUTONOMY.md) and persist it with `autonomy grant --stdin`. Do not repeat skill-level upload or submission approval prompts while the active grant and profile both use `routine-auto`.
 7. Obey browser and tool confirmation requirements regardless of the stored mode or autonomy grant.
-8. Disclose default-enabled structured anonymous analytics and the `telemetry disable` control. Disclose default-enabled anonymous community sharing of confirmed public job links and repeatable discovery sources, plus the independent `sources sharing disable` control. The CLI also displays these disclosures before the first eligible transmission.
+8. Disclose default-enabled structured usage analytics and separate default-enabled name/email sharing with the maintainer through private PostHog analytics for support and product improvement. Explain `telemetry identity disable` to keep future analytics anonymous and `telemetry disable` to stop all analytics. Relay the CLI disclosure to the user before running another command; the disclosure command never sends identity. Use only the explicit saved candidate profile name/email, never names or emails scraped from conversation, résumés, job pages, or recruiter contacts. Honor an opt-out immediately. Disclose default-enabled anonymous community sharing of confirmed public job links and repeatable discovery sources, plus the independent `sources sharing disable` control. The CLI also displays these disclosures before the first eligible transmission.
 
 Never store passwords, MFA codes, government IDs, demographic data, CAPTCHA answers, browser session data, or inferred candidate facts.
 
@@ -33,6 +33,7 @@ Never store passwords, MFA codes, government IDs, demographic data, CAPTCHA answ
 Read [references/SOURCES.md](references/SOURCES.md) before the first discovery pass in a workflow.
 
 1. Run `sources jobs` for recently confirmed direct job links and `sources list` (optionally filtered) for the highest-signal packaged and maintainer-reviewed discovery sources. Resolve every lead to the direct employer or ATS page.
+   For each round, select at least three distinct relevant discovery sources before applying. Search across them before working deeply through one feed; include alternatives to the previous round's dominant source. Record each actual search, including zero suitable results, or an observed access blocker with `round source --stdin`. Two YC views count as one network; recruiter inboxes and user-supplied links supplement discovery but do not satisfy the three-source minimum. Do not claim that listing the catalog means a board was searched. Keep a blocked source in the report and continue to accessible alternatives.
 2. Attribute the lead with coarse `discoverySource`, stable packaged or community `discoverySourceId` when known, and independent `applicationChannel`. Treat a one-off user link as `user-supplied`. Whenever a user or agent discovers a repeatable public board, feed, directory, or careers index that is not already listed, run `sources suggest --stdin`; the CLI contributes its sanitized metadata by default unless community sharing has been disabled.
 3. Verify the application channel immediately before assessment. Mark it `active`, `closed`, or `unclear`.
 4. Classify eligibility only after checking residence, location, work authorization, sponsorship, schedule, and employment type.
@@ -51,6 +52,7 @@ Do not lower seniority, compensation, location, work mode, or evidence threshold
 ## Apply
 
 For batches, scheduled work, or resumable handoffs, read [references/RUNS.md](references/RUNS.md), create a round ID, and use the attention and friction queues.
+Check `round status` after the initial discovery pass and before submitting. Preserve source attribution independently of the ATS. A round cannot complete without recorded coverage and attribution; if one discovery source supplies more than 60% of confirmed submissions, explain why using the reviewed alternatives and their fit or access results. Do not submit weaker matches to balance source percentages. Report searched sources, blockers, source mix, and any concentration explanation when handing off or completing a round.
 
 1. When private cloud state is configured, run `cloud status`, acquire the application-run lease with `cloud lease-acquire`, and renew it at least every five minutes. A client without the live lease may research and draft but must not submit.
 2. Recheck employer, title, direct domain, posting status, eligibility, and `autoEligible` immediately before submission.
@@ -103,7 +105,7 @@ node scripts/job-application.mjs ledger review
 node scripts/job-application.mjs ledger review-ack --stdin
 node scripts/job-application.mjs autonomy grant --stdin
 node scripts/job-application.mjs autonomy status|preview|revoke
-node scripts/job-application.mjs round start|complete --stdin
+node scripts/job-application.mjs round start|source|complete --stdin
 node scripts/job-application.mjs round status [round-id]
 node scripts/job-application.mjs sources list [--stdin]
 node scripts/job-application.mjs sources jobs [--stdin]
@@ -116,6 +118,7 @@ node scripts/job-application.mjs attention list
 node scripts/job-application.mjs friction record --stdin
 node scripts/job-application.mjs friction list
 node scripts/job-application.mjs telemetry status|enable|disable|reset
+node scripts/job-application.mjs telemetry identity status|enable|disable
 node scripts/job-application.mjs telemetry preview --stdin
 node scripts/job-application.mjs telemetry record --stdin
 ```

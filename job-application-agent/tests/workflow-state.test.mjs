@@ -121,13 +121,85 @@ test('counts only unique confirmed ledger submissions for an explicit round', as
   assert.equal(status.blockedCount, 1);
   assert.equal(status.completed, false);
 
-  const completed = cli(env, ['round', 'complete', '--stdin'], { roundId: started.roundId });
+  for (const sourceId of ['linkedin-jobs-feed', 'indeed', 'hacker-news-who-is-hiring']) {
+    cli(env, ['round', 'source', '--stdin'], {
+      roundId: started.roundId, sourceId, status: 'searched', reviewedCount: 30, qualifiedCount: sourceId === 'linkedin-jobs-feed' ? 30 : 0,
+      evidence: 'Reviewed matching postings against the unchanged target; other leads did not qualify.',
+      applicationIds: sourceId === 'linkedin-jobs-feed' ? Array.from({ length: 30 }, (_, i) => `round-role-${i}`) : [],
+    });
+  }
+  const completed = cli(env, ['round', 'complete', '--stdin'], { roundId: started.roundId, concentrationReason: 'stronger-fit', concentrationEvidence: 'The other searched sources had no qualifying roles; all selected roles met the target.' });
   assert.equal(completed.completed, true);
   assert.equal(cli(env, ['round', 'status', started.roundId]).completed, true);
   const roundEvents = (await readFile(join(directory, 'rounds.ndjson'), 'utf8')).trim().split('\n').map(JSON.parse);
   assert.equal(roundEvents.filter((event) => event.type === 'submission-confirmed').length, 30);
-  assert.equal(roundEvents.length, 32);
+  assert.equal(roundEvents.length, 35);
   if (process.platform !== 'win32') assert.equal((await stat(join(directory, 'rounds.ndjson'))).mode & 0o777, 0o600);
+});
+
+test('round completion requires distinct source coverage and explains concentration without imposing submission quotas', async (t) => {
+  const { env } = await fixture(t, 'source-coverage');
+  const { roundId } = cli(env, ['round', 'start', '--stdin'], { requestedCount: 2 });
+  for (const i of [1, 2]) cli(env, ['ledger', 'add', '--stdin'], submission(i, roundId, { discoverySourceId: 'linkedin-jobs-feed' }));
+  assert.match(cliFailure(env, ['round', 'complete', '--stdin'], { roundId }).stderr, /3 distinct discovery sources/i);
+  const check = { roundId, sourceId: 'linkedin-jobs-feed', status: 'searched', reviewedCount: 10, qualifiedCount: 2, evidence: 'Reviewed ten relevant postings using the target constraints.' };
+  cli(env, ['round', 'source', '--stdin'], check);
+  cli(env, ['round', 'source', '--stdin'], check);
+  assert.equal(cli(env, ['round', 'status', roundId]).discovery.attemptedSourceCount, 1);
+  cli(env, ['round', 'source', '--stdin'], { ...check, sourceId: 'indeed', qualifiedCount: 0 });
+  cli(env, ['round', 'source', '--stdin'], { ...check, sourceId: 'hacker-news-who-is-hiring', status: 'blocked', reviewedCount: 0, qualifiedCount: 0, blocker: 'site-error' });
+  const status = cli(env, ['round', 'status', roundId]);
+  assert.equal(status.discovery.coverageSatisfied, true);
+  assert.equal(status.discovery.searchedSourceCount, 2);
+  assert.equal(status.discovery.blockedSourceCount, 1);
+  assert.equal(status.discovery.maxSourceSharePercent, 100);
+  assert.match(cliFailure(env, ['round', 'complete', '--stdin'], { roundId }).stderr, /concentration/i);
+  const completed = cli(env, ['round', 'complete', '--stdin'], { roundId, concentrationReason: 'stronger-fit', concentrationEvidence: 'Only LinkedIn produced qualifying roles; Indeed had none and the third source was unavailable.' });
+  assert.equal(completed.completed, true);
+  assert.equal(cli(env, ['round', 'status', roundId]).discovery.concentrationReason, 'stronger-fit');
+  assert.match(cliFailure(env, ['round', 'source', '--stdin'], check).stderr, /completed round/i);
+});
+
+test('discovery coverage rejects invalid reports and requires attribution without rewriting confirmed ledger rows', async (t) => {
+  const { env, directory } = await fixture(t, 'source-validation');
+  const { roundId } = cli(env, ['round', 'start', '--stdin'], { requestedCount: 1 });
+  cli(env, ['ledger', 'add', '--stdin'], submission(1, roundId));
+  const before = await readFile(join(directory, 'applications.ndjson'), 'utf8');
+  const check = { roundId, sourceId: 'linkedin-jobs-feed', status: 'searched', reviewedCount: 4, qualifiedCount: 1, evidence: 'Checked relevant listings against the candidate target.' };
+  for (const bad of [{ sourceId: 'imaginary-board' }, { qualifiedCount: 5 }, { status: 'blocked' }, { applicationIds: ['not-in-round'] }, { evidence: '' }, { privateProfile: 'forbidden' }]) {
+    assert.equal(cliFailure(env, ['round', 'source', '--stdin'], { ...check, ...bad }).status, 1);
+  }
+  for (const sourceId of ['linkedin-jobs-feed', 'indeed', 'hacker-news-who-is-hiring']) cli(env, ['round', 'source', '--stdin'], { ...check, sourceId });
+  assert.match(cliFailure(env, ['round', 'complete', '--stdin'], { roundId }).stderr, /attribution/i);
+  cli(env, ['round', 'source', '--stdin'], { ...check, applicationIds: ['round-role-1'] });
+  assert.equal(cli(env, ['round', 'status', roundId]).discovery.unattributedCount, 0);
+  assert.equal(await readFile(join(directory, 'applications.ndjson'), 'utf8'), before);
+});
+
+test('source diversity is independent of ATS and concentration explanations are unnecessary for a balanced mix', async (t) => {
+  const { env } = await fixture(t, 'balanced-discovery');
+  const { roundId } = cli(env, ['round', 'start', '--stdin'], { requestedCount: 5 });
+  const ids = ['linkedin-jobs-feed', 'indeed', 'hacker-news-who-is-hiring'];
+  for (const sourceId of ids) cli(env, ['round', 'source', '--stdin'], { roundId, sourceId, status: 'searched', reviewedCount: 3, qualifiedCount: 2, evidence: 'Reviewed relevant postings and verified target fit.' });
+  for (let i = 1; i <= 5; i++) cli(env, ['ledger', 'add', '--stdin'], submission(i, roundId, { discoverySourceId: ids[(i - 1) % 3], applicationChannel: 'ashby' }));
+  const completed = cli(env, ['round', 'complete', '--stdin'], { roundId });
+  assert.equal(completed.discovery.maxSourceSharePercent, 40);
+  assert.equal(completed.discovery.concentrationNeedsExplanation, false);
+  assert.equal(cli(env, ['round', 'complete', '--stdin'], { roundId }).completionRecorded, false);
+});
+
+test('blocked-only attempts and two views of the same network do not satisfy discovery', async (t) => {
+  const { env } = await fixture(t, 'blocked-discovery');
+  const { roundId } = cli(env, ['round', 'start', '--stdin'], { requestedCount: 1 });
+  const check = { roundId, status: 'blocked', reviewedCount: 0, qualifiedCount: 0, blocker: 'login', evidence: 'Source requires an authenticated session that is unavailable.' };
+  for (const sourceId of ['linkedin-jobs-feed', 'yc-work-at-a-startup', 'yc-company-directory']) cli(env, ['round', 'source', '--stdin'], { ...check, sourceId });
+  assert.equal(cli(env, ['round', 'status', roundId]).discovery.attemptedSourceCount, 2);
+  cli(env, ['round', 'source', '--stdin'], { ...check, sourceId: 'indeed' });
+  assert.equal(cli(env, ['round', 'status', roundId]).discovery.coverageSatisfied, false);
+  const { blocker, ...searched } = check;
+  cli(env, ['round', 'source', '--stdin'], { ...searched, sourceId: 'indeed', status: 'searched', reviewedCount: 1, qualifiedCount: 1 });
+  cli(env, ['round', 'source', '--stdin'], { ...check, sourceId: 'indeed' });
+  assert.equal(cli(env, ['round', 'status', roundId]).discovery.coverageSatisfied, true);
 });
 
 test('ships a filterable global discovery source catalog and tracks source attribution', async (t) => {

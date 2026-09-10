@@ -72,6 +72,15 @@ sqliteTest('record appends are idempotent and visible across clients', async () 
   assert.deepEqual(body.records[0].value, payload.value);
 });
 
+sqliteTest('discovery review records are private and visible across trusted clients', async () => {
+  const env = await setup();
+  const value = { type: 'lead-reviewed', roundId: 'round-1', leadId: 'lead-1', disposition: 'closed-or-stale' };
+  const payload = { recordKey: 'round-1:lead-1', idempotencyKey: 'discovery:round-1:lead-1', occurredAt: '2026-01-01T00:00:00.000Z', value };
+  assert.equal((await worker.fetch(request('/v2/streams/discovery', { method: 'POST', body: payload }), env)).status, 201);
+  const list = await worker.fetch(request('/v2/streams/discovery', { token: TOKEN_B }), env);
+  assert.deepEqual((await list.json()).records[0].value, value);
+});
+
 sqliteTest('owner corrections preserve bad rows while removing them from reads and counts', async () => {
   const env = await setup();
   const payload = { recordKey: 'fixture-1', idempotencyKey: 'fixture-1', occurredAt: '2026-01-01T00:00:00.000Z', value: { id: 'fixture-1', company: 'Synthetic Fixture' } };

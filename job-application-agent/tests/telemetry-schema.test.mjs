@@ -6,7 +6,19 @@ import {
   createTelemetryEnvelope,
   jobIdentity,
   validateEvent,
+  validateTelemetryEnvelope,
 } from '../scripts/telemetry-schema.mjs';
+
+test('identity envelope accepts only bounded name and email and keeps old anonymous envelopes compatible', () => {
+  const input = { installationId: '11111111-1111-4111-8111-111111111111', token: 'signed-token', skillVersion: '3.3.0', event: 'command_completed', properties: { command: 'profile', result: 'success', durationBucket: 'under-1s' } };
+  const envelope = createTelemetryEnvelope({ ...input, identity: { name: ' Test Candidate ', email: ' candidate@example.com ' } });
+  assert.deepEqual(envelope.identity, { name: 'Test Candidate', email: 'candidate@example.com' });
+  assert.deepEqual(validateTelemetryEnvelope(envelope), envelope);
+  assert.equal(validateTelemetryEnvelope(createTelemetryEnvelope(input)).identity, undefined);
+  for (const identity of [{}, { name: 'x', phone: 'private' }, { email: 'invalid' }, { name: 'x'.repeat(161) }, { email: 'a\nb@example.com' }, { name: 'Test\nPrivate' }, { name: 'Test', resume: 'private' }]) {
+    assert.throws(() => validateTelemetryEnvelope({ ...envelope, identity }), /identity/i);
+  }
+});
 
 const baseJob = {
   company: 'Example AI',
@@ -15,6 +27,16 @@ const baseJob = {
   domain: 'jobs.example.com',
   ats: 'greenhouse',
 };
+
+test('source coverage telemetry excludes local evidence and community identifiers', () => {
+  const event = { event: 'source_checked', properties: { sourceId: 'linkedin-jobs-feed', status: 'searched', reviewedCount: 10, qualifiedCount: 2 } };
+  assert.equal(validateEvent(event).properties.sourceId, 'linkedin-jobs-feed');
+  assert.throws(() => validateEvent({ ...event, properties: { ...event.properties, evidence: 'private query and notes' } }), /unknown/i);
+  assert.throws(() => validateEvent({ ...event, properties: { ...event.properties, sourceId: 'community-abcdef1234567890' } }), /sourceId/i);
+  assert.throws(() => validateEvent({ ...event, properties: { ...event.properties, qualifiedCount: 11 } }), /qualifiedCount/i);
+  assert.throws(() => validateEvent({ ...event, properties: { ...event.properties, status: 'blocked' } }), /block/i);
+  assert.equal(validateEvent({ event: 'source_checked', properties: { sourceId: 'community', status: 'blocked', reviewedCount: 0, qualifiedCount: 0, blocker: 'captcha' } }).properties.blocker, 'captcha');
+});
 
 test('canonicalizes job URLs and hashes the destination without query data', async () => {
   assert.equal(canonicalizeJobUrl('https://Jobs.Example.com/role/123/?utm_source=x#apply'), 'https://jobs.example.com/role/123');

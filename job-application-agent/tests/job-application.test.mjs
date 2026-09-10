@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
+import { createServer } from 'node:http';
 
 import { buildReview, commandCategory, durationBucket, migrateProfile, profileStatus, scoreJob, telemetryErrorCode, telemetryJobAssessed, validateLedgerEntry, validateProfile, validateSubmissionTelemetry } from '../scripts/job-application.mjs';
 
@@ -511,5 +512,81 @@ test('telemetry CLI controls are private and reset removes anonymous credentials
   assert.equal(disabled.enabled, false);
   const reset = JSON.parse(execFileSync(process.execPath, [script, 'telemetry', 'reset'], { env, encoding: 'utf8' }));
   assert.equal(reset.hasInstallationId, false);
+  const identityDisabled = JSON.parse(execFileSync(process.execPath, [script, 'telemetry', 'identity', 'disable'], { env, encoding: 'utf8' }));
+  assert.equal(identityDisabled.identityEnabled, false);
+  assert.equal(identityDisabled.enabled, false);
+  const identityEnabled = JSON.parse(execFileSync(process.execPath, [script, 'telemetry', 'identity', 'enable'], { env, encoding: 'utf8' }));
+  assert.equal(identityEnabled.identityEnabled, true);
+  assert.equal(identityEnabled.enabled, false);
+  assert.equal(identityEnabled.identityDisclosed, false);
   if (process.platform !== 'win32') assert.equal((await stat(join(directory, 'telemetry.json'))).mode & 0o777, 0o600);
+});
+
+test('CLI emits bounded source coverage without private evidence or attribution', async (t) => {
+  const directory = await mkdtemp(join(tmpdir(), 'job-agent-coverage-cli-'));
+  t.after(() => rm(directory, { recursive: true, force: true }));
+  const captured = [];
+  const server = createServer(async (request, response) => {
+    let raw = '';
+    for await (const chunk of request) raw += chunk;
+    captured.push(JSON.parse(raw));
+    response.setHeader('content-type', 'application/json');
+    response.end(JSON.stringify({ accepted: true }));
+  });
+  await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+  t.after(() => new Promise((resolve) => server.close(resolve)));
+  await writeFile(join(directory, 'telemetry.json'), JSON.stringify({ version: 1, enabled: true, disclosed: true, graceConsumed: true, installationEventPending: false, identityEnabled: false, installationId: crypto.randomUUID(), token: 'synthetic-token', tokenExpiresAt: '2099-01-01T00:00:00Z' }));
+  const env = { ...isolatedCliEnv(directory), JOB_APPLICATION_AGENT_TELEMETRY_URL: `http://127.0.0.1:${server.address().port}` };
+  const script = fileURLToPath(new URL('../scripts/job-application.mjs', import.meta.url));
+  const started = await runCli(script, ['round', 'start', '--stdin'], { requestedCount: 1 }, env);
+  assert.equal(started.code, 0, started.stderr);
+  const roundId = JSON.parse(started.stdout).roundId;
+  const sourceId = 'community-0123456789abcdef';
+  const report = await runCli(script, ['round', 'source', '--stdin'], { roundId, sourceId, status: 'searched', reviewedCount: 8, qualifiedCount: 2, evidence: 'Private search query and candidate context', applicationIds: [] }, env);
+  assert.equal(report.code, 0, report.stderr);
+  const event = captured.find((body) => body.event === 'source_checked');
+  assert.ok(event, JSON.stringify(captured));
+  assert.deepEqual(event.properties, { sourceId: 'community', status: 'searched', reviewedCount: 8, qualifiedCount: 2 });
+  assert.equal(JSON.stringify(captured).includes('Private search query'), false);
+  assert.equal(JSON.stringify(captured).includes(roundId), false);
+  assert.equal(JSON.stringify(captured).includes(sourceId), false);
+});
+
+test('CLI attaches only explicit saved name/email after disclosure and opt-out continues anonymous usage', async (t) => {
+  const directory = await mkdtemp(join(tmpdir(), 'job-agent-identity-cli-'));
+  t.after(() => rm(directory, { recursive: true, force: true }));
+  const captured = [];
+  const server = createServer(async (request, response) => {
+    let raw = '';
+    for await (const chunk of request) raw += chunk;
+    captured.push({ path: request.url, body: JSON.parse(raw) });
+    response.setHeader('content-type', 'application/json');
+    response.end(JSON.stringify(request.url === '/v1/install' ? { installationId: crypto.randomUUID(), token: 'synthetic-relay-token', expiresAt: '2099-01-01T00:00:00Z' } : { accepted: true }));
+  });
+  await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+  t.after(() => new Promise((resolve) => server.close(resolve)));
+  // Synthetic Secret Service implementation: never touch the developer's real profile.
+  const preload = `import cp from 'node:child_process'; import { syncBuiltinESMExports } from 'node:module'; Object.defineProperty(process, 'platform', { value: 'linux' }); cp.execFileSync = (file, args) => { if (file === 'secret-tool' && args[0] === 'lookup') return ${JSON.stringify(JSON.stringify(target))}; throw new Error('Unexpected secret operation'); }; syncBuiltinESMExports();`;
+  const runtimeArgs = ['--import', `data:text/javascript,${encodeURIComponent(preload)}`];
+  const env = { ...isolatedCliEnv(directory), JOB_APPLICATION_AGENT_TELEMETRY_URL: `http://127.0.0.1:${server.address().port}` };
+  const script = fileURLToPath(new URL('../scripts/job-application.mjs', import.meta.url));
+  const run = (args) => runCli(script, args, undefined, env, runtimeArgs);
+  const first = await run(['profile', 'check']);
+  assert.equal(first.code, 0, first.stderr);
+  assert.match(first.stderr, /name and email sharing is enabled by default/i);
+  assert.ok(captured.length > 0);
+  assert.ok(captured.every(({ body }) => body.identity === undefined));
+  const second = await run(['profile', 'check']);
+  assert.equal(second.code, 0, second.stderr);
+  const identified = captured.at(-1).body;
+  assert.deepEqual(identified.identity, { name: target.name, email: target.email });
+  assert.equal(JSON.stringify(identified).includes(target.phone), false);
+  assert.equal(JSON.stringify(identified).includes(target.location), false);
+  const count = captured.length;
+  const optedOut = await run(['telemetry', 'identity', 'disable']);
+  assert.equal(optedOut.code, 0, optedOut.stderr);
+  assert.equal(captured.length, count);
+  assert.equal((await run(['profile', 'check'])).code, 0);
+  assert.equal(captured.at(-1).body.identity, undefined);
+  assert.notEqual(captured.at(-1).body.installationId, identified.installationId);
 });

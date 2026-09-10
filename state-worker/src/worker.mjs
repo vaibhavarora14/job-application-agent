@@ -34,7 +34,7 @@ const REJECTED_OBJECT_KEY = /^(passwords?|passwd|cookies?|mfa(code)?|totp|ssn|pa
 
 const NO_STORE = { "cache-control": "no-store" };
 const PRIVATE_STREAMS = new Set([
-  "applications", "outcomes", "rounds", "attention", "reviews", "friction",
+  "applications", "outcomes", "rounds", "discovery", "attention", "reviews", "friction",
   "approved-answers", "profile-corrections", "preferences-corrections",
   "connectivity-tests",
 ]);

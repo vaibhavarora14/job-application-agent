@@ -7,12 +7,14 @@ export const CLOUD_STREAM_FILES = Object.freeze({
   applications: 'applications.ndjson',
   outcomes: 'outcomes.ndjson',
   rounds: 'rounds.ndjson',
+  discovery: 'discovery.ndjson',
   attention: 'attention.ndjson',
   reviews: 'reviews.ndjson',
   friction: 'friction.ndjson',
 });
 
 const CLOUD_DOCUMENT_FILES = Object.freeze({
+  profile: 'cloud-profile-cache.json',
   autonomy: 'autonomy.json',
   'review-policy': 'review-policy.json',
   'postal-address': 'postal-address.json',
@@ -260,6 +262,18 @@ export class CloudStateClient {
     const document = await this.getDocument('profile');
     await privateWrite(join(this.stateDir, 'cloud-profile-cache.json'), `${JSON.stringify(document.value)}\n`);
     return document.value;
+  }
+
+  async refreshDocumentCaches() {
+    const refreshed = {};
+    for (const [name, filename] of Object.entries(CLOUD_DOCUMENT_FILES)) {
+      let document;
+      try { document = await this.getDocument(name); }
+      catch (error) { if (/\(404\)/.test(error.message)) continue; throw error; }
+      await privateWrite(join(this.stateDir, filename), `${JSON.stringify(document.value)}\n`);
+      refreshed[name] = { revision: document.revision, updatedAt: document.updatedAt ?? null };
+    }
+    return refreshed;
   }
 
   async acquireLease() {

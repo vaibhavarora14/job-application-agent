@@ -39,6 +39,17 @@ sqliteTest('cloud config and profile cache are owner-only and work without Keych
   assert.deepEqual(JSON.parse(await readFile(cache, 'utf8')), profile);
 });
 
+sqliteTest('cloud documents refresh the owner-only local caches', async () => {
+  const ctx = await setup();
+  await ctx.client.putDocument('autonomy', { version: 1, enabled: true, mode: 'routine-auto' }, 0);
+
+  const refreshed = await ctx.client.refreshDocumentCaches();
+
+  assert.equal(refreshed.autonomy.revision, 1);
+  assert.equal(JSON.parse(await readFile(join(ctx.stateDir, 'autonomy.json'), 'utf8')).enabled, true);
+  if (process.platform !== 'win32') assert.equal((await stat(join(ctx.stateDir, 'autonomy.json'))).mode & 0o777, 0o600);
+});
+
 sqliteTest('reconcile dry-run reports the exact union without writing', async () => {
   const ctx = await setup();
   const local = [
@@ -62,6 +73,17 @@ sqliteTest('reconcile imports local-only rows idempotently and preserves provena
   assert.equal(second.imported, 0);
   const row = await ctx.bindings.DB.prepare("SELECT provenance FROM records WHERE stream = 'applications'").first();
   assert.equal(row.provenance, 'mac-cutover');
+});
+
+sqliteTest('reconcile includes the owner-only discovery review ledger', async () => {
+  const ctx = await setup();
+  const lead = { type: 'lead-reviewed', roundId: 'round-1', leadId: 'lead-1', disposition: 'duplicate', occurredAt: '2026-01-01T00:00:00.000Z' };
+  await writeFile(join(ctx.stateDir, 'discovery.ndjson'), `${JSON.stringify(lead)}\n`);
+
+  const report = await ctx.client.reconcile({ dryRun: false });
+
+  assert.equal(report.streams.discovery.imported ?? report.streams.discovery.localOnly, 1);
+  assert.deepEqual((await ctx.client.listStream('discovery'))[0].value, lead);
 });
 
 sqliteTest('resume download verifies checksum and creates a private path cache', async () => {
