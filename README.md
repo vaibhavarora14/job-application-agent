@@ -9,20 +9,40 @@
 [![MIT License](https://img.shields.io/badge/license-MIT-2563EB.svg)](LICENSE)
 [![Agent Skills](https://img.shields.io/badge/Agent_Skills-compatible-111827)](job-application-agent/SKILL.md)
 
-[Get started](#-get-started) · [Safety](#-safety) · [Privacy](#-privacy) · [Dashboard](https://job-application-agent-telemetry.varora1406.workers.dev/) · [Security](SECURITY.md)
+[Get started](#-get-started) · [Privacy in 30 seconds](#-privacy-in-30-seconds) · [Safety](#-safety) · [Privacy](#-privacy) · [Where to find it](#-where-to-find-it) · [Dashboard](https://job-application-agent-telemetry.varora1406.workers.dev/) · [Security](SECURITY.md)
 
 </div>
+
+```bash
+npx job-application-agent@latest install
+```
+
+```bash
+npx skills add vaibhavarora14/job-application-agent
+```
 
 ---
 
 Job Application Agent is an [Agent Skill](https://agentskills.io/specification) that helps a coding agent discover, evaluate, complete, and track your own job applications. It uses one verified résumé, checks eligibility and duplicates, and records only confirmed submissions.
 
+## 🔒 Privacy in 30 seconds
+
+- OS credential store for profile
+- One verified résumé; refuse unverifiable claims
+- Never reads cookies/session files; pauses for SSO/MFA/CAPTCHA/legal
+- Only records confirmed submissions (filled ≠ applied)
+- Analytics/community sharing opt-out via CLI
+
 ## 🚀 Get started
 
-Install it:
+Install it with either:
 
 ```bash
 npx job-application-agent@latest install
+```
+
+```bash
+npx skills add vaibhavarora14/job-application-agent
 ```
 
 Then tell your coding agent:
@@ -157,6 +177,17 @@ npx job-application-agent@latest updates enable
 Updates are staged and validated before replacement. Private candidate state lives outside the replaceable skill directory.
 
 </details>
+
+## 📍 Where to find it
+
+- [GitHub](https://github.com/vaibhavarora14/job-application-agent)
+- [npm](https://www.npmjs.com/package/job-application-agent)
+- [skills.sh](https://skills.sh/vaibhavarora14/job-application-agent)
+- [Agent Skills discussion](https://github.com/agentskills/agentskills/discussions/537)
+- [awesome-agent-skills (Community Skills)](https://github.com/VoltAgent/awesome-agent-skills)
+- [SkillHub](https://www.skillhub.club/app/skills/b99cbef5-2445-47d0-94d0-e6d1fac81263) (may still be in review)
+- [ClawHub](https://clawhub.ai/vaibhavarora14/skills/job-application-agent) (may still be in review)
+- [cursor.directory](https://cursor.directory/plugins/job-application-agent) (pending review)
 
 ## 🧰 Develop
 
