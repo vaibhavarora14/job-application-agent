@@ -32,6 +32,19 @@ Installer, persistence, local-state, release-workflow, package-metadata, and sec
 
 Claims such as **atomic**, **safe**, **exact**, **verified**, or **never** need a direct test or a precise explanation of what remains outside the guarantee.
 
+## External PR checklist (ledger / installer)
+
+For ledger-lock, installer, or persistence changes (see [#14](https://github.com/vaibhavarora14/job-application-agent/pull/14) and [#15](https://github.com/vaibhavarora14/job-application-agent/pull/15)):
+
+1. Synchronize with current `main` before requesting re-review.
+2. Add the adversarial regressions already required on those PRs—do not invent weaker substitutes:
+   - **Lock reclaim (#14):** a live lock cannot be reclaimed solely because of age; a replacement lock cannot be deleted after ownership changes; a failed metadata write closes and removes the newly created lock.
+   - **Installer persistence (#15):** malformed/truncated status recovery; symlink and other non-regular package entries; runner/scheduler command consistency; rollback after every post-activation failure; configuration truthfulness; package-version consistency; uninstall preserving unrelated shared logs/state.
+3. Expect the full Ubuntu/macOS/Windows × Node 20/24 matrix and the required `quality-gate` to pass.
+4. Resolve every review conversation and request re-review. Owner bypass is not used for external contributions.
+
+Security and privacy vulnerabilities still follow [`SECURITY.md`](SECURITY.md).
+
 ## Review and merge
 
 All required checks and review conversations must be complete. New commits dismiss stale approvals. Do not ask a maintainer to bypass quality gates for an external contribution.
