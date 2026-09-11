@@ -19,9 +19,15 @@
     "skill",
     "job-search",
     "job-application",
-    "career"
+    "career",
+    "privacy",
+    "claude",
+    "cursor",
+    "codex",
+    "resume",
+    "browser-automation"
   ],
-  "homepage": "https://github.com/vaibhavarora14/job-application-agent#readme",
+  "homepage": "https://jobappagent.com",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/vaibhavarora14/job-application-agent.git"
