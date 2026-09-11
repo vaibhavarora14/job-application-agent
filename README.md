@@ -187,7 +187,7 @@ Updates are staged and validated before replacement. Private candidate state liv
 - [Agent Skills discussion](https://github.com/agentskills/agentskills/discussions/537)
 - [awesome-agent-skills (Community Skills)](https://github.com/VoltAgent/awesome-agent-skills)
 - [SkillHub](https://www.skillhub.club/app/skills/b99cbef5-2445-47d0-94d0-e6d1fac81263) (may still be in review)
-- [ClawHub](https://clawhub.ai/vaibhavarora14/skills/job-application-agent) (may still be in review)
+- [ClawHub](https://clawhub.ai/vaibhavarora14/skills/job-application-agent)
 - [cursor.directory](https://cursor.directory/plugins/job-application-agent) (pending review)
 
 ## 🧰 Develop
