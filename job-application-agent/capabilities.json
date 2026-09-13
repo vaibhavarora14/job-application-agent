@@ -1,5 +1,6 @@
 {
   "capabilities": [
-    "cloud-state-v2"
+    "cloud-state-v2",
+    "application-accounting-v1"
   ]
 }

@@ -17,6 +17,7 @@ export function createMemoryD1(schema = '') {
   if (!DatabaseSync) throw new Error('The in-memory D1 test adapter requires node:sqlite (Node.js 22.5 or newer)');
   const database = new DatabaseSync(':memory:');
   database.exec(schema);
+  let batchTail = Promise.resolve();
   return {
     exec(sql) {
       database.exec(sql);
@@ -48,6 +49,10 @@ export function createMemoryD1(schema = '') {
       return api;
     },
     async batch(statements) {
+      const previous = batchTail;
+      let release;
+      batchTail = new Promise(resolve => { release = resolve; });
+      await previous;
       database.exec('BEGIN IMMEDIATE');
       try {
         const results = [];
@@ -57,7 +62,7 @@ export function createMemoryD1(schema = '') {
       } catch (error) {
         database.exec('ROLLBACK');
         throw error;
-      }
+      } finally { release(); }
     },
     database,
   };

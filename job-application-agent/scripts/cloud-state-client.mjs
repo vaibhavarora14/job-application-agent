@@ -1,3 +1,4 @@
+import { ACCOUNTING_CAPABILITY, stableJson, validateDelivery, validateLead } from './application-accounting.mjs';
 import { createHash, randomUUID } from 'node:crypto';
 import { appendFile, chmod, mkdir, readFile, rename, stat, writeFile } from 'node:fs/promises';
 import { homedir, platform } from 'node:os';
@@ -8,6 +9,7 @@ export const CLOUD_STREAM_FILES = Object.freeze({
   outcomes: 'outcomes.ndjson',
   rounds: 'rounds.ndjson',
   discovery: 'discovery.ndjson',
+  delivery: 'delivery.ndjson',
   attention: 'attention.ndjson',
   reviews: 'reviews.ndjson',
   friction: 'friction.ndjson',
@@ -93,6 +95,7 @@ export async function enableCloudUpdateGuard({ home = homedir(), agentHome = pro
   catch (error) { if (error.code === 'ENOENT') return { guarded: false, reason: 'managed-install-not-found' }; throw error; }
   const required = new Set(config.requiredCapabilities ?? []);
   required.add('cloud-state-v2');
+  required.add(ACCOUNTING_CAPABILITY);
   await privateWrite(path, `${JSON.stringify({ ...config, requiredCapabilities: [...required].sort() }, null, 2)}\n`);
   return { guarded: true, capability: 'cloud-state-v2' };
 }
@@ -159,6 +162,23 @@ export class CloudStateClient {
     return { configured: true, url: config.url, configuredClient: { id: config.clientId ?? null, name: config.clientName ?? null, token: tokenSuffix(config.token) }, pendingLocalWrites: pending.length, ...remote };
   }
 
+  async requireAccounting() {
+    const config = await this.config(true);
+    if (!config) return;
+    const backend = hash(`${config.url}:${config.token}`);
+    try {
+      const status = await this.status();
+      if (!status.configured) return;
+      if (!status.capabilities?.includes(ACCOUNTING_CAPABILITY)) throw new Error('Private backend upgrade required: application-accounting-v1 is missing.');
+      await ensurePrivateDirectory(this.stateDir);
+      await privateWrite(join(this.stateDir, 'cloud-accounting-capability.json'), JSON.stringify({ supported: true, backend }));
+    } catch (error) {
+      if (!/^Cloud state unavailable:/.test(error.message)) throw error;
+      try { if (JSON.parse(await readFile(join(this.stateDir, 'cloud-accounting-capability.json'), 'utf8')).backend === backend) return; } catch {}
+      throw error;
+    }
+  }
+
   async getDocument(name) {
     const response = await this.request(`/v2/documents/${encodeURIComponent(name)}`);
     return response.json();
@@ -199,7 +219,7 @@ export class CloudStateClient {
     if (forbidden) throw new Error(`Cloud record contains forbidden field: ${forbidden}`);
     const payload = {
       recordKey: String(recordKey ?? value?.id ?? value?.roundId ?? randomUUID()),
-      idempotencyKey: String(idempotencyKey ?? `${stream}:${hash(JSON.stringify(value))}`),
+      idempotencyKey: String(idempotencyKey ?? `${stream}:${hash(stableJson(value))}`),
       occurredAt: occurredAt ?? value?.occurredAt ?? value?.submittedAt ?? new Date().toISOString(),
       provenance,
       value,
@@ -289,7 +309,13 @@ export class CloudStateClient {
   }
 
   async createIntent(value) {
+    await this.requireAccounting();
     return (await this.request('/v2/intents', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(value) })).json();
+  }
+
+  async confirmRetry(intentId, delivery, leaseId) {
+    await this.requireAccounting();
+    return (await this.request(`/v2/intents/${encodeURIComponent(intentId)}/confirm`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ delivery, leaseId }) })).json();
   }
 
   async markIntentSentUnverified(intentId, leaseId) {
@@ -301,11 +327,22 @@ export class CloudStateClient {
   }
 
   async reconcile({ dryRun = true, provenance = 'local-reconcile' } = {}) {
+    await this.requireAccounting();
     const report = { dryRun, streams: {}, imported: 0, downloaded: 0 };
     for (const [stream, filename] of Object.entries(CLOUD_STREAM_FILES)) {
-      const local = await readNdjson(join(this.stateDir, filename));
+      const normalize = value => stream === 'delivery' ? validateDelivery(value) : stream === 'discovery' && value.version === 1 && value.type === 'lead-reviewed' ? validateLead(value) : value;
+      let local = (await readNdjson(join(this.stateDir, filename))).map(normalize);
       const cloudRecords = await this.listStream(stream);
-      const cloud = cloudRecords.map((record) => record.value);
+      let cloud = cloudRecords.map((record) => normalize(record.value));
+      if (['delivery','discovery'].includes(stream)) {
+        const ids = new Map();
+        for (const value of [...local, ...cloud].filter(v => v.version === 1 && (stream === 'delivery' || v.type === 'lead-reviewed'))) {
+          if (ids.has(value.id) && stableJson(ids.get(value.id)) !== stableJson(value)) throw new Error('Conflicting accounting event ID during cloud reconciliation.');
+          ids.set(value.id, value);
+        }
+        const unique = values => values.filter((value,index) => value.version !== 1 || (stream === 'discovery' && value.type !== 'lead-reviewed') || values.findIndex(other => other.id === value.id && other.version === 1) === index);
+        local = unique(local); cloud = unique(cloud);
+      }
       const localCounts = multiset(local);
       const cloudCounts = multiset(cloud);
       const localOnly = multisetDifference(local, cloudCounts);
@@ -314,7 +351,7 @@ export class CloudStateClient {
       if (!dryRun) {
         const prepared = localOnly.map(({ value, index }) => ({
           recordKey: String(value?.id ?? value?.roundId ?? value?.applicationId ?? `${stream}-${index}`),
-          idempotencyKey: `reconcile:${hash(JSON.stringify(value))}:${index}`,
+          idempotencyKey: value.version === 1 && (stream === 'delivery' || (stream === 'discovery' && value.type === 'lead-reviewed')) ? `accounting:${value.id}` : `reconcile:${hash(stableJson(value))}:${index}`,
           occurredAt: value?.occurredAt ?? value?.submittedAt ?? new Date().toISOString(),
           provenance,
           value,
@@ -353,7 +390,7 @@ async function readNdjson(path) {
 }
 
 function key(value) {
-  return JSON.stringify(value);
+  return stableJson(value);
 }
 
 function multiset(values) {
