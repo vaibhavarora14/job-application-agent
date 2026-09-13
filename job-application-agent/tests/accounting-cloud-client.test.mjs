@@ -141,6 +141,9 @@ sqliteTest('cached accounting permits offline research and durable observation q
   if (process.platform !== 'win32') assert.equal((await stat(join(ctx.stateDir, 'cloud-pending.ndjson'))).mode & 0o777, 0o600);
   await assert.rejects(() => restarted.createIntent({ applicationId: 'another-app', canonicalUrl: 'https://example.com/jobs/another', leaseId: 'expired-lease' }), /cloud state unavailable/i);
   assert.equal((await ctx.bindings.DB.prepare('SELECT COUNT(*) AS count FROM application_intents').first()).count, 0);
+  await ctx.client.reconcile({dryRun:false});
+  assert.equal((await ctx.client.pendingWrites()).length,0);
+  assert.equal((await readRows(ctx.stateDir,'delivery')).length,1);
 });
 
 sqliteTest('a delivery replay followed by repeated synchronization preserves one logical evidence event', async t => {
