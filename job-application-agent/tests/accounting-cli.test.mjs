@@ -4,7 +4,8 @@ import { mkdtemp, writeFile, readFile, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import test from 'node:test';
-const script = new URL('../scripts/job-application.mjs', import.meta.url).pathname;
+import { fileURLToPath } from 'node:url';
+const script = fileURLToPath(new URL('../scripts/job-application.mjs', import.meta.url));
 async function fixture(t) {
   const dir = await mkdtemp(join(tmpdir(), 'accounting-cli-'));
   t.after(() => rm(dir, { recursive: true, force: true }));
