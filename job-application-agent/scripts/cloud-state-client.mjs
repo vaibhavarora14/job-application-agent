@@ -247,8 +247,20 @@ export class CloudStateClient {
   }
 
   async pendingWrites() {
-    try { return (await readFile(join(this.stateDir, 'cloud-pending.ndjson'), 'utf8')).split('\n').filter(Boolean).map(JSON.parse); }
-    catch (error) { if (error.code === 'ENOENT') return []; throw error; }
+    const events = await readNdjson(join(this.stateDir, 'cloud-pending.ndjson'));
+    const receipts = new Set((await readNdjson(join(this.stateDir, 'cloud-pending-receipts.ndjson'))).map(event => event.key));
+    return events.filter(event => !receipts.has(hash(stableJson(event))));
+  }
+
+  async flushAccountingWrites(stream) {
+    if (!['delivery','discovery'].includes(stream)) return;
+    for (const event of (await this.pendingWrites()).filter(event => event.type === 'append-record' && event.stream === stream)) {
+      await this.appendRecord(stream, event.payload.value, { ...event.payload, queueOnFailure: false });
+      const receipt = { key: hash(stableJson(event)) };
+      const path = join(this.stateDir, 'cloud-pending-receipts.ndjson');
+      await appendFile(path, `${JSON.stringify(receipt)}\n`, { mode: 0o600 });
+      await chmod(path, 0o600);
+    }
   }
 
   async putFile(name, bytes, revision) {
@@ -330,6 +342,7 @@ export class CloudStateClient {
     await this.requireAccounting();
     const report = { dryRun, streams: {}, imported: 0, downloaded: 0 };
     for (const [stream, filename] of Object.entries(CLOUD_STREAM_FILES)) {
+      if (!dryRun) await this.flushAccountingWrites(stream);
       const normalize = value => stream === 'delivery' ? validateDelivery(value) : stream === 'discovery' && value.version === 1 && value.type === 'lead-reviewed' ? validateLead(value) : value;
       let local = (await readNdjson(join(this.stateDir, filename))).map(normalize);
       const cloudRecords = await this.listStream(stream);
