@@ -71,6 +71,11 @@ function submission(index, roundId, overrides = {}) {
   };
 }
 
+function recordLeads(env, roundId, sourceId, entries, otherCount = 0) {
+  for (const app of entries) cli(env, ['round','lead','--stdin'], { roundId, sourceId, applicationId: app.id, url: app.url, employerJobId: app.employerJobId, company: app.company, role: app.role, disposition:'qualified', observedAt:app.submittedAt, evidence:'Synthetic role meets the target requirements.' });
+  for (let i=0;i<otherCount;i++) cli(env, ['round','lead','--stdin'], { roundId, sourceId, url:`https://other.fixture.example/${sourceId}/${i}`, company:`Other ${i}`, disposition:'no-relevant-opening', observedAt:'2026-08-01T00:00:00Z', evidence:'No target role on this careers page.' });
+}
+
 test('persists a scoped autonomy grant and revokes future routine transmissions', async (t) => {
   const { directory, env } = await fixture(t, 'autonomy');
 
@@ -122,6 +127,7 @@ test('counts only unique confirmed ledger submissions for an explicit round', as
   assert.equal(status.completed, false);
 
   for (const sourceId of ['linkedin-jobs-feed', 'indeed', 'hacker-news-who-is-hiring']) {
+    recordLeads(env, started.roundId, sourceId, sourceId === 'linkedin-jobs-feed' ? Array.from({ length:30 },(_,i)=>submission(i,started.roundId)) : [], sourceId === 'linkedin-jobs-feed' ? 0 : 30);
     cli(env, ['round', 'source', '--stdin'], {
       roundId: started.roundId, sourceId, status: 'searched', reviewedCount: 30, qualifiedCount: sourceId === 'linkedin-jobs-feed' ? 30 : 0,
       evidence: 'Reviewed matching postings against the unchanged target; other leads did not qualify.',
@@ -142,6 +148,8 @@ test('round completion requires distinct source coverage and explains concentrat
   const { roundId } = cli(env, ['round', 'start', '--stdin'], { requestedCount: 2 });
   for (const i of [1, 2]) cli(env, ['ledger', 'add', '--stdin'], submission(i, roundId, { discoverySourceId: 'linkedin-jobs-feed' }));
   assert.match(cliFailure(env, ['round', 'complete', '--stdin'], { roundId }).stderr, /3 distinct discovery sources/i);
+  recordLeads(env,roundId,'linkedin-jobs-feed',[submission(1,roundId),submission(2,roundId)],8);
+  recordLeads(env,roundId,'indeed',[],10);
   const check = { roundId, sourceId: 'linkedin-jobs-feed', status: 'searched', reviewedCount: 10, qualifiedCount: 2, evidence: 'Reviewed ten relevant postings using the target constraints.' };
   cli(env, ['round', 'source', '--stdin'], check);
   cli(env, ['round', 'source', '--stdin'], check);
@@ -169,7 +177,10 @@ test('discovery coverage rejects invalid reports and requires attribution withou
   for (const bad of [{ sourceId: 'imaginary-board' }, { qualifiedCount: 5 }, { status: 'blocked' }, { applicationIds: ['not-in-round'] }, { evidence: '' }, { privateProfile: 'forbidden' }]) {
     assert.equal(cliFailure(env, ['round', 'source', '--stdin'], { ...check, ...bad }).status, 1);
   }
-  for (const sourceId of ['linkedin-jobs-feed', 'indeed', 'hacker-news-who-is-hiring']) cli(env, ['round', 'source', '--stdin'], { ...check, sourceId });
+  for (const sourceId of ['linkedin-jobs-feed', 'indeed', 'hacker-news-who-is-hiring']) {
+    recordLeads(env,roundId,sourceId,[submission(1,roundId)],3);
+    cli(env, ['round', 'source', '--stdin'], { ...check, sourceId });
+  }
   assert.match(cliFailure(env, ['round', 'complete', '--stdin'], { roundId }).stderr, /attribution/i);
   cli(env, ['round', 'source', '--stdin'], { ...check, applicationIds: ['round-role-1'] });
   assert.equal(cli(env, ['round', 'status', roundId]).discovery.unattributedCount, 0);
@@ -180,7 +191,11 @@ test('source diversity is independent of ATS and concentration explanations are 
   const { env } = await fixture(t, 'balanced-discovery');
   const { roundId } = cli(env, ['round', 'start', '--stdin'], { requestedCount: 5 });
   const ids = ['linkedin-jobs-feed', 'indeed', 'hacker-news-who-is-hiring'];
-  for (const sourceId of ids) cli(env, ['round', 'source', '--stdin'], { roundId, sourceId, status: 'searched', reviewedCount: 3, qualifiedCount: 2, evidence: 'Reviewed relevant postings and verified target fit.' });
+  for (const sourceId of ids) {
+    const entries=Array.from({length:5},(_,i)=>submission(i+1,roundId)).filter((_,i)=>ids[i%3]===sourceId);
+    recordLeads(env,roundId,sourceId,entries,1);
+    cli(env, ['round', 'source', '--stdin'], { roundId, sourceId, status: 'searched', evidence: 'Reviewed relevant postings and verified target fit.' });
+  }
   for (let i = 1; i <= 5; i++) cli(env, ['ledger', 'add', '--stdin'], submission(i, roundId, { discoverySourceId: ids[(i - 1) % 3], applicationChannel: 'ashby' }));
   const completed = cli(env, ['round', 'complete', '--stdin'], { roundId });
   assert.equal(completed.discovery.maxSourceSharePercent, 40);
@@ -197,6 +212,7 @@ test('blocked-only attempts and two views of the same network do not satisfy dis
   cli(env, ['round', 'source', '--stdin'], { ...check, sourceId: 'indeed' });
   assert.equal(cli(env, ['round', 'status', roundId]).discovery.coverageSatisfied, false);
   const { blocker, ...searched } = check;
+  recordLeads(env,roundId,'indeed',[submission(1,roundId)]);
   cli(env, ['round', 'source', '--stdin'], { ...searched, sourceId: 'indeed', status: 'searched', reviewedCount: 1, qualifiedCount: 1 });
   cli(env, ['round', 'source', '--stdin'], { ...check, sourceId: 'indeed' });
   assert.equal(cli(env, ['round', 'status', roundId]).discovery.coverageSatisfied, true);

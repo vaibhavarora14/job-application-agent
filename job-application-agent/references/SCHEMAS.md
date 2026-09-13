@@ -221,3 +221,7 @@ Generate `ledger review` first. Acknowledge only after the candidate has reviewe
 The acknowledgement stores the current canonical unique-submission and mature-application counts in append-only `reviews.ndjson`.
 
 `ledger review` also returns `interviewLearningSegments`. Each row combines the canonical application's source and ten-point fit-score band with the latest recorded interview quality and failure point, plus a count. This supports evidence-based targeting reviews without exposing private notes or automatically changing score weights.
+
+## Delivery and per-lead accounting
+
+See [ACCOUNTING.md](ACCOUNTING.md) for versioned delivery events, explicit corrections, linked retry evidence, lead dispositions/revisions, and effective round/review output fields. These streams are private and append-only; they never become telemetry properties.

@@ -28,12 +28,16 @@ Use `scripts/job-application.mjs` for private state and deterministic checks. Re
 
 Never store passwords, MFA codes, government IDs, demographic data, CAPTCHA answers, browser session data, or inferred candidate facts.
 
+## Accounting
+
+Read [references/ACCOUNTING.md](references/ACCOUNTING.md) before recording delivery evidence, recovery attempts, or per-lead discovery. For new rounds, record each lead with `round lead --stdin` and derive source totals from those records. Email access is optional: visible browser success counts, verified email sends count with receipt unknown, and matched final delivery failures correct effective totals. Preserve historical events and use explicit corrections for conflicts.
+
 ## Discover and assess
 
 Read [references/SOURCES.md](references/SOURCES.md) before the first discovery pass in a workflow.
 
 1. Run `sources jobs` for recently confirmed direct job links and `sources list` (optionally filtered) for the highest-signal packaged and maintainer-reviewed discovery sources. Resolve every lead to the direct employer or ATS page.
-   For each round, select at least three distinct relevant discovery sources before applying. Search across them before working deeply through one feed; include alternatives to the previous round's dominant source. Record each actual search, including zero suitable results, or an observed access blocker with `round source --stdin`. Two YC views count as one network; recruiter inboxes and user-supplied links supplement discovery but do not satisfy the three-source minimum. Do not claim that listing the catalog means a board was searched. Keep a blocked source in the report and continue to accessible alternatives.
+   For each round, select at least three distinct relevant discovery sources before applying. Search across them before working deeply through one feed; include alternatives to the previous round's dominant source. Record individual reviewed leads first, then each actual search, including zero suitable results, or an observed access blocker with `round source --stdin`. Two YC views count as one network; recruiter inboxes and user-supplied links supplement discovery but do not satisfy the three-source minimum. Do not claim that listing the catalog means a board was searched. Keep a blocked source in the report and continue to accessible alternatives.
 2. Attribute the lead with coarse `discoverySource`, stable packaged or community `discoverySourceId` when known, and independent `applicationChannel`. Treat a one-off user link as `user-supplied`. Whenever a user or agent discovers a repeatable public board, feed, directory, or careers index that is not already listed, run `sources suggest --stdin`; the CLI contributes its sanitized metadata by default unless community sharing has been disabled.
 3. Verify the application channel immediately before assessment. Mark it `active`, `closed`, or `unclear`.
 4. Classify eligibility only after checking residence, location, work authorization, sponsorship, schedule, and employment type.
@@ -76,7 +80,8 @@ Check `round status` after the initial discovery pass and before submitting. Pre
 - Record outcomes with `ledger outcome --stdin`. Use structured rejection reasons and mark each as `explicit` or `inferred`. Do not treat an inference as a candidate fact.
 - After an interview, optionally record `interviewQuality` (`promising`, `viable`, `weak`, or `dead`) and a bounded `failurePoint`. Keep free-form interview notes private.
 - Rely on idempotent outcome recording; identical events do not append rows or emit duplicate telemetry.
-- Run `ledger review` for canonical unique submissions, duplicate-row counts, mature applications, reasons, interview-quality/failure-point counts, source and fit-score learning segments, and mature-cohort conversions.
+- Audit matched delivery failures with authorized email tools when available; otherwise report delivery not audited and continue. Keep delivery failures separate from hiring rejections.
+- Run `ledger review` for effective canonical unique submissions, duplicate-row counts, mature applications, reasons, interview-quality/failure-point counts, source and fit-score learning segments, and mature-cohort conversions.
 - Review submission hygiene after each ten newly acknowledged unique submissions.
 - Review outcome effectiveness only after at least 20 newly acknowledged applications have aged ten business days.
 - Generate proposals only. Change targeting, profile facts, resume claims, scoring thresholds, or answer guidance only with candidate approval.
@@ -98,6 +103,10 @@ node scripts/job-application.mjs profile field <allowed-field>
 node scripts/job-application.mjs resume import <google-doc-url-or-local-pdf>
 node scripts/job-application.mjs resume path
 node scripts/job-application.mjs score --stdin
+node scripts/job-application.mjs ledger delivery|retry --stdin
+node scripts/job-application.mjs ledger deliveries [application-id]
+node scripts/job-application.mjs round lead --stdin
+node scripts/job-application.mjs round leads [round-id]
 node scripts/job-application.mjs ledger check --stdin
 node scripts/job-application.mjs ledger add --stdin
 node scripts/job-application.mjs ledger outcome --stdin

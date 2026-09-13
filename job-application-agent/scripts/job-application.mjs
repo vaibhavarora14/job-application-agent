@@ -7,6 +7,7 @@ import { platform } from 'node:os';
 import { basename, join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
+import { ACCOUNTING_CAPABILITY, accountingApplicationKey, canonicalUrl, deliveryProjection, discoveryProjection, validateDelivery, validateDeliveryReferences, validateLead, validateLeadReferences, stableJson } from './application-accounting.mjs';
 import { createSecretStore, migrateLegacyStateDir, resolveStateDir } from './secret-store.mjs';
 import { SourceCommunityClient } from './source-community-client.mjs';
 import { normalizeCommunityJob, normalizeCommunitySource } from './source-community-schema.mjs';
@@ -506,12 +507,7 @@ function rolesLikelySame(left, right) {
   return shared / Math.min(leftTokens.size, rightTokens.size) >= 0.75;
 }
 
-function canonicalApplicationKey(entry, fallback = '') {
-  if (entry.employerJobId) return `job:${normalizedText(entry.company)}:${String(entry.employerJobId).toLowerCase()}`;
-  if (entry.company && entry.role) return `legacy-role:${normalizedText(entry.company)}:${normalizedText(entry.role)}`;
-  if (entry.url) return `url:${normalizeUrl(entry.url)}`;
-  return `id:${entry.id ?? fallback}`;
-}
+const canonicalApplicationKey = accountingApplicationKey;
 
 function businessDaysBetween(startValue, endValue) {
   const start = new Date(startValue);
@@ -525,8 +521,10 @@ function businessDaysBetween(startValue, endValue) {
   return days;
 }
 
-export function buildReview(entries, outcomeEntries = [], acknowledgements = [], now = new Date()) {
+export function buildReview(entries, outcomeEntries = [], acknowledgements = [], now = new Date(), deliveryEvents = []) {
   const submissions = entries.filter((entry) => !Number.isNaN(Date.parse(entry.submittedAt)));
+  const delivery = deliveryProjection(submissions, deliveryEvents);
+  const effectiveKeys = new Set(submissions.filter((entry, i) => delivery.applications[i].counted).map(canonicalApplicationKey));
   const explicitOutcomes = outcomeEntries.length > 0;
   const outcomes = explicitOutcomes ? outcomeEntries : entries.filter((entry) => ['interview', 'rejected', 'offer', 'withdrawn'].includes(entry.status));
   const groups = new Map();
@@ -535,7 +533,7 @@ export function buildReview(entries, outcomeEntries = [], acknowledgements = [],
     if (!groups.has(key)) groups.set(key, []);
     groups.get(key).push(entry);
   });
-  const canonical = [...groups.values()].map((group) => [...group].sort((a, b) => Date.parse(a.submittedAt) - Date.parse(b.submittedAt))[0]);
+  const canonical = [...groups].filter(([key]) => effectiveKeys.has(key)).map(([,group]) => [...group].sort((a, b) => Date.parse(a.submittedAt) - Date.parse(b.submittedAt))[0]);
   const outcomesById = new Map();
   for (const outcome of outcomes) {
     if (!outcomesById.has(outcome.id)) outcomesById.set(outcome.id, []);
@@ -544,7 +542,7 @@ export function buildReview(entries, outcomeEntries = [], acknowledgements = [],
   const canonicalOutcomes = [];
   const matureCanonicalOutcomes = [];
   const canonicalInterviewDetails = [];
-  for (const group of groups.values()) {
+  for (const [groupKey, group] of groups) {
     const candidates = explicitOutcomes
       ? group.flatMap((entry) => outcomesById.get(entry.id) ?? [])
       : group.filter((entry) => ['interview', 'rejected', 'offer', 'withdrawn'].includes(entry.status));
@@ -559,7 +557,7 @@ export function buildReview(entries, outcomeEntries = [], acknowledgements = [],
         source: canonicalApplication.source,
         score: canonicalApplication.score,
       });
-      if (businessDaysBetween(canonicalApplication.submittedAt, now) >= 10) matureCanonicalOutcomes.push(latest);
+      if (effectiveKeys.has(groupKey) && businessDaysBetween(canonicalApplication.submittedAt, now) >= 10) matureCanonicalOutcomes.push(latest);
     }
   }
   const maturedApplications = canonical.filter((entry) => businessDaysBetween(entry.submittedAt, now) >= 10).length;
@@ -598,7 +596,11 @@ export function buildReview(entries, outcomeEntries = [], acknowledgements = [],
     submittedTotal: canonical.length,
     uniqueSubmittedTotal: canonical.length,
     rawSubmissionRows: submissions.length,
-    duplicateSubmissionRows: submissions.length - canonical.length,
+    duplicateSubmissionRows: submissions.length - groups.size,
+    recordedSubmissionCount: groups.size,
+    effectiveSubmissionCount: canonical.length,
+    failedDeliveryCount: delivery.failedDeliveryCount,
+    receiptUnknownEmailCount: delivery.receiptUnknownEmailCount,
     submittedSinceLastReview,
     maturedApplications,
     outcomeCounts,
@@ -1081,7 +1083,7 @@ async function ledgerAdd(entryInput, duplicateOverride, companyReapplyOverride, 
         if (entry.roundId) await cloudState.appendRecord('rounds', { type: 'submission-confirmed', roundId: entry.roundId, applicationId: entry.id, occurredAt: entry.submittedAt }, { recordKey: entry.roundId, idempotencyKey: `round-confirmation:${entry.roundId}:${entry.id}`, occurredAt: entry.submittedAt, queueOnFailure: true });
       }
     }
-    return { recorded: storedEntry.id, review: buildReview([...entries, storedEntry]), ...(cloudIntent ? { cloudIntent: cloudIntent.intentId } : {}) };
+    return { recorded: storedEntry.id, review: buildReview([...entries, storedEntry], outcomes, [], new Date(), await jsonLines(join(dir, 'delivery.ndjson'))), ...(cloudIntent ? { cloudIntent: cloudIntent.intentId } : {}) };
   });
 }
 
@@ -1107,6 +1109,60 @@ function isoDate(value, label) {
   return result;
 }
 
+async function appendAccounting(stream, event, { cloudConfirmed = false } = {}) {
+  const file = join(await ensureStateDir(), `${stream}.ndjson`);
+  const previous = await jsonLines(file);
+  const matches = previous.filter(e => e.id === event.id);
+  if (matches.some(e => stableJson(e) !== stableJson(event))) throw new Error('Conflicting accounting event ID.');
+  if (matches.length) return { recorded: false, duplicate: true, event };
+  await appendFile(file, `${JSON.stringify(event)}\n`, { mode: 0o600 });
+  await chmod(file, 0o600);
+  if (!cloudConfirmed && await cloudState.configured()) await cloudState.appendRecord(stream, event, { recordKey: event.id, idempotencyKey: `accounting:${event.id}`, occurredAt: event.occurredAt ?? event.observedAt, queueOnFailure: true });
+  return { recorded: true, duplicate: false, event };
+}
+
+async function recordDelivery(input, retry = false) {
+  const { cloudIntentId, cloudLeaseId, ...raw } = object(input, 'delivery');
+  const event = validateDelivery({ ...raw, ...(retry ? { type: 'retry-confirmed' } : {}) });
+  if (!retry && event.type === 'retry-confirmed') throw new Error('Use ledger retry for replacement transmissions.');
+  return withStateLock('applications', () => withStateLock('delivery', async dir => {
+    const applications = await jsonLines(join(dir, 'applications.ndjson'));
+    const events = await jsonLines(join(dir, 'delivery.ndjson'));
+    validateDeliveryReferences(event, applications, events);
+    let cloudConfirmed = false;
+    if (retry && !events.some(e => e.id === event.id) && await cloudState.configured()) {
+      if (!cloudIntentId || !cloudLeaseId || event.attemptId !== cloudIntentId) throw new Error('Cloud retry requires its intent and live lease; attemptId must equal cloudIntentId.');
+      await cloudState.confirmRetry(cloudIntentId, event, cloudLeaseId);
+      cloudConfirmed = true;
+    }
+    const result = await appendAccounting('delivery', event, { cloudConfirmed });
+    return { ...result, delivery: deliveryProjection(applications, [...events, event]) };
+  }));
+}
+async function deliveryHistory(applicationId) {
+  const dir = await ensureStateDir();
+  const apps = (await jsonLines(join(dir, 'applications.ndjson'))).filter(a => !applicationId || a.id === applicationId);
+  const events = (await jsonLines(join(dir, 'delivery.ndjson'))).filter(e => !applicationId || e.applicationId === applicationId);
+  return { ...deliveryProjection(apps, events), events };
+}
+async function recordLead(input) {
+  const event = validateLead(input);
+  knownDiscoverySourceId(event.sourceId, 'lead.sourceId');
+  return withStateLock('rounds', async dir => {
+    const round = await roundStatus(event.roundId);
+    const events = await jsonLines(join(dir, 'discovery.ndjson'));
+    if (round.completed && !event.supersedes && !events.some(e => e.id === event.id)) throw new Error('Completed rounds accept only corrections to existing leads.');
+    validateLeadReferences(event, events);
+    return appendAccounting('discovery', event);
+  });
+}
+async function leadHistory(roundId) {
+  const dir = await ensureStateDir();
+  const id = roundId ?? (await roundStatus()).roundId;
+  const history = (await jsonLines(join(dir, 'discovery.ndjson'))).filter(e => e.roundId === id);
+  return { ...discoveryProjection(history, { roundId: id }), history };
+}
+
 async function roundStart(input) {
   const value = object(input, 'round');
   const allowed = new Set(['requestedCount', 'startedAt']);
@@ -1114,6 +1170,7 @@ async function roundStart(input) {
   const event = {
     type: 'started',
     roundId: `round-${new Date().toISOString().slice(0, 10)}-${randomUUID()}`,
+    discoveryPolicyVersion: 2,
     requestedCount: integer(value.requestedCount, 'round.requestedCount', 1, 1000),
     occurredAt: isoDate(value.startedAt, 'round.startedAt'),
   };
@@ -1127,7 +1184,7 @@ function discoveryGroup(id) {
   return id;
 }
 
-function discoverySummary(events, applications, completion) {
+function discoverySummary(events, applications, completion, audit = null) {
   const latest = new Map();
   const searchedIds = new Set();
   const attribution = new Map();
@@ -1136,7 +1193,10 @@ function discoverySummary(events, applications, completion) {
     if (event.status === 'searched') searchedIds.add(event.sourceId);
     for (const id of event.applicationIds ?? []) attribution.set(id, event.sourceId);
   }
-  const sources = [...latest.values()];
+  const sources = [...latest.values()].map(report => {
+    const leads = audit?.leads.filter(lead => lead.sourceId === report.sourceId) ?? [];
+    return audit ? { ...report, reviewedCount: leads.length, qualifiedCount: leads.filter(lead => !lead.conflict && lead.disposition === 'qualified').length, accounting: 'per-lead' } : { ...report, accounting: 'legacy-unverified' };
+  });
   const eligible = sources.filter((item) => !['recruiter-inbound', 'user-supplied-leads'].includes(item.sourceId));
   const attempted = new Set(eligible.map((item) => discoveryGroup(item.sourceId)));
   const searched = new Set(eligible.filter((item) => searchedIds.has(item.sourceId)).map((item) => discoveryGroup(item.sourceId)));
@@ -1172,8 +1232,14 @@ async function roundSource(input) {
   const sourceId = knownDiscoverySourceId(value.sourceId, 'coverage.sourceId');
   const status = string(value.status, 'coverage.status', 20);
   if (!['searched', 'blocked'].includes(status)) throw new Error('coverage.status must be searched or blocked.');
-  const reviewedCount = integer(value.reviewedCount, 'coverage.reviewedCount', 0, 10000);
-  const qualifiedCount = integer(value.qualifiedCount, 'coverage.qualifiedCount', 0, reviewedCount);
+  const roundState = await roundStatus(string(value.roundId, 'coverage.roundId', 180));
+  const audit = discoveryProjection(await jsonLines(join(await ensureStateDir(), 'discovery.ndjson')), { roundId: value.roundId });
+  const leads = audit.leads.filter(lead => lead.sourceId === sourceId);
+  const derivedReviewed = status === 'blocked' ? 0 : leads.length;
+  const derivedQualified = status === 'blocked' ? 0 : leads.filter(lead => !lead.conflict && lead.disposition === 'qualified').length;
+  const reviewedCount = roundState.discoveryPolicyVersion === 2 ? derivedReviewed : integer(value.reviewedCount, 'coverage.reviewedCount', 0, 10000);
+  const qualifiedCount = roundState.discoveryPolicyVersion === 2 ? derivedQualified : integer(value.qualifiedCount, 'coverage.qualifiedCount', 0, reviewedCount);
+  if (roundState.discoveryPolicyVersion === 2 && ((value.reviewedCount != null && value.reviewedCount !== reviewedCount) || (value.qualifiedCount != null && value.qualifiedCount !== qualifiedCount))) throw new Error('Source count assertions do not match recorded leads.');
   const blocker = value.blocker == null ? null : string(value.blocker, 'coverage.blocker', 40);
   if (status === 'blocked' && (!SOURCE_BLOCKERS.has(blocker) || reviewedCount !== 0 || qualifiedCount !== 0)) throw new Error('Blocked sources require a documented blocker and zero counts.');
   if (status === 'searched' && blocker != null) throw new Error('Searched sources cannot have a blocker.');
@@ -1217,6 +1283,16 @@ function replayAttention(events, roundId = null) {
 async function attentionList(roundId = null) {
   const events = await jsonLines(join(await ensureStateDir(), 'attention.ndjson'));
   const items = replayAttention(events, roundId);
+  const dir = await ensureStateDir();
+  const apps = await jsonLines(join(dir, 'applications.ndjson'));
+  const delivery = deliveryProjection(apps, await jsonLines(join(dir, 'delivery.ndjson')));
+  for (const item of delivery.applications.filter(a => a.failed || a.conflict)) {
+    const app = apps.find(a => a.id === item.applicationId);
+    if (roundId && app.roundId !== roundId) continue;
+    items.push({ id: `delivery:${app.id}`, applicationId: app.id, roundId: app.roundId ?? null, url: app.url, stage: 'confirmation', blocker: item.conflict ? 'delivery-conflict' : 'delivery-failed', requiredActions: ['review-delivery'], derived: true });
+  }
+  const discovery = discoveryProjection(await jsonLines(join(dir, 'discovery.ndjson')), { roundId });
+  for (const lead of discovery.leads.filter(l => l.conflict)) items.push({ id: `discovery:${lead.key}`, roundId: lead.roundId, url: lead.url, stage: 'discovery', blocker: 'assessment-conflict', requiredActions: ['review-assessment'], derived: true });
   return { count: items.length, items };
 }
 
@@ -1251,6 +1327,7 @@ async function attentionResolve(input) {
   for (const key of Object.keys(value)) if (!allowed.has(key)) throw new Error(`Unknown attention resolution property: ${key}.`);
   const id = string(value.id, 'attention.id', 180);
   const current = await attentionList();
+  if (current.items.some(item => item.id === id && item.derived)) throw new Error('Resolve accounting attention with a delivery correction, verified recovery, or lead revision.');
   if (!current.items.some((item) => item.id === id)) throw new Error('Attention item is not active.');
   const event = { type: 'resolved', id, resolvedAt: isoDate(value.resolvedAt, 'attention.resolvedAt') };
   await appendPrivateEvent('attention', event);
@@ -1267,7 +1344,11 @@ async function roundStatus(roundId = null) {
   if (!started) throw new Error('Application round was not found.');
   const matching = (await jsonLines(join(dir, 'applications.ndjson'))).filter((entry) => entry.roundId === id && entry.status === 'submitted');
   const applications = [...new Map(matching.map((entry, index) => [canonicalApplicationKey(entry, String(index)), entry])).values()];
-  const confirmedCount = new Set(applications.map((entry, index) => canonicalApplicationKey(entry, String(index)))).size;
+  const delivery = deliveryProjection(matching, await jsonLines(join(dir, 'delivery.ndjson')));
+  const effectiveKeys = new Set(matching.filter((entry,i) => delivery.applications[i].counted).map(canonicalApplicationKey));
+  const effectiveApplications = applications.filter(entry => effectiveKeys.has(canonicalApplicationKey(entry)));
+  const confirmedCount = delivery.effectiveSubmissionCount;
+  const audit = started.discoveryPolicyVersion === 2 ? discoveryProjection(await jsonLines(join(dir, 'discovery.ndjson')), { roundId: id }) : null;
   const attention = await attentionList(id);
   const completion = events.find((event) => event.type === 'completed' && event.roundId === id);
   return {
@@ -1277,7 +1358,16 @@ async function roundStatus(roundId = null) {
     remainingCount: Math.max(0, started.requestedCount - confirmedCount),
     blockedCount: attention.count,
     completed: Boolean(completion),
-    discovery: discoverySummary(events.filter((event) => event.roundId === id), applications, completion),
+    discoveryPolicyVersion: started.discoveryPolicyVersion ?? 1,
+    recordedSubmissionCount: delivery.recordedSubmissionCount,
+    effectiveSubmissionCount: confirmedCount,
+    failedDeliveryCount: delivery.failedDeliveryCount,
+    receiptUnknownEmailCount: delivery.receiptUnknownEmailCount,
+    shortfallCount: Math.max(0, started.requestedCount - confirmedCount),
+    needsRecovery: Boolean(completion) && confirmedCount < started.requestedCount,
+    discovery: { ...discoverySummary(events.filter((event) => event.roundId === id), effectiveApplications, completion, audit),
+      ...(audit ? { reviewedCount: audit.reviewedCount, qualifiedCount: audit.qualifiedCount, uniqueLeadCount: audit.uniqueLeadCount, dispositionCounts: audit.dispositionCounts, conflicts: audit.conflicts,
+        missingLeadApplicationIds: effectiveApplications.filter(app => !audit.leads.some(lead => !lead.conflict && lead.disposition === 'qualified' && lead.applicationId === app.id && lead.sourceId === (app.discoverySourceId ?? events.filter(e => e.type === 'source-checked' && e.applicationIds?.includes(app.id)).at(-1)?.sourceId) && (canonicalUrl(lead.url) === canonicalUrl(app.url) || (lead.employerJobId && lead.employerJobId.toLowerCase() === app.employerJobId?.toLowerCase() && normalizedText(lead.company) === normalizedText(app.company))))).map(app => app.id) } : { accounting: 'legacy-unverified' }) },
     startedAt: started.occurredAt,
     ...(completion ? { completedAt: completion.occurredAt } : {}),
   };
@@ -1294,6 +1384,7 @@ async function roundComplete(input) {
     if (status.confirmedCount < status.requestedCount) throw new Error(`Round requires ${status.requestedCount} confirmed submissions before completion.`);
     if (!status.discovery.coverageSatisfied) throw new Error('Round requires attempts across at least 3 distinct discovery sources, including at least one searched source. Record coverage and blockers with round source --stdin.');
     if (status.discovery.unattributedCount) throw new Error('Round requires discovery source attribution for every confirmed submission. Supply missing attribution using round source applicationIds; do not rewrite the ledger.');
+    if (status.discovery.conflicts?.length || status.discovery.missingLeadApplicationIds?.length) throw new Error('Round requires qualified lead records for every submission and resolution of conflicting assessments.');
     let explanation = {};
     if (status.discovery.concentrationNeedsExplanation || value.concentrationReason != null || value.concentrationEvidence != null) {
       if (!CONCENTRATION_REASONS.has(value.concentrationReason)) throw new Error('Source concentration requires a documented concentrationReason and private concentrationEvidence.');
@@ -1399,7 +1490,7 @@ async function ledgerReview() {
   const applications = await jsonLines(join(dir, 'applications.ndjson'));
   const outcomes = await jsonLines(join(dir, 'outcomes.ndjson'));
   const acknowledgements = await jsonLines(join(dir, 'reviews.ndjson'));
-  return buildReview(applications, outcomes, acknowledgements);
+  return buildReview(applications, outcomes, acknowledgements, new Date(), await jsonLines(join(dir, 'delivery.ndjson')));
 }
 
 async function ledgerReviewAcknowledge(input) {
@@ -1547,6 +1638,9 @@ async function executeCommand([area, action, value], telemetry, session, communi
     const event = await telemetryJobAssessed(job, result);
     if (event) domainEvents.push(event);
   } else if (area === 'ledger' && action === 'check' && value === '--stdin') result = await ledgerCheck(await jsonStdin());
+  else if (area === 'ledger' && action === 'delivery' && value === '--stdin') result = await recordDelivery(await jsonStdin());
+  else if (area === 'ledger' && action === 'retry' && value === '--stdin') result = await recordDelivery(await jsonStdin(), true);
+  else if (area === 'ledger' && action === 'deliveries') result = await deliveryHistory(value);
   else if (area === 'ledger' && action === 'add' && value === '--stdin') {
     const input = await jsonStdin();
     const telemetryDetails = validateSubmissionTelemetry(input.telemetry);
@@ -1569,6 +1663,8 @@ async function executeCommand([area, action, value], telemetry, session, communi
   else if (area === 'autonomy' && action === 'preview' && value == null) result = await autonomyStatus();
   else if (area === 'autonomy' && action === 'revoke' && value == null) result = await autonomyRevoke();
   else if (area === 'round' && action === 'start' && value === '--stdin') result = await roundStart(await jsonStdin());
+  else if (area === 'round' && action === 'lead' && value === '--stdin') result = await recordLead(await jsonStdin());
+  else if (area === 'round' && action === 'leads') result = await leadHistory(value);
   else if (area === 'round' && action === 'source' && value === '--stdin') {
     result = await roundSource(await jsonStdin());
     domainEvents.push({ event: 'source_checked', properties: {
