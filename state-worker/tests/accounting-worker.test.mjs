@@ -225,3 +225,72 @@ sqliteTest('lease expiry blocks both recovery preparation and confirmation', asy
   const confirmation = await worker.fetch(request(`/v2/intents/${intentId}/confirm`, { method: 'POST', body: { leaseId, delivery: retryEvent(intentId) } }), env);
   assert.equal(confirmation.status, 409);
 });
+
+for (const observation of ['receipt', 'correction']) {
+  sqliteTest(`already transmitted recovery remains recordable after a late original-attempt ${observation}`, async () => {
+    const env = await setup();
+    await seedApplication(env);
+    const leaseId = await acquireLease(env);
+    const prepared = await prepareRetry(env, leaseId);
+    assert.equal(prepared.status, 201);
+    const { intentId } = await prepared.json();
+    const transmission = retryEvent(intentId);
+    const sent = await worker.fetch(request(`/v2/intents/${intentId}/sent-unverified`, { method: 'POST', body: { leaseId } }), env);
+    assert.equal(sent.status, 200);
+    const lateEvidence = failure({
+      id: `late-${observation}`,
+      type: observation === 'receipt' ? 'receipt-confirmed' : 'correction',
+      evidenceType: 'employer-acknowledgement',
+      evidence: 'Synthetic employer acknowledgement arrived after replacement transmission.',
+      ...(observation === 'correction' ? { supersedes: 'failure-event', status: 'receipt-confirmed' } : {}),
+    });
+    const received = await worker.fetch(request('/v2/streams/delivery', { method: 'POST', token: TOKEN_B, body: envelope(lateEvidence) }), env);
+    assert.equal(received.status, 201);
+
+    const confirmed = await worker.fetch(request(`/v2/intents/${intentId}/confirm`, { method: 'POST', body: { leaseId, delivery: transmission } }), env);
+    assert.equal(confirmed.status, 200);
+    const applications = await (await worker.fetch(request('/v2/streams/applications'), env)).json();
+    const deliveries = await (await worker.fetch(request('/v2/streams/delivery'), env)).json();
+    assert.equal(applications.records.length, 1);
+    assert.equal(deliveries.records.filter(row => row.value.type === 'retry-confirmed' && row.value.attemptId === intentId).length, 1);
+    assert.equal((await env.DB.prepare('SELECT status FROM application_intents WHERE intent_id = ?').bind(intentId).first()).status, 'confirmed');
+  });
+}
+
+sqliteTest('automatic startup recovery accepts validated historical retries through batch reconciliation', async () => {
+  const env = await setup();
+  await seedApplication(env, { failed: false });
+  const historicalRetry = retryEvent('historical-recovery-attempt');
+  const records = [failure(), historicalRetry].map(value => ({ ...envelope(value), provenance: 'automatic-recovery' }));
+  const imported = await worker.fetch(request('/v2/streams/delivery/batch', { method: 'POST', body: { records } }), env);
+  assert.equal(imported.status, 201);
+  const replayed = await worker.fetch(request('/v2/streams/delivery/batch', { method: 'POST', body: { records } }), env);
+  assert.equal(replayed.status, 200);
+  const deliveries = await (await worker.fetch(request('/v2/streams/delivery'), env)).json();
+  assert.equal(deliveries.records.length, 2);
+  assert.ok(deliveries.records.every(row => row.provenance === 'automatic-recovery'));
+  const applications = await (await worker.fetch(request('/v2/streams/applications'), env)).json();
+  assert.equal(applications.records.length, 1);
+  assert.equal(deliveryProjection(applications.records.map(row => row.value), deliveries.records.map(row => row.value)).effectiveSubmissionCount, 1);
+});
+
+for (const stream of ['delivery', 'discovery']) {
+  sqliteTest(`concurrent ${stream} batches cannot both accept different payloads for the same event ID`, async () => {
+    const env = await setup();
+    await seedApplication(env, { failed: false });
+    const first = stream === 'delivery'
+      ? failure()
+      : { version: 1, type: 'lead-reviewed', id: 'shared-lead-event', roundId: 'round-1', sourceId: 'direct', url: canonicalUrl, company: 'Example', role: 'Engineer', disposition: 'qualified', observedAt: new Date().toISOString(), evidence: 'Synthetic initial candidate assessment.' };
+    const competing = { ...first, evidence: 'Synthetic different observation using the same event ID.' };
+    const requests = [first, competing].map((value, index) => request(`/v2/streams/${stream}/batch`, {
+      method: 'POST', token: index === 0 ? TOKEN_A : TOKEN_B, body: { records: [envelope(value)] },
+    }));
+    const responses = await Promise.all(requests.map(input => worker.fetch(input, env)));
+    assert.deepEqual(responses.map(response => response.status).sort(), [201, 409]);
+    const stored = await (await worker.fetch(request(`/v2/streams/${stream}`), env)).json();
+    assert.equal(stored.records.length, 1);
+    const successfulIndex = responses.findIndex(response => response.status === 201);
+    assert.equal(stored.records[0].value.id, first.id);
+    assert.equal(stored.records[0].value.evidence, [first, competing][successfulIndex].evidence);
+  });
+}

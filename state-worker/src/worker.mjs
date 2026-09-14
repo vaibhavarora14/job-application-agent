@@ -252,7 +252,7 @@ async function validateAccountingRecord(env, stream, body, pending = [], context
   const events = [...(context?.events ?? await streamValues(env, stream)), ...pending];
   if (stream === 'delivery') {
     validateDeliveryReferences(value, context?.applications ?? await streamValues(env, 'applications'), events);
-    if (value.type === 'retry-confirmed' && !events.some(e => e.id === value.id) && body.provenance !== 'local-reconcile') throw new Error('New cloud retry must be confirmed through its leased intent.');
+    if (value.type === 'retry-confirmed' && !events.some(e => e.id === value.id) && !['local-reconcile', 'automatic-recovery'].includes(body.provenance)) throw new Error('New cloud retry must be confirmed through its leased intent.');
   } else validateLeadReferences(value, events);
   body.value = value;
   body.recordKey = value.id;
@@ -278,7 +278,7 @@ async function streamAppend(request, env, client, stream) {
   ).bind(stream, recordKey, idempotencyKey, payload, occurredAt, receivedAt, client.id, provenance).run();
   const row = await env.DB.prepare("SELECT sequence, record_key, payload_json, occurred_at, received_at, client_id, provenance FROM records WHERE stream = ? AND idempotency_key = ?")
     .bind(stream, idempotencyKey).first();
-  if ((stream === 'delivery' || (stream === 'discovery' && body.value.version === 1 && body.value.type === 'lead-reviewed')) && stableJson(JSON.parse(row.payload_json)) !== stableJson(body.value)) return conflict('Accounting event ID already has different content.');
+  if ((stream === 'delivery' || (stream === 'discovery' && body.value?.version === 1 && body.value?.type === 'lead-reviewed')) && stableJson(JSON.parse(row.payload_json)) !== stableJson(body.value)) return conflict('Accounting event ID already has different content.');
   return jsonResponse({ stream, sequence: row.sequence, recordKey: row.record_key, duplicate: !result.meta?.changes, value: JSON.parse(row.payload_json), occurredAt: row.occurred_at, receivedAt: row.received_at, clientId: row.client_id, provenance: row.provenance }, result.meta?.changes ? 201 : 200);
 }
 
@@ -307,6 +307,20 @@ async function streamBatchAppend(request, env, client, stream) {
     }
   } catch (error) { return badRequest(error.message); }
   const results = await env.DB.batch(statements);
+  // Concurrent batches may pass validation against the same snapshot. Verify the
+  // winning content after INSERT OR IGNORE before acknowledging either host.
+  const accounting = body.records.filter(item => stream === 'delivery' || (stream === 'discovery' && item.value?.version === 1 && item.value?.type === 'lead-reviewed'));
+  if (accounting.length) {
+    const payloads = new Map();
+    // Keep the stream parameter and event IDs within D1's bound-parameter limit.
+    for (let offset = 0; offset < accounting.length; offset += 99) {
+      const chunk = accounting.slice(offset, offset + 99);
+      const stored = await env.DB.prepare(`SELECT idempotency_key, payload_json FROM records WHERE stream = ? AND idempotency_key IN (${chunk.map(() => '?').join(',')})`)
+        .bind(stream, ...chunk.map(item => item.idempotencyKey)).all();
+      for (const row of stored.results) payloads.set(row.idempotency_key, stableJson(JSON.parse(row.payload_json)));
+    }
+    if (accounting.some(item => payloads.get(item.idempotencyKey) !== stableJson(item.value))) return conflict('Accounting event ID already has different content.');
+  }
   const inserted = results.reduce((sum, result) => sum + Number(result.meta?.changes ?? 0), 0);
   return jsonResponse({ stream, attempted: statements.length, inserted, duplicates: statements.length - inserted }, inserted ? 201 : 200);
 }
@@ -429,7 +443,7 @@ async function updateIntent(request, env, client, intentId, action) {
       return jsonResponse({ intentId, status: 'confirmed', applicationId: intent.application_id });
     }
     if (!['prepared','sent-unverified'].includes(intent.status)) return conflict('intent is not confirmable');
-    try { validateDeliveryReferences(event, await streamValues(env, 'applications'), existing); } catch (error) { return conflict(error.message); }
+    try { validateDeliveryReferences(event, await streamValues(env, 'applications'), existing, { preparedRetry: true }); } catch (error) { return conflict(error.message); }
     await env.DB.batch([
       env.DB.prepare("INSERT OR IGNORE INTO records (stream, record_key, idempotency_key, payload_json, occurred_at, received_at, client_id, provenance) SELECT 'delivery', ?, ?, ?, ?, ?, ?, 'live' WHERE EXISTS (SELECT 1 FROM application_intents WHERE intent_id = ? AND status IN ('prepared','sent-unverified'))").bind(event.id, `accounting:${event.id}`, JSON.stringify(event), event.occurredAt, now, client.id, intentId),
       env.DB.prepare("UPDATE application_intents SET status = 'confirmed', updated_at = ? WHERE intent_id = ? AND status IN ('prepared','sent-unverified')").bind(now, intentId),
