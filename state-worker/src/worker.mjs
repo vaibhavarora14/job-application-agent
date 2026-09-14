@@ -1,3 +1,4 @@
+import { ACCOUNTING_CAPABILITY, accountingApplicationKey, canonicalUrl, deliveryProjection, validateDelivery, validateDeliveryReferences, validateLead, validateLeadReferences, stableJson } from '../../job-application-agent/scripts/application-accounting.mjs';
 import { createHash, timingSafeEqual } from "node:crypto";
 import { createBackup } from "./backup.mjs";
 
@@ -34,7 +35,7 @@ const REJECTED_OBJECT_KEY = /^(passwords?|passwd|cookies?|mfa(code)?|totp|ssn|pa
 
 const NO_STORE = { "cache-control": "no-store" };
 const PRIVATE_STREAMS = new Set([
-  "applications", "outcomes", "rounds", "discovery", "attention", "reviews", "friction",
+  "applications", "outcomes", "rounds", "discovery", "delivery", "attention", "reviews", "friction",
   "approved-answers", "profile-corrections", "preferences-corrections",
   "connectivity-tests",
 ]);
@@ -241,10 +242,28 @@ async function streamList(url, env, stream) {
   return jsonResponse({ stream, records, nextCursor: records.at(-1)?.sequence ?? after });
 }
 
+async function streamValues(env, stream) {
+  const result = await env.DB.prepare("SELECT r.payload_json FROM records r LEFT JOIN record_corrections c ON c.record_sequence = r.sequence WHERE r.stream = ? AND c.record_sequence IS NULL ORDER BY r.sequence").bind(stream).all();
+  return result.results.map(row => JSON.parse(row.payload_json));
+}
+async function validateAccountingRecord(env, stream, body, pending = [], context = null) {
+  if (stream !== 'delivery' && !(stream === 'discovery' && body.value?.version === 1 && body.value?.type === 'lead-reviewed')) return;
+  const value = stream === 'delivery' ? validateDelivery(body.value) : validateLead(body.value);
+  const events = [...(context?.events ?? await streamValues(env, stream)), ...pending];
+  if (stream === 'delivery') {
+    validateDeliveryReferences(value, context?.applications ?? await streamValues(env, 'applications'), events);
+    if (value.type === 'retry-confirmed' && !events.some(e => e.id === value.id) && !['local-reconcile', 'automatic-recovery'].includes(body.provenance)) throw new Error('New cloud retry must be confirmed through its leased intent.');
+  } else validateLeadReferences(value, events);
+  body.value = value;
+  body.recordKey = value.id;
+  body.idempotencyKey = `accounting:${value.id}`;
+}
+
 async function streamAppend(request, env, client, stream) {
   if (!PRIVATE_STREAMS.has(stream)) return notFound("stream not allowlisted");
   let body;
   try { body = await jsonBody(request); } catch (error) { return badRequest(error.message); }
+  try { await validateAccountingRecord(env, stream, body); } catch (error) { return badRequest(error.message); }
   const recordKey = typeof body.recordKey === "string" && body.recordKey.length <= 300 ? body.recordKey : null;
   const idempotencyKey = typeof body.idempotencyKey === "string" && body.idempotencyKey.length <= 300 ? body.idempotencyKey : null;
   if (!recordKey || !idempotencyKey || !("value" in body)) return badRequest("recordKey, idempotencyKey, and value are required");
@@ -259,6 +278,7 @@ async function streamAppend(request, env, client, stream) {
   ).bind(stream, recordKey, idempotencyKey, payload, occurredAt, receivedAt, client.id, provenance).run();
   const row = await env.DB.prepare("SELECT sequence, record_key, payload_json, occurred_at, received_at, client_id, provenance FROM records WHERE stream = ? AND idempotency_key = ?")
     .bind(stream, idempotencyKey).first();
+  if ((stream === 'delivery' || (stream === 'discovery' && body.value?.version === 1 && body.value?.type === 'lead-reviewed')) && stableJson(JSON.parse(row.payload_json)) !== stableJson(body.value)) return conflict('Accounting event ID already has different content.');
   return jsonResponse({ stream, sequence: row.sequence, recordKey: row.record_key, duplicate: !result.meta?.changes, value: JSON.parse(row.payload_json), occurredAt: row.occurred_at, receivedAt: row.received_at, clientId: row.client_id, provenance: row.provenance }, result.meta?.changes ? 201 : 200);
 }
 
@@ -270,8 +290,12 @@ async function streamBatchAppend(request, env, client, stream) {
   const receivedAt = new Date().toISOString();
   const statements = [];
   try {
+    const pending = [];
+    const context = ['delivery','discovery'].includes(stream) ? { events: await streamValues(env, stream), applications: stream === 'delivery' ? await streamValues(env, 'applications') : [] } : null;
     for (const item of body.records) {
       if (!item || typeof item !== "object" || Array.isArray(item)) throw new Error("each record must be an object");
+      await validateAccountingRecord(env, stream, item, pending, context);
+      pending.push(item.value);
       const recordKey = typeof item.recordKey === "string" && item.recordKey.length <= 300 ? item.recordKey : null;
       const idempotencyKey = typeof item.idempotencyKey === "string" && item.idempotencyKey.length <= 300 ? item.idempotencyKey : null;
       if (!recordKey || !idempotencyKey || !("value" in item)) throw new Error("each record requires recordKey, idempotencyKey, and value");
@@ -283,6 +307,20 @@ async function streamBatchAppend(request, env, client, stream) {
     }
   } catch (error) { return badRequest(error.message); }
   const results = await env.DB.batch(statements);
+  // Concurrent batches may pass validation against the same snapshot. Verify the
+  // winning content after INSERT OR IGNORE before acknowledging either host.
+  const accounting = body.records.filter(item => stream === 'delivery' || (stream === 'discovery' && item.value?.version === 1 && item.value?.type === 'lead-reviewed'));
+  if (accounting.length) {
+    const payloads = new Map();
+    // Keep the stream parameter and event IDs within D1's bound-parameter limit.
+    for (let offset = 0; offset < accounting.length; offset += 99) {
+      const chunk = accounting.slice(offset, offset + 99);
+      const stored = await env.DB.prepare(`SELECT idempotency_key, payload_json FROM records WHERE stream = ? AND idempotency_key IN (${chunk.map(() => '?').join(',')})`)
+        .bind(stream, ...chunk.map(item => item.idempotencyKey)).all();
+      for (const row of stored.results) payloads.set(row.idempotency_key, stableJson(JSON.parse(row.payload_json)));
+    }
+    if (accounting.some(item => payloads.get(item.idempotencyKey) !== stableJson(item.value))) return conflict('Accounting event ID already has different content.');
+  }
   const inserted = results.reduce((sum, result) => sum + Number(result.meta?.changes ?? 0), 0);
   return jsonResponse({ stream, attempted: statements.length, inserted, duplicates: statements.length - inserted }, inserted ? 201 : 200);
 }
@@ -364,13 +402,21 @@ async function createIntent(request, env, client) {
   const lease = await env.DB.prepare("SELECT lease_id, holder_client_id, expires_at FROM leases WHERE name = 'application-run'").first();
   if (!lease || lease.lease_id !== body.leaseId || lease.holder_client_id !== client.id || Date.parse(lease.expires_at) <= Date.now()) return conflict("active application lease required");
   const duplicate = await env.DB.prepare("SELECT r.sequence FROM records r LEFT JOIN record_corrections c ON c.record_sequence = r.sequence WHERE r.stream = 'applications' AND r.record_key = ? AND c.record_sequence IS NULL LIMIT 1").bind(body.applicationId).first();
-  if (duplicate) return conflict("application already recorded");
+  if (body.retry === true) {
+    const apps = await streamValues(env, 'applications');
+    const app = apps.find(a => a.id === body.applicationId);
+    const related = app ? apps.filter(a => accountingApplicationKey(a) === accountingApplicationKey(app)) : [];
+    const states = deliveryProjection(related, await streamValues(env, 'delivery')).applications;
+    if (!states.length || states.some(state => !state.failed || state.conflict)) return conflict('retry requires verified failure of every prior attempt');
+  } else if (duplicate) return conflict("application already recorded");
+  try { body.canonicalUrl = canonicalUrl(body.canonicalUrl); } catch (error) { return badRequest(error.message); }
   const open = await env.DB.prepare("SELECT intent_id, status FROM application_intents WHERE application_id = ? AND status IN ('prepared', 'sent-unverified') LIMIT 1").bind(body.applicationId).first();
   if (open) return conflict(`application already has ${open.status} intent`);
   const intentId = crypto.randomUUID();
   const now = new Date().toISOString();
-  await env.DB.prepare("INSERT INTO application_intents (intent_id, application_id, round_id, canonical_url, status, payload_json, client_id, created_at, updated_at) VALUES (?, ?, ?, ?, 'prepared', ?, ?, ?, ?)")
-    .bind(intentId, body.applicationId, body.roundId ?? null, body.canonicalUrl, JSON.stringify(body.value ?? {}), client.id, now, now).run();
+  const created = await env.DB.prepare("INSERT INTO application_intents (intent_id, application_id, round_id, canonical_url, status, payload_json, client_id, created_at, updated_at) SELECT ?, ?, ?, ?, 'prepared', ?, ?, ?, ? WHERE NOT EXISTS (SELECT 1 FROM application_intents WHERE application_id = ? AND status IN ('prepared', 'sent-unverified'))")
+    .bind(intentId, body.applicationId, body.roundId ?? null, body.canonicalUrl, JSON.stringify({ ...body.value, retry: body.retry === true }), client.id, now, now, body.applicationId).run();
+  if (!created.meta?.changes) return conflict('application already has an open intent');
   return jsonResponse({ intentId, applicationId: body.applicationId, status: "prepared", createdAt: now }, 201);
 }
 
@@ -386,6 +432,25 @@ async function updateIntent(request, env, client, intentId, action) {
     if (intent.status !== "prepared") return conflict("only prepared intent may be marked sent-unverified");
     await env.DB.prepare("UPDATE application_intents SET status = 'sent-unverified', updated_at = ? WHERE intent_id = ?").bind(now, intentId).run();
     return jsonResponse({ intentId, status: "sent-unverified", requiresVerification: true });
+  }
+  if (action === 'confirm' && JSON.parse(intent.payload_json).retry === true) {
+    let event;
+    try { event = validateDelivery(body.delivery); } catch (error) { return badRequest(error.message); }
+    if (event.type !== 'retry-confirmed' || event.applicationId !== intent.application_id || event.attemptId !== intentId || event.url !== intent.canonical_url) return badRequest('Retry evidence must match the prepared application, attempt and destination.');
+    const existing = await streamValues(env, 'delivery');
+    if (intent.status === 'confirmed') {
+      if (!existing.some(e => stableJson(e) === stableJson(event))) return conflict('intent already confirmed with different evidence');
+      return jsonResponse({ intentId, status: 'confirmed', applicationId: intent.application_id });
+    }
+    if (!['prepared','sent-unverified'].includes(intent.status)) return conflict('intent is not confirmable');
+    try { validateDeliveryReferences(event, await streamValues(env, 'applications'), existing, { preparedRetry: true }); } catch (error) { return conflict(error.message); }
+    await env.DB.batch([
+      env.DB.prepare("INSERT OR IGNORE INTO records (stream, record_key, idempotency_key, payload_json, occurred_at, received_at, client_id, provenance) SELECT 'delivery', ?, ?, ?, ?, ?, ?, 'live' WHERE EXISTS (SELECT 1 FROM application_intents WHERE intent_id = ? AND status IN ('prepared','sent-unverified'))").bind(event.id, `accounting:${event.id}`, JSON.stringify(event), event.occurredAt, now, client.id, intentId),
+      env.DB.prepare("UPDATE application_intents SET status = 'confirmed', updated_at = ? WHERE intent_id = ? AND status IN ('prepared','sent-unverified')").bind(now, intentId),
+    ]);
+    const stored = await streamValues(env, 'delivery');
+    if (!stored.some(e => stableJson(e) === stableJson(event))) return conflict('intent was confirmed concurrently with different evidence');
+    return jsonResponse({ intentId, status: 'confirmed', applicationId: intent.application_id });
   }
   if (action === "confirm") {
     if (!["prepared", "sent-unverified"].includes(intent.status)) return conflict("intent is not confirmable");
@@ -415,7 +480,7 @@ async function v2Status(env, client) {
   const lease = await env.DB.prepare("SELECT holder_client_id, lease_id, renewed_at, expires_at FROM leases WHERE name = 'application-run'").first();
   const counts = await env.DB.prepare("SELECT r.stream, COUNT(*) AS rows, COUNT(DISTINCT r.record_key) AS unique_records, MAX(r.sequence) AS latest_revision FROM records r LEFT JOIN record_corrections c ON c.record_sequence = r.sequence WHERE c.record_sequence IS NULL GROUP BY r.stream ORDER BY r.stream").all();
   const blobBackend = env.STATE ? "r2" : env.STATE_KV ? "kv" : "unavailable";
-  return jsonResponse({ backend: `cloudflare-d1-${blobBackend}`, apiVersion: 2, client, documents: revisions.results, files: files.results, streams: counts.results, lease: lease && Date.parse(lease.expires_at) > Date.now() ? { holderClientId: lease.holder_client_id, renewedAt: lease.renewed_at, expiresAt: lease.expires_at, heldByThisClient: lease.holder_client_id === client.id } : null });
+  return jsonResponse({ backend: `cloudflare-d1-${blobBackend}`, apiVersion: 2, capabilities: [ACCOUNTING_CAPABILITY], client, documents: revisions.results, files: files.results, streams: counts.results, lease: lease && Date.parse(lease.expires_at) > Date.now() ? { holderClientId: lease.holder_client_id, renewedAt: lease.renewed_at, expiresAt: lease.expires_at, heldByThisClient: lease.holder_client_id === client.id } : null });
 }
 
 async function adminClient(request, env, clientId, action) {
