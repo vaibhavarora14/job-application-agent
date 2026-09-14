@@ -1238,23 +1238,23 @@ async function roundSource(input) {
   const sourceId = knownDiscoverySourceId(value.sourceId, 'coverage.sourceId');
   const status = string(value.status, 'coverage.status', 20);
   if (!['searched', 'blocked'].includes(status)) throw new Error('coverage.status must be searched or blocked.');
-  const roundState = await roundStatus(string(value.roundId, 'coverage.roundId', 180));
-  const audit = discoveryProjection(await jsonLines(join(await ensureStateDir(), 'discovery.ndjson')), { roundId: value.roundId });
-  const leads = audit.leads.filter(lead => lead.sourceId === sourceId);
-  const derivedReviewed = status === 'blocked' ? 0 : leads.length;
-  const derivedQualified = status === 'blocked' ? 0 : leads.filter(lead => !lead.conflict && lead.disposition === 'qualified').length;
-  const reviewedCount = roundState.discoveryPolicyVersion === 2 ? derivedReviewed : integer(value.reviewedCount, 'coverage.reviewedCount', 0, 10000);
-  const qualifiedCount = roundState.discoveryPolicyVersion === 2 ? derivedQualified : integer(value.qualifiedCount, 'coverage.qualifiedCount', 0, reviewedCount);
-  if (roundState.discoveryPolicyVersion === 2 && ((value.reviewedCount != null && value.reviewedCount !== reviewedCount) || (value.qualifiedCount != null && value.qualifiedCount !== qualifiedCount))) throw new Error('Source count assertions do not match recorded leads.');
+  const roundId = string(value.roundId, 'coverage.roundId', 180);
   const blocker = value.blocker == null ? null : string(value.blocker, 'coverage.blocker', 40);
-  if (status === 'blocked' && (!SOURCE_BLOCKERS.has(blocker) || reviewedCount !== 0 || qualifiedCount !== 0)) throw new Error('Blocked sources require a documented blocker and zero counts.');
   if (status === 'searched' && blocker != null) throw new Error('Searched sources cannot have a blocker.');
   const evidence = string(value.evidence, 'coverage.evidence', 2000);
   const applicationIds = value.applicationIds == null ? [] : [...new Set(stringArray(value.applicationIds, 'coverage.applicationIds'))];
   if (applicationIds.length > 1000 || (status === 'blocked' && applicationIds.length)) throw new Error('Invalid coverage.applicationIds.');
   const event = await withStateLock('rounds', async (dir) => {
-    const round = await roundStatus(string(value.roundId, 'coverage.roundId', 180));
+    const round = await roundStatus(roundId);
     if (round.completed) throw new Error('Cannot record coverage for a completed round.');
+    const audit = discoveryProjection(await jsonLines(join(dir, 'discovery.ndjson')), { roundId: value.roundId });
+    const leads = audit.leads.filter(lead => lead.sourceId === sourceId);
+    const derivedReviewed = status === 'blocked' ? 0 : leads.length;
+    const derivedQualified = status === 'blocked' ? 0 : leads.filter(lead => !lead.conflict && lead.disposition === 'qualified').length;
+    const reviewedCount = round.discoveryPolicyVersion === 2 ? derivedReviewed : integer(value.reviewedCount, 'coverage.reviewedCount', 0, 10000);
+    const qualifiedCount = round.discoveryPolicyVersion === 2 ? derivedQualified : integer(value.qualifiedCount, 'coverage.qualifiedCount', 0, reviewedCount);
+    if (round.discoveryPolicyVersion === 2 && ((value.reviewedCount != null && value.reviewedCount !== reviewedCount) || (value.qualifiedCount != null && value.qualifiedCount !== qualifiedCount))) throw new Error('Source count assertions do not match recorded leads.');
+    if (status === 'blocked' && (!SOURCE_BLOCKERS.has(blocker) || reviewedCount !== 0 || qualifiedCount !== 0)) throw new Error('Blocked sources require a documented blocker and zero counts.');
     const applications = await jsonLines(join(dir, 'applications.ndjson'));
     for (const id of applicationIds) {
       const entry = applications.find((item) => item.id === id && item.roundId === round.roundId && item.status === 'submitted');
