@@ -266,6 +266,42 @@ test('a distinct requisition at a shared URL cannot undo explicit identity enric
   }
 });
 
+test('an explicit correction resolves forked identity enrichment by retaining one verified branch ID', async () => {
+  const { validateLeadReferences } = await import('../scripts/application-accounting.mjs');
+  const original = lead({ id: 'original', url: 'https://example.com/careers' });
+  const first = lead({ ...original, id: 'first-branch', employerJobId: 'REQ-1', supersedes: original.id });
+  const second = lead({ ...original, id: 'second-branch', employerJobId: 'REQ-2', supersedes: original.id });
+  assert.doesNotThrow(() => validateLeadReferences(first, [original]));
+  assert.doesNotThrow(() => validateLeadReferences(second, [original, first]));
+  const prior = [original, first, second];
+  assert.equal(discoveryProjection(prior).conflicts.length, 1);
+  const correction = lead({
+    ...first, id: 'resolved-identity', supersedes: [first.id, second.id],
+    evidence: 'Employer posting confirms REQ-1; the second assessment used an incorrect requisition ID.',
+  });
+  assert.doesNotThrow(() => validateLeadReferences(correction, prior));
+  for (const events of [[...prior, correction], [correction, second, first, original]]) {
+    const result = discoveryProjection(events);
+    assert.equal(result.reviewedCount, 1);
+    assert.equal(result.qualifiedCount, 1);
+    assert.equal(result.uniqueLeadCount, 1);
+    assert.equal(result.conflicts.length, 0);
+    assert.equal(result.leads[0].employerJobId, 'REQ-1');
+  }
+});
+
+test('an identity correction cannot merge unrelated requisitions at the same company and URL', async () => {
+  const { validateLeadReferences } = await import('../scripts/application-accounting.mjs');
+  const first = lead({ id: 'first-requisition', employerJobId: 'REQ-1', url: 'https://example.com/careers' });
+  const second = lead({ ...first, id: 'second-requisition', employerJobId: 'REQ-2' });
+  const correction = lead({ ...first, id: 'invalid-merge', supersedes: [first.id, second.id] });
+  assert.throws(() => validateLeadReferences(correction, [first, second]), /same round, source and requisition/);
+  const result = discoveryProjection([first, second]);
+  assert.equal(result.reviewedCount, 2);
+  assert.equal(result.uniqueLeadCount, 2);
+  assert.equal(result.conflicts.length, 0);
+});
+
 test('forked identity enrichments remain one conflicted assessment in either order', () => {
   const original = lead();
   const left = lead({ id: 'left-enrichment', employerJobId: 'REQ-1', supersedes: original.id });
