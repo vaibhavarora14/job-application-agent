@@ -54,3 +54,33 @@ test('new rounds derive source totals and require qualified lead linkage', async
   assert.equal(run(['round','leads',roundId]).qualifiedCount,0);
   assert.notEqual(fail(['round','lead','--stdin'],{...lead,id:'new-lead',url:'https://different.example/job'}).status,0);
 });
+
+for (const scenario of [
+  { name: 'different requisition IDs at the same URL', application: { employerJobId: 'req-1' }, lead: { employerJobId: 'req-2' }, matched: false },
+  { name: 'different companies sharing a requisition ID and URL', application: { employerJobId: 'req-1' }, lead: { employerJobId: 'req-1', company: 'Another Company' }, matched: false },
+  { name: 'different companies sharing a URL without requisition IDs', application: {}, lead: { company: 'Another Company' }, matched: false },
+  { name: 'matching company and requisition ID across URL aliases', application: { employerJobId: 'req-1' }, lead: { employerJobId: 'req-1', url: 'https://ats.example.test/alias/1' }, matched: true },
+  { name: 'matching company and URL when only one requisition ID is known', application: { employerJobId: 'req-1' }, lead: {}, matched: true },
+]) {
+  test(`qualified lead attribution checks ${scenario.name}`, async (t) => {
+    const { dir, run, fail } = await fixture(t);
+    const { roundId } = run(['round', 'start', '--stdin'], { requestedCount: 1 });
+    const app = { ...application(roundId), ...scenario.application };
+    await writeFile(join(dir, 'applications.ndjson'), JSON.stringify(app) + '\n');
+    run(['round', 'lead', '--stdin'], {
+      id: 'qualified-lead', roundId, sourceId: 'indeed', company: 'Example', role: app.role,
+      url: app.url, disposition: 'qualified', applicationId: app.id,
+      observedAt: '2026-01-01T00:00:00Z', evidence: 'Synthetic verified requisition assessment.',
+      ...scenario.lead,
+    });
+    for (const sourceId of ['indeed', 'linkedin-jobs-feed', 'hacker-news-who-is-hiring']) {
+      run(['round', 'source', '--stdin'], { roundId, sourceId, status: 'searched', evidence: 'Synthetic search performed.' });
+    }
+    const status = run(['round', 'status', roundId]);
+    assert.deepEqual(status.discovery.missingLeadApplicationIds, scenario.matched ? [] : [app.id]);
+    const completion = fail(['round', 'complete', '--stdin'], {
+      roundId, concentrationReason: 'stronger-fit', concentrationEvidence: 'Only the selected source had a qualifying opening.',
+    });
+    assert.equal(completion.status === 0, scenario.matched, completion.stderr);
+  });
+}

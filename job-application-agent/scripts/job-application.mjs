@@ -533,6 +533,7 @@ export function buildReview(entries, outcomeEntries = [], acknowledgements = [],
     if (!groups.has(key)) groups.set(key, []);
     groups.get(key).push(entry);
   });
+  const recordedCanonical = [...groups.values()].map(group => [...group].sort((a, b) => Date.parse(a.submittedAt) - Date.parse(b.submittedAt))[0]);
   const canonical = [...groups].filter(([key]) => effectiveKeys.has(key)).map(([,group]) => [...group].sort((a, b) => Date.parse(a.submittedAt) - Date.parse(b.submittedAt))[0]);
   const outcomesById = new Map();
   for (const outcome of outcomes) {
@@ -562,9 +563,10 @@ export function buildReview(entries, outcomeEntries = [], acknowledgements = [],
   }
   const maturedApplications = canonical.filter((entry) => businessDaysBetween(entry.submittedAt, now) >= 10).length;
   const lastAck = acknowledgements.length ? acknowledgements[acknowledgements.length - 1] : {};
-  const submittedSinceLastReview = Math.max(0, canonical.length - (lastAck.uniqueSubmissionCount ?? 0));
+  const recordedMaturedApplicationCount = recordedCanonical.filter(entry => businessDaysBetween(entry.submittedAt, now) >= 10).length;
+  const submittedSinceLastReview = Math.max(0, recordedCanonical.length - (lastAck.uniqueSubmissionCount ?? 0));
   const hygieneDue = submittedSinceLastReview >= 10;
-  const outcomeDue = maturedApplications - (lastAck.maturedApplicationCount ?? 0) >= 20;
+  const outcomeDue = recordedMaturedApplicationCount - (lastAck.maturedApplicationCount ?? 0) >= 20;
   const reviewReasons = [...(hygieneDue ? ['submission-hygiene'] : []), ...(outcomeDue ? ['outcome-effectiveness'] : [])];
   const outcomeCounts = Object.fromEntries(['interview', 'rejected', 'offer', 'withdrawn'].map((status) => [status, canonicalOutcomes.filter((entry) => entry.status === status).length]));
   const matureOutcomeCounts = Object.fromEntries(['interview', 'rejected', 'offer', 'withdrawn'].map((status) => [status, matureCanonicalOutcomes.filter((entry) => entry.status === status).length]));
@@ -603,6 +605,7 @@ export function buildReview(entries, outcomeEntries = [], acknowledgements = [],
     receiptUnknownEmailCount: delivery.receiptUnknownEmailCount,
     submittedSinceLastReview,
     maturedApplications,
+    recordedMaturedApplicationCount,
     outcomeCounts,
     matureOutcomeCounts,
     reasonCounts,
@@ -1128,10 +1131,13 @@ async function recordDelivery(input, retry = false) {
   return withStateLock('applications', () => withStateLock('delivery', async dir => {
     const applications = await jsonLines(join(dir, 'applications.ndjson'));
     const events = await jsonLines(join(dir, 'delivery.ndjson'));
-    validateDeliveryReferences(event, applications, events);
+    const cloudRetry = retry && await cloudState.configured();
+    if (cloudRetry && !events.some(e => e.id === event.id) && (!cloudIntentId || !cloudLeaseId || event.attemptId !== cloudIntentId)) throw new Error('Cloud retry requires its intent and live lease; attemptId must equal cloudIntentId.');
+    // Cloud transmission eligibility was checked at intent preparation. The
+    // Worker verifies that intent before we persist the observed transmission.
+    validateDeliveryReferences(event, applications, events, { preparedRetry: cloudRetry });
     let cloudConfirmed = false;
-    if (retry && !events.some(e => e.id === event.id) && await cloudState.configured()) {
-      if (!cloudIntentId || !cloudLeaseId || event.attemptId !== cloudIntentId) throw new Error('Cloud retry requires its intent and live lease; attemptId must equal cloudIntentId.');
+    if (cloudRetry && !events.some(e => e.id === event.id)) {
       await cloudState.confirmRetry(cloudIntentId, event, cloudLeaseId);
       cloudConfirmed = true;
     }
@@ -1367,7 +1373,7 @@ async function roundStatus(roundId = null) {
     needsRecovery: Boolean(completion) && confirmedCount < started.requestedCount,
     discovery: { ...discoverySummary(events.filter((event) => event.roundId === id), effectiveApplications, completion, audit),
       ...(audit ? { reviewedCount: audit.reviewedCount, qualifiedCount: audit.qualifiedCount, uniqueLeadCount: audit.uniqueLeadCount, dispositionCounts: audit.dispositionCounts, conflicts: audit.conflicts,
-        missingLeadApplicationIds: effectiveApplications.filter(app => !audit.leads.some(lead => !lead.conflict && lead.disposition === 'qualified' && lead.applicationId === app.id && lead.sourceId === (app.discoverySourceId ?? events.filter(e => e.type === 'source-checked' && e.applicationIds?.includes(app.id)).at(-1)?.sourceId) && (canonicalUrl(lead.url) === canonicalUrl(app.url) || (lead.employerJobId && lead.employerJobId.toLowerCase() === app.employerJobId?.toLowerCase() && normalizedText(lead.company) === normalizedText(app.company))))).map(app => app.id) } : { accounting: 'legacy-unverified' }) },
+        missingLeadApplicationIds: effectiveApplications.filter(app => !audit.leads.some(lead => !lead.conflict && lead.disposition === 'qualified' && lead.applicationId === app.id && lead.sourceId === (app.discoverySourceId ?? events.filter(e => e.type === 'source-checked' && e.applicationIds?.includes(app.id)).at(-1)?.sourceId) && (normalizedText(lead.company) === normalizedText(app.company) && (lead.employerJobId && app.employerJobId ? lead.employerJobId.toLowerCase() === app.employerJobId.toLowerCase() : canonicalUrl(lead.url) === canonicalUrl(app.url))))).map(app => app.id) } : { accounting: 'legacy-unverified' }) },
     startedAt: started.occurredAt,
     ...(completion ? { completedAt: completion.occurredAt } : {}),
   };
@@ -1498,7 +1504,7 @@ async function ledgerReviewAcknowledge(input) {
   const reviewedAt = string(value.reviewedAt ?? new Date().toISOString(), 'reviewedAt', 80);
   if (Number.isNaN(Date.parse(reviewedAt))) throw new Error('reviewedAt must be an ISO date.');
   const review = await ledgerReview();
-  const event = { reviewedAt, uniqueSubmissionCount: review.uniqueSubmittedTotal, maturedApplicationCount: review.maturedApplications };
+  const event = { reviewedAt, uniqueSubmissionCount: review.recordedSubmissionCount, maturedApplicationCount: review.recordedMaturedApplicationCount };
   await withStateLock('reviews', async (dir) => {
     const file = join(dir, 'reviews.ndjson');
     await appendFile(file, `${JSON.stringify(event)}\n`, { mode: 0o600 });
