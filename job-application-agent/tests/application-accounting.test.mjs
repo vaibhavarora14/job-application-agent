@@ -188,3 +188,92 @@ test('a later verified requisition ID enriches a URL-only lead without inflating
   assert.equal(result.uniqueLeadCount,1);
   assert.equal(result.leads[0].employerJobId,'REQ-1');
 });
+
+test('conflicting retry copies project identically in either arrival order', () => {
+  const email = delivery({ id: 'retry-email', type: 'retry-confirmed', attemptId: 'replacement', channel: 'email', evidenceType: 'sent-email' });
+  const browser = { ...email, id: 'retry-browser', channel: 'browser', evidenceType: 'browser-confirmation' };
+  const forward = deliveryProjection([application()], [delivery(), email, browser]);
+  assert.deepEqual(forward, deliveryProjection([application()], [browser, email, delivery()]));
+  assert.equal(forward.applications[0].conflict, true);
+});
+
+test('company formatting does not split verified requisitions or create assessment conflicts', () => {
+  const original = lead({ company: 'Example, Inc.', employerJobId: 'REQ-1' });
+  const alias = lead({ id: 'alias', company: 'Example Inc', employerJobId: 'req-1', url: 'https://ats.example/jobs/1' });
+  const sameSource = discoveryProjection([original, alias]);
+  assert.equal(sameSource.reviewedCount, 1);
+  assert.equal(sameSource.qualifiedCount, 1);
+  const crossSource = discoveryProjection([original, { ...alias, sourceId: 'linkedin' }]);
+  assert.equal(crossSource.reviewedCount, 2);
+  assert.equal(crossSource.uniqueLeadCount, 1);
+});
+
+test('URL-only sightings discard tracking while retaining distinct requisition parameters', () => {
+  const original = lead({ url: 'https://example.com/careers?jobId=123&trackingId=one' });
+  const repeat = lead({ id: 'repeat', url: 'https://example.com/careers?trackingId=two&jobId=123' });
+  assert.equal(discoveryProjection([original, repeat]).reviewedCount, 1);
+  assert.equal(discoveryProjection([original, { ...repeat, sourceId: 'linkedin' }]).uniqueLeadCount, 1);
+  assert.equal(discoveryProjection([original, { ...repeat, url: 'https://example.com/careers?jobId=456' }]).uniqueLeadCount, 2);
+});
+
+test('a revision can enrich but cannot remove a verified requisition identity', async () => {
+  const { validateLeadReferences } = await import('../scripts/application-accounting.mjs');
+  const original = lead({ employerJobId: 'REQ-1' });
+  const weakened = lead({ id: 'weakened', supersedes: original.id });
+  assert.throws(() => validateLeadReferences(weakened, [original]), /same round, source and requisition/);
+  const urlOnly = lead();
+  const enriched = lead({ id: 'enriched', employerJobId: 'REQ-1', supersedes: urlOnly.id });
+  assert.doesNotThrow(() => validateLeadReferences(enriched, [urlOnly]));
+});
+
+test('prepared retry confirmation preserves evidence without reauthorizing its transmission', async () => {
+  const { validateDeliveryReferences } = await import('../scripts/application-accounting.mjs');
+  const receipt = delivery({ id: 'receipt', type: 'receipt-confirmed', evidenceType: 'employer-acknowledgement' });
+  const retry = delivery({ id: 'retry', type: 'retry-confirmed', attemptId: 'replacement', channel: 'browser', evidenceType: 'browser-confirmation' });
+  const evidence = [delivery(), receipt];
+  assert.throws(() => validateDeliveryReferences(retry, [application()], evidence), /verified failure/);
+  assert.doesNotThrow(() => validateDeliveryReferences(retry, [application()], evidence, { preparedRetry: true }));
+  assert.throws(() => validateDeliveryReferences({ ...retry, id: 'another' }, [application()], [...evidence, retry], { preparedRetry: true }), /attemptId already exists/);
+});
+
+for (const parameter of ['id', 'career_job_req_id']) {
+  test(`URL-only discovery preserves distinct ${parameter} requisition values`, () => {
+    const first = lead({ url: `https://example.com/careers?${parameter}=123&trackingId=one` });
+    const repeat = lead({ id: 'repeat', url: `https://example.com/careers?trackingId=two&${parameter}=123` });
+    const different = lead({ id: 'different', url: `https://example.com/careers?${parameter}=456&trackingId=three` });
+    const result = discoveryProjection([first, repeat, different]);
+    assert.equal(result.reviewedCount, 2);
+    assert.equal(result.qualifiedCount, 2);
+    assert.equal(result.uniqueLeadCount, 2);
+    assert.equal(result.conflicts.length, 0);
+  });
+}
+
+test('a distinct requisition at a shared URL cannot undo explicit identity enrichment', async () => {
+  const { validateLeadReferences } = await import('../scripts/application-accounting.mjs');
+  const original = lead({ id: 'url-observation', url: 'https://example.com/careers' });
+  const enriched = lead({ ...original, id: 'verified-requisition', employerJobId: 'REQ-1', supersedes: original.id });
+  const another = lead({ ...original, id: 'other-requisition', employerJobId: 'REQ-2' });
+  assert.doesNotThrow(() => validateLeadReferences(enriched, [original]));
+  assert.doesNotThrow(() => validateLeadReferences(another, [original, enriched]));
+  for (const events of [[original, enriched, another], [another, enriched, original]]) {
+    const result = discoveryProjection(events);
+    assert.equal(result.reviewedCount, 2);
+    assert.equal(result.qualifiedCount, 2);
+    assert.equal(result.uniqueLeadCount, 2);
+    assert.equal(result.conflicts.length, 0);
+    assert.deepEqual(result.leads.map(item => item.employerJobId).sort(), ['REQ-1', 'REQ-2']);
+  }
+});
+
+test('forked identity enrichments remain one conflicted assessment in either order', () => {
+  const original = lead();
+  const left = lead({ id: 'left-enrichment', employerJobId: 'REQ-1', supersedes: original.id });
+  const right = lead({ id: 'right-enrichment', employerJobId: 'REQ-2', supersedes: original.id });
+  for (const events of [[original, left, right], [right, left, original]]) {
+    const result = discoveryProjection(events);
+    assert.equal(result.reviewedCount, 1);
+    assert.equal(result.qualifiedCount, 0);
+    assert.equal(result.conflicts.length, 1);
+  }
+});
