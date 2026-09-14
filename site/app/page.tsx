@@ -49,8 +49,8 @@ export default function Home() {
 
       <section className="section page-width" id="founding">
         <div className="founding-card">
-          <div><p className="eyebrow">Pre-launch cloud access</p><h2>Reserve the agent that keeps running.</h2><p>Job Application Agent launches October 1, 2026. Pay $49 now. Your 90 days begin only when cloud access is activated. If we have not activated you within 60 days of payment, you will be automatically refunded.</p></div>
-          <div className="offer-panel"><div><span>PRE-LAUNCH PRICE</span><strong>$49</strong><small>90 days from activation · launches October 1</small></div><ul><li>Scheduled job discovery</li><li>Persistent, resumable runs</li><li>Decision notifications</li><li>Secure checkout by Dodo Payments</li></ul><FoundingCheckout /></div>
+          <div><p className="eyebrow">Pre-launch reservation</p><h2>Reserve the agent that keeps running.</h2><p>Job Application Agent launches October 1, 2026. Pay $49 now to hold the founding price for cloud access when it ships. Hosted continuity is still verifying. Access details come when cloud access is ready.</p></div>
+          <div className="offer-panel"><div><span>FOUNDING PRICE</span><strong>$49</strong><small>Reservation for 90 days when cloud opens · launches October 1</small></div><ul><li>Scheduled job discovery</li><li>Persistent, resumable runs</li><li>Decision notifications</li><li>Secure checkout by Dodo Payments</li></ul><FoundingCheckout /></div>
         </div>
       </section>
 
@@ -58,8 +58,8 @@ export default function Home() {
         <div className="section-heading"><p className="eyebrow">Straight answers</p><h2>Before you reserve.</h2></div>
         <details><summary>When does Job Application Agent launch?</summary><p>The cloud product is scheduled to launch on October 1, 2026. This countdown runs to the start of launch day in India.</p></details>
         <details><summary>Is this a mass-application bot?</summary><p>No. It filters aggressively and applies only inside rules you set. Unclear or sensitive decisions pause for you.</p></details>
-        <details><summary>When do my 90 days begin?</summary><p>On the day your cloud access is activated—not on the payment date.</p></details>
-        <details><summary>What if access is not ready?</summary><p>If we have not activated your access within 60 days of payment, the full $49 payment is automatically refunded.</p></details>
+        <details><summary>When do my 90 days begin?</summary><p>When cloud access opens for your reservation, not on the payment date. We will share the exact start details once hosted access is ready.</p></details>
+        <details><summary>What if access is not ready?</summary><p>Your $49 is a pre-launch reservation of founding cloud access. Hosted continuity is still verifying. We will follow up with access details when cloud access ships.</p></details>
         <details><summary>Does it guarantee a job?</summary><p>No. It reduces repetitive search and application work. Employers make every hiring decision.</p></details>
       </section>
     </main>

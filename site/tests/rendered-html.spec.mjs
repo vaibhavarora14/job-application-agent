@@ -23,9 +23,14 @@ test("server-renders the focused cloud offer and honest community proof", async 
   assert.match(html, /Active installations · last 30 days/);
   assert.match(html, /Verified applications submitted/);
   assert.match(html, /Jobs assessed/);
-  assert.match(html, /Reserve 90-day access · \$49/);
+  assert.match(html, /Reserve founding access · \$49/);
   assert.match(html, /Verified facts only/);
   assert.match(html, /Secure checkout by Dodo Payments/);
+  assert.match(html, /Pre-launch reservation/);
+  assert.match(html, /hold the founding price/);
+  assert.match(html, /Hosted continuity is still verifying/);
+  assert.doesNotMatch(html, /60 days|automatically refund/i);
+  assert.match(html, /Hosted continuity<\/span><strong>VERIFYING<\/strong>/);
   assert.doesNotMatch(html, /class="topbar"/);
   assert.doesNotMatch(html, /Run it locally|Install from GitHub|Join early access|first 50/i);
   assert.doesNotMatch(html, /codex-preview|react-loading-skeleton|Your site is taking shape/i);
@@ -35,7 +40,10 @@ test("server-renders human-readable privacy and terms pages", async () => {
   const [privacy, terms] = await Promise.all([render("/privacy"), render("/terms")]);
   assert.equal(privacy.status, 200); assert.equal(terms.status, 200);
   assert.match(await privacy.text(), /Privacy, in plain language/);
-  assert.match(await terms.text(), /one-time \$49 purchase/);
+  const termsHtml = await terms.text();
+  assert.match(termsHtml, /one-time \$49 pre-launch reservation/);
+  assert.doesNotMatch(termsHtml, /60 days|automatically request a full refund|Activation and refund promise/i);
+  assert.doesNotMatch(await privacy.text(), /60-day activation promise|support refunds/i);
 });
 
 test("server-renders a payment return page that waits for verified status", async () => {
