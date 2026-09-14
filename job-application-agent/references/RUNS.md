@@ -21,6 +21,9 @@ Start input: `{ "requestedCount": 30 }`. Complete input: `{ "roundId": "round-..
 
 ## Discovery coverage
 
+For new rounds, first record every reviewed lead with `round lead --stdin`; see [ACCOUNTING.md](ACCOUNTING.md) for fields, revisions, and delivery accounting. Source counts are derived from those lead records. The optional counts in the example below are assertions and require matching records. Existing rounds retain legacy, unverified aggregate reports.
+
+
 Before submitting, search at least three relevant independent sources from `sources list`, including alternatives to the last round's dominant source. Listing the catalog or browsing multiple jobs on one board is not source coverage. Record a report after each actual search or observed access blocker:
 
 ```json
@@ -55,6 +58,9 @@ This is a discovery requirement, not an application quota. Never lower fit, elig
 Coverage reports emit bounded `source_checked` analytics automatically. Only allowlisted packaged source IDs (community sources become `community`), counts, status, and blocker codes are sent. Notes, application IDs, exact community IDs, and round IDs stay local. Completion emits aggregate coverage counts, maximum source share, and the reason code, never the explanation. Failed best-effort analytics does not erase local reports.
 
 ## Submission accounting
+
+Before completion, audit final email delivery failures through authorized email tools when available; otherwise report delivery not audited and continue. Verified email sends count with receipt unknown. Use `ledger delivery` to record matched failures, never `ledger outcome rejected`. Effective totals exclude failed attempts; completed rounds retain their completion record and expose a recovery shortfall. See [ACCOUNTING.md](ACCOUNTING.md) for safe linked replacement attempts.
+
 
 Count only unique applications with a visible employer/ATS confirmation or a verified sent recruiting email that were also added to the ledger with the same `roundId`. Filled forms, blockers, drafts, unsent email, and ambiguous confirmations never count. `round complete` rejects an under-target round.
 

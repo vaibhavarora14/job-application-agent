@@ -542,12 +542,17 @@ test('CLI emits bounded source coverage without private evidence or attribution'
   assert.equal(started.code, 0, started.stderr);
   const roundId = JSON.parse(started.stdout).roundId;
   const sourceId = 'community-0123456789abcdef';
+  for(let i=0;i<8;i++) {
+    const result = await runCli(script,['round','lead','--stdin'],{roundId,sourceId,url:`https://fixture.example/jobs/${i}`,company:`Fixture ${i}`,disposition:i<2?'qualified':'closed-stale',observedAt:'2026-08-01T00:00:00Z',evidence:'Private lead assessment'},env);
+    assert.equal(result.code,0,result.stderr);
+  }
   const report = await runCli(script, ['round', 'source', '--stdin'], { roundId, sourceId, status: 'searched', reviewedCount: 8, qualifiedCount: 2, evidence: 'Private search query and candidate context', applicationIds: [] }, env);
   assert.equal(report.code, 0, report.stderr);
   const event = captured.find((body) => body.event === 'source_checked');
   assert.ok(event, JSON.stringify(captured));
   assert.deepEqual(event.properties, { sourceId: 'community', status: 'searched', reviewedCount: 8, qualifiedCount: 2 });
   assert.equal(JSON.stringify(captured).includes('Private search query'), false);
+  assert.equal(JSON.stringify(captured).includes('Private lead assessment'), false);
   assert.equal(JSON.stringify(captured).includes(roundId), false);
   assert.equal(JSON.stringify(captured).includes(sourceId), false);
 });

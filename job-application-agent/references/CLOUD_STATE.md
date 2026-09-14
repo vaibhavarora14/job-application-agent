@@ -17,3 +17,5 @@ Browser sessions, Gmail credentials, passwords, verification codes, CAPTCHA resp
 Normal profile, résumé, ledger, outcome, round, attention, review, and friction commands automatically reconcile through the configured backend. `cloud export` creates an owner-only JSON archive. During a cloud outage, continue cached research and drafts but do not transmit a new application.
 
 For a shared Linux host where Codex and another agent need separate credentials, follow [`VPS_CLIENTS.md`](VPS_CLIENTS.md). Keep a single scheduler and rely on the D1 lease—not local process assumptions—to enforce the one-writer rule.
+
+Accounting clients require the `application-accounting-v1` backend capability. Deploy Worker support before upgrading cloud-configured clients. Delivery and discovery streams participate in private reconciliation, export, and backup/restore. See [ACCOUNTING.md](ACCOUNTING.md).
