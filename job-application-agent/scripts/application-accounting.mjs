@@ -18,7 +18,8 @@ export function canonicalUrl(value) {
   const url = new URL(required(value, 'url', 2048));
   if (!['https:', 'http:'].includes(url.protocol) || url.username || url.password) throw new Error('A public HTTP(S) URL is required.');
   url.hash = '';
-  for (const key of [...url.searchParams.keys()]) if (/^(utm_|ref$|source$|gh_src$)/i.test(key)) url.searchParams.delete(key);
+  // Unknown parameters may identify a requisition (for example SAP career_job_req_id).
+  for (const key of [...url.searchParams.keys()]) if (/^(utm_.*|ref|refid|referrer|source|gh_src|tracking_?id|trk|trkinfo|gclid|fbclid|msclkid|mc_cid|mc_eid|lever-source|lever-origin)$/i.test(key)) url.searchParams.delete(key);
   url.searchParams.sort();
   url.pathname = url.pathname.replace(/\/+$/, '') || '/';
   return url.href;
@@ -77,8 +78,8 @@ function heads(events) {
   return { current, conflict: invalidIds.size > 0 || missing || (all.length > 0 && !current.length) };
 }
 function refs(event) { return event.supersedes == null ? [] : Array.isArray(event.supersedes) ? event.supersedes : [event.supersedes]; }
+const normalized = value => String(value ?? '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
 export function accountingApplicationKey(entry, fallback = '') {
-  const normalized = value => String(value ?? '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
   if (entry.employerJobId) return `job:${normalized(entry.company)}:${String(entry.employerJobId).toLowerCase()}`;
   if (entry.company && entry.role) return `legacy-role:${normalized(entry.company)}:${normalized(entry.role)}`;
   if (entry.url) return `url:${canonicalUrl(entry.url).replace(/\/$/, '').toLowerCase()}`;
@@ -88,7 +89,8 @@ export function deliveryProjection(entries, events = []) {
   const applications = entries.map(app => {
     const selected = events.filter(e => e.version === 1 && e.applicationId === app.id && DELIVERY_TYPES.includes(e.type));
     const initial = { attemptId: `initial:${app.id}`, channel: (app.applicationChannel ?? app.source) === 'email' ? 'email' : 'browser', url: app.url };
-    const retries = [...new Map(selected.filter(e => e.type === 'retry-confirmed').map(e => [e.attemptId, e])).values()];
+    // A stable representative keeps even conflicting retry projections independent of arrival order.
+    const retries = [...new Map(selected.filter(e => e.type === 'retry-confirmed').sort((a, b) => stableJson(a).localeCompare(stableJson(b))).map(e => [e.attemptId, e])).values()];
     const attempts = [initial, ...retries].map(attempt => {
       const observations = selected.filter(e => e.attemptId === attempt.attemptId && e.type !== 'retry-confirmed');
       const graph = heads(observations);
@@ -143,7 +145,7 @@ export function deliveryProjection(entries, events = []) {
   const canonical = [...groups.values()];
   return { applications, recordedSubmissionCount: canonical.length, effectiveSubmissionCount: canonical.filter(g => g.some(a => a.counted)).length, failedDeliveryCount: canonical.filter(g => g.every(a => a.failed)).length, receiptUnknownEmailCount: canonical.filter(g => g.some(a => a.receiptUnknown)).length };
 }
-export function validateDeliveryReferences(event, applications, events) {
+export function validateDeliveryReferences(event, applications, events, { preparedRetry = false } = {}) {
   const app = applications.find(a => a.id === event.applicationId);
   if (!app) throw new Error('Delivery applicationId is not recorded.');
   const existing = events.filter(e => e.id === event.id);
@@ -153,7 +155,7 @@ export function validateDeliveryReferences(event, applications, events) {
     const related = applications.filter(a => accountingApplicationKey(a) === accountingApplicationKey(app));
     const all = deliveryProjection(related, events).applications;
     const current = all.find(a => a.applicationId === app.id);
-    if (all.some(a => !a.failed || a.conflict)) throw new Error('Retry requires verified failure of every prior attempt and no conflicts.');
+    if (!preparedRetry && all.some(a => !a.failed || a.conflict)) throw new Error('Retry requires verified failure of every prior attempt and no conflicts.');
     if (current.attempts.some(a => a.attemptId === event.attemptId)) throw new Error('Retry attemptId already exists.');
   } else if (event.attemptId !== `initial:${app.id}` && !events.some(e => e.type === 'retry-confirmed' && e.attemptId === event.attemptId && e.applicationId === app.id)) throw new Error('Delivery attemptId is not recorded.');
   for (const id of refs(event)) {
@@ -181,32 +183,44 @@ export function validateLead(input) {
   v.id ??= eventId(v, 'lead'); required(v.id,'id');
   return v;
 }
-function requisitionKey(e) { return e.employerJobId ? `${e.company.trim().toLowerCase()}:${e.employerJobId.toLowerCase()}` : canonicalUrl(e.url); }
+function requisitionKey(e) { return e.employerJobId ? `${normalized(e.company)}:${e.employerJobId.toLowerCase()}` : canonicalUrl(e.url); }
 export function leadKey(e) { return `${e.roundId}:${e.sourceId}:${requisitionKey(e)}`; }
 export function validateLeadReferences(event, events) {
   for (const previous of events.filter(e => e.id === event.id)) if (stableJson(previous) !== stableJson(event)) throw new Error('Conflicting lead event ID.');
   for (const id of refs(event)) {
     const parent = events.find(e => e.version === 1 && e.id === id);
-    const enrichment = parent && parent.roundId === event.roundId && parent.sourceId === event.sourceId && parent.company.trim().toLowerCase() === event.company.trim().toLowerCase() && canonicalUrl(parent.url) === canonicalUrl(event.url) && (!parent.employerJobId || !event.employerJobId);
+    const enrichment = parent && parent.roundId === event.roundId && parent.sourceId === event.sourceId && normalized(parent.company) === normalized(event.company) && canonicalUrl(parent.url) === canonicalUrl(event.url) && (!parent.employerJobId && Boolean(event.employerJobId));
     if (!parent || (leadKey(parent) !== leadKey(event) && !enrichment)) throw new Error('Lead revision must reference the same round, source and requisition.');
   }
 }
 export function discoveryProjection(events, { roundId } = {}) {
   const selected = events.filter(e => e.version === 1 && e.type === 'lead-reviewed' && (roundId == null || e.roundId === roundId));
   const aliases = new Map();
-  const aliasKey = e => `${e.roundId}:${e.company.trim().toLowerCase()}:${canonicalUrl(e.url)}`;
+  const aliasKey = e => `${e.roundId}:${normalized(e.company)}:${canonicalUrl(e.url)}`;
   for (const e of selected.filter(e => e.employerJobId)) {
     const key = aliasKey(e);
     if (!aliases.has(key)) aliases.set(key, new Set());
     aliases.get(key).add(requisitionKey(e));
   }
   const resolvedKey = e => !e.employerJobId && aliases.get(aliasKey(e))?.size === 1 ? [...aliases.get(aliasKey(e))][0] : requisitionKey(e);
+  const keyFor = e => `${e.roundId}:${e.sourceId}:${resolvedKey(e)}`;
+  const roots = new Map(selected.map(e => [keyFor(e), keyFor(e)]));
+  const root = key => { while (roots.get(key) !== key) key = roots.get(key); return key; };
+  const byId = new Map();
+  for (const e of selected) { if (!byId.has(e.id)) byId.set(e.id, []); byId.get(e.id).push(e); }
+  // Explicit revisions keep their lineage even when a shared careers URL later
+  // acquires another requisition. Forked enrichments stay together for conflict review.
+  for (const e of selected) for (const id of [e.id, ...refs(e)]) for (const parent of byId.get(id) ?? []) {
+    if (parent.roundId !== e.roundId || parent.sourceId !== e.sourceId) continue;
+    const left = root(keyFor(e)); const right = root(keyFor(parent));
+    if (left !== right) roots.set(left < right ? right : left, left < right ? left : right);
+  }
   const groups = new Map();
-  for (const e of selected) { const key = `${e.roundId}:${e.sourceId}:${resolvedKey(e)}`; if (!groups.has(key)) groups.set(key,[]); groups.get(key).push(e); }
+  for (const e of selected) { const key = root(keyFor(e)); if (!groups.has(key)) groups.set(key,[]); groups.get(key).push(e); }
   const leads = []; const conflicts = [];
   for (const [key, values] of groups) {
     const graph = heads(values);
-    const comparable = e => stableJson(Object.fromEntries(Object.entries(e).filter(([k]) => !['id','observedAt','supersedes', ...(e.employerJobId ? ['url'] : [])].includes(k))));
+    const comparable = e => stableJson(Object.fromEntries(Object.entries({ ...e, company: normalized(e.company), ...(e.employerJobId ? { employerJobId: e.employerJobId.toLowerCase() } : { url: canonicalUrl(e.url) }) }).filter(([k]) => !['id','observedAt','supersedes', ...(e.employerJobId ? ['url'] : [])].includes(k))));
     const conflict = graph.conflict || new Set(graph.current.map(comparable)).size > 1;
     if (conflict) conflicts.push({ key, eventIds: [...new Set(values.map(e => e.id))].sort() });
     const lead = [...graph.current].sort((a,b) => a.id.localeCompare(b.id))[0] ?? values[0];
