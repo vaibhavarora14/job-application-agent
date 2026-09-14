@@ -187,10 +187,25 @@ function requisitionKey(e) { return e.employerJobId ? `${normalized(e.company)}:
 export function leadKey(e) { return `${e.roundId}:${e.sourceId}:${requisitionKey(e)}`; }
 export function validateLeadReferences(event, events) {
   for (const previous of events.filter(e => e.id === event.id)) if (stableJson(previous) !== stableJson(event)) throw new Error('Conflicting lead event ID.');
-  for (const id of refs(event)) {
-    const parent = events.find(e => e.version === 1 && e.id === id);
-    const enrichment = parent && parent.roundId === event.roundId && parent.sourceId === event.sourceId && normalized(parent.company) === normalized(event.company) && canonicalUrl(parent.url) === canonicalUrl(event.url) && (!parent.employerJobId && Boolean(event.employerJobId));
-    if (!parent || (leadKey(parent) !== leadKey(event) && !enrichment)) throw new Error('Lead revision must reference the same round, source and requisition.');
+  const history = new Map(events.filter(e => e.version === 1 && e.type === 'lead-reviewed').map(e => [e.id, e]));
+  const parents = refs(event).map(id => history.get(id));
+  const sameScope = parent => parent && parent.roundId === event.roundId && parent.sourceId === event.sourceId && normalized(parent.company) === normalized(event.company);
+  const ancestors = parent => {
+    const seen = new Set(); const pending = [parent.id];
+    while (pending.length) {
+      const id = pending.pop(); const previous = history.get(id);
+      if (seen.has(id) || !sameScope(previous)) continue;
+      seen.add(id); pending.push(...refs(previous));
+    }
+    return seen;
+  };
+  // A disputed enrichment can choose an already-recorded ID only by explicitly
+  // superseding branches from the same lineage, never unrelated requisitions.
+  const lineages = parents.length > 1 && parents.every(sameScope) ? parents.map(ancestors) : [];
+  const resolvesFork = Boolean(event.employerJobId) && lineages.length > 1 && parents.some(parent => leadKey(parent) === leadKey(event)) && [...lineages[0]].some(id => lineages.every(lineage => lineage.has(id)));
+  for (const parent of parents) {
+    const enrichment = sameScope(parent) && canonicalUrl(parent.url) === canonicalUrl(event.url) && (!parent.employerJobId && Boolean(event.employerJobId));
+    if (!parent || (leadKey(parent) !== leadKey(event) && !enrichment && !resolvesFork)) throw new Error('Lead revision must reference the same round, source and requisition.');
   }
 }
 export function discoveryProjection(events, { roundId } = {}) {
