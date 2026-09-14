@@ -67,14 +67,14 @@ test('CLI records a transmitted cloud retry when late receipt evidence invalidat
   await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
   t.after(() => new Promise(resolve => server.close(resolve)));
   const backendUrl = `http://127.0.0.1:${server.address().port}`;
-  const preload = `const realFetch = globalThis.fetch; globalThis.fetch = (input, init) => { const url = new URL(typeof input === 'string' ? input : input.url); if (url.origin !== 'https://state.example.com') throw new Error('Unexpected non-fixture network request'); return realFetch(${JSON.stringify(backendUrl)} + url.pathname + url.search, init); };`;
+  const preload = `const realFetch = globalThis.fetch; globalThis.fetch = (input, init) => { const url = new URL(typeof input === 'string' ? input : input.url); if (url.origin !== 'https://state.example.com') throw new Error('Unexpected non-fixture network request'); return realFetch(process.env.ACCOUNTING_TEST_BACKEND_URL + url.pathname + url.search, init); };`;
   const configPath = join(stateDir, 'cloud-config.json');
   await writeFile(configPath, JSON.stringify({ version: 2, url: 'https://state.example.com', token, clientId: 'synthetic-client' }), { mode: 0o600 });
   await writeFile(join(stateDir, 'telemetry.json'), JSON.stringify({ version: 1, enabled: false, disclosed: true, graceConsumed: true, installationEventPending: false }));
   for (const [stream, rows] of Object.entries(streams)) {
     await writeFile(join(stateDir, `${stream}.ndjson`), `${rows.map(row => JSON.stringify(row)).join('\n')}\n`, { mode: 0o600 });
   }
-  const env = { ...process.env, JOB_APPLICATION_AGENT_STATE_DIR: stateDir, JOB_APPLICATION_AGENT_CLOUD_CONFIG: configPath, JOB_APPLICATION_AGENT_SOURCE_COMMUNITY_URL: 'http://127.0.0.1:9' };
+  const env = { ...process.env, ACCOUNTING_TEST_BACKEND_URL: backendUrl, JOB_APPLICATION_AGENT_STATE_DIR: stateDir, JOB_APPLICATION_AGENT_CLOUD_CONFIG: configPath, JOB_APPLICATION_AGENT_SOURCE_COMMUNITY_URL: 'http://127.0.0.1:9' };
   const result = await new Promise((resolve, reject) => {
     const child = spawn(process.execPath, ['--import', `data:text/javascript,${encodeURIComponent(preload)}`, script, 'ledger', 'retry', '--stdin'], { env, stdio: ['pipe', 'pipe', 'pipe'] });
     let stdout = '';
