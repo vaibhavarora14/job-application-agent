@@ -39,11 +39,12 @@ test("server-renders the focused cloud offer and honest community proof", async 
 test("server-renders human-readable privacy and terms pages", async () => {
   const [privacy, terms] = await Promise.all([render("/privacy"), render("/terms")]);
   assert.equal(privacy.status, 200); assert.equal(terms.status, 200);
-  assert.match(await privacy.text(), /Privacy, in plain language/);
+  const privacyHtml = await privacy.text();
   const termsHtml = await terms.text();
+  assert.match(privacyHtml, /Privacy, in plain language/);
   assert.match(termsHtml, /one-time \$49 pre-launch reservation/);
   assert.doesNotMatch(termsHtml, /60 days|automatically request a full refund|Activation and refund promise/i);
-  assert.doesNotMatch(await privacy.text(), /60-day activation promise|support refunds/i);
+  assert.doesNotMatch(privacyHtml, /60-day activation promise|support refunds/i);
 });
 
 test("server-renders a payment return page that waits for verified status", async () => {
