@@ -53,6 +53,10 @@ Read [references/SOURCES.md](references/SOURCES.md) before the first discovery p
 
 Do not lower seniority, compensation, location, work mode, or evidence thresholds to increase volume. Unknown compensation does not exclude a role; pause if the application asks the candidate to state or accept compensation.
 
+## Optional LLM assist
+
+When the host agent supports a custom OpenAI-compatible base URL and API key, you may use Free.ai for text assists (JD parse, score rationale, short drafts). Read [references/FREE_AI.md](references/FREE_AI.md). The skill CLI does not call Free.ai. Deterministic commands (`score`, `ledger check`, leases, intents) remain authoritative. Free.ai is not the hosted browser-apply path or the Antigravity/Codex default executor.
+
 ## Apply
 
 For batches, scheduled work, or resumable handoffs, read [references/RUNS.md](references/RUNS.md), create a round ID, and use the attention and friction queues.
