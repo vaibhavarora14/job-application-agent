@@ -30,3 +30,16 @@ test('documents durable autonomy, resumable rounds, attention and friction contr
   assert.match(runs, /discoverySource/);
   assert.match(runs, /applicationChannel/);
 });
+
+test('documents Free.ai as optional LLM assist only', async () => {
+  const skill = await readFile(new URL('../SKILL.md', import.meta.url), 'utf8');
+  const freeAi = await readFile(new URL('../references/FREE_AI.md', import.meta.url), 'utf8');
+
+  assert.match(skill, /FREE_AI\.md/);
+  assert.match(skill, /does not call Free\.ai/i);
+  assert.match(freeAi, /https:\/\/api\.free\.ai\/v1/);
+  assert.match(freeAi, /FREE_AI_API_KEY/);
+  assert.match(freeAi, /qwen7b/);
+  assert.match(freeAi, /not the hosted/i);
+  assert.match(freeAi, /does not read `FREE_AI_API_KEY`/i);
+});

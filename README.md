@@ -128,6 +128,16 @@ flowchart LR
 
 The bundled CLI handles private profile storage, résumé import, scoring, duplicate checks, resumable rounds, attention queues, and application/outcome ledgers. The coding agent handles discovery and browser interaction under the rules in [`SKILL.md`](job-application-agent/SKILL.md).
 
+### Optional LLM assist (Free.ai)
+
+For text assists—JD parse, fit-score rationale, short why-company drafts—you can point an OpenAI-compatible client at Free.ai when your agent host supports a custom base URL and API key:
+
+- Base URL: `https://api.free.ai/v1`
+- Key: `FREE_AI_API_KEY` from [free.ai/account](https://free.ai/account/?tab=api)
+- Own-hardware model example: `qwen7b`
+
+This is optional and assistive only. The skill CLI does not call Free.ai; deterministic `score`, ledger, lease, and intent commands remain the source of truth. Free.ai is not the hosted cloud apply loop, headed browser fill/submit path, or Antigravity/Codex default. Prefer own-hardware models for the OSS/grant path—not premium third-party models. Details: [`FREE_AI.md`](job-application-agent/references/FREE_AI.md).
+
 Discovery combines the reviewed [`SOURCES.json`](job-application-agent/references/SOURCES.json) catalog with an anonymous community registry. Every confirmed application automatically contributes its canonical public job URL, company, role, application channel, and provider; prior confirmed ledger entries backfill during later commands after a one-command disclosure grace period. Jobs, repeatable boards, and feeds are logged pending and become visible in the public dashboard or CLI only after maintainer review. Disable both forms of community sharing independently from analytics with `sources sharing disable`.
 
 New rounds derive reviewed and qualified totals from private per-lead records, including rejection reasons and revision history. Delivery reconciliation subtracts verified failed emails from effective application totals without erasing history; email access is optional, and sent email without acknowledgement remains labelled receipt unknown. See [accounting](job-application-agent/references/ACCOUNTING.md).
