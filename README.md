@@ -187,6 +187,7 @@ Updates are staged and validated before replacement. Private candidate state liv
 - [npm](https://www.npmjs.com/package/job-application-agent)
 - [skills.sh](https://skills.sh/vaibhavarora14/job-application-agent)
 - [skills.re](https://skills.re/skills/vaibhavarora14/job-application-agent/job-application-agent)
+- [OpenAgentSkill](https://www.openagentskill.com/skills/vaibhavarora14-job-application-agent-job-application-agent)
 - [awesome-claude-skills catalog (Chat2AnyLLM)](https://chat2anyllm.github.io/awesome-claude-skills/)
 - [Agent Skills discussion](https://github.com/agentskills/agentskills/discussions/537)
 - [awesome-agent-skills (Community Skills)](https://github.com/VoltAgent/awesome-agent-skills)
