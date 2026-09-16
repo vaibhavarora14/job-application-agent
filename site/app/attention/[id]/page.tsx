@@ -5,6 +5,7 @@ import { actionLabel } from "../../../lib/attention-action-labels.mjs";
 import { buildLiveSessionProxyPath } from "../../../lib/attention-live-session.mjs";
 import { verifyAttentionMagicLink } from "../../../lib/attention-magic-link.mjs";
 import { BLOCKER_COPY } from "../../../lib/attention-mail.mjs";
+import { hasJudgmentActions, needsLiveBrowser } from "../../../lib/attention-questions.mjs";
 import { AttentionActions } from "./AttentionActions";
 
 type PageProps = {
@@ -20,6 +21,8 @@ type MagicPayload = {
   stage: string;
   blocker: string;
   requiredActions: string[];
+  questions: { id: string; prompt: string; kind: string; required: boolean }[];
+  aiAssistanceDiscouraged: boolean;
   expiresAt: number;
 };
 
@@ -59,11 +62,22 @@ export default async function AttentionPage({ params, searchParams }: PageProps)
 
   const view = verified.payload;
   const why = (BLOCKER_COPY as Record<string, string>)[view.blocker] ?? BLOCKER_COPY.other;
-  // Always go through the Worker live-session route (verifies token, then
-  // embeds/redirects to noVNC with Worker-held password). IAP helpers are founder/dev-only.
   const liveSessionAvailable = Boolean(String(config.liveSessionBaseUrl ?? "").trim());
   const liveSessionUrl = buildLiveSessionProxyPath(view.attentionId, token);
   const liveSessionEmbedUrl = buildLiveSessionProxyPath(view.attentionId, token, { embed: true });
+  const liveNeeded = needsLiveBrowser(view.requiredActions);
+  const packagedQuestions = Array.isArray(view.questions) ? view.questions : [];
+  const questions = packagedQuestions.length
+    ? packagedQuestions
+    : (view.requiredActions.includes("provide-judgment")
+      ? [{
+        id: "judgment-default",
+        prompt: "Share your judgment answer for this application (why this role / proud project).",
+        kind: "judgment",
+        required: true,
+      }]
+      : []);
+  const judgmentUi = hasJudgmentActions(view.requiredActions) || questions.length > 0;
 
   return (
     <AttentionShell>
@@ -78,6 +92,9 @@ export default async function AttentionPage({ params, searchParams }: PageProps)
           <span className="attention-chip">{view.blocker || "paused"}</span>
           {view.stage ? <span className="attention-meta-item">stage · {view.stage}</span> : null}
           <span className="attention-meta-item lease">lease held</span>
+          {view.aiAssistanceDiscouraged ? (
+            <span className="attention-meta-item">own voice</span>
+          ) : null}
         </div>
       </header>
 
@@ -97,11 +114,17 @@ export default async function AttentionPage({ params, searchParams }: PageProps)
       </section>
 
       <section className="attention-panel attention-act-panel" aria-labelledby="act-heading">
-        <h2 id="act-heading">Act in the live browser</h2>
+        <h2 id="act-heading">{judgmentUi ? "Answer & resume" : "Act in the live browser"}</h2>
         <p>
-          Complete CAPTCHA, MFA, legal attestation, or judgment questions yourself.
+          {judgmentUi
+            ? "Judgment answers stay in this card and are injected on resume. Use the live browser for CAPTCHA, MFA, or widgets that cannot be mirrored."
+            : "Complete CAPTCHA, MFA, or legal attestation yourself in the live browser."}
+          {" "}
           JobAppAgent will not store codes, cookies, or CAPTCHA answers.
           filled ≠ applied until you resume and the runner sees a visible confirmation.
+          {!liveNeeded && judgmentUi
+            ? " Live browser is optional for this pause."
+            : null}
         </p>
         <AttentionActions
           view={{
@@ -112,6 +135,8 @@ export default async function AttentionPage({ params, searchParams }: PageProps)
             stage: view.stage,
             blocker: view.blocker,
             requiredActions: view.requiredActions,
+            questions,
+            aiAssistanceDiscouraged: Boolean(view.aiAssistanceDiscouraged),
             why,
             liveSessionUrl,
             liveSessionEmbedUrl,

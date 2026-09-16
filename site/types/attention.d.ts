@@ -135,6 +135,8 @@ declare module "*/attention-magic-link.mjs" {
     stage: string;
     blocker: string;
     requiredActions: string[];
+    questions: { id: string; prompt: string; kind: string; required: boolean }[];
+    aiAssistanceDiscouraged: boolean;
     issuedAt: number;
     expiresAt: number;
   };
@@ -148,6 +150,9 @@ declare module "*/attention-magic-link.mjs" {
       stage?: string;
       blocker?: string;
       requiredActions?: string[];
+      questions?: { id?: string; prompt?: string; kind?: string; required?: boolean }[];
+      aiAssistanceDiscouraged?: boolean;
+      postingText?: string;
     },
     secret: string,
     options?: { ttlSeconds?: number; now?: number },
@@ -214,6 +219,8 @@ declare module "*/attention-notify.mjs" {
         stage: string;
         blocker: string;
         requiredActions: string[];
+        questions: { id: string; prompt: string; kind: string; required: boolean }[];
+        aiAssistanceDiscouraged: boolean;
       };
     }
     | { ok: false; error: string; status: number };
@@ -237,6 +244,8 @@ declare module "*/attention-notify.mjs" {
       subject: string;
       expiresAt: number;
       magicLinkUrl: string;
+      questions: { id: string; prompt: string; kind: string; required: boolean }[];
+      aiAssistanceDiscouraged: boolean;
     }
     | { ok: false; error: string; status?: number }
   >;
@@ -250,17 +259,29 @@ declare module "*/attention-signals.mjs" {
   };
 
   export function validateAttentionSignalRequest(input: unknown):
-    | { ok: true; data: { token: string; signal: string; action: string } }
+    | {
+      ok: true;
+      data: {
+        token: string;
+        signal: string;
+        action: string;
+        answers: { questionId: string; text: string; source: string }[];
+      };
+    }
     | { ok: false; error: string; status: number };
 
   export function buildAttentionSignalRecord(
     attentionId: string,
     signal: string,
-    meta?: { actor?: string },
+    meta?: {
+      actor?: string;
+      answers?: { questionId: string; text: string; source: string }[];
+    },
   ): {
     attentionId: string;
     signal: string;
     actor: string;
+    payload: Record<string, unknown>;
     createdAt: string;
     updatedAt: string;
   };
@@ -269,6 +290,8 @@ declare module "*/attention-signals.mjs" {
     attentionId: string;
     signal: string;
     updatedAt?: string;
+    payload?: Record<string, unknown>;
+    answers?: { questionId: string; text: string; source: string }[];
   } | null): {
     attentionId: string | null;
     signal: string | null;
@@ -277,5 +300,72 @@ declare module "*/attention-signals.mjs" {
     skipped: boolean;
     aborted: boolean;
     updatedAt?: string;
+    answers: { questionId: string; text: string; source: string }[];
+    payload: Record<string, unknown>;
   };
+}
+
+declare module "*/attention-questions.mjs" {
+  export function detectAiAssistanceDiscouraged(text: unknown): boolean;
+  export function normalizeAttentionQuestions(raw: unknown): {
+    id: string;
+    prompt: string;
+    kind: string;
+    required: boolean;
+  }[];
+  export function normalizeAttentionAnswers(raw: unknown): {
+    questionId: string;
+    text: string;
+    source: string;
+  }[];
+  export function fingerprintPrompt(prompt: string): string;
+  export function suggestPriorAnswers(
+    prompt: string,
+    bank: { fingerprint?: string; prompt?: string; text?: string; tags?: string[] }[],
+    options?: { limit?: number },
+  ): { fingerprint: string; prompt: string; text: string; score: number }[];
+  export function needsLiveBrowser(requiredActions?: string[]): boolean;
+  export function hasJudgmentActions(requiredActions?: string[]): boolean;
+}
+
+declare module "*/attention-draft.mjs" {
+  export function resolveDraftConfig(config?: {
+    apiKey?: string;
+    baseUrl?: string;
+    model?: string;
+  }): { configured: boolean; apiKey: string; baseUrl: string; model: string };
+
+  export function buildHeuristicDraft(input: {
+    prompt: string;
+    company?: string;
+    role?: string;
+    candidateNotes?: string;
+  }): string;
+
+  export function humanizeDraftText(text: string): string;
+
+  export function draftAttentionAnswer(
+    input: {
+      prompt: string;
+      company?: string;
+      role?: string;
+      candidateNotes?: string;
+      aiAssistanceDiscouraged?: boolean;
+    },
+    config?: {
+      apiKey?: string;
+      baseUrl?: string;
+      model?: string;
+      fetchImpl?: typeof fetch;
+    },
+  ): Promise<
+    | { ok: true; draft: string; model: string; note: string }
+    | {
+      ok: false;
+      error: string;
+      status?: number;
+      message?: string;
+      heuristic?: string;
+    }
+  >;
 }

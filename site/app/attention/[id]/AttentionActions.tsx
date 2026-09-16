@@ -5,6 +5,8 @@ import {
   liveBrowserLoadFailedMessage,
   liveBrowserUnavailableMessage,
 } from "../../../lib/attention-live-session.mjs";
+import { needsLiveBrowser } from "../../../lib/attention-questions.mjs";
+import { AttentionAnswerFields, type AttentionQuestion } from "./AttentionAnswerFields";
 
 type AttentionView = {
   attentionId: string;
@@ -14,6 +16,8 @@ type AttentionView = {
   stage: string;
   blocker: string;
   requiredActions: string[];
+  questions: AttentionQuestion[];
+  aiAssistanceDiscouraged: boolean;
   why: string;
   liveSessionUrl: string | null;
   liveSessionEmbedUrl: string | null;
@@ -28,6 +32,8 @@ type SignalResponse = {
   note?: string;
   signal?: string;
 };
+
+type AnswerEntry = { text: string; source: "typed" | "draft_approved" | "bank" };
 
 const CONNECTING_CLEAR_MS = 2500;
 /** Soft blank watchdog — CSP blocks often never fire iframe onError. */
@@ -44,8 +50,11 @@ export function AttentionActions({ view }: { view: AttentionView }) {
   const [connecting, setConnecting] = useState(false);
   const [loadFailed, setLoadFailed] = useState(false);
   const [opening, setOpening] = useState(false);
+  const [answers, setAnswers] = useState<Record<string, AnswerEntry>>({});
   const clearConnectingTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const loadFailTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const showLivePrimary = needsLiveBrowser(view.requiredActions);
 
   useEffect(() => {
     return () => {
@@ -98,14 +107,44 @@ export function AttentionActions({ view }: { view: AttentionView }) {
     setLoadFailed(true);
   }
 
+  function setAnswer(questionId: string, text: string, source: AnswerEntry["source"]) {
+    setAnswers((prev) => ({ ...prev, [questionId]: { text, source } }));
+  }
+
+  function missingRequiredAnswers() {
+    return view.questions
+      .filter((question) => question.required)
+      .filter((question) => !String(answers[question.id]?.text ?? "").trim());
+  }
+
   async function send(action: "resume" | "skip" | "abort") {
     setBusy(action);
     setError(null);
     try {
+      if (action === "resume") {
+        const missing = missingRequiredAnswers();
+        if (missing.length) {
+          setError(`Answer required: ${missing[0].prompt}`);
+          setBusy(null);
+          return;
+        }
+      }
+
+      const payload: Record<string, unknown> = { token: view.token, action };
+      if (action === "resume") {
+        payload.answers = Object.entries(answers)
+          .filter(([, entry]) => entry.text.trim())
+          .map(([questionId, entry]) => ({
+            questionId,
+            text: entry.text.trim(),
+            source: entry.source,
+          }));
+      }
+
       const response = await fetch(`/api/attention/${encodeURIComponent(view.attentionId)}/signal`, {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ token: view.token, action }),
+        body: JSON.stringify(payload),
       });
       const body = await response.json() as SignalResponse;
       if (!response.ok) {
@@ -121,7 +160,6 @@ export function AttentionActions({ view }: { view: AttentionView }) {
   }
 
   function fireAndForgetWake() {
-    // Ops wake may still run in the background; never block the panel or surface instructions.
     void fetch(`/api/attention/${encodeURIComponent(view.attentionId)}/wake`, {
       method: "POST",
       headers: { "content-type": "application/json" },
@@ -138,7 +176,6 @@ export function AttentionActions({ view }: { view: AttentionView }) {
     scheduleClearConnecting();
     scheduleLoadFailWatchdog();
     setFrameKey((value) => value + 1);
-    // Single panel iframe → same-origin embed shell (token verify + noVNC fragment password).
     setIframeSrc(view.liveSessionEmbedUrl);
   }
 
@@ -182,21 +219,37 @@ export function AttentionActions({ view }: { view: AttentionView }) {
 
   const unavailableCopy = liveBrowserUnavailableMessage();
   const loadFailedCopy = liveBrowserLoadFailedMessage();
+  const liveButtonClass = showLivePrimary ? "button" : "button button-secondary";
 
   return (
     <div className="attention-actions-stack">
+      <AttentionAnswerFields
+        attentionId={view.attentionId}
+        token={view.token}
+        questions={view.questions}
+        aiAssistanceDiscouraged={view.aiAssistanceDiscouraged}
+        answers={answers}
+        onChange={setAnswer}
+      />
+
+      {!showLivePrimary && view.questions.length ? (
+        <p className="attention-answers-lead">
+          Live browser is optional unless CAPTCHA, MFA, or another unmirrorable step remains.
+        </p>
+      ) : null}
+
       <div className="attention-actions">
         {view.liveSessionEmbedUrl ? (
           <button
             type="button"
-            className="button"
+            className={liveButtonClass}
             disabled={opening}
             onClick={() => (panelOpen ? closeLivePanel() : openLivePanel())}
           >
             {opening ? "Starting…" : panelOpen ? "Hide live browser" : "Open live browser"}
           </button>
         ) : (
-          <button type="button" className="button" disabled title="Magic-link token missing for live session">
+          <button type="button" className={liveButtonClass} disabled title="Magic-link token missing for live session">
             Open live browser
           </button>
         )}
@@ -236,7 +289,8 @@ export function AttentionActions({ view }: { view: AttentionView }) {
           <div className="attention-live-panel-chrome">
             <p className="attention-live-panel-label">Live browser</p>
             <p className="attention-live-panel-hint">
-              Finish the paused step here. filled ≠ applied until you resume and the runner confirms visible success.
+              Finish CAPTCHA, MFA, or unmirrorable widgets here. Judgment answers above are injected on resume.
+              filled ≠ applied until you resume and the runner confirms visible success.
             </p>
           </div>
           {!view.liveSessionAvailable ? (

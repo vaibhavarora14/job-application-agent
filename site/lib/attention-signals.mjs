@@ -8,10 +8,12 @@
  *   node scripts/attention-runner-poll.mjs --attention-id …
  * (or poll GET /api/internal/attention-signals/:id with Bearer ATTENTION_NOTIFY_SECRET).
  * On resume_requested: renew lease → load session binding (same tab / :99 / 5900) →
- * re-inspect → submit if possible → visible confirm → intent/ledger.
+ * inject approved answers (P1.5) → re-inspect → submit if possible → visible confirm → intent/ledger.
  * Helper: node scripts/attention-resume-submit.mjs --attention-id … --checklist
  * Never treat UI "resume" as ledger success. Live noVNC must target VNC 5900, never 5901.
  */
+
+import { normalizeAttentionAnswers } from "./attention-questions.mjs";
 
 export const ATTENTION_SIGNAL_ACTIONS = Object.freeze({
   resume_requested: "resume_requested",
@@ -41,23 +43,30 @@ export function validateAttentionSignalRequest(input) {
   if (!token) return { ok: false, error: "token_required", status: 400 };
   if (!signal) return { ok: false, error: "action_invalid", status: 400 };
 
-  return { ok: true, data: { token, signal, action: actionRaw } };
+  const answers = normalizeAttentionAnswers(value.answers);
+  if (Object.prototype.hasOwnProperty.call(value, "answers") && !Array.isArray(value.answers)) {
+    return { ok: false, error: "answers_invalid", status: 400 };
+  }
+
+  return { ok: true, data: { token, signal, action: actionRaw, answers } };
 }
 
 /**
  * @param {string} attentionId
  * @param {string} signal
- * @param {{ actor?: string }} [meta]
+ * @param {{ actor?: string, answers?: { questionId: string, text: string, source: string }[] }} [meta]
  */
 export function buildAttentionSignalRecord(attentionId, signal, meta = {}) {
   const id = typeof attentionId === "string" ? attentionId.trim() : "";
   if (!id) throw new Error("attentionId required");
   if (!Object.values(ATTENTION_SIGNAL_ACTIONS).includes(signal)) throw new Error("signal invalid");
   const now = new Date().toISOString();
+  const answers = normalizeAttentionAnswers(meta.answers);
   return {
     attentionId: id,
     signal,
     actor: meta.actor ?? "candidate",
+    payload: answers.length ? { answers } : {},
     createdAt: now,
     updatedAt: now,
   };
@@ -73,12 +82,15 @@ export function formatRunnerSignalPoll(record) {
       attentionId: null,
       signal: null,
       pending: false,
-      // TODO(runner): treat pending:false + null signal as "still waiting"
       resumeRequested: false,
       skipped: false,
       aborted: false,
+      answers: [],
+      payload: {},
     };
   }
+  const payload = record.payload && typeof record.payload === "object" ? record.payload : {};
+  const answers = normalizeAttentionAnswers(payload.answers ?? record.answers);
   return {
     attentionId: record.attentionId,
     signal: record.signal,
@@ -87,5 +99,7 @@ export function formatRunnerSignalPoll(record) {
     skipped: record.signal === ATTENTION_SIGNAL_ACTIONS.skipped,
     aborted: record.signal === ATTENTION_SIGNAL_ACTIONS.aborted,
     updatedAt: record.updatedAt,
+    answers,
+    payload,
   };
 }
