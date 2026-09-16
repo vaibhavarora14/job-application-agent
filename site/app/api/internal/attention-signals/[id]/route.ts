@@ -6,9 +6,9 @@ type Params = { params: Promise<{ id: string }> };
 
 /**
  * GET /api/internal/attention-signals/:id
- * Runner poll stub. Bearer ATTENTION_NOTIFY_SECRET.
+ * Runner poll. Bearer ATTENTION_NOTIFY_SECRET.
  *
- * TODO(runner): replace with push webhook once GCP poll client is ready.
+ * Use job-application-agent/scripts/attention-runner-poll.mjs in the hosted loop.
  * Poll every ~5s while lease held; act on resume_requested | skipped | aborted.
  */
 export async function GET(request: Request, { params }: Params) {

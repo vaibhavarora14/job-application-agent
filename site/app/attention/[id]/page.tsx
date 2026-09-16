@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { attentionEnv } from "../../../lib/attention-auth";
+import { buildLiveSessionProxyPath } from "../../../lib/attention-live-session.mjs";
 import { verifyAttentionMagicLink } from "../../../lib/attention-magic-link.mjs";
 import { BLOCKER_COPY } from "../../../lib/attention-mail.mjs";
 import { AttentionActions, actionLabel } from "./AttentionActions";
@@ -28,19 +29,6 @@ export const metadata: Metadata = {
   title: "Attention",
   robots: { index: false, follow: false },
 };
-
-function liveSessionHref(attentionId: string, baseUrl: string) {
-  const base = baseUrl.trim();
-  if (!base) return null;
-  try {
-    const url = new URL(base);
-    // Ticket 2 stub: shape for auth’d noVNC proxy. Harden in follow-up.
-    if (!url.searchParams.has("attention")) url.searchParams.set("attention", attentionId);
-    return url.toString();
-  } catch {
-    return null;
-  }
-}
 
 export default async function AttentionPage({ params, searchParams }: PageProps) {
   const { id } = await params;
@@ -70,7 +58,9 @@ export default async function AttentionPage({ params, searchParams }: PageProps)
 
   const view = verified.payload;
   const why = (BLOCKER_COPY as Record<string, string>)[view.blocker] ?? BLOCKER_COPY.other;
-  const liveSessionUrl = liveSessionHref(view.attentionId, config.liveSessionBaseUrl);
+  // Always go through the Worker live-session route (verifies token, then
+  // redirects to noVNC with Worker-held password or shows IAP helper).
+  const liveSessionUrl = buildLiveSessionProxyPath(view.attentionId, token);
 
   return (
     <AttentionShell>

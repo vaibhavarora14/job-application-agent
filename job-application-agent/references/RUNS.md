@@ -91,14 +91,21 @@ Store only application ID, canonical URL, round ID, stage, blocker enum, timesta
 
 When `ATTENTION_NOTIFY_URL` and `ATTENTION_NOTIFY_SECRET` are set on the runner host, `attention add` POSTs to the site Worker notify API so the candidate receives an email with a signed magic link to `/attention/:id`. Optional `company` / `role` on the add payload (or ledger lookup) fill the email subject; they are not persisted on the attention event.
 
-Runner poll stub (while lease held):
+**Open live session** goes through `GET /api/attention/:id/live-session?token=…` (magic-link verified). The Worker either 302s to `ATTENTION_LIVE_SESSION_BASE_URL` with optional `ATTENTION_NOVNC_PASSWORD` in the URL fragment, or shows an IAP tunnel helper for agent-box port 6080. VNC passwords are never emailed.
+
+Runner poll while lease held:
 
 ```text
-GET https://jobappagent.com/api/internal/attention-signals/:id
-Authorization: Bearer $ATTENTION_NOTIFY_SECRET
+node scripts/attention-runner-poll.mjs --attention-id attention-…
+# GET {PUBLIC_SITE_URL}/api/internal/attention-signals/:id
+# Authorization: Bearer $ATTENTION_NOTIFY_SECRET
 ```
 
-Act on `resume_requested` | `skipped` | `aborted`. filled ≠ applied until visible ATS confirm + ledger intent confirm. Full contract: `site/docs/ATTENTION.md`.
+Exit codes: `0` resume_requested · `10` skipped · `11` aborted · `20` timeout · `1` error.
+
+#### Resume re-inspect checklist
+
+After `resume_requested` (exit 0): renew the lease; re-inspect the live ATS page; submit only with visible confirmation; confirm the ledger intent. filled ≠ applied. If unsure, re-open attention. On skip: resolve attention, no submit, continue the round. On abort: release the lease and end the round. Full contract: `site/docs/ATTENTION.md`.
 
 ## Friction queue
 
