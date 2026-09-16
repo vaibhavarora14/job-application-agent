@@ -16,6 +16,9 @@ Productizes the hosted-run attention pause: email notify → magic-link attentio
 | `ATTENTION_IAP_HELPER_COMMAND` | no | **Founder/dev only.** Override the IAP tunnel one-liner documented below. Never rendered on buyer attention surfaces |
 | `ATTENTION_WAKE_URL` | no | Optional HTTPS webhook for on-demand VM wake. When set, opening live session / `POST /api/internal/attention-wake` POSTs a signed wake payload here (Bearer `ATTENTION_NOTIFY_SECRET`). Wire to `gcloud compute instances start` outside the Worker |
 | `ATTENTION_WAKE_INSTRUCTIONS` | no | **Founder/dev / internal wake API only.** Override wake instructions returned when `ATTENTION_WAKE_URL` is unset. Never shown in the buyer live panel |
+| `ATTENTION_DRAFT_API_KEY` | no | Optional OpenAI-compatible key for judgment **Draft** on `/attention/:id`. When unset, Draft returns `draft_unconfigured` and typed answers still work |
+| `ATTENTION_DRAFT_BASE_URL` | no | Optional chat-completions base URL (default OpenAI-compatible `/v1`) |
+| `ATTENTION_DRAFT_MODEL` | no | Optional model id (default `gpt-4o-mini`) |
 
 ## CLI / runner host env (agent-box)
 
@@ -53,11 +56,16 @@ Bearer `ATTENTION_NOTIFY_SECRET`. Body:
   "url": "https://…",
   "stage": "submission",
   "blocker": "legal-attestation",
-  "requiredActions": ["review-legal", "provide-judgment", "complete-captcha"]
+  "requiredActions": ["review-legal", "provide-judgment", "complete-captcha"],
+  "questions": [
+    { "id": "why", "prompt": "Why this role at LiveKit?", "kind": "why-us", "required": true }
+  ],
+  "postingText": "optional — used to detect “don’t use AI assistance”",
+  "aiAssistanceDiscouraged": false
 }
 ```
 
-Sends email subject `Action needed: {company} — {role}` with checklist + **Open live session** magic link (~45 min TTL). Never includes VNC passwords.
+Sends email subject `Action needed: {company} — {role}` with checklist + **Open live session** magic link (~45 min TTL). Never includes VNC passwords. `questions[]` and `aiAssistanceDiscouraged` are signed into the magic-link payload for the attention UI.
 
 ### `GET /api/attention/:id/live-session?token=…&embed=1`
 
@@ -91,8 +99,27 @@ No GCP credentials are required inside the Worker for this MVP.
 
 ### `POST /api/attention/:id/signal`
 
-Magic-link body `{ "token": "…", "action": "resume" | "skip" | "abort" }`.
-Stores a coordination row in site D1 (`attention_signals`). **Not** the application ledger — state-worker attention stream remains SoT for opened/resolved.
+Magic-link body:
+
+```json
+{
+  "token": "…",
+  "action": "resume" | "skip" | "abort",
+  "answers": [
+    { "questionId": "why", "text": "…", "source": "typed" | "draft_approved" | "bank" }
+  ]
+}
+```
+
+Stores a coordination row in site D1 (`attention_signals`), including `answers[]` on `payload_json` for the runner. On resume, approved answers are also upserted into the site **answer bank** (`attention_answer_bank` — fingerprint, prompt, text, tags). **Not** the application ledger — state-worker attention stream remains SoT for opened/resolved. Never stores CAPTCHA/MFA/cookies.
+
+### `POST /api/attention/:id/draft`
+
+Magic-link body `{ "token", "questionId?", "prompt?", "candidateNotes?" }`. Returns a short first-person draft for edit/Approve, or `draft_unconfigured` when `ATTENTION_DRAFT_API_KEY` is unset. Disabled with `403 ai_assistance_discouraged` when the posting bans AI assistance. Drafts are private scratch until Approve — never silent-pasted into the ATS.
+
+### `GET /api/attention/:id/answers?token=…&prompt=…`
+
+Magic-link prior-answer suggestions from the site D1 answer bank (fuzzy prompt match). Never auto-fills without showing the text.
 
 ### `GET /api/internal/attention-signals/:id`
 
@@ -106,6 +133,9 @@ Bearer poll for the GCP runner.
   "resumeRequested": true,
   "skipped": false,
   "aborted": false,
+  "answers": [
+    { "questionId": "why", "text": "…", "source": "typed" }
+  ],
   "updatedAt": "…"
 }
 ```
@@ -168,22 +198,53 @@ After exit `0` / `resume_requested`:
 1. `cloud lease-renew` (lease must stay held through the pause). If lease lost → new attention `session-expired`; fail closed.
 2. Load session binding; refuse resume if missing or if live URL **drifts** from `jobUrl`.
 3. Focus the **same** ATS tab the candidate used in the live session (`DISPLAY=:99` / profile path).
-4. Re-check live DOM for remaining absolute blockers — do not trust prior fill state blindly.
-5. **If clear → agent submits** (submit bias). No extra in-app “please confirm submit” unless a new absolute gate appeared.
-6. Wait for a **visible** success/confirmation surface (Ashby/generic selectors in `scripts/ats/submit-adapters.mjs`).
-7. `cloud intent-confirm` / `ledger add` only after that visible confirm. **filled ≠ applied.**
-8. If confirmation is missing after click → `cloud intent-sent` / sent-unverified; **never retry** until verified.
-9. If still blocked → `attention add` again honestly (never invent success).
-10. On skip (`10`): `attention resolve`, do not submit, continue the round.
-11. On abort (`11`): `cloud lease-release`, end the round.
+4. Load `answers[]` from the poll payload. Inject into matching textareas (`scripts/ats/answer-inject.mjs`, Ashby-first) before submit classification.
+5. Re-check live DOM for remaining absolute blockers — do not trust prior fill state blindly.
+6. **CAPTCHA vendor is Off by default** (`CAPTCHA_VENDOR=off`). Live panel remains the path for CAPTCHA. See CAPTCHA section below.
+7. **If clear → agent submits** (submit bias). No extra in-app “please confirm submit” unless a new absolute gate appeared.
+8. Wait for a **visible** success/confirmation surface (Ashby/generic selectors in `scripts/ats/submit-adapters.mjs`).
+9. `cloud intent-confirm` / `ledger add` only after that visible confirm. **filled ≠ applied.**
+10. If confirmation is missing after click → `cloud intent-sent` / sent-unverified; **never retry** until verified.
+11. If still blocked → `attention add` again honestly (never invent success).
+12. On skip (`10`): `attention resolve`, do not submit, continue the round.
+13. On abort (`11`): `cloud lease-release`, end the round.
 
 Ledger/intent rules are unchanged from `SKILL.md` / `RUNS.md` / `state-worker/AGENT.md`.
 
+## P1.5 — Judgment answers + drafts
+
+Quiet Trust attention card can collect narrative answers **in-app** so the live panel is reserved for unmirrorable blockers (CAPTCHA / MFA / legal widgets).
+
+| Surface | Behavior |
+|---------|----------|
+| Pause packaging | `attention add` accepts `questions[]`, optional `postingText`, `aiAssistanceDiscouraged` |
+| UI | Textareas per question; optional **Use prior answer**; optional **Draft** → edit → **Approve** / Discard |
+| AI policy | When posting copy discourages AI assistance, Draft is hidden/disabled (“Answer in your own voice”) |
+| Resume | Runner injects approved answers, then re-inspects / submits |
+| Storage | Site D1 `attention_answer_bank` (reusable prompts/text). Signal `payload_json` carries answers for the poll. Attention queue still never stores CAPTCHA/MFA/cookies |
+
+## CAPTCHA vendor (scaffolded, Off by default)
+
+Optional buyer-opt-in CAPTCHA assist lives in `job-application-agent/scripts/captcha-vendor.mjs`.
+
+| Env / pref | Default | Meaning |
+|------------|---------|---------|
+| `CAPTCHA_VENDOR` | `off` | `off` \| `capsolver` \| `2captcha` |
+| `CAPTCHA_VENDOR_API_KEY` | unset | Runner-only secret |
+| `CAPTCHA_BUYER_OPT_IN` / `CAPTCHA_ASSIST` | off | Must be `on` for assist |
+| `CAPTCHA_SPEND_CAP_USD_MONTH` | `5` | Fail closed to live panel when exceeded |
+
+When Off (or missing key / unsupported type / spend cap), behavior is identical to today: attention `complete-captcha` + live panel. Adapters are stubs until an explicit spike go — **no vendor calls in CI**, no production enable in this slice.
+
+Buyer disclosure (Quiet Trust):
+
+> Optional CAPTCHA assist uses a third-party solver on public challenge tokens. Some employers disallow automation. You can turn this off anytime; we fall back to the live browser.
+
 ## UI
 
-`/attention/:id?token=…` — Quiet Trust attention card: blocker chip, required actions, lease badge.
+`/attention/:id?token=…` — Quiet Trust attention card: blocker chip, required actions, lease badge, judgment answer fields when packaged.
 
-**Open live browser** expands an **in-page live panel** (iframe → `/api/attention/:id/live-session?token=…&embed=1`). Resume / Skip / Abort stay visible beside the panel. Optional full-bleed expand and “Open in new tab” when live session is configured.
+**Open live browser** expands an **in-page live panel** (iframe → `/api/attention/:id/live-session?token=…&embed=1`). Shown as the primary CTA when CAPTCHA/MFA/unmirrorable actions remain; otherwise secondary beside in-card answers. Resume / Skip / Abort stay visible beside the panel.
 
 Soft status line may show **Connecting…** briefly, then clears once the iframe loads (or after a short timeout). Buyers never see wake-recorded / ops / IAP / gcloud / SSH helper copy.
 
@@ -356,7 +417,8 @@ node job-application-agent/scripts/attention-runner-poll.mjs \
 - Full WebSocket noVNC reverse-proxy through the site Worker (next slice after embed works)
 - Named Cloudflare tunnel DNS / VM wake automation (`live.jobappagent.com`)
 - Browserbase / Steel
-- CAPTCHA vendor solve API (gated — human in panel for P1)
-- Attestation auto-grants UI / judgment draft paste (P1.5)
+- Enabling CAPTCHA vendor in production (scaffold only — `CAPTCHA_VENDOR=off`)
+- Attestation auto-grants UI
 - Multi-tenant paid→slot / billing
 - VERIFYING badge flip / founding checkout copy changes
+- Multi-tenant answer-bank scoping beyond founding single-tenant fingerprints

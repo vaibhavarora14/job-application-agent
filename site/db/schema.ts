@@ -82,3 +82,18 @@ export const attentionSignals = sqliteTable("attention_signals", {
 }, (table) => [
   index("idx_attention_signals_updated_at").on(table.updatedAt),
 ]);
+
+/**
+ * Reusable judgment answers for attention UI (P1.5).
+ * Never store CAPTCHA, MFA, cookies, or government IDs.
+ */
+export const attentionAnswerBank = sqliteTable("attention_answer_bank", {
+  fingerprint: text("fingerprint").primaryKey(),
+  prompt: text("prompt").notNull(),
+  text: text("text").notNull(),
+  tagsJson: text("tags_json").notNull().default("[]"),
+  source: text("source").notNull().default("typed"),
+  updatedAt: text("updated_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+}, (table) => [
+  index("idx_attention_answer_bank_updated_at").on(table.updatedAt),
+]);

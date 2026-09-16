@@ -4,6 +4,11 @@
  * Never embeds VNC passwords or session cookies.
  */
 
+import {
+  detectAiAssistanceDiscouraged,
+  normalizeAttentionQuestions,
+} from "./attention-questions.mjs";
+
 const encoder = new TextEncoder();
 
 function toBase64Url(bytes) {
@@ -55,6 +60,9 @@ export async function signAttentionMagicLink(input, secret, options = {}) {
 
   const now = Number.isFinite(options.now) ? options.now : Math.floor(Date.now() / 1000);
   const ttlSeconds = Number.isFinite(options.ttlSeconds) ? Math.max(60, Math.min(options.ttlSeconds, 3600)) : 2700;
+  const questions = normalizeAttentionQuestions(input?.questions);
+  const aiAssistanceDiscouraged = Boolean(input?.aiAssistanceDiscouraged)
+    || detectAiAssistanceDiscouraged(input?.postingText ?? "");
   const payload = {
     v: 1,
     aid: attentionId,
@@ -64,6 +72,8 @@ export async function signAttentionMagicLink(input, secret, options = {}) {
     stage: String(input?.stage ?? "").trim().toLowerCase().slice(0, 40),
     blocker: String(input?.blocker ?? "").trim().toLowerCase().slice(0, 60),
     requiredActions: normalizeActions(input?.requiredActions),
+    questions,
+    aiAssistanceDiscouraged,
     iat: now,
     exp: now + ttlSeconds,
   };
@@ -136,6 +146,8 @@ export async function verifyAttentionMagicLink(token, secret, options = {}) {
       stage: String(payload.stage ?? ""),
       blocker: String(payload.blocker ?? ""),
       requiredActions: normalizeActions(payload.requiredActions),
+      questions: normalizeAttentionQuestions(payload.questions),
+      aiAssistanceDiscouraged: Boolean(payload.aiAssistanceDiscouraged),
       issuedAt: payload.iat,
       expiresAt: payload.exp,
     },

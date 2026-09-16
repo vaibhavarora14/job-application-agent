@@ -21,6 +21,11 @@ import {
   sessionBindingPath,
   writeSessionBindingFile,
 } from './session-binding.mjs';
+import {
+  detectAiAssistanceDiscouraged,
+  extractNarrativeQuestionsFromText,
+  normalizeAttentionQuestions,
+} from './attention-questions.mjs';
 
 const SOURCES = new Set(['linkedin', 'greenhouse', 'lever', 'ashby', 'workable', 'comeet', 'workday', 'rippling', 'smartrecruiters', 'google-form', 'company', 'email', 'other']);
 const DISCOVERY_SOURCES = new Set(['direct-company', 'linkedin', 'x', 'yc', 'hacker-news', 'job-board', 'email', 'user-supplied', 'web-search', 'other']);
@@ -1339,6 +1344,9 @@ async function attentionNotifyHook(event, context = {}) {
         stage: event.stage,
         blocker: event.blocker,
         requiredActions: event.requiredActions,
+        questions: event.questions ?? [],
+        aiAssistanceDiscouraged: Boolean(event.aiAssistanceDiscouraged),
+        postingText: context.postingText ?? '',
       }),
     });
     const body = await response.json().catch(() => ({}));
@@ -1357,6 +1365,8 @@ async function attentionAdd(input) {
   const value = object(input, 'attention item');
   const allowed = new Set([
     'roundId', 'applicationId', 'url', 'stage', 'blocker', 'requiredActions', 'createdAt', 'company', 'role',
+    // P1.5 judgment packaging (prompts only — never candidate responses).
+    'questions', 'postingText', 'aiAssistanceDiscouraged',
     // Local-only session binding hooks — never appended to the cloud attention event.
     ...SESSION_BINDING_ATTENTION_KEYS,
   ]);
@@ -1380,6 +1390,13 @@ async function attentionAdd(input) {
       }
     } catch { /* best-effort context for notify only */ }
   }
+  const postingText = typeof value.postingText === 'string' ? value.postingText.slice(0, 20_000) : '';
+  let questions = normalizeAttentionQuestions(value.questions);
+  if (!questions.length && postingText && requiredActions.includes('provide-judgment')) {
+    questions = extractNarrativeQuestionsFromText(postingText);
+  }
+  const aiAssistanceDiscouraged = value.aiAssistanceDiscouraged === true
+    || detectAiAssistanceDiscouraged(postingText);
   const localBindingFields = extractSessionBindingFields(value);
   const event = {
     type: 'opened',
@@ -1390,6 +1407,9 @@ async function attentionAdd(input) {
     stage,
     blocker,
     requiredActions: [...new Set(requiredActions)],
+    // Prompts only — never store candidate responses on the attention queue.
+    ...(questions.length ? { questions } : {}),
+    ...(aiAssistanceDiscouraged ? { aiAssistanceDiscouraged: true } : {}),
     createdAt: isoDate(value.createdAt, 'attention.createdAt'),
   };
   await appendPrivateEvent('attention', event);
@@ -1402,13 +1422,15 @@ async function attentionAdd(input) {
       applicationId: event.applicationId,
       roundId: event.roundId,
       createdAt: event.createdAt,
+      questions: event.questions,
+      aiAssistanceDiscouraged: event.aiAssistanceDiscouraged,
       ...localBindingFields,
     });
     const path = sessionBindingPath(await ensureStateDir(), event.id);
     sessionBinding = { path, binding: await writeSessionBindingFile(path, binding) };
   }
 
-  const notify = await attentionNotifyHook(event, { company, role });
+  const notify = await attentionNotifyHook(event, { company, role, postingText });
   const base = sessionBinding ? { ...event, sessionBinding } : event;
   return notify.attempted ? { ...base, notify } : base;
 }

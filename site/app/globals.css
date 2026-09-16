@@ -332,6 +332,73 @@ footer a { min-width: 2.75rem; min-height: 2.75rem; margin-left: 1.25rem; paddin
 .attention-url a { color: var(--green); }
 .attention-actions-stack { display: grid; gap: 1rem; }
 .attention-actions { display: flex; flex-wrap: wrap; gap: .65rem; align-items: start; }
+.attention-answers { display: grid; gap: 1.15rem; }
+.attention-answers-lead { margin: 0; color: var(--muted); font-size: .92rem; line-height: 1.5; }
+.attention-answer-card { display: grid; gap: .55rem; }
+.attention-answer-label {
+  margin: 0;
+  color: var(--ink);
+  font-size: .98rem;
+  line-height: 1.45;
+}
+.attention-answer-index {
+  font: 600 .72rem/1 var(--font-mono), monospace;
+  letter-spacing: .04em;
+  color: var(--muted);
+}
+.attention-answer-required { color: var(--coral); }
+.attention-answer-textarea {
+  width: 100%;
+  min-height: 7.5rem;
+  padding: .85rem 1rem;
+  border: 1px solid var(--line);
+  border-radius: .65rem;
+  background: var(--bg);
+  color: var(--ink);
+  font: inherit;
+  line-height: 1.5;
+  resize: vertical;
+}
+.attention-answer-textarea:focus {
+  outline: 2px solid color-mix(in srgb, var(--green) 45%, transparent);
+  outline-offset: 1px;
+}
+.attention-answer-tools { display: flex; flex-wrap: wrap; gap: .55rem; align-items: center; }
+.attention-answer-hint { margin: 0; color: var(--muted); font-size: .82rem; line-height: 1.4; }
+.attention-draft-box {
+  display: grid;
+  gap: .55rem;
+  padding: .75rem;
+  border: 1px dashed var(--line);
+  border-radius: .65rem;
+  background: color-mix(in srgb, var(--surface) 80%, var(--bg));
+}
+.attention-prior-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: .45rem;
+}
+.attention-prior-item {
+  display: grid;
+  gap: .25rem;
+  width: 100%;
+  text-align: left;
+  padding: .7rem .8rem;
+  border: 1px solid var(--line);
+  border-radius: .55rem;
+  background: var(--bg);
+  color: inherit;
+  cursor: pointer;
+}
+.attention-prior-item:hover { border-color: color-mix(in srgb, var(--green) 40%, var(--line)); }
+.attention-prior-prompt {
+  font: 600 .72rem/1.3 var(--font-mono), monospace;
+  letter-spacing: .03em;
+  color: var(--muted);
+}
+.attention-prior-text { font-size: .88rem; line-height: 1.45; color: var(--text); }
 .button-danger {
   border: 1px solid #e0b8b0;
   background: var(--coral-soft);

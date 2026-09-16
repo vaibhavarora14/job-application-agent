@@ -19,6 +19,8 @@ An active grant covers discovery, assessment, verified form filling, canonical r
 
 Always stop for authentication, MFA, CAPTCHA, legal attestations, demographic responses, government identifiers, unverifiable claims, and ambiguous work authorization or compensation. Obey every browser, host, and tool permission prompt; the grant never bypasses an access control.
 
+CAPTCHA vendor assist (`scripts/captcha-vendor.mjs`) remains **Off by default** (`CAPTCHA_VENDOR=off`). It may run only when the vendor flag, API key, and buyer `captchaAssist` opt-in are all set; otherwise pause with `complete-captcha` / live panel. MFA, SSO, and government ID stay human forever. Optional judgment drafts on the attention page still require candidate Approve before inject — never silent AI paste, and Draft is disabled when a posting discourages AI assistance.
+
 `autonomy revoke` blocks new routine transmissions without deleting applications, outcomes, rounds, or queued attention items.
 
 ## Improvement boundary
