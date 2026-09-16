@@ -1,7 +1,7 @@
 "use client";
 
-import { useState } from "react";
-import { formatWakeStatusMessage } from "../../../lib/attention-wake.mjs";
+import { useEffect, useRef, useState } from "react";
+import { liveBrowserUnavailableMessage } from "../../../lib/attention-live-session.mjs";
 
 type AttentionView = {
   attentionId: string;
@@ -14,6 +14,8 @@ type AttentionView = {
   why: string;
   liveSessionUrl: string | null;
   liveSessionEmbedUrl: string | null;
+  /** True when ATTENTION_LIVE_SESSION_BASE_URL is configured on the Worker. */
+  liveSessionAvailable: boolean;
   token: string;
   expiresAt: number;
 };
@@ -24,12 +26,7 @@ type SignalResponse = {
   signal?: string;
 };
 
-type WakeResponse = {
-  error?: string;
-  message?: string;
-  status?: string;
-  instructions?: string | null;
-};
+const CONNECTING_CLEAR_MS = 2500;
 
 export function AttentionActions({ view }: { view: AttentionView }) {
   const [status, setStatus] = useState<string | null>(null);
@@ -38,9 +35,31 @@ export function AttentionActions({ view }: { view: AttentionView }) {
   const [panelOpen, setPanelOpen] = useState(false);
   const [panelExpanded, setPanelExpanded] = useState(false);
   const [iframeSrc, setIframeSrc] = useState<string | null>(null);
-  const [wakeStatus, setWakeStatus] = useState<string | null>(null);
-  const [wakeInstructions, setWakeInstructions] = useState<string | null>(null);
+  const [connecting, setConnecting] = useState(false);
   const [opening, setOpening] = useState(false);
+  const clearConnectingTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (clearConnectingTimer.current) clearTimeout(clearConnectingTimer.current);
+    };
+  }, []);
+
+  function scheduleClearConnecting() {
+    if (clearConnectingTimer.current) clearTimeout(clearConnectingTimer.current);
+    clearConnectingTimer.current = setTimeout(() => {
+      setConnecting(false);
+      clearConnectingTimer.current = null;
+    }, CONNECTING_CLEAR_MS);
+  }
+
+  function clearConnectingNow() {
+    if (clearConnectingTimer.current) {
+      clearTimeout(clearConnectingTimer.current);
+      clearConnectingTimer.current = null;
+    }
+    setConnecting(false);
+  }
 
   async function send(action: "resume" | "skip" | "abort") {
     setBusy(action);
@@ -64,49 +83,50 @@ export function AttentionActions({ view }: { view: AttentionView }) {
     }
   }
 
-  async function openLivePanel() {
+  function fireAndForgetWake() {
+    // Ops wake may still run in the background; never block the panel or surface instructions.
+    void fetch(`/api/attention/${encodeURIComponent(view.attentionId)}/wake`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ token: view.token }),
+    }).catch(() => {
+      /* ignore — buyer path does not depend on wake response */
+    });
+  }
+
+  function openLivePanel() {
     if (!view.liveSessionEmbedUrl) {
       setError("Magic-link token missing for live session.");
       return;
     }
     setOpening(true);
     setError(null);
-    setWakeStatus(formatWakeStatusMessage("starting"));
     setPanelOpen(true);
 
-    try {
-      const wakeResponse = await fetch(`/api/attention/${encodeURIComponent(view.attentionId)}/wake`, {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ token: view.token }),
-      });
-      const wakeBody = await wakeResponse.json() as WakeResponse;
-      if (typeof wakeBody.message === "string") {
-        setWakeStatus(wakeBody.message);
-      } else if (wakeResponse.ok) {
-        setWakeStatus(formatWakeStatusMessage("recorded"));
-      } else {
-        setWakeStatus(formatWakeStatusMessage("failed"));
-      }
-      if (typeof wakeBody.instructions === "string" && wakeBody.instructions.trim()) {
-        setWakeInstructions(wakeBody.instructions);
-      } else {
-        setWakeInstructions(null);
-      }
-    } catch {
-      setWakeStatus(formatWakeStatusMessage("failed"));
+    fireAndForgetWake();
+
+    if (!view.liveSessionAvailable) {
+      setIframeSrc(null);
+      setConnecting(false);
+      setOpening(false);
+      return;
     }
 
+    setConnecting(true);
+    scheduleClearConnecting();
     // Load the same-origin embed shell (verifies token, injects noVNC password in fragment).
     setIframeSrc(view.liveSessionEmbedUrl);
     setOpening(false);
   }
 
   function closeLivePanel() {
+    clearConnectingNow();
     setPanelOpen(false);
     setPanelExpanded(false);
     setIframeSrc(null);
   }
+
+  const unavailableCopy = liveBrowserUnavailableMessage();
 
   return (
     <div className="attention-actions-stack">
@@ -125,12 +145,12 @@ export function AttentionActions({ view }: { view: AttentionView }) {
             Open live browser
           </button>
         )}
-        {panelOpen && view.liveSessionUrl ? (
+        {panelOpen && view.liveSessionAvailable && view.liveSessionUrl ? (
           <a className="button button-secondary" href={view.liveSessionUrl} target="_blank" rel="noreferrer">
             Open in new tab
           </a>
         ) : null}
-        {panelOpen ? (
+        {panelOpen && view.liveSessionAvailable ? (
           <button
             type="button"
             className="button button-secondary"
@@ -150,7 +170,7 @@ export function AttentionActions({ view }: { view: AttentionView }) {
         </button>
         {error ? <p className="action-error" role="alert">{error}</p> : null}
         {status ? <p className="attention-status" role="status">{status}</p> : null}
-        {wakeStatus ? <p className="attention-wake-status" role="status">{wakeStatus}</p> : null}
+        {connecting ? <p className="attention-wake-status" role="status">Connecting…</p> : null}
       </div>
 
       {panelOpen ? (
@@ -164,20 +184,22 @@ export function AttentionActions({ view }: { view: AttentionView }) {
               Finish the paused step here. filled ≠ applied until you resume and the runner confirms visible success.
             </p>
           </div>
-          {wakeInstructions ? (
-            <pre className="attention-wake-instructions">{wakeInstructions}</pre>
-          ) : null}
-          {iframeSrc ? (
+          {!view.liveSessionAvailable ? (
+            <div className="attention-live-unavailable" role="status">
+              {unavailableCopy}
+            </div>
+          ) : iframeSrc ? (
             <iframe
               className="attention-live-frame"
               title="Remote live browser"
               src={iframeSrc}
               allow="clipboard-read; clipboard-write"
               referrerPolicy="no-referrer"
+              onLoad={() => clearConnectingNow()}
             />
           ) : (
             <div className="attention-live-frame attention-live-frame-pending" role="status">
-              Starting live browser…
+              Connecting…
             </div>
           )}
         </section>

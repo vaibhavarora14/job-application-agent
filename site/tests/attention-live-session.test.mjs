@@ -6,6 +6,7 @@ import {
   buildLiveSessionProxyUrl,
   buildNoVncLiveSessionUrl,
   defaultIapHelperCommand,
+  liveBrowserUnavailableMessage,
   liveSessionFrameSrcOrigins,
   resolveLiveSessionTarget,
   wantsLiveSessionEmbed,
@@ -29,7 +30,7 @@ test("rejects invalid live-session base URL", () => {
   assert.equal(buildNoVncLiveSessionUrl("not a url").ok, false);
 });
 
-test("resolveLiveSessionTarget redirects when base URL set, else IAP helper", () => {
+test("resolveLiveSessionTarget redirects when base URL set, else buyer unavailable", () => {
   const redirect = resolveLiveSessionTarget({
     liveSessionBaseUrl: "https://novnc.example/vnc.html",
     novncPassword: "pw",
@@ -38,11 +39,15 @@ test("resolveLiveSessionTarget redirects when base URL set, else IAP helper", ()
   assert.match(redirect.url, /^https:\/\/novnc\.example\/vnc\.html/);
   assert.equal(redirect.hasPassword, true);
 
-  const iap = resolveLiveSessionTarget({}, "attention-9");
-  assert.equal(iap.mode, "iap");
-  assert.match(iap.iapHelperCommand, /start-iap-tunnel/);
-  assert.match(iap.iapHelperCommand, /6080/);
-  assert.match(iap.localUrl, /127\.0\.0\.1:6080/);
+  const unavailable = resolveLiveSessionTarget({}, "attention-9");
+  assert.equal(unavailable.mode, "unavailable");
+  assert.equal(unavailable.message, liveBrowserUnavailableMessage());
+  assert.match(unavailable.message, /temporarily unavailable/i);
+  assert.doesNotMatch(unavailable.message, /gcloud|IAP|SSH|tunnel/i);
+  // Founder helper remains available for docs/ops — not buyer copy.
+  assert.match(unavailable.iapHelperCommand, /start-iap-tunnel/);
+  assert.match(unavailable.iapHelperCommand, /6080/);
+  assert.match(unavailable.localUrl, /127\.0\.0\.1:6080/);
   assert.match(defaultIapHelperCommand(), /gcloud compute start-iap-tunnel/);
 });
 

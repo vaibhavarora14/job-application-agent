@@ -366,15 +366,16 @@ footer a { min-width: 2.75rem; min-height: 2.75rem; margin-left: 1.25rem; paddin
   font-size: .85rem;
   line-height: 1.45;
 }
-.attention-wake-instructions {
+.attention-live-unavailable {
   margin: 0;
-  padding: .85rem 1rem;
-  border-radius: .45rem;
-  background: #173F35;
-  color: #F2E9D8;
-  font: .78rem/1.45 var(--font-mono), monospace;
-  white-space: pre-wrap;
-  word-break: break-word;
+  padding: 1.5rem 1.1rem;
+  border: 1px solid var(--line);
+  border-radius: .55rem;
+  background: var(--surface);
+  color: var(--text);
+  font-size: .95rem;
+  line-height: 1.5;
+  text-align: center;
 }
 .attention-live-frame {
   width: 100%;

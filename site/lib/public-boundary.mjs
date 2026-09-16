@@ -57,7 +57,7 @@ export function publicSecurityHeaders() {
 
 /**
  * Same-origin attention live-session embed shell may be framed by the attention
- * page and may itself frame public noVNC (or local IAP noVNC).
+ * page and may itself frame public noVNC.
  *
  * @param {string[]} [frameSrcOrigins]
  */
