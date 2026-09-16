@@ -24,11 +24,17 @@ commit populated environment files.
 - `COMMUNITY_STATS_UPSTREAM`: validated aggregate telemetry endpoint
 - `COMMUNITY_JOBS_UPSTREAM`: maintainer-reviewed public job endpoint
 - `REFUND_CRON_SECRET`: bearer secret shared with the daily refund workflow
+- `ATTENTION_NOTIFY_SECRET`: bearer secret for attention notify + runner signal poll
+- `ATTENTION_MAGIC_LINK_SECRET`: HMAC secret for `/attention/:id` magic links
+- `RESEND_API_KEY`: Resend key for attention email (notify fails closed when unset)
+- `RESEND_FROM_EMAIL`: optional From override for attention mail
+- `ATTENTION_LIVE_SESSION_BASE_URL`: optional noVNC/live-view base URL (Ticket 2 stub)
 - `DODO_PAYMENTS_API_KEY`: Dodo server API key for checkout-session creation
 - `DODO_PAYMENTS_WEBHOOK_KEY`: signing secret for the configured endpoint
 - `DODO_PRODUCT_ID`: one-time founding-access product
 - `DODO_PAYMENTS_ENVIRONMENT`: `test_mode` during verification, then `live_mode`
 
+Attention / resume MVP details: [`docs/ATTENTION.md`](docs/ATTENTION.md).
 The Dodo webhook endpoint is `https://jobappagent.com/api/webhooks/dodo`.
 Subscribe it to payment, successful refund, and dispute events. Checkout
 collects the customer email; the landing page does not require a lead form.

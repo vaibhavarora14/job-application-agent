@@ -70,3 +70,15 @@ export const publicRateLimits = sqliteTable("public_rate_limits", {
 }, (table) => [
   index("idx_public_rate_limits_updated_at").on(table.updatedAt),
 ]);
+
+/** Coordination only — not the application ledger. Never store secrets here. */
+export const attentionSignals = sqliteTable("attention_signals", {
+  attentionId: text("attention_id").primaryKey(),
+  signal: text("signal").notNull(),
+  actor: text("actor").notNull().default("candidate"),
+  payloadJson: text("payload_json").notNull().default("{}"),
+  createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+  updatedAt: text("updated_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+}, (table) => [
+  index("idx_attention_signals_updated_at").on(table.updatedAt),
+]);

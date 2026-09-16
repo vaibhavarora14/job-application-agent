@@ -1302,9 +1302,53 @@ async function attentionList(roundId = null) {
   return { count: items.length, items };
 }
 
+async function attentionNotifyHook(event, context = {}) {
+  const notifyUrl = process.env.ATTENTION_NOTIFY_URL?.trim();
+  const notifySecret = process.env.ATTENTION_NOTIFY_SECRET?.trim();
+  if (!notifyUrl || !notifySecret) return { attempted: false, reason: 'notify_unconfigured' };
+
+  let email = '';
+  try { email = String(storedProfileRaw()?.email ?? '').trim().toLowerCase(); } catch { email = ''; }
+  if (!email) {
+    console.error('[attention-notify] profile email missing; skip notify fail-closed');
+    return { attempted: true, ok: false, error: 'profile_email_missing' };
+  }
+
+  const company = String(context.company ?? '').trim() || 'Company';
+  const role = String(context.role ?? '').trim() || 'Role';
+  try {
+    const response = await fetch(notifyUrl, {
+      method: 'POST',
+      headers: {
+        authorization: `Bearer ${notifySecret}`,
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({
+        attentionId: event.id,
+        email,
+        company,
+        role,
+        url: event.url,
+        stage: event.stage,
+        blocker: event.blocker,
+        requiredActions: event.requiredActions,
+      }),
+    });
+    const body = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      console.error(`[attention-notify] site notify failed (${response.status}): ${body?.error ?? 'unknown'}`);
+      return { attempted: true, ok: false, error: body?.error ?? 'notify_failed', status: response.status };
+    }
+    return { attempted: true, ok: true, magicLinkUrl: body?.magicLinkUrl ?? null, emailId: body?.emailId ?? null };
+  } catch (error) {
+    console.error(`[attention-notify] site notify request failed: ${error instanceof Error ? error.message : 'unknown'}`);
+    return { attempted: true, ok: false, error: 'notify_request_failed' };
+  }
+}
+
 async function attentionAdd(input) {
   const value = object(input, 'attention item');
-  const allowed = new Set(['roundId', 'applicationId', 'url', 'stage', 'blocker', 'requiredActions', 'createdAt']);
+  const allowed = new Set(['roundId', 'applicationId', 'url', 'stage', 'blocker', 'requiredActions', 'createdAt', 'company', 'role']);
   for (const key of Object.keys(value)) if (!allowed.has(key)) throw new Error(`Unknown attention property: ${key}.`);
   const stage = string(value.stage, 'attention.stage', 40).toLowerCase();
   const blocker = string(value.blocker, 'attention.blocker', 60).toLowerCase();
@@ -1312,11 +1356,24 @@ async function attentionAdd(input) {
   if (!ATTENTION_BLOCKERS.has(blocker)) throw new Error('attention.blocker is invalid.');
   const requiredActions = stringArray(value.requiredActions, 'attention.requiredActions', true).map((item) => item.toLowerCase());
   if (requiredActions.length > 8 || requiredActions.some((item) => !REQUIRED_ACTIONS.has(item))) throw new Error('attention.requiredActions must contain only documented actions.');
+  const applicationId = string(value.applicationId, 'attention.applicationId', 180);
+  let company = typeof value.company === 'string' ? value.company.trim() : '';
+  let role = typeof value.role === 'string' ? value.role.trim() : '';
+  if (!company || !role) {
+    try {
+      const apps = await jsonLines(join(await ensureStateDir(), 'applications.ndjson'));
+      const match = apps.find((entry) => entry.id === applicationId);
+      if (match) {
+        company = company || String(match.company ?? '').trim();
+        role = role || String(match.role ?? match.title ?? '').trim();
+      }
+    } catch { /* best-effort context for notify only */ }
+  }
   const event = {
     type: 'opened',
     id: `attention-${randomUUID()}`,
     roundId: string(value.roundId, 'attention.roundId', 180),
-    applicationId: string(value.applicationId, 'attention.applicationId', 180),
+    applicationId,
     url: string(value.url, 'attention.url', 2048),
     stage,
     blocker,
@@ -1324,7 +1381,8 @@ async function attentionAdd(input) {
     createdAt: isoDate(value.createdAt, 'attention.createdAt'),
   };
   await appendPrivateEvent('attention', event);
-  return event;
+  const notify = await attentionNotifyHook(event, { company, role });
+  return notify.attempted ? { ...event, notify } : event;
 }
 
 async function attentionResolve(input) {

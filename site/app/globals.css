@@ -282,6 +282,63 @@ footer a { min-width: 2.75rem; min-height: 2.75rem; margin-left: 1.25rem; paddin
   footer a { margin: 0 1rem 0 0; }
 }
 
+/* Attention / resume (P1 Quiet Trust) */
+.attention-page { padding-block: 2.5rem 5rem; max-width: 42rem; }
+.attention-header h1, .attention-error-panel h1 {
+  margin: .7rem 0 1rem;
+  font-family: var(--font-display), serif;
+  font-size: clamp(2rem, 4vw, 2.85rem);
+  font-weight: 400;
+  line-height: 1.08;
+  letter-spacing: -.04em;
+}
+.attention-summary { margin: 0 0 1.25rem; color: var(--text); font-size: 1.05rem; line-height: 1.65; }
+.attention-meta { display: flex; flex-wrap: wrap; gap: .55rem .9rem; align-items: center; }
+.attention-chip {
+  padding: .4rem .65rem;
+  border: 1px solid var(--line);
+  border-radius: .45rem;
+  background: var(--coral-soft);
+  color: var(--coral);
+  font: 600 .68rem/1 var(--font-mono), monospace;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+}
+.attention-meta-item {
+  color: var(--muted);
+  font: 500 .72rem/1.4 var(--font-mono), monospace;
+  letter-spacing: .04em;
+}
+.attention-meta-item.lease { color: var(--green); }
+.attention-panel {
+  margin-top: 1.75rem;
+  padding: 1.5rem 1.6rem;
+  border: 1px solid var(--line);
+  border-radius: 1rem;
+  background: var(--surface);
+}
+.attention-panel h2 {
+  margin: 0 0 .85rem;
+  font-family: var(--font-display), serif;
+  font-size: 1.45rem;
+  font-weight: 400;
+  letter-spacing: -.03em;
+}
+.attention-panel > p { margin: 0 0 1.1rem; color: var(--text); }
+.attention-checklist { margin: 0; padding: 0 0 0 1.15rem; color: var(--ink); }
+.attention-checklist li { margin: .45rem 0; }
+.attention-url { margin: 1.1rem 0 0; color: var(--muted); font-size: .85rem; word-break: break-word; }
+.attention-url a { color: var(--green); }
+.attention-actions { display: flex; flex-wrap: wrap; gap: .65rem; align-items: start; }
+.button-danger {
+  border: 1px solid #e0b8b0;
+  background: var(--coral-soft);
+  color: var(--coral);
+}
+.button-danger:hover:not(:disabled) { background: #efd4cd; color: var(--coral); }
+.attention-status { width: 100%; margin: .35rem 0 0; color: var(--green); font-size: .85rem; }
+.attention-error-panel .eyebrow { color: var(--coral); }
+
 @media (prefers-reduced-motion: reduce) {
   html { scroll-behavior: auto; }
   *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; }
