@@ -59,15 +59,30 @@ export async function upsertAttentionSignal(record: {
 export async function getAttentionSignal(attentionId: string) {
   await ensureAttentionSignalSchema();
   const row = await env.DB.prepare(
-    `SELECT attention_id AS attentionId, signal, actor,
+    `SELECT attention_id AS attentionId, signal, actor, payload_json AS payloadJson,
             created_at AS createdAt, updated_at AS updatedAt
      FROM attention_signals WHERE attention_id = ?`,
   ).bind(attentionId).first<{
     attentionId: string;
     signal: string;
     actor: string;
+    payloadJson: string;
     createdAt: string;
     updatedAt: string;
   }>();
-  return row ?? null;
+  if (!row) return null;
+  let payload: Record<string, unknown> = {};
+  try {
+    payload = JSON.parse(row.payloadJson || "{}");
+  } catch {
+    payload = {};
+  }
+  return {
+    attentionId: row.attentionId,
+    signal: row.signal,
+    actor: row.actor,
+    payload,
+    createdAt: row.createdAt,
+    updatedAt: row.updatedAt,
+  };
 }

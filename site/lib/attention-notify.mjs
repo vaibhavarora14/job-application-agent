@@ -8,6 +8,10 @@ import {
   signAttentionMagicLink,
 } from "./attention-magic-link.mjs";
 import { sendAttentionEmail } from "./attention-mail.mjs";
+import {
+  detectAiAssistanceDiscouraged,
+  normalizeAttentionQuestions,
+} from "./attention-questions.mjs";
 
 const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -28,6 +32,10 @@ export function validateAttentionNotifyRequest(input) {
   const requiredActions = Array.isArray(value.requiredActions)
     ? value.requiredActions.map((item) => String(item).trim().toLowerCase()).filter(Boolean).slice(0, 8)
     : [];
+  const questions = normalizeAttentionQuestions(value.questions);
+  const postingText = typeof value.postingText === "string" ? value.postingText.slice(0, 20_000) : "";
+  const aiAssistanceDiscouraged = value.aiAssistanceDiscouraged === true
+    || detectAiAssistanceDiscouraged(postingText);
 
   if (!attentionId || attentionId.length > 180) return { ok: false, error: "attention_id_invalid", status: 400 };
   if (!emailPattern.test(email)) return { ok: false, error: "email_invalid", status: 400 };
@@ -38,7 +46,18 @@ export function validateAttentionNotifyRequest(input) {
 
   return {
     ok: true,
-    data: { attentionId, email, company, role, url, stage, blocker, requiredActions },
+    data: {
+      attentionId,
+      email,
+      company,
+      role,
+      url,
+      stage,
+      blocker,
+      requiredActions,
+      questions,
+      aiAssistanceDiscouraged,
+    },
   };
 }
 
@@ -101,8 +120,8 @@ export async function notifyAttentionOpened(request, config) {
     emailId: mailed.id,
     subject: mailed.subject,
     expiresAt: signed.expiresAt,
-    // Returned for machine callers (CLI / runner) so they can log the deep link locally.
-    // Never put VNC passwords here.
     magicLinkUrl,
+    questions: validated.data.questions,
+    aiAssistanceDiscouraged: validated.data.aiAssistanceDiscouraged,
   };
 }

@@ -32,5 +32,9 @@ export function attentionEnv() {
     wakeUrl: env.ATTENTION_WAKE_URL ?? "",
     /** Optional override for wake instructions on internal wake API when ATTENTION_WAKE_URL is unset. */
     wakeInstructions: env.ATTENTION_WAKE_INSTRUCTIONS ?? "",
+    /** Optional OpenAI-compatible key for attention judgment drafts (P1.5). */
+    draftApiKey: env.ATTENTION_DRAFT_API_KEY ?? "",
+    draftBaseUrl: env.ATTENTION_DRAFT_BASE_URL ?? "",
+    draftModel: env.ATTENTION_DRAFT_MODEL ?? "",
   };
 }

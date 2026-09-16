@@ -114,7 +114,7 @@ node scripts/attention-resume-submit.mjs --checklist
 node scripts/attention-resume-submit.mjs --attention-id attention-… --stdin
 ```
 
-After `resume_requested` (exit 0): renew the lease; load session binding; re-inspect the **same** filled ATS tab; if clear, **submit**; wait for visible confirmation; confirm the ledger intent. If unsure or still blocked, re-open attention. On skip: resolve attention, no submit, continue the round. On abort: release the lease and end the round. Full contract: `site/docs/ATTENTION.md`.
+After `resume_requested` (exit 0): renew the lease; load session binding; inject approved `answers[]` from the poll payload into matching textareas when present; re-inspect the **same** filled ATS tab; if clear, **submit**; wait for visible confirmation; confirm the ledger intent. CAPTCHA vendor assist is Off by default (`CAPTCHA_VENDOR=off`). If unsure or still blocked, re-open attention. On skip: resolve attention, no submit, continue the round. On abort: release the lease and end the round. Full contract: `site/docs/ATTENTION.md`.
 
 ## Friction queue
 

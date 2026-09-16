@@ -117,6 +117,29 @@ export function validateSessionBinding(input) {
     ...(roundId ? { roundId } : {}),
     ...(tabHint ? { tabHint } : {}),
   };
+
+  // P1.5: optional judgment prompts for resume inject (never candidate responses).
+  if (Array.isArray(value.questions) && value.questions.length) {
+    binding.questions = value.questions
+      .slice(0, 8)
+      .map((item) => {
+        if (!item || typeof item !== "object") return null;
+        const id = trimString(item.id).slice(0, 120);
+        const prompt = trimString(item.prompt).slice(0, 800);
+        if (!id || !prompt) return null;
+        return {
+          id,
+          prompt,
+          kind: trimString(item.kind || "judgment").slice(0, 40) || "judgment",
+          required: item.required !== false,
+        };
+      })
+      .filter(Boolean);
+  }
+  if (value.aiAssistanceDiscouraged === true) {
+    binding.aiAssistanceDiscouraged = true;
+  }
+
   return { ok: true, binding };
 }
 

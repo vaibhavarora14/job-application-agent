@@ -43,6 +43,13 @@
       "when": 1789530000000,
       "tag": "0005_attention_signals",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "6",
+      "when": 1789533600000,
+      "tag": "0006_attention_answer_bank",
+      "breakpoints": true
     }
   ]
 }

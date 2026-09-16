@@ -7,8 +7,9 @@
  *
  * Flow:
  *   resume_requested → renew lease → load session binding → same-tab check →
- *   re-inspect blockers → submit if clear → wait for visible confirmation →
- *   intent-confirm / ledger guidance
+ *   inject approved answers (P1.5) → re-inspect blockers →
+ *   optional CAPTCHA vendor (default Off) → submit if clear →
+ *   wait for visible confirmation → intent-confirm / ledger guidance
  *
  * Usage:
  *   node scripts/attention-resume-submit.mjs --attention-id attention-… --stdin
@@ -20,6 +21,7 @@
  *  11  tab_drift / binding missing
  *  12  submit_clicked_awaiting_confirm (ambiguous — intent-sent, no retry)
  *  13  ready_to_submit (DOM clear — agent should click submit then re-probe)
+ *  14  inject_answers (fill approved narrative textareas, then re-probe)
  *   1  error
  */
 
@@ -38,6 +40,11 @@ import {
   detectConfirmation,
   resolveAtsAdapter,
 } from "./ats/submit-adapters.mjs";
+import {
+  buildAnswerInjectPlan,
+  shouldInjectAnswersBeforeSubmit,
+} from "./ats/answer-inject.mjs";
+import { tryCaptchaVendorAssist } from "./captcha-vendor.mjs";
 
 export const RESUME_EXIT = Object.freeze({
   SUBMITTED: 0,
@@ -46,6 +53,7 @@ export const RESUME_EXIT = Object.freeze({
   TAB_OR_BINDING: 11,
   AWAITING_CONFIRM: 12,
   READY_TO_SUBMIT: 13,
+  INJECT_ANSWERS: 14,
 });
 
 /**
@@ -53,6 +61,7 @@ export const RESUME_EXIT = Object.freeze({
  *   pageUrl: string,
  *   pageTitle?: string,
  *   pageText?: string,
+ *   pageHtml?: string,
  *   visibleTexts?: string[],
  *   submitEnabled?: boolean,
  *   submitPresent?: boolean,
@@ -60,6 +69,10 @@ export const RESUME_EXIT = Object.freeze({
  *   matchedConfirmationSelectors?: string[],
  *   submitAlreadyClicked?: boolean,
  *   leaseHeld?: boolean,
+ *   answersInjected?: boolean,
+ *   narrativeFields?: object[],
+ *   sitekey?: string,
+ *   challengeType?: string,
  * }} ResumePageSnapshot
  */
 
@@ -68,6 +81,8 @@ export const RESUME_EXIT = Object.freeze({
  *   binding: object | null,
  *   snapshot: ResumePageSnapshot,
  *   signal?: string,
+ *   answers?: { questionId: string, text: string, source?: string, prompt?: string }[],
+ *   captchaAssist?: object | null,
  * }} input
  */
 export function decideResumeSubmit(input) {
@@ -148,8 +163,34 @@ export function decideResumeSubmit(input) {
     };
   }
 
+  const answers = Array.isArray(input.answers) ? input.answers : [];
+  const injectGate = shouldInjectAnswersBeforeSubmit({ answers });
+  if (injectGate.inject && !snapshot.answersInjected) {
+    const questions = Array.isArray(binding.questions) ? binding.questions : [];
+    const injectPlan = buildAnswerInjectPlan({
+      answers,
+      questions,
+      fields: snapshot.narrativeFields,
+      pageUrl: snapshot.pageUrl,
+    });
+    return {
+      action: "inject_answers",
+      exitCode: RESUME_EXIT.INJECT_ANSWERS,
+      message: "Approved attention answers ready — inject into matching textareas on the bound tab, then re-inspect.",
+      injectPlan,
+      adapterId: adapter.id,
+      binding,
+      next: [
+        "Fill mapped textareas from injectPlan.fills (Ashby textarea selectors preferred)",
+        "Re-run resume probe with answersInjected:true",
+        "Do not treat draft text as approved unless source is typed|draft_approved|bank",
+      ],
+    };
+  }
+
   const blockers = detectAbsoluteBlockers(snapshot, { mode: "resume" });
   if (blockers.blocked) {
+    const captchaAssist = input.captchaAssist ?? null;
     return {
       action: "still_blocked",
       exitCode: RESUME_EXIT.STILL_BLOCKED,
@@ -158,11 +199,15 @@ export function decideResumeSubmit(input) {
       adapterId: adapter.id,
       binding,
       probe,
+      captchaAssist: blockers.blockers.includes("captcha") ? captchaAssist : undefined,
       next: [
         "attention add/update with remaining blockers + requiredActions",
         "Keep same-tab session binding; renew lease while waiting",
         "Do not submit",
-      ],
+        captchaAssist && captchaAssist.reason === "vendor_off"
+          ? "CAPTCHA_VENDOR=off — use live panel complete-captcha (default)"
+          : null,
+      ].filter(Boolean),
     };
   }
 
@@ -225,13 +270,16 @@ export function resumeSubmitChecklist() {
     "1. cloud lease-renew (fail closed if lease lost → session-expired attention)",
     `2. Load session binding (display=${FILL_DISPLAY}, vncPort=${FILL_VNC_PORT}, browserProfilePath, jobUrl)`,
     "3. Focus the SAME filled ATS tab — never navigate to a cold jobs listing",
-    "4. Re-inspect live DOM (blockers, required fields). Do not trust prior fill memory.",
-    "5. If still blocked → update attention honestly; keep binding; do not submit",
-    "6. If clear → SUBMIT (no extra in-app confirm). Prefer Ashby/generic submit selectors.",
-    "7. Wait for visible confirmation surface (selectors / thank-you URL)",
-    "8. Only then: cloud intent-confirm / ledger add. filled ≠ applied.",
-    "9. If submit ambiguous → intent-sent; never retry until verified",
-    "10. attention resolve; continue round or release lease",
+    "4. Load approved answers from poll payload (answers[]) / signal",
+    "5. Inject answers into matching textareas (Ashby-first), then re-inspect",
+    "6. Re-inspect live DOM (blockers, required fields). Do not trust prior fill memory.",
+    "7. CAPTCHA_VENDOR=off by default — live panel for captcha; vendor assist only when explicitly enabled",
+    "8. If still blocked → update attention honestly; keep binding; do not submit",
+    "9. If clear → SUBMIT (no extra in-app confirm). Prefer Ashby/generic submit selectors.",
+    "10. Wait for visible confirmation surface (selectors / thank-you URL)",
+    "11. Only then: cloud intent-confirm / ledger add. filled ≠ applied.",
+    "12. If submit ambiguous → intent-sent; never retry until verified",
+    "13. attention resolve; continue round or release lease",
   ];
 }
 
@@ -287,14 +335,15 @@ function printHelp() {
 
 Options:
   --attention-id <id>   Load local session binding for same-tab checks
-  --stdin               Page snapshot JSON on stdin
+  --stdin               Page snapshot JSON on stdin (optional answers[])
   --checklist           Print resume→submit checklist and exit 0
   --signal <name>       Default resume_requested
 
 Page snapshot fields:
   pageUrl (required), pageTitle?, pageText?, visibleTexts?[],
   submitEnabled?, submitPresent?, matchedBlockerSelectors?[],
-  matchedConfirmationSelectors?[], submitAlreadyClicked?, leaseHeld?
+  matchedConfirmationSelectors?[], submitAlreadyClicked?, leaseHeld?,
+  answersInjected?, narrativeFields?[]
 
 Exit codes:
   0  submitted_confirmed
@@ -302,6 +351,7 @@ Exit codes:
  11  tab_drift / binding missing / lease lost
  12  submit_ambiguous (awaiting confirm)
  13  ready_to_submit
+ 14  inject_answers (P1.5 — fill textareas then re-probe)
   1  error
 `);
 }
@@ -333,12 +383,37 @@ async function main(argv = process.argv.slice(2)) {
   }
 
   const snapshot = input.snapshot ?? input;
+  const answers = Array.isArray(input.answers) ? input.answers : (snapshot.answers ?? []);
+
+  // Single CAPTCHA vendor call site — no-ops when CAPTCHA_VENDOR=off (default).
+  let captchaAssist = null;
+  const provisionalBlockers = detectAbsoluteBlockers({
+    pageUrl: snapshot.pageUrl,
+    pageText: snapshot.pageText,
+    pageHtml: snapshot.pageHtml,
+    visibleTexts: snapshot.visibleTexts,
+    matchedBlockerSelectors: snapshot.matchedBlockerSelectors,
+  }, { mode: "resume" });
+  if (provisionalBlockers.blockers.includes("captcha")) {
+    captchaAssist = await tryCaptchaVendorAssist({
+      snapshot: {
+        pageUrl: snapshot.pageUrl,
+        pageText: snapshot.pageText,
+        pageHtml: snapshot.pageHtml,
+        matchedBlockerSelectors: snapshot.matchedBlockerSelectors,
+        sitekey: snapshot.sitekey,
+        challengeType: snapshot.challengeType,
+      },
+    });
+  }
+
   const decision = decideResumeSubmit({
     binding,
     snapshot: {
       pageUrl: snapshot.pageUrl,
       pageTitle: snapshot.pageTitle,
       pageText: snapshot.pageText,
+      pageHtml: snapshot.pageHtml,
       visibleTexts: snapshot.visibleTexts,
       submitEnabled: snapshot.submitEnabled,
       submitPresent: snapshot.submitPresent,
@@ -346,12 +421,18 @@ async function main(argv = process.argv.slice(2)) {
       matchedConfirmationSelectors: snapshot.matchedConfirmationSelectors,
       submitAlreadyClicked: snapshot.submitAlreadyClicked,
       leaseHeld: snapshot.leaseHeld,
+      answersInjected: snapshot.answersInjected,
+      narrativeFields: snapshot.narrativeFields,
     },
     signal: args.signal,
+    answers,
+    captchaAssist,
   });
 
   console.log(JSON.stringify({
-    ok: decision.exitCode === RESUME_EXIT.SUBMITTED || decision.exitCode === RESUME_EXIT.READY_TO_SUBMIT,
+    ok: decision.exitCode === RESUME_EXIT.SUBMITTED
+      || decision.exitCode === RESUME_EXIT.READY_TO_SUBMIT
+      || decision.exitCode === RESUME_EXIT.INJECT_ANSWERS,
     ...decision,
     checklist: resumeSubmitChecklist(),
   }, null, 2));
