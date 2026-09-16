@@ -6,7 +6,10 @@ import {
   buildLiveSessionProxyUrl,
   buildNoVncLiveSessionUrl,
   defaultIapHelperCommand,
+  LIVE_SESSION_TRYCLOUDFLARE_FRAME_SRC,
+  liveBrowserLoadFailedMessage,
   liveBrowserUnavailableMessage,
+  liveSessionConnectSrcOrigins,
   liveSessionFrameSrcOrigins,
   resolveLiveSessionTarget,
   wantsLiveSessionEmbed,
@@ -63,11 +66,22 @@ test("live-session proxy path keeps token out of email-facing VNC URL", () => {
   );
 });
 
-test("embed helpers expose frame-src origins and embed query detection", () => {
+test("embed helpers expose frame-src / connect-src origins and embed query detection", () => {
   const origins = liveSessionFrameSrcOrigins("https://novnc.example:8443/vnc.html");
   assert.ok(origins.includes("'self'"));
   assert.ok(origins.includes("https://novnc.example:8443"));
   assert.ok(origins.includes("http://127.0.0.1:6080"));
+  assert.ok(origins.includes(LIVE_SESSION_TRYCLOUDFLARE_FRAME_SRC));
+
+  const connect = liveSessionConnectSrcOrigins("https://novnc.example:8443/vnc.html");
+  assert.ok(connect.includes("'self'"));
+  assert.ok(connect.includes("https://novnc.example:8443"));
+  assert.ok(connect.includes("wss://novnc.example:8443"));
+  assert.ok(connect.includes("wss://*.trycloudflare.com"));
+  assert.ok(connect.includes("ws://127.0.0.1:6080"));
+
+  assert.match(liveBrowserLoadFailedMessage(), /failed to load/i);
+  assert.doesNotMatch(liveBrowserLoadFailedMessage(), /gcloud|IAP|SSH|tunnel/i);
 
   assert.equal(wantsLiveSessionEmbed(new URL("https://jobappagent.com/api/attention/a/live-session?embed=1")), true);
   assert.equal(wantsLiveSessionEmbed(new URL("https://jobappagent.com/api/attention/a/live-session")), false);

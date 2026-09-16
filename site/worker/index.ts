@@ -2,11 +2,16 @@
 import { handleImageOptimization, DEFAULT_DEVICE_SIZES, DEFAULT_IMAGE_SIZES } from "vinext/server/image-optimization";
 import handler from "vinext/server/app-router-entry";
 import {
+  attentionPageSecurityHeaders,
   isAttentionLiveSessionEmbedPath,
+  isAttentionPagePath,
   liveSessionEmbedSecurityHeaders,
   publicSecurityHeaders,
 } from "../lib/public-boundary.mjs";
-import { liveSessionFrameSrcOrigins } from "../lib/attention-live-session.mjs";
+import {
+  liveSessionConnectSrcOrigins,
+  liveSessionFrameSrcOrigins,
+} from "../lib/attention-live-session.mjs";
 
 interface Env {
   ASSETS: Fetcher;
@@ -55,9 +60,19 @@ const worker = {
 function withPublicSecurityHeaders(response: Response, request: Request, env: Env) {
   const url = new URL(request.url);
   const headers = new Headers(response.headers);
-  const security = isAttentionLiveSessionEmbedPath(url.pathname, url.searchParams)
-    ? liveSessionEmbedSecurityHeaders(liveSessionFrameSrcOrigins(env.ATTENTION_LIVE_SESSION_BASE_URL ?? ""))
-    : publicSecurityHeaders();
+  const liveBase = env.ATTENTION_LIVE_SESSION_BASE_URL ?? "";
+  const frameSrc = liveSessionFrameSrcOrigins(liveBase);
+  const connectSrc = liveSessionConnectSrcOrigins(liveBase);
+  let security: Record<string, string>;
+  if (isAttentionLiveSessionEmbedPath(url.pathname, url.searchParams)) {
+    // Embed shell: may be framed by attention page; may frame noVNC.
+    security = liveSessionEmbedSecurityHeaders(frameSrc, connectSrc);
+  } else if (isAttentionPagePath(url.pathname)) {
+    // Attention document: iframe embed shell (and optionally noVNC after 302).
+    security = attentionPageSecurityHeaders(frameSrc, connectSrc);
+  } else {
+    security = publicSecurityHeaders();
+  }
   for (const [name, value] of Object.entries(security)) headers.set(name, value);
   return new Response(response.body, { status: response.status, statusText: response.statusText, headers });
 }

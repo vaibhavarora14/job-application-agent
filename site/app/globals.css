@@ -377,14 +377,36 @@ footer a { min-width: 2.75rem; min-height: 2.75rem; margin-left: 1.25rem; paddin
   line-height: 1.5;
   text-align: center;
 }
-.attention-live-frame {
-  width: 100%;
+.attention-live-frame-wrap {
+  position: relative;
+  display: grid;
   min-height: min(68vh, 42rem);
   height: 68vh;
+}
+.attention-live-frame {
+  display: block;
+  width: 100%;
+  height: 100%;
+  min-height: min(68vh, 42rem);
   border: 1px solid var(--line);
   border-radius: .55rem;
   background: #111;
 }
+.attention-live-frame-fail {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  display: grid;
+  place-items: center;
+  align-content: center;
+  gap: .85rem;
+  padding: 1.25rem;
+  border-radius: .55rem;
+  background: rgba(17, 17, 17, 0.92);
+  color: #F2E9D8;
+  text-align: center;
+}
+.attention-live-frame-fail p { margin: 0; font-size: .95rem; line-height: 1.45; }
 .attention-live-frame-pending {
   display: grid;
   place-items: center;
@@ -400,15 +422,23 @@ footer a { min-width: 2.75rem; min-height: 2.75rem; margin-left: 1.25rem; paddin
   border-radius: 0;
   background: var(--bg);
 }
-.attention-live-panel-expanded .attention-live-frame {
+.attention-live-panel-expanded .attention-live-frame-wrap,
+.attention-live-panel-expanded .attention-live-frame-wrap-expanded {
   min-height: 0;
   height: calc(100vh - 7rem);
 }
+.attention-live-panel-expanded .attention-live-frame {
+  min-height: 0;
+  height: 100%;
+}
 
 @media (max-width: 720px) {
-  .attention-live-frame {
+  .attention-live-frame-wrap {
     min-height: 55vh;
     height: 55vh;
+  }
+  .attention-live-frame {
+    min-height: 55vh;
   }
 }
 

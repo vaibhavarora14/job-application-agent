@@ -1,7 +1,10 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { liveBrowserUnavailableMessage } from "../../../lib/attention-live-session.mjs";
+import {
+  liveBrowserLoadFailedMessage,
+  liveBrowserUnavailableMessage,
+} from "../../../lib/attention-live-session.mjs";
 
 type AttentionView = {
   attentionId: string;
@@ -27,6 +30,8 @@ type SignalResponse = {
 };
 
 const CONNECTING_CLEAR_MS = 2500;
+/** Soft blank watchdog — CSP blocks often never fire iframe onError. */
+const LOAD_FAIL_MS = 12000;
 
 export function AttentionActions({ view }: { view: AttentionView }) {
   const [status, setStatus] = useState<string | null>(null);
@@ -35,13 +40,17 @@ export function AttentionActions({ view }: { view: AttentionView }) {
   const [panelOpen, setPanelOpen] = useState(false);
   const [panelExpanded, setPanelExpanded] = useState(false);
   const [iframeSrc, setIframeSrc] = useState<string | null>(null);
+  const [frameKey, setFrameKey] = useState(0);
   const [connecting, setConnecting] = useState(false);
+  const [loadFailed, setLoadFailed] = useState(false);
   const [opening, setOpening] = useState(false);
   const clearConnectingTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const loadFailTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     return () => {
       if (clearConnectingTimer.current) clearTimeout(clearConnectingTimer.current);
+      if (loadFailTimer.current) clearTimeout(loadFailTimer.current);
     };
   }, []);
 
@@ -59,6 +68,34 @@ export function AttentionActions({ view }: { view: AttentionView }) {
       clearConnectingTimer.current = null;
     }
     setConnecting(false);
+  }
+
+  function clearLoadFailWatchdog() {
+    if (loadFailTimer.current) {
+      clearTimeout(loadFailTimer.current);
+      loadFailTimer.current = null;
+    }
+  }
+
+  function scheduleLoadFailWatchdog() {
+    clearLoadFailWatchdog();
+    loadFailTimer.current = setTimeout(() => {
+      loadFailTimer.current = null;
+      setLoadFailed(true);
+      clearConnectingNow();
+    }, LOAD_FAIL_MS);
+  }
+
+  function markFrameLoaded() {
+    clearLoadFailWatchdog();
+    clearConnectingNow();
+    setLoadFailed(false);
+  }
+
+  function markFrameFailed() {
+    clearLoadFailWatchdog();
+    clearConnectingNow();
+    setLoadFailed(true);
   }
 
   async function send(action: "resume" | "skip" | "abort") {
@@ -94,6 +131,17 @@ export function AttentionActions({ view }: { view: AttentionView }) {
     });
   }
 
+  function mountLiveFrame() {
+    if (!view.liveSessionEmbedUrl) return;
+    setLoadFailed(false);
+    setConnecting(true);
+    scheduleClearConnecting();
+    scheduleLoadFailWatchdog();
+    setFrameKey((value) => value + 1);
+    // Single panel iframe → same-origin embed shell (token verify + noVNC fragment password).
+    setIframeSrc(view.liveSessionEmbedUrl);
+  }
+
   function openLivePanel() {
     if (!view.liveSessionEmbedUrl) {
       setError("Magic-link token missing for live session.");
@@ -106,27 +154,34 @@ export function AttentionActions({ view }: { view: AttentionView }) {
     fireAndForgetWake();
 
     if (!view.liveSessionAvailable) {
+      clearLoadFailWatchdog();
       setIframeSrc(null);
       setConnecting(false);
+      setLoadFailed(false);
       setOpening(false);
       return;
     }
 
-    setConnecting(true);
-    scheduleClearConnecting();
-    // Load the same-origin embed shell (verifies token, injects noVNC password in fragment).
-    setIframeSrc(view.liveSessionEmbedUrl);
+    mountLiveFrame();
     setOpening(false);
+  }
+
+  function retryLivePanel() {
+    fireAndForgetWake();
+    mountLiveFrame();
   }
 
   function closeLivePanel() {
     clearConnectingNow();
+    clearLoadFailWatchdog();
     setPanelOpen(false);
     setPanelExpanded(false);
     setIframeSrc(null);
+    setLoadFailed(false);
   }
 
   const unavailableCopy = liveBrowserUnavailableMessage();
+  const loadFailedCopy = liveBrowserLoadFailedMessage();
 
   return (
     <div className="attention-actions-stack">
@@ -170,7 +225,7 @@ export function AttentionActions({ view }: { view: AttentionView }) {
         </button>
         {error ? <p className="action-error" role="alert">{error}</p> : null}
         {status ? <p className="attention-status" role="status">{status}</p> : null}
-        {connecting ? <p className="attention-wake-status" role="status">Connecting…</p> : null}
+        {connecting && !loadFailed ? <p className="attention-wake-status" role="status">Connecting…</p> : null}
       </div>
 
       {panelOpen ? (
@@ -189,14 +244,26 @@ export function AttentionActions({ view }: { view: AttentionView }) {
               {unavailableCopy}
             </div>
           ) : iframeSrc ? (
-            <iframe
-              className="attention-live-frame"
-              title="Remote live browser"
-              src={iframeSrc}
-              allow="clipboard-read; clipboard-write"
-              referrerPolicy="no-referrer"
-              onLoad={() => clearConnectingNow()}
-            />
+            <div className={panelExpanded ? "attention-live-frame-wrap attention-live-frame-wrap-expanded" : "attention-live-frame-wrap"}>
+              <iframe
+                key={frameKey}
+                className="attention-live-frame"
+                title="Remote live browser"
+                src={iframeSrc}
+                allow="clipboard-read; clipboard-write"
+                referrerPolicy="no-referrer"
+                onLoad={() => markFrameLoaded()}
+                onError={() => markFrameFailed()}
+              />
+              {loadFailed ? (
+                <div className="attention-live-frame-fail" role="alert">
+                  <p>{loadFailedCopy}</p>
+                  <button type="button" className="button" onClick={retryLivePanel}>
+                    Retry
+                  </button>
+                </div>
+              ) : null}
+            </div>
           ) : (
             <div className="attention-live-frame attention-live-frame-pending" role="status">
               Connecting…

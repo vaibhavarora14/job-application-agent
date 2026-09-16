@@ -31,6 +31,8 @@ declare module "*/attention-live-session.mjs" {
 
   export function liveBrowserUnavailableMessage(): string;
 
+  export function liveBrowserLoadFailedMessage(): string;
+
   export function defaultIapHelperCommand(): string;
 
   export function buildLiveSessionProxyPath(
@@ -46,7 +48,11 @@ declare module "*/attention-live-session.mjs" {
     options?: { embed?: boolean },
   ): string;
 
+  export const LIVE_SESSION_TRYCLOUDFLARE_FRAME_SRC: string;
+
   export function liveSessionFrameSrcOrigins(liveSessionBaseUrl: string): string[];
+
+  export function liveSessionConnectSrcOrigins(liveSessionBaseUrl: string): string[];
 
   export function wantsLiveSessionEmbed(url: URL): boolean;
 }
