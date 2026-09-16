@@ -55,6 +55,49 @@ export function publicSecurityHeaders() {
   };
 }
 
+/**
+ * Same-origin attention live-session embed shell may be framed by the attention
+ * page and may itself frame public noVNC (or local IAP noVNC).
+ *
+ * @param {string[]} [frameSrcOrigins]
+ */
+export function liveSessionEmbedSecurityHeaders(frameSrcOrigins = ["'self'"]) {
+  const frameSrc = frameSrcOrigins.length ? frameSrcOrigins.join(" ") : "'self'";
+  return {
+    "content-security-policy": [
+      "default-src 'self'",
+      "base-uri 'self'",
+      "connect-src 'self'",
+      "font-src 'self'",
+      "form-action 'self'",
+      "frame-ancestors 'self'",
+      `frame-src ${frameSrc}`,
+      "img-src 'self' data:",
+      "object-src 'none'",
+      "script-src 'self' 'unsafe-inline'",
+      "style-src 'self' 'unsafe-inline'",
+      "upgrade-insecure-requests",
+    ].join("; "),
+    "cross-origin-opener-policy": "same-origin",
+    "permissions-policy": "camera=(), geolocation=(), microphone=(), payment=()",
+    "referrer-policy": "strict-origin-when-cross-origin",
+    "strict-transport-security": "max-age=31536000; includeSubDomains",
+    "x-content-type-options": "nosniff",
+    "x-frame-options": "SAMEORIGIN",
+  };
+}
+
+/**
+ * @param {string} pathname
+ * @param {URLSearchParams} [searchParams]
+ */
+export function isAttentionLiveSessionEmbedPath(pathname, searchParams) {
+  if (!/^\/api\/attention\/[^/]+\/live-session\/?$/.test(pathname)) return false;
+  if (!searchParams) return false;
+  const embed = (searchParams.get("embed") ?? "").trim().toLowerCase();
+  return embed === "1" || embed === "true" || embed === "yes";
+}
+
 export async function hashRateLimitKey(address, scope, salt) {
   const digest = await crypto.subtle.digest("SHA-256", encoder.encode(`${salt}:${scope}:${address}`));
   return [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, "0")).join("");

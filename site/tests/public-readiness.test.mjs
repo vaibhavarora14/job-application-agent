@@ -4,6 +4,8 @@ import test from "node:test";
 import {
   consumeRateLimit,
   hashRateLimitKey,
+  isAttentionLiveSessionEmbedPath,
+  liveSessionEmbedSecurityHeaders,
   publicSecurityHeaders,
   readJsonRequest,
   readTextRequest,
@@ -76,6 +78,21 @@ test("sets a restrictive browser security baseline", () => {
   assert.equal(headers["x-content-type-options"], "nosniff");
   assert.equal(headers["x-frame-options"], "DENY");
   assert.equal(headers["referrer-policy"], "strict-origin-when-cross-origin");
+});
+
+test("live-session embed headers allow same-origin framing and noVNC frame-src", () => {
+  const headers = liveSessionEmbedSecurityHeaders(["'self'", "https://novnc.example"]);
+  assert.match(headers["content-security-policy"], /frame-ancestors 'self'/);
+  assert.match(headers["content-security-policy"], /frame-src 'self' https:\/\/novnc\.example/);
+  assert.equal(headers["x-frame-options"], "SAMEORIGIN");
+  assert.equal(
+    isAttentionLiveSessionEmbedPath("/api/attention/attention-1/live-session", new URLSearchParams("embed=1")),
+    true,
+  );
+  assert.equal(
+    isAttentionLiveSessionEmbedPath("/api/attention/attention-1/live-session", new URLSearchParams("")),
+    false,
+  );
 });
 
 test("rate-limit keys do not retain a raw visitor address", async () => {

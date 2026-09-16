@@ -24,13 +24,91 @@ declare module "*/attention-live-session.mjs" {
 
   export function defaultIapHelperCommand(): string;
 
-  export function buildLiveSessionProxyPath(attentionId: string, magicToken: string): string;
+  export function buildLiveSessionProxyPath(
+    attentionId: string,
+    magicToken: string,
+    options?: { embed?: boolean },
+  ): string;
 
   export function buildLiveSessionProxyUrl(
     publicSiteUrl: string,
     attentionId: string,
     magicToken: string,
+    options?: { embed?: boolean },
   ): string;
+
+  export function liveSessionFrameSrcOrigins(liveSessionBaseUrl: string): string[];
+
+  export function wantsLiveSessionEmbed(url: URL): boolean;
+}
+
+declare module "*/attention-wake.mjs" {
+  export function validateAttentionWakeRequest(input: unknown):
+    | {
+      ok: true;
+      data: { attentionId: string; reason: string; source: string };
+    }
+    | { ok: false; error: string; status: number };
+
+  export function defaultWakeInstructions(): string;
+
+  export function buildAttentionWakePayload(input: {
+    attentionId: string;
+    reason?: string;
+    source?: string;
+    now?: string;
+  }): {
+    type: "attention_wake";
+    attentionId: string;
+    reason: string;
+    source: string;
+    requestedAt: string;
+  };
+
+  export function formatWakeStatusMessage(
+    status: "dispatched" | "recorded" | "failed" | "starting" | string,
+  ): string;
+
+  export function dispatchAttentionWake(config: {
+    attentionId: string;
+    reason?: string;
+    source?: string;
+    wakeUrl?: string;
+    wakeInstructions?: string;
+    notifySecret?: string;
+    fetchImpl?: typeof fetch;
+    logger?: { error?: (message: string) => void; warn?: (message: string) => void };
+  }): Promise<
+    | {
+      ok: true;
+      attentionId: string;
+      status: "dispatched" | "recorded";
+      message: string;
+      instructions: string | null;
+      payload: {
+        type: "attention_wake";
+        attentionId: string;
+        reason: string;
+        source: string;
+        requestedAt: string;
+      };
+    }
+    | {
+      ok: false;
+      error: string;
+      status?: number;
+      attentionId?: string;
+      message?: string;
+      instructions?: string | null;
+      payload?: {
+        type: "attention_wake";
+        attentionId: string;
+        reason: string;
+        source: string;
+        requestedAt: string;
+      };
+    }
+  >;
 }
 
 declare module "*/attention-magic-link.mjs" {

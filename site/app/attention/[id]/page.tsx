@@ -60,8 +60,9 @@ export default async function AttentionPage({ params, searchParams }: PageProps)
   const view = verified.payload;
   const why = (BLOCKER_COPY as Record<string, string>)[view.blocker] ?? BLOCKER_COPY.other;
   // Always go through the Worker live-session route (verifies token, then
-  // redirects to noVNC with Worker-held password or shows IAP helper).
+  // embeds/redirects to noVNC with Worker-held password or shows IAP helper).
   const liveSessionUrl = buildLiveSessionProxyPath(view.attentionId, token);
+  const liveSessionEmbedUrl = buildLiveSessionProxyPath(view.attentionId, token, { embed: true });
 
   return (
     <AttentionShell>
@@ -83,7 +84,7 @@ export default async function AttentionPage({ params, searchParams }: PageProps)
         <h2 id="required-actions-heading">Required actions</h2>
         <ul className="attention-checklist">
           {(view.requiredActions.length ? view.requiredActions : ["open-live-session"]).map((action) => (
-            <li key={action}>{action === "open-live-session" ? "Open the live session and finish the paused step" : actionLabel(action)}</li>
+            <li key={action}>{action === "open-live-session" ? "Open the live browser and finish the paused step" : actionLabel(action)}</li>
           ))}
         </ul>
         {view.url ? (
@@ -94,7 +95,7 @@ export default async function AttentionPage({ params, searchParams }: PageProps)
         ) : null}
       </section>
 
-      <section className="attention-panel" aria-labelledby="act-heading">
+      <section className="attention-panel attention-act-panel" aria-labelledby="act-heading">
         <h2 id="act-heading">Act in the live browser</h2>
         <p>
           Complete CAPTCHA, MFA, legal attestation, or judgment questions yourself.
@@ -112,6 +113,7 @@ export default async function AttentionPage({ params, searchParams }: PageProps)
             requiredActions: view.requiredActions,
             why,
             liveSessionUrl,
+            liveSessionEmbedUrl,
             token,
             expiresAt: view.expiresAt,
           }}

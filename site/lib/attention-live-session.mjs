@@ -109,11 +109,13 @@ export function defaultIapHelperCommand() {
  * Site-relative live-session path (Worker verifies magic token, then redirects).
  * @param {string} attentionId
  * @param {string} magicToken
+ * @param {{ embed?: boolean }} [options]
  */
-export function buildLiveSessionProxyPath(attentionId, magicToken) {
+export function buildLiveSessionProxyPath(attentionId, magicToken, options = {}) {
   const id = encodeURIComponent(String(attentionId ?? "").trim());
   const url = new URL(`https://placeholder.local/api/attention/${id}/live-session`);
   url.searchParams.set("token", String(magicToken ?? "").trim());
+  if (options.embed) url.searchParams.set("embed", "1");
   return `${url.pathname}${url.search}`;
 }
 
@@ -122,9 +124,38 @@ export function buildLiveSessionProxyPath(attentionId, magicToken) {
  * @param {string} publicSiteUrl
  * @param {string} attentionId
  * @param {string} magicToken
+ * @param {{ embed?: boolean }} [options]
  */
-export function buildLiveSessionProxyUrl(publicSiteUrl, attentionId, magicToken) {
+export function buildLiveSessionProxyUrl(publicSiteUrl, attentionId, magicToken, options = {}) {
   const origin = new URL(publicSiteUrl).origin;
-  const path = buildLiveSessionProxyPath(attentionId, magicToken);
+  const path = buildLiveSessionProxyPath(attentionId, magicToken, options);
   return new URL(path, origin).toString();
+}
+
+/**
+ * Origin allowlist for same-origin embed shell → noVNC iframe.
+ * @param {string} liveSessionBaseUrl
+ */
+export function liveSessionFrameSrcOrigins(liveSessionBaseUrl) {
+  const origins = new Set(["'self'", "http://127.0.0.1:6080", "http://localhost:6080"]);
+  const raw = typeof liveSessionBaseUrl === "string" ? liveSessionBaseUrl.trim() : "";
+  if (raw) {
+    try {
+      origins.add(new URL(raw).origin);
+    } catch {
+      // ignore invalid base — route returns error mode separately
+    }
+  }
+  return [...origins];
+}
+
+/**
+ * Whether this live-session request should return an embeddable HTML shell
+ * (for the in-page attention panel) instead of a top-level 302.
+ * @param {URL} url
+ */
+export function wantsLiveSessionEmbed(url) {
+  if (!(url instanceof URL)) return false;
+  const embed = (url.searchParams.get("embed") ?? "").trim().toLowerCase();
+  return embed === "1" || embed === "true" || embed === "yes";
 }
