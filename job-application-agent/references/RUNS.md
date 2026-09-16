@@ -87,11 +87,13 @@ node scripts/job-application.mjs attention resolve --stdin
 
 Store only application ID, canonical URL, round ID, stage, blocker enum, timestamp, and bounded required-action enums. Never store passwords, MFA codes, CAPTCHA answers, demographic answers, government IDs, or legal responses. Prioritize authentication/MFA/CAPTCHA, then legal/authorization/compensation, then judgment/video/site issues. Preserve the tab when supported; otherwise reopen the canonical URL and refill verified data.
 
+On hosted pause, also record a **local-only session binding** (`browserProfilePath`, `display: ":99"`, `vncPort: 5900`, optional `tabHint`) via optional `attention add` fields or `scripts/session-binding.mjs`. Bindings never sync to cloud. Live noVNC must target fill x11vnc **5900** (never TigerVNC **5901**) — see `references/agent-box/` and `scripts/novnc-display-guard.mjs`.
+
 ### Hosted notify + resume (P1)
 
 When `ATTENTION_NOTIFY_URL` and `ATTENTION_NOTIFY_SECRET` are set on the runner host, `attention add` POSTs to the site Worker notify API so the candidate receives an email with a signed magic link to `/attention/:id`. Optional `company` / `role` on the add payload (or ledger lookup) fill the email subject; they are not persisted on the attention event.
 
-**Open live session** goes through `GET /api/attention/:id/live-session?token=…` (magic-link verified). The Worker either embeds/302s to `ATTENTION_LIVE_SESSION_BASE_URL` with optional `ATTENTION_NOVNC_PASSWORD` in the URL fragment, or returns a soft buyer “temporarily unavailable” message when unset. IAP tunnel helpers are founder/dev-only (see `site/docs/ATTENTION.md`). VNC passwords are never emailed.
+**Open live session** goes through `GET /api/attention/:id/live-session?token=…` (magic-link verified). The Worker either embeds/302s to `ATTENTION_LIVE_SESSION_BASE_URL` with optional `ATTENTION_NOVNC_PASSWORD` in the URL fragment, or returns a soft buyer “temporarily unavailable” message when unset. IAP tunnel helpers are founder/dev-only (see `site/docs/ATTENTION.md`). VNC passwords are never emailed. **Hard rule:** that live front must show the paused fill on `DISPLAY=:99` / VNC **5900**, not TigerVNC **5901**.
 
 Runner poll while lease held:
 
@@ -103,9 +105,16 @@ node scripts/attention-runner-poll.mjs --attention-id attention-…
 
 Exit codes: `0` resume_requested · `10` skipped · `11` aborted · `20` timeout · `1` error.
 
-#### Resume re-inspect checklist
+#### Resume → submit (after exit 0)
 
-After `resume_requested` (exit 0): renew the lease; re-inspect the live ATS page; submit only with visible confirmation; confirm the ledger intent. filled ≠ applied. If unsure, re-open attention. On skip: resolve attention, no submit, continue the round. On abort: release the lease and end the round. Full contract: `site/docs/ATTENTION.md`.
+**Submit if possible** once blockers are cleared — no extra in-app confirm. filled ≠ applied until visible ATS confirmation.
+
+```text
+node scripts/attention-resume-submit.mjs --checklist
+node scripts/attention-resume-submit.mjs --attention-id attention-… --stdin
+```
+
+After `resume_requested` (exit 0): renew the lease; load session binding; re-inspect the **same** filled ATS tab; if clear, **submit**; wait for visible confirmation; confirm the ledger intent. If unsure or still blocked, re-open attention. On skip: resolve attention, no submit, continue the round. On abort: release the lease and end the round. Full contract: `site/docs/ATTENTION.md`.
 
 ## Friction queue
 

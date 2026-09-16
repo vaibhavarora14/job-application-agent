@@ -77,7 +77,7 @@ Check `round status` after the initial discovery pass and before submitting. Pre
 13. Record `submitted` only after visible success confirmation, using independent `discoverySource`, `discoverySourceId`, `applicationChannel`, and `roundId` values. In cloud mode include the returned `cloudIntentId` and active `cloudLeaseId` in `ledger add`; confirmation atomically records the application and round progress. `ledger add` automatically shares the sanitized public job metadata and durably retries on relay failure; do not run a separate manual contribution. Record no submission when confirmation is missing or ambiguous.
 14. Record workflow telemetry with `telemetry record --stdin`. Let `ledger add` emit `application_submitted`; do not emit it twice. Pass job URLs and structured metrics only through documented transient fields.
 15. Queue hard stops with `attention add --stdin` and continue elsewhere. Record reproducible general-purpose failures with `friction record --stdin`; improvement work must never delay application work.
-16. On hosted attention resume (`resume_requested` from `scripts/attention-runner-poll.mjs`): renew the lease, re-inspect the live ATS page, and submit only with visible confirmation before intent/ledger confirm. filled ≠ applied. See [references/RUNS.md](references/RUNS.md) and `site/docs/ATTENTION.md`.
+16. On hosted attention resume (`resume_requested` from `scripts/attention-runner-poll.mjs`): renew the lease; load the local **session binding** (same tab / `DISPLAY=:99` / VNC **5900**); re-inspect the live ATS page; **submit if possible** when clear; confirm only with visible ATS success before intent/ledger. filled ≠ applied. Helpers: `scripts/attention-resume-submit.mjs`, `scripts/session-binding.mjs`, `references/agent-box/`. See [references/RUNS.md](references/RUNS.md) and `site/docs/ATTENTION.md`.
 
 ## Outcomes and reviews
 
@@ -130,6 +130,9 @@ node scripts/job-application.mjs sources sharing status|enable|disable|reset
 node scripts/job-application.mjs attention add|resolve --stdin
 node scripts/job-application.mjs attention list
 node scripts/attention-runner-poll.mjs --attention-id <id>
+node scripts/attention-resume-submit.mjs --attention-id <id> [--stdin|--checklist]
+node scripts/session-binding.mjs write|read|check|path …
+node scripts/novnc-display-guard.mjs [--unit path|--text …]
 node scripts/job-application.mjs friction record --stdin
 node scripts/job-application.mjs friction list
 node scripts/job-application.mjs telemetry status|enable|disable|reset

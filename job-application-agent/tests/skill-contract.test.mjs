@@ -19,19 +19,28 @@ test('documents durable autonomy, resumable rounds, attention and friction contr
   const skill = await readFile(new URL('../SKILL.md', import.meta.url), 'utf8');
   const autonomy = await readFile(new URL('../references/AUTONOMY.md', import.meta.url), 'utf8');
   const runs = await readFile(new URL('../references/RUNS.md', import.meta.url), 'utf8');
+  const agentBox = await readFile(new URL('../references/agent-box/README.md', import.meta.url), 'utf8');
 
   assert.match(skill, /autonomy status/);
   assert.match(skill, /round status/);
   assert.match(skill, /attention list/);
   assert.match(skill, /friction record/);
   assert.match(skill, /attention-runner-poll/);
+  assert.match(skill, /attention-resume-submit/);
+  assert.match(skill, /session-binding/);
+  assert.match(skill, /DISPLAY=:99/);
+  assert.match(skill, /5900/);
   assert.match(autonomy, /never.*merge.*publish/i);
   assert.match(autonomy, /CAPTCHA/i);
   assert.match(runs, /visible.*confirmation/i);
   assert.match(runs, /discoverySource/);
   assert.match(runs, /applicationChannel/);
-  assert.match(runs, /Resume re-inspect checklist/);
+  assert.match(runs, /Resume → submit/);
   assert.match(runs, /attention-runner-poll/);
+  assert.match(runs, /submit if possible/i);
+  assert.match(agentBox, /localhost:5900/);
+  assert.match(agentBox, /5901/);
+  assert.match(agentBox, /DISPLAY=:99/);
 });
 
 test('documents Free.ai as optional LLM assist only', async () => {
