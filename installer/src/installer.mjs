@@ -1,6 +1,7 @@
 import { chmod, cp, lstat, mkdir, readFile, rename, rm, stat, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
+import { createRequire } from 'node:module';
 
 import { installScheduler, removeScheduler } from './scheduler.mjs';
 
@@ -152,6 +153,13 @@ export async function installSkill({
   await mkdir(paths.managerDir, { recursive: true });
   const staging = path.join(paths.managerDir, `staging-${Date.now()}-${Math.random().toString(16).slice(2)}`);
   await cp(source, staging, { recursive: true, force: true });
+  if (capabilities.includes('outreach-tracking-v1')) {
+    const require = createRequire(import.meta.url);
+    const runtime = path.join(staging, 'scripts', 'runtime');
+    await mkdir(runtime, { recursive: true });
+    await cp(require.resolve('sql.js/dist/sql-asm.js'), path.join(runtime, 'sql-asm.cjs'));
+    await cp(require.resolve('sql.js/LICENSE'), path.join(runtime, 'sql.js-LICENSE'));
+  }
   await validatePackagedSkill(staging, prior.requiredCapabilities ?? []);
 
   const hadTarget = await exists(paths.target);

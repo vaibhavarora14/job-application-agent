@@ -1,6 +1,7 @@
 {
   "capabilities": [
     "cloud-state-v2",
-    "application-accounting-v1"
+    "application-accounting-v1",
+    "outreach-tracking-v1"
   ]
 }

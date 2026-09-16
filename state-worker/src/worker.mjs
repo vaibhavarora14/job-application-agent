@@ -1,6 +1,8 @@
 import { ACCOUNTING_CAPABILITY, accountingApplicationKey, canonicalUrl, deliveryProjection, validateDelivery, validateDeliveryReferences, validateLead, validateLeadReferences, stableJson } from '../../job-application-agent/scripts/application-accounting.mjs';
 import { createHash, timingSafeEqual } from "node:crypto";
 import { createBackup } from "./backup.mjs";
+import { outreachAvailable, outreachRoute } from './outreach.mjs';
+import { OUTREACH_CAPABILITY } from '../../job-application-agent/scripts/outreach-domain.mjs';
 
 export const ALLOWLIST = new Set([
   "resume.pdf",
@@ -480,7 +482,7 @@ async function v2Status(env, client) {
   const lease = await env.DB.prepare("SELECT holder_client_id, lease_id, renewed_at, expires_at FROM leases WHERE name = 'application-run'").first();
   const counts = await env.DB.prepare("SELECT r.stream, COUNT(*) AS rows, COUNT(DISTINCT r.record_key) AS unique_records, MAX(r.sequence) AS latest_revision FROM records r LEFT JOIN record_corrections c ON c.record_sequence = r.sequence WHERE c.record_sequence IS NULL GROUP BY r.stream ORDER BY r.stream").all();
   const blobBackend = env.STATE ? "r2" : env.STATE_KV ? "kv" : "unavailable";
-  return jsonResponse({ backend: `cloudflare-d1-${blobBackend}`, apiVersion: 2, capabilities: [ACCOUNTING_CAPABILITY], client, documents: revisions.results, files: files.results, streams: counts.results, lease: lease && Date.parse(lease.expires_at) > Date.now() ? { holderClientId: lease.holder_client_id, renewedAt: lease.renewed_at, expiresAt: lease.expires_at, heldByThisClient: lease.holder_client_id === client.id } : null });
+  return jsonResponse({ backend: `cloudflare-d1-${blobBackend}`, apiVersion: 2, capabilities: [ACCOUNTING_CAPABILITY, ...(await outreachAvailable(env.DB) ? [OUTREACH_CAPABILITY] : [])], client, documents: revisions.results, files: files.results, streams: counts.results, lease: lease && Date.parse(lease.expires_at) > Date.now() ? { holderClientId: lease.holder_client_id, renewedAt: lease.renewed_at, expiresAt: lease.expires_at, heldByThisClient: lease.holder_client_id === client.id } : null });
 }
 
 async function adminClient(request, env, clientId, action) {
@@ -787,6 +789,7 @@ export async function handleRequest(request, env) {
   if (pathname.startsWith("/v2/")) {
     const client = await authenticateV2(request, env);
     if (!client) return unauthorized();
+    if (pathname.startsWith('/v2/outreach/')) return outreachRoute(request, env.DB, client);
     if (method === "GET" && pathname === "/v2/status") return v2Status(env, client);
 
     const documentMatch = pathname.match(/^\/v2\/documents\/([^/]+)$/);

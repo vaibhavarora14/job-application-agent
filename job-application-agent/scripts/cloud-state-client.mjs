@@ -391,8 +391,12 @@ export class CloudStateClient {
     for (const item of status.documents ?? []) documents[item.name] = await this.getDocument(item.name);
     const streams = {};
     for (const stream of Object.keys(CLOUD_STREAM_FILES)) streams[stream] = await this.listStream(stream);
+    const outreach = status.capabilities?.includes('outreach-tracking-v1') ? {
+      snapshot: await (await this.request('/v2/outreach/snapshot')).json(),
+      deletionManifest: await (await this.request('/v2/outreach/deletions')).json(),
+    } : undefined;
     const output = path ?? join(this.stateDir, `cloud-export-${new Date().toISOString().replaceAll(':', '-')}.json`);
-    await privateWrite(output, `${JSON.stringify({ version: 1, exportedAt: new Date().toISOString(), backend: status.backend, documents, streams, files: status.files ?? [] })}\n`);
+    await privateWrite(output, `${JSON.stringify({ version: 1, exportedAt: new Date().toISOString(), backend: status.backend, documents, streams, files: status.files ?? [], ...(outreach ? { outreach } : {}) })}\n`);
     return { path: output, documents: Object.keys(documents).length, records: Object.values(streams).reduce((sum, rows) => sum + rows.length, 0) };
   }
 }

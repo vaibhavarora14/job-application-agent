@@ -6,7 +6,7 @@ import { fileURLToPath } from 'node:url';
 import { installSkill, readInstallStatus, resolveAgentHome, setAutomaticUpdates, updateSkill } from './installer.mjs';
 import { createUpdateRunner } from './runner.mjs';
 
-const USAGE = `Usage:\n  job-application-agent install\n  job-application-agent update\n  job-application-agent status\n  job-application-agent updates enable|disable\n`;
+const USAGE = `Usage:\n  job-application-agent install\n  job-application-agent update\n  job-application-agent status\n  job-application-agent updates enable|disable\n  job-application-agent outreach <command>\n`;
 
 function defaultPackageRoot() {
   return path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
@@ -49,6 +49,13 @@ export async function runCli(args, options = {}) {
     scheduler,
   };
   const command = args[0];
+
+  if (command === 'outreach') {
+    const { runOutreach } = await import('../../job-application-agent/scripts/outreach-cli.mjs');
+    const result = await runOutreach(args.slice(1));
+    output(JSON.stringify(result, null, 2));
+    return result;
+  }
 
   if (command === 'status') {
     const status = await readInstallStatus({ homeDir, agentHome });
