@@ -3,6 +3,8 @@
  * Fails closed when the mailer is unconfigured or upstream errors.
  */
 
+import { ACTION_LABELS } from "./attention-action-labels.mjs";
+
 const BLOCKER_COPY = {
   captcha: "Prove you're human in the live browser session.",
   authentication: "Sign in or approve access in the live browser session.",
@@ -18,22 +20,6 @@ const BLOCKER_COPY = {
   upload: "An upload gate needs you in the live session.",
   "site-error": "The site hit an error; inspect and decide in the live session.",
   other: "The hosted run paused and needs you.",
-};
-
-const ACTION_LABELS = {
-  "sign-in": "Sign in",
-  "complete-mfa": "Complete MFA",
-  "complete-captcha": "Complete CAPTCHA",
-  "review-legal": "Review legal attestation",
-  "choose-demographic": "Choose demographic response",
-  "provide-government-id": "Handle government ID",
-  "provide-authorization": "Provide work authorization",
-  "provide-compensation": "Provide compensation",
-  "verify-claim": "Verify missing fact",
-  "provide-judgment": "Provide judgment answer",
-  "record-video": "Record video",
-  "enable-upload": "Complete upload",
-  "retry-site": "Retry site",
 };
 
 /**
@@ -150,4 +136,4 @@ export async function sendAttentionEmail(input, config = {}) {
   }
 }
 
-export { BLOCKER_COPY, ACTION_LABELS };
+export { BLOCKER_COPY };

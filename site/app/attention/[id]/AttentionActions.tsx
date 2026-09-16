@@ -22,22 +22,6 @@ type SignalResponse = {
   signal?: string;
 };
 
-const ACTION_LABELS: Record<string, string> = {
-  "sign-in": "Sign in",
-  "complete-mfa": "Complete MFA",
-  "complete-captcha": "Complete CAPTCHA",
-  "review-legal": "Review legal attestation",
-  "choose-demographic": "Choose demographic response",
-  "provide-government-id": "Handle government ID",
-  "provide-authorization": "Provide work authorization",
-  "provide-compensation": "Provide compensation",
-  "verify-claim": "Verify missing fact",
-  "provide-judgment": "Provide judgment answer",
-  "record-video": "Record video",
-  "enable-upload": "Complete upload",
-  "retry-site": "Retry site",
-};
-
 export function AttentionActions({ view }: { view: AttentionView }) {
   const [status, setStatus] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
@@ -89,8 +73,4 @@ export function AttentionActions({ view }: { view: AttentionView }) {
       {status ? <p className="attention-status" role="status">{status}</p> : null}
     </div>
   );
-}
-
-export function actionLabel(action: string) {
-  return ACTION_LABELS[action] ?? action;
 }

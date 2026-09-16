@@ -1,3 +1,9 @@
+declare module "*/attention-action-labels.mjs" {
+  export const ACTION_LABELS: Record<string, string>;
+
+  export function actionLabel(action: string): string;
+}
+
 declare module "*/attention-live-session.mjs" {
   export function buildNoVncLiveSessionUrl(
     baseUrl: string,
@@ -75,7 +81,6 @@ declare module "*/attention-magic-link.mjs" {
 
 declare module "*/attention-mail.mjs" {
   export const BLOCKER_COPY: Record<string, string>;
-  export const ACTION_LABELS: Record<string, string>;
 
   export function buildAttentionEmail(input: {
     company?: string;
