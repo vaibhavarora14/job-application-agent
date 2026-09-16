@@ -116,3 +116,24 @@ test('one follow-up can close as no response only after it was sent', () => {
   assert.equal(readOutreach(state, 'show', { id: 'opportunity-1' }, '2026-10-06T10:00:00Z').noResponse, true);
   assert.equal(readOutreach(state, 'show', { id: 'opportunity-1' }, '2026-10-06T10:00:00Z').followupDue, false);
 });
+
+test('progression corrections cannot supersede delivery evidence and bypass an unresolved reservation', () => {
+  const f = fixture(); f.run('handoff', handoff());
+  f.run('record', { operationId: 'sent', id: 'opportunity-1', type: 'sent-user-reported', attemptId: 'handoff-1', occurredAt: now, evidence: 'User reports sending.' });
+  assert.throws(() => f.run('record', { operationId: 'bad-correction', id: 'opportunity-1', type: 'replied', supersedes: ['sent'], occurredAt: now, evidence: 'Wrong category.' }), /category|delivery/i);
+  f.run('record', { operationId: 'uncertain-correction', id: 'opportunity-1', type: 'uncertain', attemptId: 'handoff-1', supersedes: ['sent'], occurredAt: now, evidence: 'Send could not be verified.' });
+  f.run('assess', assessment('second'));
+  f.run('draft', { operationId: 'second-draft', id: 'second', text: 'Hello', claimRefs: [], purpose: 'initial' });
+  assert.throws(() => f.run('handoff', handoff({ operationId: 'second-handoff', id: 'second', exception: { approvedByUser: true, reason: 'Try another contact.' } })), /unresolved/);
+});
+
+test('valid opaque IDs may match Object.prototype property names', () => {
+  const f = fixture();
+  assert.throws(() => f.run('clear', { operationId: 'bad-clear', ids: ['constructor'] }), /not found/);
+  assert.equal(Object.hasOwn(f.state.reservations, 'clear-constructor'), false);
+  f.run('assess', assessment('constructor', { operationId: 'toString' }));
+  f.run('draft', { operationId: 'constructor', id: 'constructor', text: 'Hello', claimRefs: [], purpose: 'initial' });
+  assert.equal(readOutreach(f.state, 'show', { id: 'constructor' }, now).content.drafts.length, 1);
+  assert.equal(readOutreach(f.state, 'show', { id: 'constructor' }, now).cleared, false);
+  assert.equal(f.run('draft', { operationId: 'constructor', id: 'constructor', text: 'Hello', claimRefs: [], purpose: 'initial' }).cleared, false);
+});

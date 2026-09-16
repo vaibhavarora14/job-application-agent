@@ -11,6 +11,7 @@ const RANKING = { hiringSignal: 4, responsibility: 3, fit: 3, freshness: 2, rela
 const DAY = 86400000;
 
 function check(condition, message) { if (!condition) throw new Error(message); }
+function entry(index, key) { return Object.hasOwn(index, key) ? index[key] : undefined; }
 function object(value, name) { check(value && typeof value === 'object' && !Array.isArray(value), `${name} must be an object`); return value; }
 function keys(value, allowed) { object(value, 'input'); check(Object.keys(value).every(k => allowed.includes(k)), 'Unknown outreach property'); }
 function text(value, name, max = 2000) { check(typeof value === 'string' && value.trim().length > 0 && value.length <= max, `${name} is required and must be bounded text`); return value.trim(); }
@@ -42,7 +43,7 @@ function activeEvents(state, opportunityId) {
   return events.filter(e => !superseded.has(e.id));
 }
 function projection(state, opportunityId, now) {
-  const opportunity = state.opportunities[opportunityId];
+  const opportunity = entry(state.opportunities, opportunityId);
   check(opportunity, 'Opportunity not found');
   const events = activeEvents(state, opportunityId);
   const attempts = events.filter(e => e.type === 'handoff').map(e => {
@@ -59,7 +60,7 @@ function projection(state, opportunityId, now) {
   const initial = attempts.find(a => a.purpose === 'initial' && a.delivery.startsWith('sent-'));
   const followup = attempts.find(a => a.purpose === 'follow-up' && a.delivery.startsWith('sent-'));
   const blocked = attempts.some(a => ['conflict', 'pending-handoff', 'uncertain'].includes(a.delivery));
-  const eligible = GATES.every(g => state.contents[opportunityId]?.assessment?.qualification[g] === true);
+  const eligible = GATES.every(g => entry(state.contents, opportunityId)?.assessment?.qualification[g] === true);
   const dueOn = initial ? businessDate(initial.sentAt, state.meta.timezone, 7) : null;
   const closeOn = followup ? businessDate(followup.sentAt, state.meta.timezone, 7) : null;
   return { id: opportunityId, cleared: opportunity.cleared, suppressed,
@@ -84,13 +85,13 @@ function identities(state, assessment) {
 }
 function overlaps(a, b) { return a.some(v => b.includes(v)); }
 function reservationMatches(reservation, opportunity) { return overlaps(reservation.companies, opportunity.companies) || overlaps(reservation.recipients, opportunity.recipients); }
-function requireOpportunity(state, input) { const op = state.opportunities[id(input.id)]; check(op, 'Opportunity not found'); check(!op.cleared, 'Opportunity was cleared'); return op; }
+function requireOpportunity(state, input) { const op = entry(state.opportunities, id(input.id)); check(op, 'Opportunity not found'); check(!op.cleared, 'Opportunity was cleared'); return op; }
 function resultFor(state, action, input, now) {
   if (action.startsWith('policy-')) return { enabled: state.meta.enabled, timezone: state.meta.timezone, recoveryBlocked: state.meta.recoveryBlocked, mode: 'draft-and-track' };
   if (action === 'clear') return { cleared: input.ids, backupRetentionDays: 30, disconnectedCachesMayRemain: true };
   const result = projection(state, input.id, now);
   if (action === 'handoff' && !result.cleared && !result.suppressed && result.eligible && state.meta.enabled && !state.meta.recoveryBlocked && !result.progression.some(p => STOP.includes(p)) && result.attempts.find(a => a.id === input.operationId)?.delivery === 'pending-handoff' && result.qualificationRevision === input.qualificationRevision && Date.parse(now) - Date.parse(input.recheckedAt) <= DAY) {
-    result.copyableText = state.contents[input.id]?.drafts?.find(d => d.revision === input.draftRevision)?.text;
+    result.copyableText = entry(state.contents, input.id)?.drafts?.find(d => d.revision === input.draftRevision)?.text;
   }
   return result;
 }
@@ -100,7 +101,7 @@ export function mutateOutreach(original, action, input, { now = new Date().toISO
   check(JSON.stringify(input).length <= 32000, 'Outreach input too large');
   const operationId = id(input.operationId);
   const digest = fingerprint(original, 'operation', stableJson({ action, input }));
-  const prior = original.operations[operationId];
+  const prior = entry(original.operations, operationId);
   if (prior) {
     check(prior.digest === digest, 'Operation ID reused with different content');
     return { state: original, result: resultFor(original, action, input, now) };
@@ -119,7 +120,7 @@ export function mutateOutreach(original, action, input, { now = new Date().toISO
   } else if (action === 'assess') {
     keys(input, ['operationId', 'id', 'company', 'recipient', 'role', 'channel', 'source', 'applicationId', 'qualification', 'gateEvidence', 'evidence', 'ranking', 'aliasesVerified']);
     check(state.meta.enabled, 'Outreach is disabled'); id(input.id);
-    check(!state.tombstones[input.id], 'Opportunity was cleared');
+    check(!entry(state.tombstones, input.id), 'Opportunity was cleared');
     keys(input.company, ['name', 'domain', 'aliases']); text(input.company.name, 'company name', 200); keys(input.recipient, ['account', 'aliases']);
     check(Array.isArray(input.company.aliases) && input.company.aliases.length <= 10 && Array.isArray(input.recipient.aliases) && input.recipient.aliases.length <= 10, 'Bounded alias arrays required');
     if (input.company.aliases.length || input.recipient.aliases.length) check(input.aliasesVerified === true, 'Aliases require verified identity evidence');
@@ -144,25 +145,25 @@ export function mutateOutreach(original, action, input, { now = new Date().toISO
     for (const gate of GATES) check(Array.isArray(input.gateEvidence[gate]) && input.gateEvidence[gate].length > 0 && input.gateEvidence[gate].length <= 20 && input.gateEvidence[gate].every(ref => evidenceIds.has(ref)), 'Every qualification gate needs evidence references');
     keys(input.ranking, Object.keys(RANKING));
     for (const [key, max] of Object.entries(RANKING)) check(Number.isInteger(input.ranking[key]) && input.ranking[key] >= 0 && input.ranking[key] <= max, 'Invalid ranking');
-    const existing = state.opportunities[input.id];
+    const existing = entry(state.opportunities, input.id);
     const identity = identities(state, input);
     if (existing) check(overlaps(existing.companies, identity.companies) && overlaps(existing.recipients, identity.recipients), 'Cannot replace opportunity identity; use a new opportunity');
     if (existing) for (const key of ['companies', 'recipients']) identity[key] = [...new Set([...existing[key], ...identity[key]])];
     state.opportunities[input.id] = { ...identity, id: input.id, qualificationRevision: (existing?.qualificationRevision ?? 0) + 1,
       score: Object.values(input.ranking).reduce((a, b) => a + b, 0), cleared: false, suppressed: existing?.suppressed ?? false };
-    const content = state.contents[input.id] ?? { drafts: [], evidence: {} };
+    const content = entry(state.contents, input.id) ?? { drafts: [], evidence: {} };
     content.assessment = structuredClone(input); delete content.assessment.operationId; state.contents[input.id] = content;
     addEvent('assessed');
   } else if (action === 'clear') {
     keys(input, ['operationId', 'ids']); check(Array.isArray(input.ids) && input.ids.length > 0 && input.ids.length <= 50, 'Opportunity IDs required');
     for (const opportunityId of input.ids) {
-      const op = state.opportunities[id(opportunityId)]; check(op, 'Opportunity not found');
+      const op = entry(state.opportunities, id(opportunityId)); check(op, 'Opportunity not found');
       delete state.contents[opportunityId]; op.cleared = true; op.suppressed = true;
       state.tombstones[opportunityId] = { id: opportunityId, clearedAt: now, actor };
       state.reservations[`clear-${opportunityId}`] = { opportunityId, companies: op.companies, recipients: op.recipients, suppressed: true };
     }
   } else {
-    const op = requireOpportunity(state, input); const content = state.contents[input.id];
+    const op = requireOpportunity(state, input); const content = entry(state.contents, input.id);
     if (action === 'draft') {
       keys(input, ['operationId', 'id', 'text', 'claimRefs', 'purpose']); check(state.meta.enabled, 'Outreach is disabled');
       text(input.text, 'draft', 4000); check(['initial', 'follow-up'].includes(input.purpose), 'Draft purpose required');
@@ -208,11 +209,15 @@ export function mutateOutreach(original, action, input, { now = new Date().toISO
       check([...DELIVERY, ...PROGRESSION].includes(input.type), 'Unsupported outcome');
       const occurredAt = timestamp(input.occurredAt); check(Date.parse(occurredAt) <= Date.parse(now), 'Future observation is invalid'); text(input.evidence, 'evidence');
       const supersedes = input.supersedes ?? []; check(Array.isArray(supersedes) && supersedes.length <= 20, 'Invalid correction');
-      for (const old of supersedes) check(state.events[old]?.opportunityId === input.id && state.events[old].type !== 'handoff', 'Correction must reference prior observations for this opportunity');
+      const category = DELIVERY.includes(input.type) ? DELIVERY : PROGRESSION;
+      for (const old of supersedes) {
+        const previous = entry(state.events, old);
+        check(previous?.opportunityId === input.id && category.includes(previous.type), 'Corrections must reference observations in the same delivery/progression category');
+      }
       if (DELIVERY.includes(input.type)) {
-        const attempt = state.events[input.attemptId]; check(attempt?.type === 'handoff' && attempt.opportunityId === input.id, 'Delivery observation requires its handoff');
+        const attempt = entry(state.events, input.attemptId); check(attempt?.type === 'handoff' && attempt.opportunityId === input.id, 'Delivery observation requires its handoff');
         check(Date.parse(occurredAt) >= Date.parse(attempt.occurredAt), 'Observation precedes handoff');
-        check(supersedes.every(old => state.events[old].attemptId === input.attemptId), 'Delivery corrections must match attempt');
+        check(supersedes.every(old => entry(state.events, old).attemptId === input.attemptId), 'Delivery corrections must match attempt');
         if (input.type === 'sent-verified') text(input.messageRef, 'visible message reference', 1000);
         if (input.sentText) text(input.sentText, 'actual sent text', 4000);
       }
@@ -227,7 +232,7 @@ export function mutateOutreach(original, action, input, { now = new Date().toISO
       const view = projection(state, input.id, now);
       if (input.attemptId) {
         const attempt = view.attempts.find(a => a.id === input.attemptId);
-        const reservation = state.reservations[input.attemptId] ?? { opportunityId: input.id, companies: op.companies, recipients: op.recipients, pending: true, suppressed: false };
+        const reservation = entry(state.reservations, input.attemptId) ?? { opportunityId: input.id, companies: op.companies, recipients: op.recipients, pending: true, suppressed: false };
         if (attempt.delivery === 'not-sent') delete state.reservations[input.attemptId];
         else { reservation.pending = ['pending-handoff', 'uncertain', 'conflict'].includes(attempt.delivery); state.reservations[input.attemptId] = reservation; }
       }
@@ -250,7 +255,7 @@ export function readOutreach(state, action, input = {}, now = new Date().toISOSt
   if (action === 'policy-status') return resultFor(state, action, input, now);
   if (action === 'show') {
     const view = projection(state, id(input.id), now);
-    return { ...view, content: state.contents[input.id] ?? null, events: Object.values(state.events).filter(e => e.opportunityId === input.id) };
+    return { ...view, content: entry(state.contents, input.id) ?? null, events: Object.values(state.events).filter(e => e.opportunityId === input.id) };
   }
   const items = Object.keys(state.opportunities).map(opportunityId => projection(state, opportunityId, now)).sort((a, b) => b.score - a.score);
   if (action === 'list') return { items };

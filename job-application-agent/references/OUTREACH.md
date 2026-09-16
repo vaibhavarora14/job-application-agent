@@ -144,8 +144,9 @@ For replies, optional `replyTone` is `positive`, `neutral`, or `negative`.
 Optional integer `minutesSpent` records candidate-reported effort for this event.
 
 A correction uses a new operation ID, the corrected type, and
-`supersedes: ["old-event-id"]`. Delivery corrections must reference the same
-handoff. Nothing edits an application outcome automatically.
+`supersedes: ["old-event-id"]`. Corrections stay within delivery or progression;
+a progression observation cannot supersede delivery evidence. Delivery corrections
+must reference the same handoff. Nothing edits an application outcome automatically.
 
 Suggest one follow-up seven Monday–Friday business days after a recorded send,
 in the configured timezone, without holiday adjustments. Use a new draft with

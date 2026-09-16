@@ -18,23 +18,35 @@ export async function loadOutreach(db) {
   throw new Error('Outreach changed concurrently; retry read');
 }
 
+export async function loadOutreachHistory(db) {
+  const historyRevision = await db.prepare('SELECT (SELECT COALESCE(MAX(sequence), 0) FROM records) AS records, (SELECT COUNT(*) FROM record_corrections) AS corrections').first();
+  const rows = (await db.prepare("SELECT r.stream, r.payload_json FROM records r LEFT JOIN record_corrections c ON c.record_sequence = r.sequence WHERE r.stream IN ('applications', 'outcomes') AND c.record_sequence IS NULL").all()).results;
+  return { historyRevision, ...Object.fromEntries(['applications', 'outcomes'].map(stream => [stream, rows.filter(row => row.stream === stream).map(row => JSON.parse(row.payload_json))])) };
+}
+
 export async function cloudOutreachMutation(db, action, input, context) {
   for (let retry = 0; retry < 5; retry++) {
     const before = await loadOutreach(db);
-    const output = mutateOutreach(before, action, input, context);
+    const history = context?.loadHistory ? await context.loadHistory() : {};
+    const output = mutateOutreach(before, action, input, { ...context, ...history });
     if (output.state === before) return output.result;
     const statements = [];
     // Every statement uses the same revision predicate. D1 batch is transactional:
     // either this operation wins and all rows change, or every statement is a no-op.
-    const predicate = '(SELECT revision FROM outreach_meta WHERE id = 1) = ?';
+    let predicate = '(SELECT revision FROM outreach_meta WHERE id = 1) = ?';
+    const guardValues = [before.meta.revision];
+    if (history.historyRevision) {
+      predicate += ' AND (SELECT COALESCE(MAX(sequence), 0) FROM records) = ? AND (SELECT COUNT(*) FROM record_corrections) = ?';
+      guardValues.push(history.historyRevision.records, history.historyRevision.corrections);
+    }
     for (const table of OUTREACH_TABLES) {
       const old = before[table], next = output.state[table];
-      for (const key of Object.keys(old)) if (!(key in next)) statements.push(db.prepare(`DELETE FROM outreach_${table} WHERE id = ? AND ${predicate}`).bind(key, before.meta.revision));
-      for (const [key, value] of Object.entries(next)) if (stableJson(value) !== stableJson(old[key] ?? null)) {
-        statements.push(db.prepare(`INSERT INTO outreach_${table} (id, payload_json) SELECT ?, ? WHERE ${predicate} ON CONFLICT(id) DO UPDATE SET payload_json = excluded.payload_json`).bind(key, JSON.stringify(value), before.meta.revision));
+      for (const key of Object.keys(old)) if (!Object.hasOwn(next, key)) statements.push(db.prepare(`DELETE FROM outreach_${table} WHERE id = ? AND ${predicate}`).bind(key, ...guardValues));
+      for (const [key, value] of Object.entries(next)) if (stableJson(value) !== stableJson(Object.hasOwn(old, key) ? old[key] : null)) {
+        statements.push(db.prepare(`INSERT INTO outreach_${table} (id, payload_json) SELECT ?, ? WHERE ${predicate} ON CONFLICT(id) DO UPDATE SET payload_json = excluded.payload_json`).bind(key, JSON.stringify(value), ...guardValues));
       }
     }
-    statements.push(db.prepare('UPDATE outreach_meta SET revision = ?, payload_json = ? WHERE id = 1 AND revision = ?').bind(output.state.meta.revision, JSON.stringify(output.state.meta), before.meta.revision));
+    statements.push(db.prepare(`UPDATE outreach_meta SET revision = ?, payload_json = ? WHERE id = 1 AND ${predicate}`).bind(output.state.meta.revision, JSON.stringify(output.state.meta), ...guardValues));
     const result = await db.batch(statements);
     if (result.at(-1).meta.changes) return output.result;
   }
@@ -60,9 +72,9 @@ export async function outreachRoute(request, db, client) {
     const raw = await request.text(); if (raw.length > 34000) return respond({ error: 'Request too large' }, 413);
     const body = JSON.parse(raw);
     if (!body || Object.keys(body).some(k => !['action', 'input'].includes(k))) throw new Error('Invalid command envelope');
-    const context = { actor: client.id, applications: [], outcomes: [] };
+    const context = { actor: client.id };
     if ((body.action === 'assess' && body.input?.applicationId) || body.action === 'handoff') {
-      for (const stream of ['applications', 'outcomes']) context[stream] = (await db.prepare('SELECT r.payload_json FROM records r LEFT JOIN record_corrections c ON c.record_sequence = r.sequence WHERE r.stream = ? AND c.record_sequence IS NULL').bind(stream).all()).results.map(r => JSON.parse(r.payload_json));
+      context.loadHistory = () => loadOutreachHistory(db);
     }
     return respond(await cloudOutreachMutation(db, body.action, body.input, context));
   } catch (error) {

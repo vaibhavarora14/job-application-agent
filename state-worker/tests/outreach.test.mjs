@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import test from 'node:test';
 import { outreachD1 as createMemoryD1 } from './outreach-d1-helper.mjs';
-import { cloudOutreachMutation, loadOutreach } from '../src/outreach.mjs';
+import { cloudOutreachMutation, loadOutreach, loadOutreachHistory } from '../src/outreach.mjs';
 import { fixture, assessment, handoff } from '../../job-application-agent/tests/fixtures/outreach.mjs';
 import { OUTREACH_SCHEMA, withLocalOutreach } from '../../job-application-agent/scripts/outreach-store.mjs';
 import { mutateOutreach, readOutreach } from '../../job-application-agent/scripts/outreach-domain.mjs';
@@ -142,4 +142,34 @@ test('backup retries when a mutation would otherwise mix outreach table revision
   const opportunityIds = archive.outreach.opportunities.map(row => row.id).sort();
   assert.deepEqual(archive.outreach.contents.map(row => row.id).sort(), opportunityIds);
   assert(opportunityIds.includes('created-during-backup'));
+});
+
+test('prototype-name IDs survive cloud round-trips and sensitive content is deleted on clear', async () => {
+  const DB = createMemoryD1(OUTREACH_SCHEMA);
+  await cloudOutreachMutation(DB, 'policy-enable', { operationId: 'enable', timezone: 'UTC' }, context);
+  await assert.rejects(cloudOutreachMutation(DB, 'clear', { operationId: 'bad-clear', ids: ['constructor'] }, context), /not found/);
+  await cloudOutreachMutation(DB, 'assess', assessment('constructor', { operationId: 'toString' }), context);
+  await cloudOutreachMutation(DB, 'draft', { operationId: 'constructor', id: 'constructor', text: 'Hello', claimRefs: [], purpose: 'initial' }, context);
+  assert.equal(readOutreach(await loadOutreach(DB), 'show', { id: 'constructor' }, now).content.drafts.length, 1);
+  await cloudOutreachMutation(DB, 'clear', { operationId: 'clear-constructor', ids: ['constructor'] }, context);
+  assert.deepEqual((await loadOutreach(DB)).contents, {});
+  assert.equal((await DB.prepare('SELECT COUNT(*) AS count FROM outreach_contents').first()).count, 0);
+});
+
+test('a linked outcome written during handoff invalidates the batch and rechecks history', async () => {
+  const base = await readFile(new URL('../migrations/0001_private_state.sql', import.meta.url), 'utf8');
+  const DB = createMemoryD1(base + OUTREACH_SCHEMA);
+  const append = (stream, key, value) => DB.prepare('INSERT INTO records (stream, record_key, idempotency_key, payload_json, occurred_at, received_at, client_id, provenance) VALUES (?, ?, ?, ?, ?, ?, ?, ?)').bind(stream, key, key, JSON.stringify(value), now, now, 'system', 'test').run();
+  await append('applications', 'app-1', { id: 'app-1', company: 'Example', role: 'Staff Product Engineer', status: 'submitted' });
+  const linkedContext = { ...context, loadHistory: () => loadOutreachHistory(DB) };
+  await cloudOutreachMutation(DB, 'policy-enable', { operationId: 'enable', timezone: 'UTC' }, context);
+  await cloudOutreachMutation(DB, 'assess', assessment('opportunity-1', { applicationId: 'app-1', source: { kind: 'application', url: 'https://example.org/jobs/1' } }), linkedContext);
+  await cloudOutreachMutation(DB, 'draft', { operationId: 'draft', id: 'opportunity-1', text: 'Hello', claimRefs: [], purpose: 'initial' }, context);
+  let interleaved = false;
+  const racingDatabase = { ...DB, async batch(statements) {
+    if (!interleaved) { interleaved = true; await append('outcomes', 'rejection', { id: 'app-1', status: 'rejected' }); }
+    return DB.batch(statements);
+  } };
+  await assert.rejects(cloudOutreachMutation(racingDatabase, 'handoff', handoff(), linkedContext), /hiring outcome/);
+  assert.deepEqual((await loadOutreach(DB)).reservations, {});
 });
