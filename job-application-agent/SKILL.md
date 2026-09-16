@@ -28,6 +28,18 @@ Use `scripts/job-application.mjs` for private state and deterministic checks. Re
 
 Never store passwords, MFA codes, government IDs, demographic data, CAPTCHA answers, browser session data, or inferred candidate facts.
 
+## Optional outreach companion
+
+For candidate-requested outreach drafting or tracking, read
+[references/OUTREACH.md](references/OUTREACH.md). V1 is opt-in, draft-and-track
+only: qualify evidence, draft truthful text, obtain exact draft selection, hand
+copyable text to the candidate for manual sending, and record actual observations.
+Do not automate LinkedIn/X access or messaging. Existing application autonomy
+does not enable this module. Outreach commands bypass analytics and community
+transmissions; do not run updater/telemetry/community commands as part of an
+outreach-only workflow. Keep outreach separate from applications and never
+classify a proposed screen as scheduled. No scheduled follow-up is created.
+
 ## Accounting
 
 Read [references/ACCOUNTING.md](references/ACCOUNTING.md) before recording delivery evidence, recovery attempts, or per-lead discovery. For new rounds, record each lead with `round lead --stdin` and derive source totals from those records. Email access is optional: visible browser success counts, verified email sends count with receipt unknown, and matched final delivery failures correct effective totals. Preserve historical events and use explicit corrections for conflicts.
