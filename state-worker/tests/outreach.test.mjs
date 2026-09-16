@@ -44,7 +44,7 @@ test('local SQLite survives reopen, uses private modes, and physically removes c
     await withLocalOutreach(dir, () => ({ state: f.state, result: true }));
     const result = await withLocalOutreach(dir, state => ({ result: readOutreach(state, 'show', { id: 'opportunity-1' }, now) }));
     assert.equal(result.content.drafts.length, 1);
-    assert.equal((await stat(join(dir, 'outreach.sqlite'))).mode & 0o777, 0o600);
+    if (process.platform !== 'win32') assert.equal((await stat(join(dir, 'outreach.sqlite'))).mode & 0o777, 0o600);
     await withLocalOutreach(dir, state => mutateOutreach(state, 'clear', { operationId: 'clear', ids: ['opportunity-1'] }, context));
     const bytes = await readFile(join(dir, 'outreach.sqlite'));
     assert.equal(bytes.includes(Buffer.from('example-recruiter')), false);

@@ -5,16 +5,17 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { outreachCache } from '../scripts/outreach-cli.mjs';
 const exec = promisify(execFile);
-const cli = new URL('../scripts/job-application.mjs', import.meta.url).pathname;
+const cli = fileURLToPath(new URL('../scripts/job-application.mjs', import.meta.url));
 
 test('CLI outreach success and errors bypass telemetry, identity, and community network paths', async () => {
   const dir = await mkdtemp(join(tmpdir(), 'outreach-cli-'));
   try {
     const trap = join(dir, 'network-trap.mjs');
     await writeFile(trap, "import { appendFileSync } from 'node:fs'; globalThis.fetch = async () => { appendFileSync(process.env.NETWORK_MARKER, 'called'); throw new Error('NETWORK_TRAP'); };\n");
-    const run = args => exec(process.execPath, ['--import', trap, cli, 'outreach', ...args], { env: { ...process.env, NETWORK_MARKER: join(dir, 'network-called'), JOB_APPLICATION_AGENT_STATE_DIR: dir, JOB_APPLICATION_AGENT_CLOUD_CONFIG: join(dir, 'absent.json') } });
+    const run = args => exec(process.execPath, ['--import', pathToFileURL(trap).href, cli, 'outreach', ...args], { env: { ...process.env, NETWORK_MARKER: join(dir, 'network-called'), JOB_APPLICATION_AGENT_STATE_DIR: dir, JOB_APPLICATION_AGENT_CLOUD_CONFIG: join(dir, 'absent.json') } });
     const result = await run(['policy', 'status']);
     assert.equal(JSON.parse(result.stdout).enabled, false);
     await assert.rejects(run(['invented']), error => !error.stderr.includes('NETWORK_TRAP') && /outreach/i.test(error.stderr));
