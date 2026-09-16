@@ -1,3 +1,32 @@
+declare module "*/attention-live-session.mjs" {
+  export function buildNoVncLiveSessionUrl(
+    baseUrl: string,
+    options?: { attentionId?: string; password?: string; autoconnect?: boolean },
+  ): { ok: true; url: string; hasPassword: boolean } | { ok: false; error: string };
+
+  export function resolveLiveSessionTarget(
+    config: {
+      liveSessionBaseUrl?: string;
+      novncPassword?: string;
+      iapHelperCommand?: string;
+    },
+    attentionId: string,
+  ):
+    | { mode: "redirect"; url: string; hasPassword: boolean; note: string }
+    | { mode: "iap"; attentionId: string | null; iapHelperCommand: string; localUrl: string; note: string }
+    | { mode: "error"; error: string };
+
+  export function defaultIapHelperCommand(): string;
+
+  export function buildLiveSessionProxyPath(attentionId: string, magicToken: string): string;
+
+  export function buildLiveSessionProxyUrl(
+    publicSiteUrl: string,
+    attentionId: string,
+    magicToken: string,
+  ): string;
+}
+
 declare module "*/attention-magic-link.mjs" {
   export type AttentionMagicPayload = {
     attentionId: string;

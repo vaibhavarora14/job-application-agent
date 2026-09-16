@@ -72,7 +72,7 @@ export function AttentionActions({ view }: { view: AttentionView }) {
           Open live session
         </a>
       ) : (
-        <button type="button" className="button" disabled title="ATTENTION_LIVE_SESSION_BASE_URL not configured">
+        <button type="button" className="button" disabled title="Magic-link token missing for live session">
           Open live session
         </button>
       )}

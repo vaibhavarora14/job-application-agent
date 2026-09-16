@@ -22,6 +22,11 @@ export function attentionEnv() {
     resendApiKey: env.RESEND_API_KEY ?? "",
     resendFrom: env.RESEND_FROM_EMAIL ?? "JobAppAgent <attention@jobappagent.com>",
     publicSiteUrl: env.PUBLIC_SITE_URL ?? "https://jobappagent.com",
+    /** Public HTTPS front for agent-box noVNC (historically port 6080). */
     liveSessionBaseUrl: env.ATTENTION_LIVE_SESSION_BASE_URL ?? "",
+    /** Optional VNC password injected only on Worker→noVNC redirect (never emailed). */
+    novncPassword: env.ATTENTION_NOVNC_PASSWORD ?? "",
+    /** Optional override for the IAP tunnel helper shown when base URL is unset. */
+    iapHelperCommand: env.ATTENTION_IAP_HELPER_COMMAND ?? "",
   };
 }

@@ -24,11 +24,14 @@ test('documents durable autonomy, resumable rounds, attention and friction contr
   assert.match(skill, /round status/);
   assert.match(skill, /attention list/);
   assert.match(skill, /friction record/);
+  assert.match(skill, /attention-runner-poll/);
   assert.match(autonomy, /never.*merge.*publish/i);
   assert.match(autonomy, /CAPTCHA/i);
   assert.match(runs, /visible.*confirmation/i);
   assert.match(runs, /discoverySource/);
   assert.match(runs, /applicationChannel/);
+  assert.match(runs, /Resume re-inspect checklist/);
+  assert.match(runs, /attention-runner-poll/);
 });
 
 test('documents Free.ai as optional LLM assist only', async () => {

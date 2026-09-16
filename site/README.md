@@ -28,7 +28,9 @@ commit populated environment files.
 - `ATTENTION_MAGIC_LINK_SECRET`: HMAC secret for `/attention/:id` magic links
 - `RESEND_API_KEY`: Resend key for attention email (notify fails closed when unset)
 - `RESEND_FROM_EMAIL`: optional From override for attention mail
-- `ATTENTION_LIVE_SESSION_BASE_URL`: optional noVNC/live-view base URL (Ticket 2 stub)
+- `ATTENTION_LIVE_SESSION_BASE_URL`: public noVNC/live-view base (agent-box port 6080); live-session route 302s here after magic-link verify
+- `ATTENTION_NOVNC_PASSWORD`: optional VNC password for Worker redirect fragment only (never emailed)
+- `ATTENTION_IAP_HELPER_COMMAND`: optional IAP tunnel one-liner when live-session base URL is unset
 - `DODO_PAYMENTS_API_KEY`: Dodo server API key for checkout-session creation
 - `DODO_PAYMENTS_WEBHOOK_KEY`: signing secret for the configured endpoint
 - `DODO_PRODUCT_ID`: one-time founding-access product
