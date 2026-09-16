@@ -1,6 +1,7 @@
 import { attentionEnv } from "../../../../../lib/attention-auth";
 import { verifyAttentionMagicLink } from "../../../../../lib/attention-magic-link.mjs";
 import {
+  liveBrowserLoadFailedMessage,
   liveBrowserUnavailableMessage,
   resolveLiveSessionTarget,
   wantsLiveSessionEmbed,
@@ -93,6 +94,7 @@ function embedShellResponse(options: {
   frameUrl: string;
   attentionId?: string;
 }) {
+  const failCopy = liveBrowserLoadFailedMessage();
   const html = `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -108,7 +110,18 @@ function embedShellResponse(options: {
     .bar strong { color: var(--ink); font-weight: 600; }
     .connecting { margin: 0; opacity: 1; transition: opacity .35s ease; }
     .connecting.is-clear { opacity: 0; }
+    .frame-wrap { position: relative; flex: 1; min-height: 0; display: flex; flex-direction: column; }
     iframe { flex: 1; width: 100%; border: 0; background: #111; min-height: 0; }
+    .fail {
+      display: none; position: absolute; inset: 0; place-items: center; gap: .85rem;
+      padding: 1.25rem; background: rgba(17, 17, 17, 0.92); color: #F2E9D8; text-align: center;
+    }
+    .fail.is-visible { display: grid; }
+    .fail p { margin: 0; font-size: .95rem; line-height: 1.45; }
+    .fail button {
+      appearance: none; border: 1px solid #D8CCB7; border-radius: .45rem; background: #FFFAF0;
+      color: #173F35; font: 600 .85rem/1.2 "DM Sans", "Segoe UI", sans-serif; padding: .55rem 1rem; cursor: pointer;
+    }
   </style>
 </head>
 <body>
@@ -117,25 +130,75 @@ function embedShellResponse(options: {
       <strong>Live browser</strong>
       <p class="connecting" id="connecting" role="status">Connecting…</p>
     </div>
-    <iframe
-      id="live-frame"
-      title="Remote live browser"
-      src="${escapeAttr(options.frameUrl)}"
-      allow="clipboard-read; clipboard-write"
-      referrerpolicy="no-referrer"
-    ></iframe>
+    <div class="frame-wrap">
+      <iframe
+        id="live-frame"
+        title="Remote live browser"
+        src="${escapeAttr(options.frameUrl)}"
+        allow="clipboard-read; clipboard-write"
+        referrerpolicy="no-referrer"
+      ></iframe>
+      <div class="fail" id="fail" role="alert" hidden>
+        <p>${escapeHtml(failCopy)}</p>
+        <button type="button" id="retry">Retry</button>
+      </div>
+    </div>
   </div>
   <script>
     (function () {
       var el = document.getElementById("connecting");
       var frame = document.getElementById("live-frame");
+      var fail = document.getElementById("fail");
+      var retry = document.getElementById("retry");
+      var failTimer = null;
+      var frameUrl = ${JSON.stringify(options.frameUrl)};
       function clearStatus() {
         if (!el) return;
         el.classList.add("is-clear");
         el.setAttribute("aria-hidden", "true");
         window.setTimeout(function () { el.textContent = ""; }, 400);
       }
-      if (frame) frame.addEventListener("load", clearStatus);
+      function showFail() {
+        clearStatus();
+        if (failTimer) { window.clearTimeout(failTimer); failTimer = null; }
+        if (!fail) return;
+        fail.hidden = false;
+        fail.classList.add("is-visible");
+      }
+      function hideFail() {
+        if (!fail) return;
+        fail.hidden = true;
+        fail.classList.remove("is-visible");
+      }
+      function armFailWatchdog() {
+        if (failTimer) window.clearTimeout(failTimer);
+        failTimer = window.setTimeout(showFail, 12000);
+      }
+      function reloadFrame() {
+        hideFail();
+        if (el) {
+          el.textContent = "Connecting…";
+          el.classList.remove("is-clear");
+          el.removeAttribute("aria-hidden");
+        }
+        if (frame) {
+          frame.src = "about:blank";
+          window.setTimeout(function () {
+            frame.src = frameUrl;
+            armFailWatchdog();
+          }, 0);
+        }
+      }
+      if (frame) {
+        frame.addEventListener("load", function () {
+          clearStatus();
+          if (failTimer) { window.clearTimeout(failTimer); failTimer = null; }
+          hideFail();
+        });
+        frame.addEventListener("error", showFail);
+      }
+      if (retry) retry.addEventListener("click", reloadFrame);
+      armFailWatchdog();
       window.setTimeout(clearStatus, 2500);
     })();
   </script>

@@ -55,8 +55,8 @@ Auth’d live-session entry (buyer path = **in-page embed**):
 1. Verifies the same magic-link token as `/attention/:id`.
 2. **Fire-and-forget wake** (see below) so on-demand agent-box can start — does **not** block the embed on wake recorded.
 3. If `ATTENTION_LIVE_SESSION_BASE_URL` is set:
-   - **`embed=1`** (attention panel) → same-origin HTML shell that iframes noVNC with `autoconnect=true` and optional `ATTENTION_NOVNC_PASSWORD` in the **hash fragment** (not query). Soft “Connecting…” clears once the iframe loads / after a short timeout. Worker CSP allows `frame-ancestors 'self'` and `frame-src` for the noVNC origin.
-   - Without `embed` → **302** to noVNC (new-tab / email deep-link fallback).
+   - **`embed=1`** (attention panel) → same-origin HTML shell that iframes noVNC with `autoconnect=true` and optional `ATTENTION_NOVNC_PASSWORD` in the **hash fragment** (not query). Soft “Connecting…” clears once the iframe loads / after a short timeout. Soft “Live browser failed to load — retry” if the frame errors or stays blank. Worker CSP: attention page `frame-src` allows `'self'` + configured live origin + `https://*.trycloudflare.com`; embed shell allows `frame-ancestors 'self'` and the same noVNC `frame-src` / `wss:` `connect-src`.
+   - Without `embed` → **302** to noVNC (new-tab / email deep-link fallback). Attention-page CSP must still allow the live origin so a redirected iframe can paint.
 4. If unset → soft buyer HTML: **“Live browser is temporarily unavailable. Try again shortly.”** No IAP / gcloud / SSH paste blocks on this route.
 
 Full WebSocket reverse-proxy through the Worker remains out of scope; public HTTPS noVNC embed is the buyer path.
