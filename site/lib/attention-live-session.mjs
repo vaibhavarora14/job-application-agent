@@ -6,7 +6,7 @@
  * with optional short-lived credentials in the URL fragment (not query),
  * so the password is not sent to the HTTP server or access logs.
  *
- * Full WebSocket proxy is out of scope; IAP tunnel docs cover private agent-box.
+ * Full WebSocket proxy is out of scope; founder IAP tunnel docs cover private agent-box.
  */
 
 /**
@@ -84,16 +84,27 @@ export function resolveLiveSessionTarget(config, attentionId) {
     : defaultIapHelperCommand();
 
   return {
-    mode: "iap",
+    mode: "unavailable",
     attentionId: id || null,
+    /** Founder/dev reference only — never render in buyer UI. */
     iapHelperCommand: iapHelper,
     localUrl: "http://127.0.0.1:6080/vnc.html?autoconnect=true",
-    note: "ATTENTION_LIVE_SESSION_BASE_URL unset — use IAP tunnel to agent-box port 6080, then open local noVNC.",
+    note: "ATTENTION_LIVE_SESSION_BASE_URL unset — buyer sees unavailable; IAP helper is founder/dev-only (docs).",
+    message: liveBrowserUnavailableMessage(),
   };
 }
 
 /**
- * Default founder helper for GCP agent-box (port 6080 historically hosts noVNC).
+ * Buyer-facing copy when public noVNC is not configured.
+ * Do not surface IAP / gcloud / SSH helpers here.
+ */
+export function liveBrowserUnavailableMessage() {
+  return "Live browser is temporarily unavailable. Try again shortly.";
+}
+
+/**
+ * Default founder/dev IAP helper for GCP agent-box (port 6080 historically hosts noVNC).
+ * Not shown on buyer attention surfaces — see site/docs/ATTENTION.md.
  * Replace INSTANCE / ZONE / PROJECT via ATTENTION_IAP_HELPER_COMMAND when set.
  */
 export function defaultIapHelperCommand() {
@@ -132,18 +143,57 @@ export function buildLiveSessionProxyUrl(publicSiteUrl, attentionId, magicToken,
   return new URL(path, origin).toString();
 }
 
+/** Quick Tunnel / cloudflared noVNC fronts (buyer live panel). */
+export const LIVE_SESSION_TRYCLOUDFLARE_FRAME_SRC = "https://*.trycloudflare.com";
+
 /**
- * Origin allowlist for same-origin embed shell → noVNC iframe.
+ * Buyer-facing copy when the live panel iframe fails to paint.
+ * Quiet Trust — no gcloud / IAP / ops instructions.
+ */
+export function liveBrowserLoadFailedMessage() {
+  return "Live browser failed to load — retry";
+}
+
+/**
+ * Origin allowlist for framing the embed shell and/or public noVNC.
+ * Used on the attention page (direct child iframe) and the embed shell (nested noVNC).
  * @param {string} liveSessionBaseUrl
  */
 export function liveSessionFrameSrcOrigins(liveSessionBaseUrl) {
-  const origins = new Set(["'self'", "http://127.0.0.1:6080", "http://localhost:6080"]);
+  const origins = new Set([
+    "'self'",
+    "http://127.0.0.1:6080",
+    "http://localhost:6080",
+    LIVE_SESSION_TRYCLOUDFLARE_FRAME_SRC,
+  ]);
   const raw = typeof liveSessionBaseUrl === "string" ? liveSessionBaseUrl.trim() : "";
   if (raw) {
     try {
       origins.add(new URL(raw).origin);
     } catch {
       // ignore invalid base — route returns error mode separately
+    }
+  }
+  return [...origins];
+}
+
+/**
+ * connect-src allowlist for same-origin shell JS that may talk to the live host
+ * (usually only needed inside the noVNC origin; included for embed-shell defense).
+ * @param {string} liveSessionBaseUrl
+ */
+export function liveSessionConnectSrcOrigins(liveSessionBaseUrl) {
+  const origins = new Set(["'self'"]);
+  for (const entry of liveSessionFrameSrcOrigins(liveSessionBaseUrl)) {
+    if (entry === "'self'") continue;
+    if (entry.startsWith("https://")) {
+      origins.add(entry);
+      origins.add(`wss://${entry.slice("https://".length)}`);
+      continue;
+    }
+    if (entry.startsWith("http://")) {
+      origins.add(entry);
+      origins.add(`ws://${entry.slice("http://".length)}`);
     }
   }
   return [...origins];

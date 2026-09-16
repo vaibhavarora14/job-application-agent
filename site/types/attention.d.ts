@@ -19,8 +19,19 @@ declare module "*/attention-live-session.mjs" {
     attentionId: string,
   ):
     | { mode: "redirect"; url: string; hasPassword: boolean; note: string }
-    | { mode: "iap"; attentionId: string | null; iapHelperCommand: string; localUrl: string; note: string }
+    | {
+      mode: "unavailable";
+      attentionId: string | null;
+      iapHelperCommand: string;
+      localUrl: string;
+      note: string;
+      message: string;
+    }
     | { mode: "error"; error: string };
+
+  export function liveBrowserUnavailableMessage(): string;
+
+  export function liveBrowserLoadFailedMessage(): string;
 
   export function defaultIapHelperCommand(): string;
 
@@ -37,7 +48,11 @@ declare module "*/attention-live-session.mjs" {
     options?: { embed?: boolean },
   ): string;
 
+  export const LIVE_SESSION_TRYCLOUDFLARE_FRAME_SRC: string;
+
   export function liveSessionFrameSrcOrigins(liveSessionBaseUrl: string): string[];
+
+  export function liveSessionConnectSrcOrigins(liveSessionBaseUrl: string): string[];
 
   export function wantsLiveSessionEmbed(url: URL): boolean;
 }
@@ -66,7 +81,7 @@ declare module "*/attention-wake.mjs" {
   };
 
   export function formatWakeStatusMessage(
-    status: "dispatched" | "recorded" | "failed" | "starting" | string,
+    status: "dispatched" | "recorded" | "failed" | "starting" | "connecting" | string,
   ): string;
 
   export function dispatchAttentionWake(config: {

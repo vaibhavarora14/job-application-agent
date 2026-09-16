@@ -6,6 +6,10 @@ import {
   buildLiveSessionProxyUrl,
   buildNoVncLiveSessionUrl,
   defaultIapHelperCommand,
+  LIVE_SESSION_TRYCLOUDFLARE_FRAME_SRC,
+  liveBrowserLoadFailedMessage,
+  liveBrowserUnavailableMessage,
+  liveSessionConnectSrcOrigins,
   liveSessionFrameSrcOrigins,
   resolveLiveSessionTarget,
   wantsLiveSessionEmbed,
@@ -29,7 +33,7 @@ test("rejects invalid live-session base URL", () => {
   assert.equal(buildNoVncLiveSessionUrl("not a url").ok, false);
 });
 
-test("resolveLiveSessionTarget redirects when base URL set, else IAP helper", () => {
+test("resolveLiveSessionTarget redirects when base URL set, else buyer unavailable", () => {
   const redirect = resolveLiveSessionTarget({
     liveSessionBaseUrl: "https://novnc.example/vnc.html",
     novncPassword: "pw",
@@ -38,11 +42,15 @@ test("resolveLiveSessionTarget redirects when base URL set, else IAP helper", ()
   assert.match(redirect.url, /^https:\/\/novnc\.example\/vnc\.html/);
   assert.equal(redirect.hasPassword, true);
 
-  const iap = resolveLiveSessionTarget({}, "attention-9");
-  assert.equal(iap.mode, "iap");
-  assert.match(iap.iapHelperCommand, /start-iap-tunnel/);
-  assert.match(iap.iapHelperCommand, /6080/);
-  assert.match(iap.localUrl, /127\.0\.0\.1:6080/);
+  const unavailable = resolveLiveSessionTarget({}, "attention-9");
+  assert.equal(unavailable.mode, "unavailable");
+  assert.equal(unavailable.message, liveBrowserUnavailableMessage());
+  assert.match(unavailable.message, /temporarily unavailable/i);
+  assert.doesNotMatch(unavailable.message, /gcloud|IAP|SSH|tunnel/i);
+  // Founder helper remains available for docs/ops — not buyer copy.
+  assert.match(unavailable.iapHelperCommand, /start-iap-tunnel/);
+  assert.match(unavailable.iapHelperCommand, /6080/);
+  assert.match(unavailable.localUrl, /127\.0\.0\.1:6080/);
   assert.match(defaultIapHelperCommand(), /gcloud compute start-iap-tunnel/);
 });
 
@@ -58,11 +66,22 @@ test("live-session proxy path keeps token out of email-facing VNC URL", () => {
   );
 });
 
-test("embed helpers expose frame-src origins and embed query detection", () => {
+test("embed helpers expose frame-src / connect-src origins and embed query detection", () => {
   const origins = liveSessionFrameSrcOrigins("https://novnc.example:8443/vnc.html");
   assert.ok(origins.includes("'self'"));
   assert.ok(origins.includes("https://novnc.example:8443"));
   assert.ok(origins.includes("http://127.0.0.1:6080"));
+  assert.ok(origins.includes(LIVE_SESSION_TRYCLOUDFLARE_FRAME_SRC));
+
+  const connect = liveSessionConnectSrcOrigins("https://novnc.example:8443/vnc.html");
+  assert.ok(connect.includes("'self'"));
+  assert.ok(connect.includes("https://novnc.example:8443"));
+  assert.ok(connect.includes("wss://novnc.example:8443"));
+  assert.ok(connect.includes("wss://*.trycloudflare.com"));
+  assert.ok(connect.includes("ws://127.0.0.1:6080"));
+
+  assert.match(liveBrowserLoadFailedMessage(), /failed to load/i);
+  assert.doesNotMatch(liveBrowserLoadFailedMessage(), /gcloud|IAP|SSH|tunnel/i);
 
   assert.equal(wantsLiveSessionEmbed(new URL("https://jobappagent.com/api/attention/a/live-session?embed=1")), true);
   assert.equal(wantsLiveSessionEmbed(new URL("https://jobappagent.com/api/attention/a/live-session")), false);

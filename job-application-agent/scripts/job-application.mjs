@@ -14,6 +14,13 @@ import { normalizeCommunityJob, normalizeCommunitySource } from './source-commun
 import { TelemetryClient } from './telemetry-client.mjs';
 import { jobIdentity } from './telemetry-schema.mjs';
 import { CloudStateClient, defaultCloudConfigPath, enableCloudUpdateGuard, saveCloudConfig } from './cloud-state-client.mjs';
+import {
+  SESSION_BINDING_ATTENTION_KEYS,
+  createSessionBinding,
+  extractSessionBindingFields,
+  sessionBindingPath,
+  writeSessionBindingFile,
+} from './session-binding.mjs';
 
 const SOURCES = new Set(['linkedin', 'greenhouse', 'lever', 'ashby', 'workable', 'comeet', 'workday', 'rippling', 'smartrecruiters', 'google-form', 'company', 'email', 'other']);
 const DISCOVERY_SOURCES = new Set(['direct-company', 'linkedin', 'x', 'yc', 'hacker-news', 'job-board', 'email', 'user-supplied', 'web-search', 'other']);
@@ -1348,7 +1355,11 @@ async function attentionNotifyHook(event, context = {}) {
 
 async function attentionAdd(input) {
   const value = object(input, 'attention item');
-  const allowed = new Set(['roundId', 'applicationId', 'url', 'stage', 'blocker', 'requiredActions', 'createdAt', 'company', 'role']);
+  const allowed = new Set([
+    'roundId', 'applicationId', 'url', 'stage', 'blocker', 'requiredActions', 'createdAt', 'company', 'role',
+    // Local-only session binding hooks — never appended to the cloud attention event.
+    ...SESSION_BINDING_ATTENTION_KEYS,
+  ]);
   for (const key of Object.keys(value)) if (!allowed.has(key)) throw new Error(`Unknown attention property: ${key}.`);
   const stage = string(value.stage, 'attention.stage', 40).toLowerCase();
   const blocker = string(value.blocker, 'attention.blocker', 60).toLowerCase();
@@ -1369,6 +1380,7 @@ async function attentionAdd(input) {
       }
     } catch { /* best-effort context for notify only */ }
   }
+  const localBindingFields = extractSessionBindingFields(value);
   const event = {
     type: 'opened',
     id: `attention-${randomUUID()}`,
@@ -1381,8 +1393,24 @@ async function attentionAdd(input) {
     createdAt: isoDate(value.createdAt, 'attention.createdAt'),
   };
   await appendPrivateEvent('attention', event);
+
+  let sessionBinding = null;
+  if (localBindingFields) {
+    const binding = createSessionBinding({
+      attentionId: event.id,
+      jobUrl: event.url,
+      applicationId: event.applicationId,
+      roundId: event.roundId,
+      createdAt: event.createdAt,
+      ...localBindingFields,
+    });
+    const path = sessionBindingPath(await ensureStateDir(), event.id);
+    sessionBinding = { path, binding: await writeSessionBindingFile(path, binding) };
+  }
+
   const notify = await attentionNotifyHook(event, { company, role });
-  return notify.attempted ? { ...event, notify } : event;
+  const base = sessionBinding ? { ...event, sessionBinding } : event;
+  return notify.attempted ? { ...base, notify } : base;
 }
 
 async function attentionResolve(input) {

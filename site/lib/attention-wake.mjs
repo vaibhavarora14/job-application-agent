@@ -40,7 +40,7 @@ export function defaultWakeInstructions() {
     "  --zone=asia-south1-a \\",
     "  --project=agent-runner-vaibhav-4500",
     "",
-    "# Wait until RUNNING, then confirm Xvfb + x11vnc + noVNC (:6080) before live session.",
+    "# Wait until RUNNING, then confirm Xvfb :99 + x11vnc :5900 + noVNC (:6080 → localhost:5900) before live session.",
   ].join("\n");
 }
 
@@ -64,26 +64,27 @@ export function buildAttentionWakePayload(input) {
 }
 
 /**
- * Human-readable status for the attention card.
- * @param {"dispatched"|"recorded"|"failed"|"starting"} status
+ * Soft buyer-facing status for the attention live panel.
+ * Never mention gcloud, IAP, SSH, or ops — wake details stay on internal APIs.
+ * @param {"dispatched"|"recorded"|"failed"|"starting"|"connecting"} status
  */
 export function formatWakeStatusMessage(status) {
   switch (status) {
-    case "dispatched":
-      return "Starting live browser… wake signal sent.";
-    case "recorded":
-      return "Starting live browser… wake recorded (ops start required).";
-    case "starting":
-      return "Starting live browser…";
     case "failed":
-      return "Wake signal failed. Retry or ask the operator to start agent-box.";
+      // Soft buyer copy — never mention ops / agent-box / gcloud.
+      return "Live browser is temporarily unavailable. Try again shortly.";
+    case "dispatched":
+    case "recorded":
+    case "starting":
+    case "connecting":
     default:
-      return "Starting live browser…";
+      return "Connecting…";
   }
 }
 
 /**
  * Dispatch wake: POST ATTENTION_WAKE_URL when set, else record + return instructions.
+ * `instructions` are for internal/ops consumers only — buyer UI must never render them.
  *
  * @param {{
  *   attentionId: string,

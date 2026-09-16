@@ -60,7 +60,8 @@ export default async function AttentionPage({ params, searchParams }: PageProps)
   const view = verified.payload;
   const why = (BLOCKER_COPY as Record<string, string>)[view.blocker] ?? BLOCKER_COPY.other;
   // Always go through the Worker live-session route (verifies token, then
-  // embeds/redirects to noVNC with Worker-held password or shows IAP helper).
+  // embeds/redirects to noVNC with Worker-held password). IAP helpers are founder/dev-only.
+  const liveSessionAvailable = Boolean(String(config.liveSessionBaseUrl ?? "").trim());
   const liveSessionUrl = buildLiveSessionProxyPath(view.attentionId, token);
   const liveSessionEmbedUrl = buildLiveSessionProxyPath(view.attentionId, token, { embed: true });
 
@@ -114,6 +115,7 @@ export default async function AttentionPage({ params, searchParams }: PageProps)
             why,
             liveSessionUrl,
             liveSessionEmbedUrl,
+            liveSessionAvailable,
             token,
             expiresAt: view.expiresAt,
           }}

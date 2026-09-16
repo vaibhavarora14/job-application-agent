@@ -31,6 +31,10 @@ export async function readTextRequest(request, maxBytes) {
   return { ok: true, data };
 }
 
+function joinCspSources(sources, fallback = "'self'") {
+  return Array.isArray(sources) && sources.length ? sources.join(" ") : fallback;
+}
+
 export function publicSecurityHeaders() {
   return {
     "content-security-policy": [
@@ -40,6 +44,43 @@ export function publicSecurityHeaders() {
       "font-src 'self'",
       "form-action 'self'",
       "frame-ancestors 'none'",
+      // Explicit so framing same-origin embed shells does not rely on default-src fallback alone.
+      "frame-src 'self'",
+      "img-src 'self' data:",
+      "object-src 'none'",
+      "script-src 'self' 'unsafe-inline'",
+      "style-src 'self' 'unsafe-inline'",
+      "upgrade-insecure-requests",
+    ].join("; "),
+    "cross-origin-opener-policy": "same-origin",
+    "permissions-policy": "camera=(), geolocation=(), microphone=(), payment=()",
+    "referrer-policy": "strict-origin-when-cross-origin",
+    "strict-transport-security": "max-age=31536000; includeSubDomains",
+    "x-content-type-options": "nosniff",
+    "x-frame-options": "DENY",
+  };
+}
+
+/**
+ * Buyer attention page: may iframe the same-origin live-session embed shell, and
+ * must also allow the configured noVNC / trycloudflare origin when the iframe
+ * follows a 302 or frames noVNC directly.
+ *
+ * @param {string[]} [frameSrcOrigins]
+ * @param {string[]} [connectSrcOrigins]
+ */
+export function attentionPageSecurityHeaders(frameSrcOrigins = ["'self'"], connectSrcOrigins = ["'self'"]) {
+  const frameSrc = joinCspSources(frameSrcOrigins);
+  const connectSrc = joinCspSources(connectSrcOrigins);
+  return {
+    "content-security-policy": [
+      "default-src 'self'",
+      "base-uri 'self'",
+      `connect-src ${connectSrc}`,
+      "font-src 'self'",
+      "form-action 'self'",
+      "frame-ancestors 'none'",
+      `frame-src ${frameSrc}`,
       "img-src 'self' data:",
       "object-src 'none'",
       "script-src 'self' 'unsafe-inline'",
@@ -57,17 +98,19 @@ export function publicSecurityHeaders() {
 
 /**
  * Same-origin attention live-session embed shell may be framed by the attention
- * page and may itself frame public noVNC (or local IAP noVNC).
+ * page and may itself frame public noVNC.
  *
  * @param {string[]} [frameSrcOrigins]
+ * @param {string[]} [connectSrcOrigins]
  */
-export function liveSessionEmbedSecurityHeaders(frameSrcOrigins = ["'self'"]) {
-  const frameSrc = frameSrcOrigins.length ? frameSrcOrigins.join(" ") : "'self'";
+export function liveSessionEmbedSecurityHeaders(frameSrcOrigins = ["'self'"], connectSrcOrigins = ["'self'"]) {
+  const frameSrc = joinCspSources(frameSrcOrigins);
+  const connectSrc = joinCspSources(connectSrcOrigins);
   return {
     "content-security-policy": [
       "default-src 'self'",
       "base-uri 'self'",
-      "connect-src 'self'",
+      `connect-src ${connectSrc}`,
       "font-src 'self'",
       "form-action 'self'",
       "frame-ancestors 'self'",
@@ -85,6 +128,13 @@ export function liveSessionEmbedSecurityHeaders(frameSrcOrigins = ["'self'"]) {
     "x-content-type-options": "nosniff",
     "x-frame-options": "SAMEORIGIN",
   };
+}
+
+/**
+ * @param {string} pathname
+ */
+export function isAttentionPagePath(pathname) {
+  return /^\/attention\/[^/]+\/?$/.test(pathname);
 }
 
 /**

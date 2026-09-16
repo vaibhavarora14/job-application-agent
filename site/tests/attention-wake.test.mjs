@@ -44,7 +44,9 @@ test("dispatchAttentionWake records instructions when wake URL unset", async () 
   });
   assert.equal(result.ok, true);
   assert.equal(result.status, "recorded");
-  assert.match(result.message, /Starting live browser/);
+  // Buyer-safe soft status — never "ops start required" / gcloud paste.
+  assert.equal(result.message, "Connecting…");
+  assert.doesNotMatch(result.message, /ops|gcloud|IAP|SSH/i);
   assert.match(result.instructions, /gcloud compute instances start/);
   assert.match(defaultWakeInstructions(), /agent-box/);
 });
@@ -64,6 +66,7 @@ test("dispatchAttentionWake posts webhook when ATTENTION_WAKE_URL set", async ()
   assert.equal(result.ok, true);
   assert.equal(result.status, "dispatched");
   assert.equal(result.instructions, null);
+  assert.equal(result.message, "Connecting…");
   assert.equal(seen?.method, "POST");
   assert.equal(seen?.headers?.authorization, "Bearer secret");
   const body = JSON.parse(String(seen?.body));
@@ -79,6 +82,8 @@ test("dispatchAttentionWake fails closed on webhook error", async () => {
   });
   assert.equal(result.ok, false);
   assert.equal(result.error, "wake_dispatch_failed");
-  assert.match(result.message, /Wake signal failed/);
-  assert.match(formatWakeStatusMessage("starting"), /Starting live browser/);
+  assert.match(result.message, /temporarily unavailable/i);
+  assert.doesNotMatch(result.message, /operator|agent-box|gcloud/i);
+  assert.equal(formatWakeStatusMessage("starting"), "Connecting…");
+  assert.equal(formatWakeStatusMessage("recorded"), "Connecting…");
 });

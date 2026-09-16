@@ -2,14 +2,20 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
+  attentionPageSecurityHeaders,
   consumeRateLimit,
   hashRateLimitKey,
   isAttentionLiveSessionEmbedPath,
+  isAttentionPagePath,
   liveSessionEmbedSecurityHeaders,
   publicSecurityHeaders,
   readJsonRequest,
   readTextRequest,
 } from "../lib/public-boundary.mjs";
+import {
+  liveSessionConnectSrcOrigins,
+  liveSessionFrameSrcOrigins,
+} from "../lib/attention-live-session.mjs";
 
 function rateLimitDatabase() {
   let count = 0;
@@ -74,16 +80,41 @@ test("sets a restrictive browser security baseline", () => {
   const headers = publicSecurityHeaders();
   assert.match(headers["content-security-policy"], /default-src 'self'/);
   assert.match(headers["content-security-policy"], /frame-ancestors 'none'/);
+  assert.match(headers["content-security-policy"], /frame-src 'self'/);
   assert.equal(headers["strict-transport-security"], "max-age=31536000; includeSubDomains");
   assert.equal(headers["x-content-type-options"], "nosniff");
   assert.equal(headers["x-frame-options"], "DENY");
   assert.equal(headers["referrer-policy"], "strict-origin-when-cross-origin");
 });
 
+test("attention page CSP allows embed shell and configured noVNC frame-src", () => {
+  const liveBase = "https://apache-given-builders-narrative.trycloudflare.com/vnc.html";
+  const headers = attentionPageSecurityHeaders(
+    liveSessionFrameSrcOrigins(liveBase),
+    liveSessionConnectSrcOrigins(liveBase),
+  );
+  const csp = headers["content-security-policy"];
+  assert.match(csp, /frame-ancestors 'none'/);
+  assert.match(csp, /frame-src 'self'/);
+  assert.match(csp, /https:\/\/apache-given-builders-narrative\.trycloudflare\.com/);
+  assert.match(csp, /https:\/\/\*\.trycloudflare\.com/);
+  assert.match(csp, /connect-src 'self'/);
+  assert.match(csp, /wss:\/\/apache-given-builders-narrative\.trycloudflare\.com/);
+  assert.match(csp, /wss:\/\/\*\.trycloudflare\.com/);
+  assert.equal(headers["x-frame-options"], "DENY");
+  assert.equal(isAttentionPagePath("/attention/attention-1"), true);
+  assert.equal(isAttentionPagePath("/attention/attention-1/"), true);
+  assert.equal(isAttentionPagePath("/api/attention/attention-1/live-session"), false);
+});
+
 test("live-session embed headers allow same-origin framing and noVNC frame-src", () => {
-  const headers = liveSessionEmbedSecurityHeaders(["'self'", "https://novnc.example"]);
+  const headers = liveSessionEmbedSecurityHeaders(
+    ["'self'", "https://novnc.example", "https://*.trycloudflare.com"],
+    ["'self'", "https://novnc.example", "wss://novnc.example", "wss://*.trycloudflare.com"],
+  );
   assert.match(headers["content-security-policy"], /frame-ancestors 'self'/);
-  assert.match(headers["content-security-policy"], /frame-src 'self' https:\/\/novnc\.example/);
+  assert.match(headers["content-security-policy"], /frame-src 'self' https:\/\/novnc\.example https:\/\/\*\.trycloudflare\.com/);
+  assert.match(headers["content-security-policy"], /connect-src 'self' https:\/\/novnc\.example wss:\/\/novnc\.example/);
   assert.equal(headers["x-frame-options"], "SAMEORIGIN");
   assert.equal(
     isAttentionLiveSessionEmbedPath("/api/attention/attention-1/live-session", new URLSearchParams("embed=1")),

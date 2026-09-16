@@ -1,6 +1,11 @@
 import { attentionEnv } from "../../../../../lib/attention-auth";
 import { verifyAttentionMagicLink } from "../../../../../lib/attention-magic-link.mjs";
-import { resolveLiveSessionTarget, wantsLiveSessionEmbed } from "../../../../../lib/attention-live-session.mjs";
+import {
+  liveBrowserLoadFailedMessage,
+  liveBrowserUnavailableMessage,
+  resolveLiveSessionTarget,
+  wantsLiveSessionEmbed,
+} from "../../../../../lib/attention-live-session.mjs";
 import { dispatchAttentionWake } from "../../../../../lib/attention-wake.mjs";
 
 type Params = { params: Promise<{ id: string }> };
@@ -10,10 +15,11 @@ type VerifyErr = { ok: false; error: string };
 /**
  * GET /api/attention/:id/live-session?token=…&embed=1
  *
- * Auth’d live-session entry: verify magic link, optionally wake agent-box, then
+ * Auth’d live-session entry: verify magic link, fire-and-forget wake, then
  * either embed noVNC in a same-origin shell (embed=1), 302 to noVNC (top-level),
- * or return IAP tunnel helper HTML when ATTENTION_LIVE_SESSION_BASE_URL is unset.
+ * or return buyer-facing unavailable HTML when ATTENTION_LIVE_SESSION_BASE_URL is unset.
  *
+ * IAP / gcloud helpers are founder/dev-only (docs) — never returned on this buyer route.
  * Never emails VNC passwords. Full WebSocket proxy is out of scope.
  */
 export async function GET(request: Request, { params }: Params) {
@@ -40,8 +46,14 @@ export async function GET(request: Request, { params }: Params) {
       "Request a fresh attention notify from the hosted run. Lease hold is typically 45–60 minutes.");
   }
 
-  // Best-effort wake before opening the headed browser (on-demand agent-box).
-  const wake = await dispatchAttentionWake({
+  const target = resolveLiveSessionTarget({
+    liveSessionBaseUrl: config.liveSessionBaseUrl,
+    novncPassword: config.novncPassword,
+    iapHelperCommand: config.iapHelperCommand,
+  }, attentionId);
+
+  // Fire-and-forget wake for ops — never stall the buyer panel on wake recorded.
+  void dispatchAttentionWake({
     attentionId,
     reason: "live_session",
     source: "live_session_route",
@@ -49,19 +61,14 @@ export async function GET(request: Request, { params }: Params) {
     wakeInstructions: config.wakeInstructions,
     notifySecret: config.notifySecret,
     logger: console,
+  }).catch(() => {
+    /* ignore — buyer path does not depend on wake */
   });
-
-  const target = resolveLiveSessionTarget({
-    liveSessionBaseUrl: config.liveSessionBaseUrl,
-    novncPassword: config.novncPassword,
-    iapHelperCommand: config.iapHelperCommand,
-  }, attentionId);
 
   const embed = wantsLiveSessionEmbed(url);
 
   if (target.mode === "error") {
-    return htmlResponse(503, "Live session misconfigured",
-      `Fix ATTENTION_LIVE_SESSION_BASE_URL (${target.error}).`);
+    return htmlResponse(503, "Live browser unavailable", liveBrowserUnavailableMessage(), { embed: true });
   }
 
   if (target.mode === "redirect" && target.url) {
@@ -69,73 +76,25 @@ export async function GET(request: Request, { params }: Params) {
       return embedShellResponse({
         title: "Live browser",
         frameUrl: target.url,
-        wakeMessage: wake.ok ? wake.message : (wake.message ?? "Starting live browser…"),
         attentionId,
       });
     }
     return Response.redirect(target.url, 302);
   }
 
-  // IAP / local tunnel path — usable by founder without Slack tribal knowledge.
-  const wakeView = {
-    ok: wake.ok,
-    message: wake.message,
-    instructions: wake.instructions ?? null,
-    wakeStatus: typeof wake.status === "string" ? wake.status : undefined,
-  };
-  if (embed) {
-    return htmlResponse(200, "Open live session via IAP tunnel", iapBody(target, wakeView), { embed: true });
-  }
-  return htmlResponse(200, "Open live session via IAP tunnel", iapBody(target, wakeView));
-}
-
-function iapBody(target: {
-  iapHelperCommand?: string;
-  localUrl?: string;
-  attentionId?: string | null;
-  note?: string;
-}, wake?: { ok?: boolean; message?: string; instructions?: string | null; wakeStatus?: string }) {
-  const command = target.iapHelperCommand ?? "";
-  const localUrl = target.localUrl ?? "http://127.0.0.1:6080/vnc.html?autoconnect=true";
-  const wakeNote = wake?.message
-    ? `<p class="attention-wake" role="status">${escapeHtml(wake.message)}</p>`
-    : "";
-  const wakeOps = wake?.instructions
-    ? `<p>If agent-box may be stopped, start it first:</p><pre class="attention-iap-cmd">${escapeHtml(wake.instructions)}</pre>`
-    : "";
-  return [
-    wakeNote,
-    wakeOps,
-    "<p>Public noVNC is not configured (<code>ATTENTION_LIVE_SESSION_BASE_URL</code> unset).",
-    "Use an IAP tunnel to agent-box port <strong>6080</strong>, then open local noVNC.</p>",
-    "<ol>",
-    `<li>In a terminal with gcloud auth for the agent-box project, run:</li>`,
-    `</ol>`,
-    `<pre class="attention-iap-cmd">${escapeHtml(command)}</pre>`,
-    "<ol start=\"2\">",
-    `<li>Open <a href="${escapeAttr(localUrl)}" target="_blank" rel="noreferrer">${escapeHtml(localUrl)}</a> in this browser.`,
-    "Enter the VNC password from your local agent-box secrets if prompted — it is never emailed.</li>",
-    "<li>Finish CAPTCHA / MFA / legal / judgment in the live browser.</li>",
-    "<li>Return to the attention page and click <strong>I’ve finished — resume</strong>.</li>",
-    "</ol>",
-    target.attentionId
-      ? `<p class="attention-meta-item">attention · ${escapeHtml(target.attentionId)}</p>`
-      : "",
-    "<p>To skip the tunnel for founders with a stable HTTPS front for noVNC, set",
-    "<code>ATTENTION_LIVE_SESSION_BASE_URL</code> and optional <code>ATTENTION_NOVNC_PASSWORD</code>",
-    "on the site Worker — Open live browser then embeds noVNC (password only in the URL fragment).</p>",
-  ].join("\n");
+  // BASE_URL unset — soft buyer message only (IAP helper is founder/dev docs, not this surface).
+  const unavailable = liveBrowserUnavailableMessage();
+  return htmlResponse(503, "Live browser unavailable", `<p role="status">${escapeHtml(unavailable)}</p>`, {
+    embed: Boolean(embed),
+  });
 }
 
 function embedShellResponse(options: {
   title: string;
   frameUrl: string;
-  wakeMessage?: string;
   attentionId?: string;
 }) {
-  const wake = options.wakeMessage
-    ? `<p class="wake" role="status">${escapeHtml(options.wakeMessage)}</p>`
-    : "";
+  const failCopy = liveBrowserLoadFailedMessage();
   const html = `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -149,23 +108,100 @@ function embedShellResponse(options: {
     .shell { display: flex; flex-direction: column; height: 100%; min-height: 280px; }
     .bar { display: flex; align-items: center; justify-content: space-between; gap: .75rem; padding: .55rem .85rem; border-bottom: 1px solid var(--line); background: var(--surface); font-size: .78rem; color: var(--muted); }
     .bar strong { color: var(--ink); font-weight: 600; }
-    .wake { margin: 0; }
+    .connecting { margin: 0; opacity: 1; transition: opacity .35s ease; }
+    .connecting.is-clear { opacity: 0; }
+    .frame-wrap { position: relative; flex: 1; min-height: 0; display: flex; flex-direction: column; }
     iframe { flex: 1; width: 100%; border: 0; background: #111; min-height: 0; }
+    .fail {
+      display: none; position: absolute; inset: 0; place-items: center; gap: .85rem;
+      padding: 1.25rem; background: rgba(17, 17, 17, 0.92); color: #F2E9D8; text-align: center;
+    }
+    .fail.is-visible { display: grid; }
+    .fail p { margin: 0; font-size: .95rem; line-height: 1.45; }
+    .fail button {
+      appearance: none; border: 1px solid #D8CCB7; border-radius: .45rem; background: #FFFAF0;
+      color: #173F35; font: 600 .85rem/1.2 "DM Sans", "Segoe UI", sans-serif; padding: .55rem 1rem; cursor: pointer;
+    }
   </style>
 </head>
 <body>
   <div class="shell">
     <div class="bar">
       <strong>Live browser</strong>
-      ${wake}
+      <p class="connecting" id="connecting" role="status">Connecting…</p>
     </div>
-    <iframe
-      title="Remote live browser"
-      src="${escapeAttr(options.frameUrl)}"
-      allow="clipboard-read; clipboard-write"
-      referrerpolicy="no-referrer"
-    ></iframe>
+    <div class="frame-wrap">
+      <iframe
+        id="live-frame"
+        title="Remote live browser"
+        src="${escapeAttr(options.frameUrl)}"
+        allow="clipboard-read; clipboard-write"
+        referrerpolicy="no-referrer"
+      ></iframe>
+      <div class="fail" id="fail" role="alert" hidden>
+        <p>${escapeHtml(failCopy)}</p>
+        <button type="button" id="retry">Retry</button>
+      </div>
+    </div>
   </div>
+  <script>
+    (function () {
+      var el = document.getElementById("connecting");
+      var frame = document.getElementById("live-frame");
+      var fail = document.getElementById("fail");
+      var retry = document.getElementById("retry");
+      var failTimer = null;
+      var frameUrl = ${JSON.stringify(options.frameUrl)};
+      function clearStatus() {
+        if (!el) return;
+        el.classList.add("is-clear");
+        el.setAttribute("aria-hidden", "true");
+        window.setTimeout(function () { el.textContent = ""; }, 400);
+      }
+      function showFail() {
+        clearStatus();
+        if (failTimer) { window.clearTimeout(failTimer); failTimer = null; }
+        if (!fail) return;
+        fail.hidden = false;
+        fail.classList.add("is-visible");
+      }
+      function hideFail() {
+        if (!fail) return;
+        fail.hidden = true;
+        fail.classList.remove("is-visible");
+      }
+      function armFailWatchdog() {
+        if (failTimer) window.clearTimeout(failTimer);
+        failTimer = window.setTimeout(showFail, 12000);
+      }
+      function reloadFrame() {
+        hideFail();
+        if (el) {
+          el.textContent = "Connecting…";
+          el.classList.remove("is-clear");
+          el.removeAttribute("aria-hidden");
+        }
+        if (frame) {
+          frame.src = "about:blank";
+          window.setTimeout(function () {
+            frame.src = frameUrl;
+            armFailWatchdog();
+          }, 0);
+        }
+      }
+      if (frame) {
+        frame.addEventListener("load", function () {
+          clearStatus();
+          if (failTimer) { window.clearTimeout(failTimer); failTimer = null; }
+          hideFail();
+        });
+        frame.addEventListener("error", showFail);
+      }
+      if (retry) retry.addEventListener("click", reloadFrame);
+      armFailWatchdog();
+      window.setTimeout(clearStatus, 2500);
+    })();
+  </script>
 </body>
 </html>`;
   return new Response(html, {
@@ -194,13 +230,8 @@ function htmlResponse(status: number, title: string, bodyHtml: string, options?:
     h1 { font-size: ${compact ? "1.25rem" : "1.65rem"}; line-height: 1.2; margin: 0.35rem 0 1rem; }
     .eyebrow { text-transform: uppercase; letter-spacing: 0.08em; font-size: 0.75rem; color: var(--muted); }
     .panel { background: var(--panel); border: 1px solid var(--line); padding: 1.25rem 1.35rem; border-radius: 2px; }
-    pre.attention-iap-cmd { white-space: pre-wrap; word-break: break-word; background: #111; color: #f4f4f4; padding: 1rem; border-radius: 2px; font-size: 0.85rem; }
     code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.9em; }
-    ol { padding-left: 1.25rem; }
-    li { margin: 0.5rem 0; }
     .legal-back { display: ${compact ? "none" : "inline-block"}; margin-bottom: 1.5rem; text-decoration: none; color: var(--muted); }
-    .attention-wake { color: #173F35; font-size: 0.9rem; }
-    .attention-meta-item { color: var(--muted); font-size: 0.8rem; }
   </style>
 </head>
 <body>

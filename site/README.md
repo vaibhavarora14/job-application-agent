@@ -28,11 +28,11 @@ commit populated environment files.
 - `ATTENTION_MAGIC_LINK_SECRET`: HMAC secret for `/attention/:id` magic links
 - `RESEND_API_KEY`: Resend key for attention email (notify fails closed when unset)
 - `RESEND_FROM_EMAIL`: optional From override for attention mail
-- `ATTENTION_LIVE_SESSION_BASE_URL`: public noVNC/live-view base (agent-box port 6080); attention page embeds this after magic-link verify
+- `ATTENTION_LIVE_SESSION_BASE_URL`: public noVNC/live-view base (agent-box port 6080); attention page embeds this after magic-link verify (required for buyer live panel)
 - `ATTENTION_NOVNC_PASSWORD`: optional VNC password for Worker embed/redirect fragment only (never emailed)
-- `ATTENTION_IAP_HELPER_COMMAND`: optional IAP tunnel one-liner when live-session base URL is unset
+- `ATTENTION_IAP_HELPER_COMMAND`: optional IAP tunnel one-liner for **founder/dev docs/ops only** (never shown in buyer UI)
 - `ATTENTION_WAKE_URL`: optional webhook for on-demand agent-box wake (`gcloud compute instances start` outside the Worker)
-- `ATTENTION_WAKE_INSTRUCTIONS`: optional wake instruction text when wake URL is unset
+- `ATTENTION_WAKE_INSTRUCTIONS`: optional wake instruction text for **internal/ops** wake API when wake URL is unset (never buyer UI)
 - `DODO_PAYMENTS_API_KEY`: Dodo server API key for checkout-session creation
 - `DODO_PAYMENTS_WEBHOOK_KEY`: signing secret for the configured endpoint
 - `DODO_PRODUCT_ID`: one-time founding-access product
