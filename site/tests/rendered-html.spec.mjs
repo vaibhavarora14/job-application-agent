@@ -47,6 +47,24 @@ test("server-renders human-readable privacy and terms pages", async () => {
   assert.doesNotMatch(privacyHtml, /60-day activation promise|support refunds/i);
 });
 
+test("platform guides render usable prompts and publish only known platform routes", async () => {
+  const catalog = await (await render("/platforms")).text();
+  const sitemap = await (await render("/sitemap.xml")).text();
+  for (const platform of ["hermes", "grok", "openclaw"]) {
+    assert.match(catalog, new RegExp(`href="/platforms/${platform}"`));
+    assert.match(sitemap, new RegExp(`https://jobappagent.com/platforms/${platform}`));
+    const response = await render(`/platforms/${platform}`);
+    assert.equal(response.status, 200);
+    const html = await response.text();
+    assert.match(html, /id="setup-prompt"/);
+    assert.match(html, /review-each/);
+    assert.match(html, /npx job-application-agent@latest install/);
+    assert.match(html, /visible ATS success/);
+  }
+  const unknown = await render("/platforms/unknown-agent");
+  assert.equal(unknown.status, 404);
+});
+
 test("server-renders a payment return page that waits for verified status", async () => {
   const response = await render("/checkout/return?purchase_id=11111111-1111-4111-8111-111111111111");
   assert.equal(response.status, 200);

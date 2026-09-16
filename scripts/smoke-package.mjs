@@ -17,6 +17,11 @@ try {
   if (!npmCliPath) throw new Error('npm_execpath is required; run this check through npm run smoke:package.');
   const packed = await execFileAsync(process.execPath, [npmCliPath, 'pack', '--silent', '--ignore-scripts'], { cwd: root });
   tarball = path.join(root, packed.stdout.trim().split(/\r?\n/).at(-1));
+  const guide = await execFileAsync(process.execPath, [npmCliPath,
+    'exec', '--yes', `--package=file:${tarball}`, '--', 'job-application-agent', 'platforms', 'hermes',
+  ], { cwd: temp });
+  assert.match(guide.stdout, /external_dirs/);
+  assert.match(guide.stdout, /visible ATS success/);
   await execFileAsync(process.execPath, [npmCliPath,
     'exec', '--yes', `--package=file:${tarball}`, '--', 'job-application-agent', 'install',
   ], {

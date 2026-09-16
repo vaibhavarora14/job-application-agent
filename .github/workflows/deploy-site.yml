@@ -6,6 +6,7 @@ on:
       - main
     paths:
       - 'site/**'
+      - 'job-application-agent/platforms.json'
       - '.github/workflows/deploy-site.yml'
   workflow_dispatch:
 
@@ -44,4 +45,3 @@ jobs:
           curl --fail --silent --show-error --retry 6 --retry-all-errors --retry-delay 2 --retry-max-time 30 "$SITE_WORKER_URL/jobs" > /dev/null
         env:
           SITE_WORKER_URL: https://job-application-agent-site.varora1406.workers.dev
-

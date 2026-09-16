@@ -6,7 +6,7 @@ import { fileURLToPath } from 'node:url';
 import { installSkill, readInstallStatus, resolveAgentHome, setAutomaticUpdates, updateSkill } from './installer.mjs';
 import { createUpdateRunner } from './runner.mjs';
 
-const USAGE = `Usage:\n  job-application-agent install\n  job-application-agent update\n  job-application-agent status\n  job-application-agent updates enable|disable\n  job-application-agent outreach <command>\n`;
+const USAGE = `Usage:\n  job-application-agent install\n  job-application-agent update\n  job-application-agent status\n  job-application-agent updates enable|disable\n  job-application-agent platforms [hermes|grok|openclaw]\n  job-application-agent outreach <command>\n`;
 
 function defaultPackageRoot() {
   return path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
@@ -49,6 +49,21 @@ export async function runCli(args, options = {}) {
     scheduler,
   };
   const command = args[0];
+
+  if (command === 'platforms') {
+    const catalog = JSON.parse(await readFile(path.join(packageRoot, 'job-application-agent', 'platforms.json'), 'utf8'));
+    if (args.length === 1) {
+      const listing = catalog.platforms.map(item => `${item.id}: ${item.name} — ${item.status}`).join('\n');
+      output(`Platform setup guides (read-only):\n${listing}\nRun job-application-agent platforms <name> for instructions.`);
+      return catalog.platforms;
+    }
+    const selected = catalog.platforms.find(item => item.id === args[1]);
+    if (!selected || args.length !== 2) throw new Error(USAGE);
+    const steps = selected.steps.map((step, i) => `${i + 1}. ${step.title}\n${step.text}${step.code ? `\n\n${step.code}` : ''}`).join('\n\n');
+    const guide = `${selected.name}\n${selected.status}\n\n${steps}\n\nStarter prompt\n${selected.starter}\n\nReusable instructions\n${catalog.instructions}\n\nPlatform documentation: ${selected.docsUrl}`;
+    output(guide);
+    return guide;
+  }
 
   if (command === 'outreach') {
     const { runOutreach } = await import('../../job-application-agent/scripts/outreach-cli.mjs');
