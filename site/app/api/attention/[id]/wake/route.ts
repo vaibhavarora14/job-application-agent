@@ -45,6 +45,8 @@ export async function POST(request: Request, { params }: Params) {
     logger: console,
   });
 
+  // Buyer-facing wake: never return founder/ops instructions (gcloud / IAP).
+  // Soft status only — AttentionActions ignores wake body for the live panel.
   if (!result.ok) {
     const httpStatus = typeof result.status === "number" ? result.status : 502;
     return Response.json({
@@ -52,7 +54,6 @@ export async function POST(request: Request, { params }: Params) {
       attentionId,
       status: "failed",
       message: result.message,
-      instructions: result.instructions ?? null,
     }, { status: httpStatus, headers: { "cache-control": "no-store" } });
   }
 
@@ -61,6 +62,5 @@ export async function POST(request: Request, { params }: Params) {
     attentionId: result.attentionId,
     status: result.status,
     message: result.message,
-    instructions: result.instructions,
   }, { headers: { "cache-control": "no-store" } });
 }

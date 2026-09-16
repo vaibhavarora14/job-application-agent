@@ -26,11 +26,11 @@ export function attentionEnv() {
     liveSessionBaseUrl: env.ATTENTION_LIVE_SESSION_BASE_URL ?? "",
     /** Optional VNC password injected only on Worker→noVNC redirect (never emailed). */
     novncPassword: env.ATTENTION_NOVNC_PASSWORD ?? "",
-    /** Optional override for the IAP tunnel helper shown when base URL is unset. */
+    /** Optional override for founder/dev IAP helper text (docs / local ops — not buyer UI). */
     iapHelperCommand: env.ATTENTION_IAP_HELPER_COMMAND ?? "",
     /** Optional webhook for on-demand VM wake (Personal/ops → gcloud start). */
     wakeUrl: env.ATTENTION_WAKE_URL ?? "",
-    /** Optional override for wake instructions when ATTENTION_WAKE_URL is unset. */
+    /** Optional override for wake instructions on internal wake API when ATTENTION_WAKE_URL is unset. */
     wakeInstructions: env.ATTENTION_WAKE_INSTRUCTIONS ?? "",
   };
 }

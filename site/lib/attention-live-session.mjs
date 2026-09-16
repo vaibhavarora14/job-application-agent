@@ -6,7 +6,7 @@
  * with optional short-lived credentials in the URL fragment (not query),
  * so the password is not sent to the HTTP server or access logs.
  *
- * Full WebSocket proxy is out of scope; IAP tunnel docs cover private agent-box.
+ * Full WebSocket proxy is out of scope; founder IAP tunnel docs cover private agent-box.
  */
 
 /**
@@ -84,16 +84,27 @@ export function resolveLiveSessionTarget(config, attentionId) {
     : defaultIapHelperCommand();
 
   return {
-    mode: "iap",
+    mode: "unavailable",
     attentionId: id || null,
+    /** Founder/dev reference only — never render in buyer UI. */
     iapHelperCommand: iapHelper,
     localUrl: "http://127.0.0.1:6080/vnc.html?autoconnect=true",
-    note: "ATTENTION_LIVE_SESSION_BASE_URL unset — use IAP tunnel to agent-box port 6080, then open local noVNC.",
+    note: "ATTENTION_LIVE_SESSION_BASE_URL unset — buyer sees unavailable; IAP helper is founder/dev-only (docs).",
+    message: liveBrowserUnavailableMessage(),
   };
 }
 
 /**
- * Default founder helper for GCP agent-box (port 6080 historically hosts noVNC).
+ * Buyer-facing copy when public noVNC is not configured.
+ * Do not surface IAP / gcloud / SSH helpers here.
+ */
+export function liveBrowserUnavailableMessage() {
+  return "Live browser is temporarily unavailable. Try again shortly.";
+}
+
+/**
+ * Default founder/dev IAP helper for GCP agent-box (port 6080 historically hosts noVNC).
+ * Not shown on buyer attention surfaces — see site/docs/ATTENTION.md.
  * Replace INSTANCE / ZONE / PROJECT via ATTENTION_IAP_HELPER_COMMAND when set.
  */
 export function defaultIapHelperCommand() {
