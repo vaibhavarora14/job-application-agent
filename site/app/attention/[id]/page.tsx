@@ -1,10 +1,11 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { attentionEnv } from "../../../lib/attention-auth";
+import { actionLabel } from "../../../lib/attention-action-labels.mjs";
 import { buildLiveSessionProxyPath } from "../../../lib/attention-live-session.mjs";
 import { verifyAttentionMagicLink } from "../../../lib/attention-magic-link.mjs";
 import { BLOCKER_COPY } from "../../../lib/attention-mail.mjs";
-import { AttentionActions, actionLabel } from "./AttentionActions";
+import { AttentionActions } from "./AttentionActions";
 
 type PageProps = {
   params: Promise<{ id: string }>;
