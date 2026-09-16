@@ -1,19 +1,21 @@
 # P1 Attention / Resume (hosted MVP)
 
-Productizes the hosted-run attention pause: email notify → magic-link attention page → auth’d live session → resume/skip/abort signals → GCP runner poll.
+Productizes the hosted-run attention pause: email notify → magic-link attention page → **in-browser live panel** → resume/skip/abort signals → GCP runner poll.
 
 ## Env vars (site Worker)
 
 | Variable | Required | Purpose |
 |----------|----------|---------|
-| `ATTENTION_NOTIFY_SECRET` | yes (to enable) | Bearer secret for `POST /api/internal/attention-notify` and runner poll `GET /api/internal/attention-signals/:id` |
+| `ATTENTION_NOTIFY_SECRET` | yes (to enable) | Bearer secret for internal attention APIs (`attention-notify`, `attention-signals`, `attention-wake`) and runner poll |
 | `ATTENTION_MAGIC_LINK_SECRET` | yes (to enable) | HMAC secret for signed `/attention/:id?token=…` links (≥16 chars; use `openssl rand -hex 32`) |
 | `RESEND_API_KEY` | yes (to send mail) | Resend API key. **Fail-closed** when missing — notify returns 503 and logs |
 | `RESEND_FROM_EMAIL` | no | Default `JobAppAgent <attention@jobappagent.com>` |
 | `PUBLIC_SITE_URL` | yes | Origin used to build magic links (already used for checkout) |
-| `ATTENTION_LIVE_SESSION_BASE_URL` | no | Public HTTPS front for agent-box noVNC (historically port **6080**). Example: `https://novnc.example/vnc.html`. When set, `/api/attention/:id/live-session` 302s here after magic-link verify |
-| `ATTENTION_NOVNC_PASSWORD` | no | VNC password held only on the Worker. Injected into the **URL fragment** on redirect — **never emailed**. Omit to let noVNC prompt |
+| `ATTENTION_LIVE_SESSION_BASE_URL` | no | Public HTTPS front for agent-box noVNC (historically port **6080**). Example: `https://novnc.example/vnc.html`. When set, live-session embeds/redirects here after magic-link verify |
+| `ATTENTION_NOVNC_PASSWORD` | no | VNC password held only on the Worker. Injected into the **URL fragment** for the embed iframe / redirect — **never emailed**. Omit to let noVNC prompt |
 | `ATTENTION_IAP_HELPER_COMMAND` | no | Override the IAP tunnel one-liner shown when `ATTENTION_LIVE_SESSION_BASE_URL` is unset |
+| `ATTENTION_WAKE_URL` | no | Optional HTTPS webhook for on-demand VM wake. When set, opening live session / `POST /api/internal/attention-wake` POSTs a signed wake payload here (Bearer `ATTENTION_NOTIFY_SECRET`). Wire to `gcloud compute instances start` outside the Worker |
+| `ATTENTION_WAKE_INSTRUCTIONS` | no | Override the founder wake instructions returned when `ATTENTION_WAKE_URL` is unset |
 
 ## CLI / runner host env (agent-box)
 
@@ -46,15 +48,35 @@ Bearer `ATTENTION_NOTIFY_SECRET`. Body:
 
 Sends email subject `Action needed: {company} — {role}` with checklist + **Open live session** magic link (~45 min TTL). Never includes VNC passwords.
 
-### `GET /api/attention/:id/live-session?token=…`
+### `GET /api/attention/:id/live-session?token=…&embed=1`
 
-Auth’d live-session entry (Ticket 2):
+Auth’d live-session entry (buyer path = **in-page embed**):
 
 1. Verifies the same magic-link token as `/attention/:id`.
-2. If `ATTENTION_LIVE_SESSION_BASE_URL` is set → **302** to noVNC with `autoconnect=true` and optional `ATTENTION_NOVNC_PASSWORD` in the **hash fragment** (not query), so intermediaries do not log the password.
-3. If unset → HTML page with a copy-paste **IAP tunnel** helper for agent-box port 6080 and local `http://127.0.0.1:6080/vnc.html`.
+2. Best-effort **wake** (see below) so on-demand agent-box can start before noVNC connects.
+3. If `ATTENTION_LIVE_SESSION_BASE_URL` is set:
+   - **`embed=1`** (attention panel) → same-origin HTML shell that iframes noVNC with `autoconnect=true` and optional `ATTENTION_NOVNC_PASSWORD` in the **hash fragment** (not query). Worker CSP allows `frame-ancestors 'self'` and `frame-src` for the noVNC origin.
+   - Without `embed` → **302** to noVNC (new-tab / email deep-link fallback).
+4. If unset → HTML page with a copy-paste **IAP tunnel** helper for agent-box port 6080 and local `http://127.0.0.1:6080/vnc.html` (founder-only fallback).
 
-Full WebSocket reverse-proxy through the Worker is out of scope; this path is playable without Slack/VNC tribal knowledge.
+Full WebSocket reverse-proxy through the Worker remains out of scope; public HTTPS noVNC embed is the buyer path.
+
+### `POST /api/attention/:id/wake`
+
+Magic-link body `{ "token": "…" }`. Same wake seam as the internal route; used by the attention page before loading the live panel. Returns `{ status: "dispatched" | "recorded", message, instructions? }`.
+
+### `POST /api/internal/attention-wake`
+
+Bearer `ATTENTION_NOTIFY_SECRET`. Body:
+
+```json
+{ "attentionId": "attention-…", "reason": "live_session", "source": "ops" }
+```
+
+- If `ATTENTION_WAKE_URL` is set → POSTs `{ type: "attention_wake", attentionId, reason, source, requestedAt }` to that webhook (Bearer secret).
+- If unset → `{ status: "recorded", instructions: "gcloud compute instances start …" }` for Personal/ops to start agent-box manually.
+
+No GCP credentials are required inside the Worker for this MVP.
 
 ### `POST /api/attention/:id/signal`
 
@@ -115,9 +137,27 @@ Ledger/intent rules are unchanged from `SKILL.md` / `RUNS.md` / `state-worker/AG
 
 `/attention/:id?token=…` — Quiet Trust attention card: blocker chip, required actions, lease badge.
 
-**Open live session** → `/api/attention/:id/live-session?token=…` (never raw VNC password).
+**Open live browser** expands an **in-page live panel** (iframe → `/api/attention/:id/live-session?token=…&embed=1`). Resume / Skip / Abort stay visible beside the panel. Optional full-bleed expand and “Open in new tab” for desktop.
 
-Then **I’ve finished — resume** / **Skip** / **Abort**.
+Status line shows **Starting live browser…** while wake runs. IAP helper HTML is shown inside the panel when `ATTENTION_LIVE_SESSION_BASE_URL` is unset (founder-only).
+
+## On-demand agent-box wake
+
+agent-box may be **stopped** for cost. Opening the live panel triggers the wake seam before loading noVNC:
+
+1. Attention page → `POST /api/attention/:id/wake`
+2. Live-session route also best-effort dispatches wake
+3. Ops can call `POST /api/internal/attention-wake` directly
+
+Wire `ATTENTION_WAKE_URL` later to a small starter that runs:
+
+```bash
+gcloud compute instances start agent-box \
+  --zone=asia-south1-a \
+  --project=agent-runner-vaibhav-4500
+```
+
+Cold-start still needs Xvfb + x11vnc/noVNC on `:6080` after the instance is RUNNING. Never stop while a cloud lease is held or `/tmp/jaa-hosted-fill.running` exists.
 
 ## Playable demo (founder on agent-box)
 
@@ -131,6 +171,8 @@ npx wrangler secret put RESEND_API_KEY
 # Optional public noVNC front (otherwise IAP helper page is used):
 npx wrangler secret put ATTENTION_LIVE_SESSION_BASE_URL
 npx wrangler secret put ATTENTION_NOVNC_PASSWORD
+# Optional wake webhook (otherwise instructions are returned):
+# npx wrangler secret put ATTENTION_WAKE_URL
 ```
 
 Ensure `PUBLIC_SITE_URL=https://jobappagent.com` is set (wrangler vars already default this).
@@ -164,9 +206,9 @@ JSON
 ```
 
 3. Open the magic link from email (or `magicLinkUrl` from the notify JSON response).
-4. Click **Open live session**:
-   - With base URL + password secrets → lands in noVNC autoconnected.
-   - Without → follow the IAP tunnel commands on the page, open `http://127.0.0.1:6080/vnc.html`.
+4. Click **Open live browser**:
+   - With base URL + password secrets → in-page panel embeds noVNC autoconnected.
+   - Without → IAP tunnel helper appears in the panel; open local `http://127.0.0.1:6080/vnc.html`.
 5. Finish the blocker in the live browser.
 6. Click **I’ve finished — resume**.
 7. On the runner:
@@ -181,7 +223,9 @@ node job-application-agent/scripts/attention-runner-poll.mjs \
 
 ## Out of scope (follow-ups)
 
-- Full WebSocket noVNC reverse-proxy through the site Worker
+- Full WebSocket noVNC reverse-proxy through the site Worker (next slice after embed works)
+- Browserbase / Steel
 - Playwright auto-resume loop on the VM
-- Multi-tenant paid→slot
+- Multi-tenant paid→slot / billing
 - CAPTCHA solving / VERIFYING badge flip
+- Changing founding/checkout copy

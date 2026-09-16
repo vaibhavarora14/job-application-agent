@@ -6,7 +6,9 @@ import {
   buildLiveSessionProxyUrl,
   buildNoVncLiveSessionUrl,
   defaultIapHelperCommand,
+  liveSessionFrameSrcOrigins,
   resolveLiveSessionTarget,
+  wantsLiveSessionEmbed,
 } from "../lib/attention-live-session.mjs";
 
 test("builds noVNC URL with autoconnect and password in fragment only", () => {
@@ -47,6 +49,21 @@ test("resolveLiveSessionTarget redirects when base URL set, else IAP helper", ()
 test("live-session proxy path keeps token out of email-facing VNC URL", () => {
   const path = buildLiveSessionProxyPath("attention-abc", "tok.en");
   assert.equal(path, "/api/attention/attention-abc/live-session?token=tok.en");
-  const absolute = buildLiveSessionProxyUrl("https://jobappagent.com", "attention-abc", "tok.en");
-  assert.equal(absolute, "https://jobappagent.com/api/attention/attention-abc/live-session?token=tok.en");
+  const embed = buildLiveSessionProxyPath("attention-abc", "tok.en", { embed: true });
+  assert.equal(embed, "/api/attention/attention-abc/live-session?token=tok.en&embed=1");
+  const absolute = buildLiveSessionProxyUrl("https://jobappagent.com", "attention-abc", "tok.en", { embed: true });
+  assert.equal(
+    absolute,
+    "https://jobappagent.com/api/attention/attention-abc/live-session?token=tok.en&embed=1",
+  );
+});
+
+test("embed helpers expose frame-src origins and embed query detection", () => {
+  const origins = liveSessionFrameSrcOrigins("https://novnc.example:8443/vnc.html");
+  assert.ok(origins.includes("'self'"));
+  assert.ok(origins.includes("https://novnc.example:8443"));
+  assert.ok(origins.includes("http://127.0.0.1:6080"));
+
+  assert.equal(wantsLiveSessionEmbed(new URL("https://jobappagent.com/api/attention/a/live-session?embed=1")), true);
+  assert.equal(wantsLiveSessionEmbed(new URL("https://jobappagent.com/api/attention/a/live-session")), false);
 });

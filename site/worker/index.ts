@@ -1,11 +1,17 @@
 /** Cloudflare Worker entry point for the vinext-starter template. */
 import { handleImageOptimization, DEFAULT_DEVICE_SIZES, DEFAULT_IMAGE_SIZES } from "vinext/server/image-optimization";
 import handler from "vinext/server/app-router-entry";
-import { publicSecurityHeaders } from "../lib/public-boundary.mjs";
+import {
+  isAttentionLiveSessionEmbedPath,
+  liveSessionEmbedSecurityHeaders,
+  publicSecurityHeaders,
+} from "../lib/public-boundary.mjs";
+import { liveSessionFrameSrcOrigins } from "../lib/attention-live-session.mjs";
 
 interface Env {
   ASSETS: Fetcher;
   DB: D1Database;
+  ATTENTION_LIVE_SESSION_BASE_URL?: string;
   IMAGES: {
     input(stream: ReadableStream): {
       transform(options: Record<string, unknown>): {
@@ -39,16 +45,20 @@ const worker = {
           return result.response();
         },
       }, allowedWidths);
-      return withPublicSecurityHeaders(response);
+      return withPublicSecurityHeaders(response, request, env);
     }
 
-    return withPublicSecurityHeaders(await handler.fetch(request, env, ctx));
+    return withPublicSecurityHeaders(await handler.fetch(request, env, ctx), request, env);
   },
 };
 
-function withPublicSecurityHeaders(response: Response) {
+function withPublicSecurityHeaders(response: Response, request: Request, env: Env) {
+  const url = new URL(request.url);
   const headers = new Headers(response.headers);
-  for (const [name, value] of Object.entries(publicSecurityHeaders())) headers.set(name, value);
+  const security = isAttentionLiveSessionEmbedPath(url.pathname, url.searchParams)
+    ? liveSessionEmbedSecurityHeaders(liveSessionFrameSrcOrigins(env.ATTENTION_LIVE_SESSION_BASE_URL ?? ""))
+    : publicSecurityHeaders();
+  for (const [name, value] of Object.entries(security)) headers.set(name, value);
   return new Response(response.body, { status: response.status, statusText: response.statusText, headers });
 }
 

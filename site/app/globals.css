@@ -284,6 +284,7 @@ footer a { min-width: 2.75rem; min-height: 2.75rem; margin-left: 1.25rem; paddin
 
 /* Attention / resume (P1 Quiet Trust) */
 .attention-page { padding-block: 2.5rem 5rem; max-width: 42rem; }
+.attention-page:has(.attention-live-panel) { max-width: min(72rem, 100%); }
 .attention-header h1, .attention-error-panel h1 {
   margin: .7rem 0 1rem;
   font-family: var(--font-display), serif;
@@ -329,6 +330,7 @@ footer a { min-width: 2.75rem; min-height: 2.75rem; margin-left: 1.25rem; paddin
 .attention-checklist li { margin: .45rem 0; }
 .attention-url { margin: 1.1rem 0 0; color: var(--muted); font-size: .85rem; word-break: break-word; }
 .attention-url a { color: var(--green); }
+.attention-actions-stack { display: grid; gap: 1rem; }
 .attention-actions { display: flex; flex-wrap: wrap; gap: .65rem; align-items: start; }
 .button-danger {
   border: 1px solid #e0b8b0;
@@ -337,7 +339,77 @@ footer a { min-width: 2.75rem; min-height: 2.75rem; margin-left: 1.25rem; paddin
 }
 .button-danger:hover:not(:disabled) { background: #efd4cd; color: var(--coral); }
 .attention-status { width: 100%; margin: .35rem 0 0; color: var(--green); font-size: .85rem; }
+.attention-wake-status { width: 100%; margin: .15rem 0 0; color: var(--text); font-size: .85rem; }
 .attention-error-panel .eyebrow { color: var(--coral); }
+.attention-live-panel {
+  display: grid;
+  gap: .75rem;
+  padding: .85rem;
+  border: 1px solid var(--line);
+  border-radius: .85rem;
+  background: var(--bg);
+}
+.attention-live-panel-chrome {
+  display: grid;
+  gap: .25rem;
+}
+.attention-live-panel-label {
+  margin: 0;
+  color: var(--ink);
+  font: 600 .72rem/1.3 var(--font-mono), monospace;
+  letter-spacing: .05em;
+  text-transform: uppercase;
+}
+.attention-live-panel-hint {
+  margin: 0;
+  color: var(--muted);
+  font-size: .85rem;
+  line-height: 1.45;
+}
+.attention-wake-instructions {
+  margin: 0;
+  padding: .85rem 1rem;
+  border-radius: .45rem;
+  background: #173F35;
+  color: #F2E9D8;
+  font: .78rem/1.45 var(--font-mono), monospace;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.attention-live-frame {
+  width: 100%;
+  min-height: min(68vh, 42rem);
+  height: 68vh;
+  border: 1px solid var(--line);
+  border-radius: .55rem;
+  background: #111;
+}
+.attention-live-frame-pending {
+  display: grid;
+  place-items: center;
+  color: #F2E9D8;
+  font-size: .95rem;
+}
+.attention-live-panel-expanded {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  margin: 0;
+  padding: 1rem;
+  border-radius: 0;
+  background: var(--bg);
+}
+.attention-live-panel-expanded .attention-live-frame {
+  min-height: 0;
+  height: calc(100vh - 7rem);
+}
+
+@media (max-width: 720px) {
+  .attention-live-frame {
+    min-height: 55vh;
+    height: 55vh;
+  }
+}
 
 @media (prefers-reduced-motion: reduce) {
   html { scroll-behavior: auto; }

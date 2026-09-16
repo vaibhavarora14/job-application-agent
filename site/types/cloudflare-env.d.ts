@@ -15,6 +15,8 @@ declare namespace Cloudflare {
     ATTENTION_LIVE_SESSION_BASE_URL?: string;
     ATTENTION_NOVNC_PASSWORD?: string;
     ATTENTION_IAP_HELPER_COMMAND?: string;
+    ATTENTION_WAKE_URL?: string;
+    ATTENTION_WAKE_INSTRUCTIONS?: string;
     RESEND_API_KEY?: string;
     RESEND_FROM_EMAIL?: string;
   }
