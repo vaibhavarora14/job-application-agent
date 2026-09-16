@@ -1,0 +1,11 @@
+.guide { overflow-wrap: anywhere; }
+.guide h1 { line-height: 1.08; }
+.guide a { color: var(--green); text-underline-offset: .2em; }
+.platforms { margin-block: 2rem; border-top: 1px solid var(--line); }
+.platforms section { padding-block: 1rem; border-bottom: 1px solid var(--line); }
+.platforms h2 { margin-top: 0; }
+.status { font: .75rem var(--font-mono), monospace; }
+.code { padding: 1rem; border: 1px solid var(--line); background: var(--surface); white-space: pre-wrap; overflow-wrap: anywhere; font-size: .875rem; line-height: 1.6; }
+.promptLabel { display: block; margin-bottom: .5rem; font-weight: 700; }
+.prompt { box-sizing: border-box; width: 100%; padding: 1rem; resize: vertical; border: 1px solid var(--line); border-radius: .5rem; background: var(--surface); color: var(--ink); font: .875rem/1.6 var(--font-body), sans-serif; }
+.prompt:focus-visible { outline: 2px solid var(--green); outline-offset: 3px; }
