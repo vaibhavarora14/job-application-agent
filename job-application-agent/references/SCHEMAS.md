@@ -166,11 +166,13 @@ Use `round source --stdin` for per-source search/blocker reports and optional at
   "url": "https://jobs.example.com/role",
   "stage": "submission",
   "blocker": "captcha",
-  "requiredActions": ["complete-captcha"]
+  "requiredActions": ["complete-captcha"],
+  "company": "Optional notify hint",
+  "role": "Optional notify hint"
 }
 ```
 
-Allowed blockers: `authentication`, `mfa`, `captcha`, `legal-attestation`, `demographic`, `government-id`, `ambiguous-authorization`, `ambiguous-compensation`, `unverifiable-claim`, `judgment`, `video`, `upload`, `site-error`, and `other`. Resolve with `{ "id": "attention-..." }`. The queue never stores the candidate's response.
+Allowed blockers: `authentication`, `mfa`, `captcha`, `legal-attestation`, `demographic`, `government-id`, `ambiguous-authorization`, `ambiguous-compensation`, `unverifiable-claim`, `judgment`, `video`, `upload`, `site-error`, and `other`. Resolve with `{ "id": "attention-..." }`. The queue never stores the candidate's response. Optional `company` / `role` are notify-only hints (not persisted on the attention event); the hosted notify path uses profile email when `ATTENTION_NOTIFY_URL` and `ATTENTION_NOTIFY_SECRET` are set. See `site/docs/ATTENTION.md`.
 
 ## Friction input
 

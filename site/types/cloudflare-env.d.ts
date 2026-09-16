@@ -10,5 +10,10 @@ declare namespace Cloudflare {
     COMMUNITY_STATS_UPSTREAM?: string;
     COMMUNITY_JOBS_UPSTREAM?: string;
     REFUND_CRON_SECRET?: string;
+    ATTENTION_NOTIFY_SECRET?: string;
+    ATTENTION_MAGIC_LINK_SECRET?: string;
+    ATTENTION_LIVE_SESSION_BASE_URL?: string;
+    RESEND_API_KEY?: string;
+    RESEND_FROM_EMAIL?: string;
   }
 }

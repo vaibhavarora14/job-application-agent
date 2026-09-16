@@ -87,6 +87,19 @@ node scripts/job-application.mjs attention resolve --stdin
 
 Store only application ID, canonical URL, round ID, stage, blocker enum, timestamp, and bounded required-action enums. Never store passwords, MFA codes, CAPTCHA answers, demographic answers, government IDs, or legal responses. Prioritize authentication/MFA/CAPTCHA, then legal/authorization/compensation, then judgment/video/site issues. Preserve the tab when supported; otherwise reopen the canonical URL and refill verified data.
 
+### Hosted notify + resume (P1)
+
+When `ATTENTION_NOTIFY_URL` and `ATTENTION_NOTIFY_SECRET` are set on the runner host, `attention add` POSTs to the site Worker notify API so the candidate receives an email with a signed magic link to `/attention/:id`. Optional `company` / `role` on the add payload (or ledger lookup) fill the email subject; they are not persisted on the attention event.
+
+Runner poll stub (while lease held):
+
+```text
+GET https://jobappagent.com/api/internal/attention-signals/:id
+Authorization: Bearer $ATTENTION_NOTIFY_SECRET
+```
+
+Act on `resume_requested` | `skipped` | `aborted`. filled ≠ applied until visible ATS confirm + ledger intent confirm. Full contract: `site/docs/ATTENTION.md`.
+
 ## Friction queue
 
 Record bounded general workflow failures without candidate data:
