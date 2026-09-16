@@ -17,6 +17,10 @@ declare namespace Cloudflare {
     ATTENTION_IAP_HELPER_COMMAND?: string;
     ATTENTION_WAKE_URL?: string;
     ATTENTION_WAKE_INSTRUCTIONS?: string;
+    /** Optional OpenAI-compatible key for attention judgment drafts (P1.5). */
+    ATTENTION_DRAFT_API_KEY?: string;
+    ATTENTION_DRAFT_BASE_URL?: string;
+    ATTENTION_DRAFT_MODEL?: string;
     RESEND_API_KEY?: string;
     RESEND_FROM_EMAIL?: string;
   }

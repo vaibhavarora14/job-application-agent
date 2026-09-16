@@ -19,6 +19,16 @@ type SignalOk = {
   };
 };
 type SignalErr = { ok: false; error: string; status: number };
+type VerifyOk = {
+  ok: true;
+  payload: {
+    attentionId: string;
+    company: string;
+    role: string;
+    questions: { id: string; prompt: string; kind: string; required: boolean }[];
+  };
+};
+type VerifyErr = { ok: false; error: string };
 
 /**
  * POST /api/attention/:id/signal
@@ -46,9 +56,13 @@ export async function POST(request: Request, { params }: Params) {
   const config = attentionEnv();
   const verified = await verifyAttentionMagicLink(validated.data.token, config.magicLinkSecret, {
     attentionId,
-  });
+  }) as VerifyOk | VerifyErr;
   if (!verified.ok) {
     return Response.json({ error: verified.error }, { status: 401 });
+  }
+  const payload = verified.payload;
+  if (!payload) {
+    return Response.json({ error: "token_invalid" }, { status: 401 });
   }
 
   const record = buildAttentionSignalRecord(attentionId, validated.data.signal, {
@@ -63,7 +77,7 @@ export async function POST(request: Request, { params }: Params) {
 
   if (validated.data.signal === "resume_requested" && validated.data.answers.length) {
     const questionById = new Map(
-      (verified.payload.questions ?? []).map((question) => [question.id, question]),
+      (payload.questions ?? []).map((question) => [question.id, question]),
     );
     await upsertAnswerBankEntries(
       validated.data.answers.map((answer) => ({
@@ -71,8 +85,8 @@ export async function POST(request: Request, { params }: Params) {
         prompt: questionById.get(answer.questionId)?.prompt ?? answer.questionId,
         text: answer.text,
         tags: [
-          verified.payload.company,
-          verified.payload.role,
+          payload.company,
+          payload.role,
           questionById.get(answer.questionId)?.kind,
         ].filter(Boolean) as string[],
         source: answer.source,

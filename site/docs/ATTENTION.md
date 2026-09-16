@@ -223,6 +223,12 @@ Quiet Trust attention card can collect narrative answers **in-app** so the live 
 | Resume | Runner injects approved answers, then re-inspects / submits |
 | Storage | Site D1 `attention_answer_bank` (reusable prompts/text). Signal `payload_json` carries answers for the poll. Attention queue still never stores CAPTCHA/MFA/cookies |
 
+D1 binding name is **`job-application-agent-public-stats`** (see `site/wrangler.jsonc`). After deploy, apply migration `0006_attention_answer_bank.sql` if it has not already run:
+
+```bash
+cd site && npx wrangler d1 migrations apply job-application-agent-public-stats --remote
+```
+
 ## CAPTCHA vendor (scaffolded, Off by default)
 
 Optional buyer-opt-in CAPTCHA assist lives in `job-application-agent/scripts/captcha-vendor.mjs`.

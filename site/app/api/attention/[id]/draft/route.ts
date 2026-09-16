@@ -4,6 +4,17 @@ import { verifyAttentionMagicLink } from "../../../../../lib/attention-magic-lin
 import { readJsonRequest } from "../../../../../lib/public-boundary.mjs";
 
 type Params = { params: Promise<{ id: string }> };
+type VerifyOk = {
+  ok: true;
+  payload: {
+    attentionId: string;
+    company: string;
+    role: string;
+    questions: { id: string; prompt: string; kind: string; required: boolean }[];
+    aiAssistanceDiscouraged: boolean;
+  };
+};
+type VerifyErr = { ok: false; error: string };
 
 /**
  * POST /api/attention/:id/draft
@@ -27,12 +38,16 @@ export async function POST(request: Request, { params }: Params) {
   if (!token) return Response.json({ error: "token_required" }, { status: 400 });
 
   const config = attentionEnv();
-  const verified = await verifyAttentionMagicLink(token, config.magicLinkSecret, { attentionId });
+  const verified = await verifyAttentionMagicLink(token, config.magicLinkSecret, { attentionId }) as VerifyOk | VerifyErr;
   if (!verified.ok) {
     return Response.json({ error: verified.error }, { status: 401 });
   }
+  const payload = verified.payload;
+  if (!payload) {
+    return Response.json({ error: "token_invalid" }, { status: 401 });
+  }
 
-  if (verified.payload.aiAssistanceDiscouraged) {
+  if (payload.aiAssistanceDiscouraged) {
     return Response.json({
       error: "ai_assistance_discouraged",
       message: "This posting asks for your own voice. Draft assist is disabled — answer in the textarea.",
@@ -41,14 +56,14 @@ export async function POST(request: Request, { params }: Params) {
 
   const questionId = typeof body.data?.questionId === "string" ? body.data.questionId.trim() : "";
   const promptFromBody = typeof body.data?.prompt === "string" ? body.data.prompt.trim() : "";
-  const question = (verified.payload.questions ?? []).find((item) => item.id === questionId);
+  const question = (payload.questions ?? []).find((item) => item.id === questionId);
   const prompt = promptFromBody || question?.prompt || "";
   if (!prompt) return Response.json({ error: "prompt_required" }, { status: 400 });
 
   const drafted = await draftAttentionAnswer({
     prompt,
-    company: verified.payload.company,
-    role: verified.payload.role,
+    company: payload.company,
+    role: payload.role,
     candidateNotes: typeof body.data?.candidateNotes === "string" ? body.data.candidateNotes : "",
     aiAssistanceDiscouraged: false,
   }, {
