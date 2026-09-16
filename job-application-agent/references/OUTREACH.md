@@ -146,7 +146,9 @@ Optional integer `minutesSpent` records candidate-reported effort for this event
 A correction uses a new operation ID, the corrected type, and
 `supersedes: ["old-event-id"]`. Corrections stay within delivery or progression;
 a progression observation cannot supersede delivery evidence. Delivery corrections
-must reference the same handoff. Nothing edits an application outcome automatically.
+must reference the same handoff. Correcting a rejection removes its derived
+suppression while preserving any explicit user suppression. Nothing edits an
+application outcome automatically.
 
 Suggest one follow-up seven Monday–Friday business days after a recorded send,
 in the configured timezone, without holiday adjustments. Use a new draft with
@@ -168,7 +170,9 @@ workstation, not independent cross-host copies.
 Cloud mode requires the migrated `outreach-tracking-v1` backend. All mutations
 require connectivity; no offline write queue exists. Read-only cached results
 are explicitly stale. On reconnect, the cache is replaced by authoritative cloud
-data, including clear tombstones. Handoffs use atomic database reservations,
+data, including clear tombstones. If a lower server revision suggests a restored
+backend or delayed response, the cache is discarded; another online read is
+required before offline inspection is available. Handoffs use atomic database reservations,
 not application submission leases. No operation changes application counts,
 round progress, or the existing application-autonomy grant.
 

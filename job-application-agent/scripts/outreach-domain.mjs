@@ -86,6 +86,12 @@ function identities(state, assessment) {
 function overlaps(a, b) { return a.some(v => b.includes(v)); }
 function reservationMatches(reservation, opportunity) { return overlaps(reservation.companies, opportunity.companies) || overlaps(reservation.recipients, opportunity.recipients); }
 function requireOpportunity(state, input) { const op = entry(state.opportunities, id(input.id)); check(op, 'Opportunity not found'); check(!op.cleared, 'Opportunity was cleared'); return op; }
+function checkLinkedApplication(content, applications, outcomes) {
+  const applicationId = content?.assessment.applicationId;
+  if (!applicationId) return;
+  check(applications.some(app => app.id === applicationId && app.status === 'submitted'), 'Linked application must still be verified');
+  check(!outcomes.some(outcome => outcome.id === applicationId && ['rejected', 'withdrawn', 'offer', 'interview'].includes(outcome.status)), 'Linked application already has a hiring outcome; review the conversation instead');
+}
 function resultFor(state, action, input, now) {
   if (action.startsWith('policy-')) return { enabled: state.meta.enabled, timezone: state.meta.timezone, recoveryBlocked: state.meta.recoveryBlocked, mode: 'draft-and-track' };
   if (action === 'clear') return { cleared: input.ids, backupRetentionDays: 30, disconnectedCachesMayRemain: true };
@@ -104,6 +110,7 @@ export function mutateOutreach(original, action, input, { now = new Date().toISO
   const prior = entry(original.operations, operationId);
   if (prior) {
     check(prior.digest === digest, 'Operation ID reused with different content');
+    if (action === 'handoff') checkLinkedApplication(entry(original.contents, input.id), applications, outcomes);
     return { state: original, result: resultFor(original, action, input, now) };
   }
   const state = structuredClone(original);
@@ -160,7 +167,7 @@ export function mutateOutreach(original, action, input, { now = new Date().toISO
       const op = entry(state.opportunities, id(opportunityId)); check(op, 'Opportunity not found');
       delete state.contents[opportunityId]; op.cleared = true; op.suppressed = true;
       state.tombstones[opportunityId] = { id: opportunityId, clearedAt: now, actor };
-      state.reservations[`clear-${opportunityId}`] = { opportunityId, companies: op.companies, recipients: op.recipients, suppressed: true };
+      state.reservations[`clear:${opportunityId}`] = { opportunityId, companies: op.companies, recipients: op.recipients, suppressed: true };
     }
   } else {
     const op = requireOpportunity(state, input); const content = entry(state.contents, input.id);
@@ -179,10 +186,7 @@ export function mutateOutreach(original, action, input, { now = new Date().toISO
       keys(input, ['operationId', 'id', 'draftRevision', 'qualificationRevision', 'selectedByUser', 'recheckedAt', 'history', 'exception']);
       check(state.meta.enabled && !state.meta.recoveryBlocked, 'Outreach disabled or restore recovery blocked');
       check(input.selectedByUser === true, 'Exact draft selection by the user required'); recent(input.recheckedAt, now);
-      if (content.assessment.applicationId) {
-        check(applications.some(app => app.id === content.assessment.applicationId && app.status === 'submitted'), 'Linked application must still be verified');
-        check(!outcomes.some(outcome => outcome.id === content.assessment.applicationId && ['rejected', 'withdrawn', 'offer', 'interview'].includes(outcome.status)), 'Linked application already has a hiring outcome; review the conversation instead');
-      }
+      checkLinkedApplication(content, applications, outcomes);
       check(input.qualificationRevision === op.qualificationRevision && GATES.every(g => content.assessment.qualification[g] === true), 'Qualification gates or revision do not match');
       const draft = content.drafts.find(d => d.revision === input.draftRevision);
       check(draft && draft.qualificationRevision === op.qualificationRevision, 'Draft revision must match current qualification');
@@ -236,13 +240,14 @@ export function mutateOutreach(original, action, input, { now = new Date().toISO
         if (attempt.delivery === 'not-sent') delete state.reservations[input.attemptId];
         else { reservation.pending = ['pending-handoff', 'uncertain', 'conflict'].includes(attempt.delivery); state.reservations[input.attemptId] = reservation; }
       }
-      if (input.type === 'rejected') {
-        op.suppressed = true; state.reservations[`stop-${input.id}`] = { opportunityId: input.id, companies: op.companies, recipients: op.recipients, suppressed: true };
-      }
+      const rejectionKey = `rejected:${input.id}`;
+      if (view.progression.includes('rejected')) {
+        state.reservations[rejectionKey] = { opportunityId: input.id, companies: op.companies, recipients: op.recipients, suppressed: true };
+      } else delete state.reservations[rejectionKey];
     } else if (action === 'suppress') {
       keys(input, ['operationId', 'id', 'scope', 'reason']); check(['company', 'recipient'].includes(input.scope), 'Suppression scope required'); text(input.reason, 'reason');
       op.suppressed = true;
-      state.reservations[operationId] = { opportunityId: input.id, companies: input.scope === 'company' ? op.companies : [], recipients: op.recipients, suppressed: true };
+      state.reservations[operationId] = { opportunityId: input.id, companies: input.scope === 'company' ? op.companies : [], recipients: input.scope === 'recipient' ? op.recipients : [], suppressed: true };
       content.evidence[operationId] = { reason: input.reason }; addEvent('suppressed');
     } else throw new Error('Unknown outreach mutation');
   }

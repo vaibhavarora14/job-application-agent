@@ -72,7 +72,7 @@ export async function restoreBackup(database, archive, { deletionManifest } = {}
       for (const row of rows) statements.push(database.prepare(`INSERT INTO outreach_${table} VALUES (?, ?)`).bind(row.id, row.payload_json));
     }
     for (const { id, value } of opportunities.filter(row => deleted.has(row.id))) {
-      statements.push(database.prepare('INSERT OR REPLACE INTO outreach_reservations VALUES (?, ?)').bind(`clear-${id}`, JSON.stringify({ opportunityId: id, companies: value.companies, recipients: value.recipients, suppressed: true })));
+      statements.push(database.prepare('INSERT OR REPLACE INTO outreach_reservations VALUES (?, ?)').bind(`clear:${id}`, JSON.stringify({ opportunityId: id, companies: value.companies, recipients: value.recipients, suppressed: true })));
     }
     await database.batch(statements);
     counts.outreach = opportunities.length;

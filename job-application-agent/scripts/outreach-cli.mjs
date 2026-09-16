@@ -3,7 +3,7 @@ import { readFile } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { CloudStateClient, defaultCloudConfigPath } from './cloud-state-client.mjs';
-import { resolveStateDir } from './secret-store.mjs';
+import { migrateLegacyStateDir, resolveStateDir } from './secret-store.mjs';
 import { mutateOutreach, readOutreach, OUTREACH_CAPABILITY } from './outreach-domain.mjs';
 import { privateOutreachWrite, withLocalOutreach, withOutreachLock } from './outreach-store.mjs';
 
@@ -36,15 +36,19 @@ export async function outreachCache(directory, binding, operation, { generation,
     if (operation === 'invalidate') {
       cache = { binding, generation: cache.generation + 1, revision: cache.revision };
       await privateOutreachWrite(path, JSON.stringify(cache));
-    } else if (operation === 'write' && cache.generation === generation && snapshot.revision >= cache.revision) {
-      cache = { binding, generation, revision: snapshot.revision, cachedAt: new Date().toISOString(), snapshot };
+    } else if (operation === 'write' && cache.generation === generation) {
+      // A lower revision may be a restored backend or a delayed response. Neither
+      // may retain older sensitive content; invalidate all in-flight writers too.
+      cache = snapshot.revision < cache.revision
+        ? { binding, generation: generation + 1, revision: -1 }
+        : { binding, generation, revision: snapshot.revision, cachedAt: new Date().toISOString(), snapshot };
       await privateOutreachWrite(path, JSON.stringify(cache));
     }
     return cache;
   });
 }
 
-export async function runOutreach(args, { input: suppliedInput, stateDirectory = resolveStateDir(), cloudClient, guard = downgradeGuard } = {}) {
+export async function runOutreach(args, { input: suppliedInput, stateDirectory = resolveStateDir(), cloudClient, guard = downgradeGuard, migrate = migrateLegacyStateDir } = {}) {
   let [action, value, rest, extra] = args;
   if (action === 'policy') { action = `policy-${value}`; value = rest; rest = extra; }
   const read = READS.has(action);
@@ -52,6 +56,7 @@ export async function runOutreach(args, { input: suppliedInput, stateDirectory =
     throw new Error('Usage: outreach policy status|enable --stdin|disable --stdin; outreach assess|draft|handoff|record|suppress|clear --stdin; outreach list|show <id>|review');
   }
   const input = read ? (action === 'show' ? { id: value } : {}) : suppliedInput ?? await readInput();
+  await migrate(stateDirectory);
   const cloud = cloudClient ?? new CloudStateClient({ stateDir: stateDirectory, configPath: process.env.JOB_APPLICATION_AGENT_CLOUD_CONFIG ?? defaultCloudConfigPath() });
   const config = await cloud.config(true);
   let result;

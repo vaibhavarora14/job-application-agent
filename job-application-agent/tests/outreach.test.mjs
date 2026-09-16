@@ -137,3 +137,42 @@ test('valid opaque IDs may match Object.prototype property names', () => {
   assert.equal(readOutreach(f.state, 'show', { id: 'constructor' }, now).cleared, false);
   assert.equal(f.run('draft', { operationId: 'constructor', id: 'constructor', text: 'Hello', claimRefs: [], purpose: 'initial' }).cleared, false);
 });
+
+test('clearing another opportunity cannot overwrite a pending handoff reservation', () => {
+  const f = fixture();
+  f.run('handoff', handoff({ operationId: 'clear-other' }));
+  f.run('assess', assessment('other', { company: { name: 'Other', domain: 'other.org', aliases: [] }, recipient: { account: 'https://x.com/other', aliases: [] }, channel: 'x' }));
+  f.run('clear', { operationId: 'clear-op', ids: ['other'] });
+  assert.equal(f.state.reservations['clear-other'].pending, true);
+  f.run('assess', assessment('retry'));
+  f.run('draft', { operationId: 'retry-draft', id: 'retry', text: 'Hello', claimRefs: [], purpose: 'initial' });
+  assert.throws(() => f.run('handoff', handoff({ operationId: 'retry-handoff', id: 'retry' })), /unresolved/);
+});
+
+test('correcting rejection removes only its derived suppression', () => {
+  const f = fixture();
+  f.run('record', { operationId: 'rejection', id: 'opportunity-1', type: 'rejected', occurredAt: now, evidence: 'Mistaken rejection.' });
+  assert.equal(readOutreach(f.state, 'show', { id: 'opportunity-1' }, now).suppressed, true);
+  f.run('record', { operationId: 'correction', id: 'opportunity-1', type: 'replied', supersedes: ['rejection'], occurredAt: now, evidence: 'Actually a reply.' });
+  assert.equal(readOutreach(f.state, 'show', { id: 'opportunity-1' }, now).suppressed, false);
+  f.run('suppress', { operationId: 'explicit', id: 'opportunity-1', scope: 'recipient', reason: 'User requests stop.' });
+  f.run('record', { operationId: 'correction-2', id: 'opportunity-1', type: 'referred', supersedes: ['correction'], occurredAt: now, evidence: 'Referral completed.' });
+  assert.equal(readOutreach(f.state, 'show', { id: 'opportunity-1' }, now).suppressed, true);
+});
+
+test('company suppression does not suppress a recipient at an unrelated company', () => {
+  const f = fixture();
+  f.run('suppress', { operationId: 'stop-company', id: 'opportunity-1', scope: 'company', reason: 'Stop this company.' });
+  f.run('assess', assessment('new-company', { company: { name: 'Other', domain: 'other.org', aliases: [] } }));
+  assert.equal(readOutreach(f.state, 'show', { id: 'new-company' }, now).suppressed, false);
+});
+
+test('handoff retries recheck current linked application outcomes', () => {
+  const f = fixture();
+  const context = { now, applications: [{ id: 'app-1', company: 'Example', role: 'Staff Product Engineer', status: 'submitted' }] };
+  let state = mutateOutreach(f.state, 'assess', assessment('opportunity-1', { operationId: 'linked', applicationId: 'app-1' }), context).state;
+  state = mutateOutreach(state, 'draft', { operationId: 'linked-draft', id: 'opportunity-1', text: 'Hello', claimRefs: [], purpose: 'initial' }, context).state;
+  const input = handoff({ qualificationRevision: 2, draftRevision: 2 });
+  state = mutateOutreach(state, 'handoff', input, context).state;
+  assert.throws(() => mutateOutreach(state, 'handoff', input, { ...context, outcomes: [{ id: 'app-1', status: 'rejected' }] }), /hiring outcome/);
+});
