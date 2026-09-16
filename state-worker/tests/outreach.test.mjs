@@ -116,3 +116,30 @@ test('current deletion manifest redacts old backups and replay cannot restore cl
   await assert.rejects(cloudOutreachMutation(target, 'assess', assessment('opportunity-1', { operationId: 'resurrection' }), context), /disabled|cleared/);
   await assert.rejects(restoreBackup(target, archive, { deletionManifest: manifest }), /empty destination/);
 });
+
+test('backup retries when a mutation would otherwise mix outreach table revisions', async () => {
+  const base = await readFile(new URL('../migrations/0001_private_state.sql', import.meta.url), 'utf8');
+  const DB = createMemoryD1(base + OUTREACH_SCHEMA);
+  await cloudOutreachMutation(DB, 'policy-enable', { operationId: 'enable', timezone: 'UTC' }, context);
+  await cloudOutreachMutation(DB, 'assess', assessment(), context);
+  let interleaved = false;
+  const racingDatabase = { ...DB, prepare(sql) {
+    const statement = DB.prepare(sql);
+    if (sql === 'SELECT id, payload_json FROM outreach_opportunities') {
+      const originalAll = statement.all;
+      statement.all = async () => {
+        const rows = await originalAll();
+        if (!interleaved) {
+          interleaved = true;
+          await cloudOutreachMutation(DB, 'assess', assessment('created-during-backup'), context);
+        }
+        return rows;
+      };
+    }
+    return statement;
+  } };
+  const archive = await createBackup(racingDatabase);
+  const opportunityIds = archive.outreach.opportunities.map(row => row.id).sort();
+  assert.deepEqual(archive.outreach.contents.map(row => row.id).sort(), opportunityIds);
+  assert(opportunityIds.includes('created-during-backup'));
+});

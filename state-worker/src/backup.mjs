@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
 import { OUTREACH_TABLES } from '../../job-application-agent/scripts/outreach-domain.mjs';
+import { loadOutreach } from './outreach.mjs';
 
 const TABLES = Object.freeze({
   clients: ['client_id', 'name', 'token_hash', 'created_at', 'last_seen_at', 'revoked_at'],
@@ -17,8 +18,13 @@ export async function createBackup(database, generatedAt = new Date().toISOStrin
   }
   const outreach = {};
   if (await database.prepare("SELECT name FROM sqlite_master WHERE name = 'outreach_meta'").first()) {
-    outreach.meta = (await database.prepare('SELECT id, revision, payload_json FROM outreach_meta').all()).results;
-    for (const table of OUTREACH_TABLES) outreach[table] = (await database.prepare(`SELECT id, payload_json FROM outreach_${table}`).all()).results;
+    if (await database.prepare('SELECT id FROM outreach_meta LIMIT 1').first()) {
+      // Reuse the revision-checked reader: a handoff/clear between table reads
+      // must not produce orphaned content or mismatched reservation history.
+      const state = await loadOutreach(database);
+      outreach.meta = [{ id: 1, revision: state.meta.revision, payload_json: JSON.stringify(state.meta) }];
+      for (const table of OUTREACH_TABLES) outreach[table] = Object.entries(state[table]).map(([id, value]) => ({ id, payload_json: JSON.stringify(value) }));
+    }
   }
   return { version: 1, generatedAt, tables, ...(outreach.meta?.length ? { outreach } : {}) };
 }
