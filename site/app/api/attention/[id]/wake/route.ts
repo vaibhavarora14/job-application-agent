@@ -46,13 +46,14 @@ export async function POST(request: Request, { params }: Params) {
   });
 
   if (!result.ok) {
+    const httpStatus = typeof result.status === "number" ? result.status : 502;
     return Response.json({
       error: result.error,
       attentionId,
       status: "failed",
       message: result.message,
       instructions: result.instructions ?? null,
-    }, { status: result.status ?? 502, headers: { "cache-control": "no-store" } });
+    }, { status: httpStatus, headers: { "cache-control": "no-store" } });
   }
 
   return Response.json({

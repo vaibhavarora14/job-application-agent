@@ -77,10 +77,16 @@ export async function GET(request: Request, { params }: Params) {
   }
 
   // IAP / local tunnel path — usable by founder without Slack tribal knowledge.
+  const wakeView = {
+    ok: wake.ok,
+    message: wake.message,
+    instructions: wake.instructions ?? null,
+    wakeStatus: typeof wake.status === "string" ? wake.status : undefined,
+  };
   if (embed) {
-    return htmlResponse(200, "Open live session via IAP tunnel", iapBody(target, wake), { embed: true });
+    return htmlResponse(200, "Open live session via IAP tunnel", iapBody(target, wakeView), { embed: true });
   }
-  return htmlResponse(200, "Open live session via IAP tunnel", iapBody(target, wake));
+  return htmlResponse(200, "Open live session via IAP tunnel", iapBody(target, wakeView));
 }
 
 function iapBody(target: {
@@ -88,7 +94,7 @@ function iapBody(target: {
   localUrl?: string;
   attentionId?: string | null;
   note?: string;
-}, wake?: { ok?: boolean; message?: string; instructions?: string | null; status?: string }) {
+}, wake?: { ok?: boolean; message?: string; instructions?: string | null; wakeStatus?: string }) {
   const command = target.iapHelperCommand ?? "";
   const localUrl = target.localUrl ?? "http://127.0.0.1:6080/vnc.html?autoconnect=true";
   const wakeNote = wake?.message
