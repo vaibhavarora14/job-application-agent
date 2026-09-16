@@ -4,12 +4,13 @@
  * Site D1 stores coordination signals only — not the application ledger.
  * State-worker attention stream remains source of truth for opened/resolved items.
  *
- * TODO(runner): GCP hosted runner should run
- * `node scripts/attention-runner-poll.mjs --attention-id …`
- * (or poll GET /api/internal/attention-signals/:id with Bearer ATTENTION_NOTIFY_SECRET)
- * after attention opens. On resume_requested: renew lease → re-inspect page →
- * submit only with visible confirm or re-open attention honestly.
- * Never treat UI "resume" as ledger success.
+ * After attention opens, the GCP hosted runner should:
+ *   node scripts/attention-runner-poll.mjs --attention-id …
+ * (or poll GET /api/internal/attention-signals/:id with Bearer ATTENTION_NOTIFY_SECRET).
+ * On resume_requested: renew lease → load session binding (same tab / :99 / 5900) →
+ * re-inspect → submit if possible → visible confirm → intent/ledger.
+ * Helper: node scripts/attention-resume-submit.mjs --attention-id … --checklist
+ * Never treat UI "resume" as ledger success. Live noVNC must target VNC 5900, never 5901.
  */
 
 export const ATTENTION_SIGNAL_ACTIONS = Object.freeze({

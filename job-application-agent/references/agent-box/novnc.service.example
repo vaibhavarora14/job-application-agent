@@ -1,0 +1,16 @@
+[Unit]
+Description=noVNC for JobAppAgent fill display (Xvfb :99 / x11vnc 5900)
+After=network.target x11vnc-fill.service
+Requires=x11vnc-fill.service
+
+[Service]
+Type=simple
+# HARD RULE: proxy fill x11vnc on localhost:5900 — NEVER TigerVNC 5901.
+# Buyer live panel (ATTENTION_LIVE_SESSION_BASE_URL → :6080) must show the
+# paused filled ATS form on DISPLAY=:99, not a cold desktop.
+ExecStart=/usr/bin/websockify --web=/usr/share/novnc 6080 localhost:5900
+Restart=on-failure
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target

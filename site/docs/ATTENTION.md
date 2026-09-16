@@ -24,6 +24,17 @@ Productizes the hosted-run attention pause: email notify → magic-link attentio
 | `ATTENTION_NOTIFY_URL` | e.g. `https://jobappagent.com/api/internal/attention-notify` |
 | `ATTENTION_NOTIFY_SECRET` | Same bearer as the site Worker |
 | `PUBLIC_SITE_URL` | Optional; poll client uses this (or derives origin from `ATTENTION_NOTIFY_URL`) |
+| `JOB_APPLICATION_AGENT_STATE_DIR` | Local state root; session bindings live under `session-bindings/` (never cloud) |
+| `DISPLAY` | Fill display — must be **`:99`** for headed Chrome |
+
+### Live display hard rule
+
+**Buyer live noVNC must show the fill session:** Xvfb `DISPLAY=:99` → x11vnc **`localhost:5900`** → websockify/noVNC (HTTP historically `:6080`).
+
+- **Never** TigerVNC `:1` / port **`5901`** (cold desktop / jobs listing = product failure).
+- Guard: `node job-application-agent/scripts/novnc-display-guard.mjs --unit /etc/systemd/system/novnc.service`
+- Example unit: `job-application-agent/references/agent-box/novnc.service.example`
+- Agent-box notes: `job-application-agent/references/agent-box/README.md`
 
 After `attention add`, the skill CLI POSTs to the site notify API when notify URL + secret are set. Uses profile email + optional `company`/`role` (or ledger lookup). Notify failure is logged and does not roll back the attention event.
 
@@ -112,24 +123,59 @@ node job-application-agent/scripts/attention-runner-poll.mjs \
 
 | Exit | Meaning | Next action |
 |------|---------|-------------|
-| `0` | `resume_requested` | Renew lease → **re-inspect** ATS page → submit only on visible confirm → intent confirm |
+| `0` | `resume_requested` | Renew lease → load **session binding** → same-tab re-inspect → **submit if possible** → visible confirm → intent confirm |
 | `10` | `skipped` | `attention resolve`, no submit, continue round |
 | `11` | `aborted` | `cloud lease-release`, end round |
 | `20` | timeout / `--once` still waiting | Renew lease or re-notify |
 | `1` | config/HTTP error | Fix `ATTENTION_NOTIFY_SECRET` / site URL |
 
-## Resume re-inspect checklist (agent)
+Helpers after exit `0`:
+
+```bash
+node job-application-agent/scripts/attention-resume-submit.mjs --checklist
+node job-application-agent/scripts/attention-resume-submit.mjs \
+  --attention-id attention-… --stdin <<'JSON'
+{ "pageUrl": "https://…/application", "submitEnabled": true, "leaseHeld": true }
+JSON
+```
+
+## Session binding (same-tab contract)
+
+Paused runs must record enough to reattach — **local-only** (browser profile paths never enter cloud state):
+
+| Field | Required | Notes |
+|-------|----------|-------|
+| `attentionId` | yes | Ties binding to attention event |
+| `jobUrl` | yes | Filled ATS form URL (`attention.url`) |
+| `browserProfilePath` | yes | Chrome user-data-dir for the headed fill |
+| `display` | yes | Must be `:99` |
+| `vncPort` | yes | Must be `5900` |
+| `tabHint` | no | Optional `{ title, urlContains }` |
+| `applicationId` / `roundId` | no | Join keys |
+
+Write via optional fields on `attention add` (`browserProfilePath`, `display`, `vncPort`, `tabHint`) or:
+
+```bash
+node job-application-agent/scripts/session-binding.mjs write --stdin
+```
+
+**Hard invariant:** keep headed Chrome on that exact filled form tab through the pause. Cold Chrome / jobs listing in the live panel is a bug.
+
+## Resume re-inspect → submit checklist (agent)
 
 After exit `0` / `resume_requested`:
 
-1. `cloud lease-renew` (lease must stay held through the pause).
-2. Re-open or focus the **same** ATS tab/page the candidate used in the live session.
-3. Re-check required fields, uploads, and disclosures on the live page — do not trust prior fill state blindly.
-4. Submit **only** when the ATS shows a visible success/confirmation surface.
-5. `cloud intent-confirm` / `ledger add` only after that visible confirm. **filled ≠ applied.**
-6. If confirmation is missing or the page still blocks → `attention add` again honestly (never invent success).
-7. On skip (`10`): `attention resolve`, do not submit, continue the round.
-8. On abort (`11`): `cloud lease-release`, end the round.
+1. `cloud lease-renew` (lease must stay held through the pause). If lease lost → new attention `session-expired`; fail closed.
+2. Load session binding; refuse resume if missing or if live URL **drifts** from `jobUrl`.
+3. Focus the **same** ATS tab the candidate used in the live session (`DISPLAY=:99` / profile path).
+4. Re-check live DOM for remaining absolute blockers — do not trust prior fill state blindly.
+5. **If clear → agent submits** (submit bias). No extra in-app “please confirm submit” unless a new absolute gate appeared.
+6. Wait for a **visible** success/confirmation surface (Ashby/generic selectors in `scripts/ats/submit-adapters.mjs`).
+7. `cloud intent-confirm` / `ledger add` only after that visible confirm. **filled ≠ applied.**
+8. If confirmation is missing after click → `cloud intent-sent` / sent-unverified; **never retry** until verified.
+9. If still blocked → `attention add` again honestly (never invent success).
+10. On skip (`10`): `attention resolve`, do not submit, continue the round.
+11. On abort (`11`): `cloud lease-release`, end the round.
 
 Ledger/intent rules are unchanged from `SKILL.md` / `RUNS.md` / `state-worker/AGENT.md`.
 
@@ -159,7 +205,7 @@ gcloud compute instances start agent-box \
   --project=agent-runner-vaibhav-4500
 ```
 
-Cold-start still needs Xvfb + x11vnc/noVNC on `:6080` after the instance is RUNNING. Never stop while a cloud lease is held or `/tmp/jaa-hosted-fill.running` exists.
+Cold-start still needs Xvfb `:99` + x11vnc **`5900`** + noVNC on `:6080` (websockify → `localhost:5900`) after the instance is RUNNING. Never stop while a cloud lease is held or `/tmp/jaa-hosted-fill.running` exists. Run `novnc-display-guard.mjs` after cold start.
 
 ## Founder / dev: IAP tunnel helper (not buyer UI)
 
@@ -174,7 +220,71 @@ gcloud compute start-iap-tunnel AGENT_BOX_INSTANCE 6080 \
 
 Then open `http://127.0.0.1:6080/vnc.html?autoconnect=true`. Override the documented one-liner with `ATTENTION_IAP_HELPER_COMMAND` if instance/zone/project differ. Prefer setting `ATTENTION_LIVE_SESSION_BASE_URL` for the real buyer path.
 
-## Playable demo (founder on agent-box)
+## Golden-path E2E runbook (founder on agent-box)
+
+LiveKit-class: **pause on prefilled form → magic link live panel → human gates → resume → submit → ledger**.
+
+### Preconditions
+
+1. Worker secrets as in the “One-time Worker secrets” section below (`ATTENTION_LIVE_SESSION_BASE_URL` must front noVNC whose websockify targets **`localhost:5900`**).
+2. agent-box: Xvfb `:99`, x11vnc on **5900**, noVNC on **6080** per `references/agent-box/`.
+3. `node job-application-agent/scripts/novnc-display-guard.mjs --unit /etc/systemd/system/novnc.service` exits 0.
+4. Headed Chrome uses a persistent fill profile on `DISPLAY=:99`.
+
+### Steps
+
+1. `cloud lease-acquire` (application-run). Hold/renew through the pause.
+2. Navigate to a real ATS application URL on the fill display; fill verified résumé facts only.
+3. Stop on absolute blockers (CAPTCHA / legal / judgment). **Do not submit.** Keep the **same filled tab** open.
+4. Open attention **with session binding**:
+
+```bash
+node job-application-agent/scripts/job-application.mjs attention add --stdin <<'JSON'
+{
+  "roundId": "round-e2e",
+  "applicationId": "app-e2e",
+  "url": "https://jobs.ashbyhq.com/…/application",
+  "stage": "submission",
+  "blocker": "legal-attestation",
+  "requiredActions": ["review-legal", "provide-judgment", "complete-captcha"],
+  "company": "LiveKit",
+  "role": "Forward Deployed Engineer",
+  "browserProfilePath": "/home/runner/.jaa-chrome-fill",
+  "display": ":99",
+  "vncPort": 5900,
+  "tabHint": { "urlContains": "/application" }
+}
+JSON
+```
+
+5. Open the magic link → Quiet Trust `/attention/:id` → **Open live browser**.
+6. **Accept only if** the panel shows the **already-filled** ATS form (fields visible). If you see TigerVNC desktop, blank XFCE, or a fresh jobs listing → **fail the run** (fix/VNC misbind); fix `novnc.service` → 5900.
+7. Candidate completes only listed absolute actions in that live tab.
+8. Click **I’ve finished — resume**.
+9. Runner poll:
+
+```bash
+node job-application-agent/scripts/attention-runner-poll.mjs --attention-id attention-…
+# expect exit 0
+```
+
+10. Resume → submit:
+
+```bash
+# Agent / automation: re-inspect same tab, then:
+node job-application-agent/scripts/attention-resume-submit.mjs --attention-id attention-… --stdin <<'JSON'
+{
+  "pageUrl": "https://jobs.ashbyhq.com/…/application",
+  "submitEnabled": true,
+  "leaseHeld": true
+}
+JSON
+# exit 13 → click submit using Ashby/generic selectors
+# re-probe until exit 0 (visible confirmation) → intent-confirm / ledger add
+```
+
+11. Confirm: ledger row exists; attention resolved; **filled ≠ applied** held until step 10 confirmation.
+12. Skip / Abort: exit 10 → resolve, no submit; exit 11 → release lease, end round.
 
 ### One-time Worker secrets
 
@@ -198,9 +308,14 @@ Ensure `PUBLIC_SITE_URL=https://jobappagent.com` is set (wrangler vars already d
 export ATTENTION_NOTIFY_URL=https://jobappagent.com/api/internal/attention-notify
 export ATTENTION_NOTIFY_SECRET=…   # same as Worker
 export PUBLIC_SITE_URL=https://jobappagent.com
+export DISPLAY=:99
 ```
 
-### Demo loop
+### Notify-only smoke (no fill session)
+
+For mail/UI wiring without a headed fill, the shorter “Playable demo” loop below still works — but it does **not** satisfy golden-path acceptance (same-tab + submit).
+
+## Playable demo (notify + poll smoke)
 
 1. Hold an application-run lease (`cloud lease-acquire`).
 2. Open attention (CLI or curl notify):
@@ -234,14 +349,14 @@ node job-application-agent/scripts/attention-runner-poll.mjs \
 # expect exit 0 and printed resume checklist
 ```
 
-8. Follow the resume re-inspect checklist above.
+8. Follow the resume → submit checklist above (session binding required for golden path).
 
 ## Out of scope (follow-ups)
 
 - Full WebSocket noVNC reverse-proxy through the site Worker (next slice after embed works)
-- Named Cloudflare tunnel DNS / VM wake automation
+- Named Cloudflare tunnel DNS / VM wake automation (`live.jobappagent.com`)
 - Browserbase / Steel
-- Playwright auto-resume loop on the VM
+- CAPTCHA vendor solve API (gated — human in panel for P1)
+- Attestation auto-grants UI / judgment draft paste (P1.5)
 - Multi-tenant paid→slot / billing
-- CAPTCHA solving / VERIFYING badge flip
-- Changing founding/checkout copy
+- VERIFYING badge flip / founding checkout copy changes

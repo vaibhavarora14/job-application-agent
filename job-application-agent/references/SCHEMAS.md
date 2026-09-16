@@ -168,11 +168,15 @@ Use `round source --stdin` for per-source search/blocker reports and optional at
   "blocker": "captcha",
   "requiredActions": ["complete-captcha"],
   "company": "Optional notify hint",
-  "role": "Optional notify hint"
+  "role": "Optional notify hint",
+  "browserProfilePath": "/home/runner/.jaa-chrome-fill",
+  "display": ":99",
+  "vncPort": 5900,
+  "tabHint": { "urlContains": "/application" }
 }
 ```
 
-Allowed blockers: `authentication`, `mfa`, `captcha`, `legal-attestation`, `demographic`, `government-id`, `ambiguous-authorization`, `ambiguous-compensation`, `unverifiable-claim`, `judgment`, `video`, `upload`, `site-error`, and `other`. Resolve with `{ "id": "attention-..." }`. The queue never stores the candidate's response. Optional `company` / `role` are notify-only hints (not persisted on the attention event); the hosted notify path uses profile email when `ATTENTION_NOTIFY_URL` and `ATTENTION_NOTIFY_SECRET` are set. See `site/docs/ATTENTION.md`.
+Allowed blockers: `authentication`, `mfa`, `captcha`, `legal-attestation`, `demographic`, `government-id`, `ambiguous-authorization`, `ambiguous-compensation`, `unverifiable-claim`, `judgment`, `video`, `upload`, `site-error`, and `other`. Resolve with `{ "id": "attention-..." }`. The queue never stores the candidate's response. Optional `company` / `role` are notify-only hints (not persisted on the attention event); the hosted notify path uses profile email when `ATTENTION_NOTIFY_URL` and `ATTENTION_NOTIFY_SECRET` are set. Optional `browserProfilePath` / `display` / `vncPort` / `tabHint` write a **local-only** session binding under `session-bindings/` (never cloud; `display` must be `:99`, `vncPort` must be `5900`). See `site/docs/ATTENTION.md` and `references/agent-box/`.
 
 ## Friction input
 

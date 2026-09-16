@@ -739,7 +739,18 @@ test('replays and prioritizes an owner-only attention queue', async (t) => {
     stage: 'submission',
     blocker: 'captcha',
     requiredActions: ['complete-captcha'],
+    browserProfilePath: join(directory, 'chrome-fill'),
+    display: ':99',
+    vncPort: 5900,
+    tabHint: { urlContains: '/captcha' },
   });
+
+  assert.ok(captcha.sessionBinding?.binding?.browserProfilePath);
+  assert.equal(captcha.sessionBinding.binding.vncPort, 5900);
+  assert.equal(captcha.sessionBinding.binding.display, ':99');
+  const attentionRaw = await readFile(join(directory, 'attention.ndjson'), 'utf8');
+  assert.doesNotMatch(attentionRaw, /browserProfilePath/);
+  assert.ok((await readFile(captcha.sessionBinding.path, 'utf8')).includes('chrome-fill'));
 
   const before = cli(env, ['attention', 'list']);
   assert.deepEqual(before.items.map((item) => item.id), [captcha.id, judgment.id]);

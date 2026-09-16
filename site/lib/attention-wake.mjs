@@ -40,7 +40,7 @@ export function defaultWakeInstructions() {
     "  --zone=asia-south1-a \\",
     "  --project=agent-runner-vaibhav-4500",
     "",
-    "# Wait until RUNNING, then confirm Xvfb + x11vnc + noVNC (:6080) before live session.",
+    "# Wait until RUNNING, then confirm Xvfb :99 + x11vnc :5900 + noVNC (:6080 → localhost:5900) before live session.",
   ].join("\n");
 }
 

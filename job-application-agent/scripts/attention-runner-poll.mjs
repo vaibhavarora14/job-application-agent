@@ -100,9 +100,11 @@ export function interpretPoll(poll) {
       action: "resume",
       message: [
         "Signal: resume_requested",
-        "Next: renew cloud lease → re-inspect the ATS page in the live browser →",
-        "submit ONLY with visible confirmation → ledger intent-confirm.",
-        "filled ≠ applied. If unsure, re-open attention honestly.",
+        "Next: renew cloud lease → load session binding (same tab / DISPLAY=:99 / VNC 5900) →",
+        "re-inspect the filled ATS page → submit if possible → wait for visible confirmation →",
+        "ledger intent-confirm. filled ≠ applied.",
+        "Helper: node scripts/attention-resume-submit.mjs --attention-id … --checklist",
+        "If unsure or still blocked, re-open attention honestly.",
       ].join(" "),
     };
   }
