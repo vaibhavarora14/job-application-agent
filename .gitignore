@@ -20,6 +20,10 @@ candidate-profile*
 profile.json
 state/
 .state/
+outreach.sqlite
+outreach.lock
+outreach-cache.lock
+outreach-cloud-cache.json
 
 # Local tooling and operating-system files
 .DS_Store

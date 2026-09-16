@@ -46,6 +46,8 @@ try {
     input: input === undefined ? undefined : JSON.stringify(input),
     env: {
       ...process.env,
+      HOME: temp,
+      JOB_APPLICATION_AGENT_HOME: agentHome,
       JOB_APPLICATION_AGENT_STATE_DIR: stateDir,
       JOB_APPLICATION_AGENT_CLOUD_CONFIG: path.join(temp, 'no-live-cloud-config.json'),
       JOB_APPLICATION_AGENT_SOURCE_COMMUNITY_URL: 'http://127.0.0.1:9',
@@ -78,6 +80,14 @@ try {
   assert.equal(run(['ledger','deliveries',app.id]).applications[0].attempts.length,2);
   assert.equal(run(['round','status',round.roundId]).confirmedCount,1);
   assert.equal(run(['ledger','review']).recordedSubmissionCount,1);
+  // The managed copy is outside npm's dependency tree: its bundled SQLite
+  // runtime must work without resolving dependencies from this checkout.
+  assert.equal(run(['outreach', 'policy', 'status']).enabled, false);
+  assert.equal(run(['outreach', 'policy', 'enable', '--stdin'], { operationId: 'smoke-outreach-enable', timezone: 'UTC' }).enabled, true);
+  assert.equal(run(['outreach', 'review']).sentVerified, 0);
+  assert.equal(run(['ledger', 'review']).recordedSubmissionCount, 1);
+  const outreachGuard = JSON.parse(await readFile(path.join(agentHome, 'job-application-agent', 'install.json'), 'utf8'));
+  assert(outreachGuard.requiredCapabilities.includes('outreach-tracking-v1'));
   process.stdout.write('Packed npm installation smoke test passed.\n');
 } finally {
   if (tarball) await rm(tarball, { force: true });

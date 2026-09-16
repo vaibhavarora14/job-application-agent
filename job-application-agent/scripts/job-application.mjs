@@ -1834,6 +1834,12 @@ async function recordInstallationStart(telemetry, session) {
 
 async function main(args) {
   const [area, action, value] = args;
+  // Outreach is private-only, including errors: never initialize telemetry or
+  // community clients, flush their queues, or run generic reconciliation here.
+  if (area === 'outreach') {
+    const { runOutreach } = await import('./outreach-cli.mjs');
+    return print(await runOutreach(args.slice(1)));
+  }
   const telemetry = new TelemetryClient({ stateDir: stateDir(), readIdentity: () => {
     const profile = storedProfileRaw();
     // Only explicit saved fields; no resume parsing, conversation scraping, or full profile payload.

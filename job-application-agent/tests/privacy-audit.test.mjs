@@ -11,6 +11,8 @@ const forbiddenProperties = [
   'agentResponse', 'jobDescription', 'formQuestion', 'draftedAnswer', 'note', 'password', 'mfa',
   'captcha', 'legalAnswer', 'demographicAnswer', 'browserData', 'ipAddress', 'requestHeaders',
   'userAgent', 'rawError',
+  'recipient', 'recipientAccount', 'message', 'sentText', 'claimRefs', 'evidence',
+  'outreachId', 'opportunityId', 'companyFingerprint', 'recipientFingerprint',
 ];
 
 test('privacy audit rejects every prohibited free-form or identity property', () => {

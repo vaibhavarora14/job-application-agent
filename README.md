@@ -83,6 +83,14 @@ For one person's agents across several trusted hosts, an optional private Cloudf
 
 ## 🤖 Choose your autonomy level
 
+An optional [outreach companion](job-application-agent/references/OUTREACH.md)
+qualifies contacts, stores drafts, prepares manual handoffs, and tracks replies
+privately. Run `job-application-agent outreach policy status` to inspect it.
+It is disabled by default, performs no automated LinkedIn/X access or sending,
+and keeps outreach counts separate from applications. Cloud use requires the
+`outreach-tracking-v1` private-state migration; local use works with the managed
+npm installation on Node 20 or later.
+
 - **`review-each`** — review every completed application before submission.
 - **`routine-auto`** — allow routine submissions while keeping sensitive and judgment-heavy steps with you.
 
