@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import { CloudStateClient, defaultCloudConfigPath } from './cloud-state-client.mjs';
 import { migrateLegacyStateDir, resolveStateDir } from './secret-store.mjs';
 import { mutateOutreach, readOutreach, OUTREACH_CAPABILITY } from './outreach-domain.mjs';
+import { confirmOutreachTowardRound } from './outreach-round.mjs';
 import { privateOutreachWrite, withLocalOutreach, withOutreachLock } from './outreach-store.mjs';
 
 const READS = new Set(['policy-status', 'list', 'show', 'review']);
@@ -91,5 +92,16 @@ export async function runOutreach(args, { input: suppliedInput, stateDirectory =
     result = await withLocalOutreach(stateDirectory, state => read ? { result: readOutreach(state, action, input) } : mutateOutreach(state, action, input, { ...context, actor: 'local' }));
   }
   if (action === 'policy-enable') await guard();
+  if (action === 'record' && result?.delivery === 'sent-verified' && input?.id) {
+    result = {
+      ...result,
+      roundConfirmation: await confirmOutreachTowardRound({
+        directory: stateDirectory,
+        outreachId: input.id,
+        cloudClient: cloud,
+        occurredAt: input.occurredAt,
+      }),
+    };
+  }
   return result;
 }
