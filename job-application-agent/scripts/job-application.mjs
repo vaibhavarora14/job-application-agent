@@ -208,8 +208,9 @@ function string(value, label, max = 5000) {
   return value.trim();
 }
 
-function optionalTrimmed(value) {
-  return typeof value === 'string' && value.trim() ? value.trim() : '';
+function optionalPresentString(candidate, key, max) {
+  if (!Object.hasOwn(candidate, key)) return '';
+  return string(candidate[key], `candidate.${key}`, max);
 }
 
 function stringArray(value, label, required = false) {
@@ -487,19 +488,14 @@ export function validateLedgerEntry(input) {
 
 export function validateLedgerCheckCandidate(input) {
   const candidate = object(input, 'candidate');
-  const id = optionalTrimmed(candidate.id);
-  const url = optionalTrimmed(candidate.url);
-  const employerJobId = optionalTrimmed(candidate.employerJobId);
-  const company = optionalTrimmed(candidate.company);
-  const role = optionalTrimmed(candidate.role);
+  const id = optionalPresentString(candidate, 'id', 180);
+  const url = optionalPresentString(candidate, 'url', 2048);
+  const employerJobId = optionalPresentString(candidate, 'employerJobId', 300);
+  const company = optionalPresentString(candidate, 'company', 300);
+  const role = optionalPresentString(candidate, 'role', 300);
   if (!url && !id && !(employerJobId && company) && !(company && role)) {
-    throw new Error('ledger check requires at least one identifier set: url, id, employerJobId, or company+role.');
+    throw new Error('ledger check requires at least one identifier set: url, id, employerJobId+company, or company+role.');
   }
-  if (id) string(id, 'candidate.id', 180);
-  if (url) string(url, 'candidate.url', 2048);
-  if (employerJobId) string(employerJobId, 'candidate.employerJobId', 300);
-  if (company) string(company, 'candidate.company', 300);
-  if (role) string(role, 'candidate.role', 300);
   if (url) normalizeUrl(url);
   return {
     ...(id ? { id } : {}),
@@ -546,6 +542,15 @@ function rolesLikelySame(left, right) {
   if (leftTokens.size === 0 || rightTokens.size === 0) return normalizedText(left) === normalizedText(right);
   const shared = [...leftTokens].filter((token) => rightTokens.has(token)).length;
   return shared / Math.min(leftTokens.size, rightTokens.size) >= 0.75;
+}
+
+function latestMatchingEntry(entries, predicate) {
+  const matches = entries.filter(predicate);
+  if (matches.length === 0) return null;
+  return [...matches]
+    .filter((entry) => !Number.isNaN(Date.parse(entry.submittedAt)))
+    .sort((left, right) => Date.parse(right.submittedAt) - Date.parse(left.submittedAt))[0]
+    ?? matches.at(-1);
 }
 
 const canonicalApplicationKey = accountingApplicationKey;
@@ -1035,10 +1040,11 @@ function duplicateResult(entries, candidate, outcomes = [], now = new Date()) {
   const hardUrl = candidateUrl ? entries.find((entry) => normalizeUrl(entry.url) === candidateUrl) : null;
   const hard = hardId ?? hardEmployerJobId ?? hardUrl;
   const hardReason = hardId ? 'id' : hardEmployerJobId ? 'employer-job-id' : hardUrl ? 'url' : null;
-  const possible = hard ? null : entries.find(sameCompanyRole);
+  const possible = hard ? null : latestMatchingEntry(entries, sameCompanyRole);
   const match = hard ?? possible;
-  const sameCompanyEntries = candidateCompany
-    ? entries.filter((entry) => normalizedText(entry.company) === candidateCompany)
+  const historyCompany = candidateCompany || normalizedText(hard?.company);
+  const sameCompanyEntries = historyCompany
+    ? entries.filter((entry) => normalizedText(entry.company) === historyCompany)
     : [];
   const companyApplications = sameCompanyEntries.slice(-20).map((entry) => ({
       id: entry.id,

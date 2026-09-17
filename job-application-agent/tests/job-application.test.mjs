@@ -356,7 +356,7 @@ test('accepts any one ledger check identifier set and never hard-matches company
   assert.deepEqual(validateLedgerCheckCandidate({ company: 'Example', role: 'Senior Product Engineer' }), {
     company: 'Example', role: 'Senior Product Engineer',
   });
-  const identifierError = /ledger check requires at least one identifier set: url, id, employerJobId, or company\+role/;
+  const identifierError = /ledger check requires at least one identifier set: url, id, employerJobId\+company, or company\+role/;
   assert.throws(() => validateLedgerCheckCandidate({}), identifierError);
   assert.throws(() => validateLedgerCheckCandidate({ company: 'Example' }), identifierError);
   assert.throws(() => validateLedgerCheckCandidate({ role: 'Senior Product Engineer' }), identifierError);
@@ -368,6 +368,8 @@ test('accepts any one ledger check identifier set and never hard-matches company
     assert.doesNotMatch(error.message, /candidate\.url must/);
   }
   assert.throws(() => validateLedgerCheckCandidate({ url: 'not-a-url' }), /Invalid URL|invalid/i);
+  assert.throws(() => validateLedgerCheckCandidate({ id: 'example-role-1', url: 123 }), /candidate\.url must/);
+  assert.throws(() => validateLedgerCheckCandidate({ id: 'example-role-1', url: null }), /candidate\.url must/);
 });
 
 test('looks up ledger rows without requiring a URL on check', async (t) => {
@@ -403,21 +405,39 @@ test('looks up ledger rows without requiring a URL on check', async (t) => {
   assert.equal(byEmployerJob.possibleDuplicate, false);
   assert.equal(byEmployerJob.reason, 'employer-job-id');
 
+  const newerUrl = 'https://jobs.example.com/123-new';
+  await writeFile(join(directory, 'applications.ndjson'), `${JSON.stringify({
+    id: 'example-role-1', company: 'Example', role: 'Senior Product Engineer', url: storedUrl, source: 'company', score: 88,
+    status: 'submitted', submittedAt: '2026-01-15T10:00:00Z', approval: 'STANDING AUTHORIZATION', answers: {}, employerJobId: 'example:123',
+  })}\n${JSON.stringify({
+    id: 'example-role-1b', company: 'Example', role: 'Senior Product Engineer', url: newerUrl, source: 'company', score: 88,
+    status: 'submitted', submittedAt: '2026-02-01T10:00:00Z', approval: 'STANDING AUTHORIZATION', answers: {},
+  })}\n`);
+
   const byCompanyRole = JSON.parse(execFileSync(process.execPath, [script, 'ledger', 'check', '--stdin'], {
     input: JSON.stringify({ company: 'Example', role: 'Senior Product Engineer' }), env, encoding: 'utf8',
   }));
   assert.equal(byCompanyRole.duplicate, false);
   assert.equal(byCompanyRole.possibleDuplicate, true);
   assert.equal(byCompanyRole.reason, 'company-role');
-  assert.equal(byCompanyRole.match.url, storedUrl);
+  assert.equal(byCompanyRole.match.url, newerUrl);
+  assert.equal(byCompanyRole.match.id, 'example-role-1b');
 
-  const identifierError = /ledger check requires at least one identifier set: url, id, employerJobId, or company\+role/;
+  const identifierError = /ledger check requires at least one identifier set: url, id, employerJobId\+company, or company\+role/;
   for (const input of [{}, { company: 'Example' }, { role: 'Senior Product Engineer' }]) {
     const failed = await runCli(script, ['ledger', 'check', '--stdin'], input, env);
     assert.equal(failed.code, 1);
     assert.match(failed.stderr, identifierError);
     assert.doesNotMatch(failed.stderr, /candidate\.url must/);
   }
+
+  const malformedUrl = await runCli(script, ['ledger', 'check', '--stdin'], { id: 'example-role-1', url: 123 }, env);
+  assert.equal(malformedUrl.code, 1);
+  assert.match(malformedUrl.stderr, /candidate\.url must/);
+
+  assert.equal(byId.sameCompany, true);
+  assert.equal(byId.companyApplications.length, 1);
+  assert.equal(byId.companyApplications[0].id, 'example-role-1');
 
   const invalidUrl = await runCli(script, ['ledger', 'check', '--stdin'], { url: 'not-a-url' }, env);
   assert.equal(invalidUrl.code, 1);
