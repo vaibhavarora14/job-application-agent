@@ -173,8 +173,13 @@ are explicitly stale. On reconnect, the cache is replaced by authoritative cloud
 data, including clear tombstones. If a lower server revision suggests a restored
 backend or delayed response, the cache is discarded; another online read is
 required before offline inspection is available. Handoffs use atomic database reservations,
-not application submission leases. No operation changes application counts,
-round progress, or the existing application-autonomy grant.
+not application submission leases. Recording `sent-verified` increments the
+active application round (or the round already attached to that opportunity)
+when that company does not already have a counted apply on the same round.
+Apply plus outreach at the same company is one confirmation, not two. The
+existing application-autonomy grant is unchanged. Use `round confirm --stdin`
+with `{ "roundId":"round-...","outreachId":"opportunity-..." }` to attach an
+already sent-verified opportunity to an open round.
 
 Outreach commands bypass telemetry, identity transmission, community sharing,
 and their automatic retry paths—including command errors. Only authenticated

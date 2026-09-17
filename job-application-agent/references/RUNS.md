@@ -14,6 +14,7 @@ Start each batch with an explicit ID:
 node scripts/job-application.mjs round start --stdin
 node scripts/job-application.mjs round source --stdin
 node scripts/job-application.mjs round status [round-id]
+node scripts/job-application.mjs round confirm --stdin
 node scripts/job-application.mjs round complete --stdin
 ```
 
@@ -62,7 +63,7 @@ Coverage reports emit bounded `source_checked` analytics automatically. Only all
 Before completion, audit final email delivery failures through authorized email tools when available; otherwise report delivery not audited and continue. Verified email sends count with receipt unknown. Use `ledger delivery` to record matched failures, never `ledger outcome rejected`. Effective totals exclude failed attempts; completed rounds retain their completion record and expose a recovery shortfall. See [ACCOUNTING.md](ACCOUNTING.md) for safe linked replacement attempts.
 
 
-Count only unique applications with a visible employer/ATS confirmation or a verified sent recruiting email that were also added to the ledger with the same `roundId`. Filled forms, blockers, drafts, unsent email, and ambiguous confirmations never count. `round complete` rejects an under-target round.
+Count unique applications with a visible employer/ATS confirmation or a verified sent recruiting email that were also added to the ledger with the same `roundId`, plus sent-verified outreach attached to that round when the company is not already a counted apply. Filled forms, blockers, drafts, unsent email, user-reported-only outreach, and ambiguous confirmations never count. Apply plus outreach at the same company is one confirmation. `round complete` rejects an under-target round.
 
 Run both company-level and requisition-level duplicate checks before filling and again immediately before transmission. Hard ledger-ID, canonical-URL, employer-job-ID, and requisition duplicates always stop. Same-role aliases require a verified distinct requisition and `NEW REQUISITION CONFIRMED`. A genuinely different role at the same company may proceed automatically only when `companyReapply.decision` is `eligible-after-cooldown`: 15 full days have passed since the latest company application and no outcome has been recorded. `cooldown-active` and `follow-up-present` require explicit candidate approval.
 
