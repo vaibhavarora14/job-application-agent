@@ -53,6 +53,8 @@ test('documents flexible ledger check lookup as a separate process from outcome'
     assert.match(copy, /company\+role/);
     assert.match(copy, /possible duplicate/);
     assert.match(copy, /never treat it as a hard already-applied/);
+    assert.match(copy, /look up the row with `ledger check` first/);
+    assert.match(copy, /pass the returned `match\.id` to `ledger outcome`/);
   }
   assert.match(schemas, /any one identifier set/);
   assert.match(schemas, /Never promote a company\+role match to a hard already-applied/);
