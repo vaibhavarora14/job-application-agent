@@ -439,6 +439,21 @@ test('looks up ledger rows without requiring a URL on check', async (t) => {
   assert.equal(exactSenior.match.id, 'example-senior');
   assert.equal(exactSenior.match.url, seniorUrl);
 
+  await writeFile(join(directory, 'applications.ndjson'), `${JSON.stringify({
+    id: 'example-backend', company: 'Example', role: 'Backend Engineer', url: 'https://jobs.example.com/backend', source: 'company', score: 84,
+    status: 'submitted', submittedAt: '2026-01-05T10:00:00Z', approval: 'STANDING AUTHORIZATION', answers: {},
+  })}\n${JSON.stringify({
+    id: 'example-frontend', company: 'Example', role: 'Frontend Engineer', url: 'https://jobs.example.com/frontend', source: 'company', score: 85,
+    status: 'submitted', submittedAt: '2026-03-01T10:00:00Z', approval: 'STANDING AUTHORIZATION', answers: {},
+  })}\n`);
+  const ambiguousEngineer = JSON.parse(execFileSync(process.execPath, [script, 'ledger', 'check', '--stdin'], {
+    input: JSON.stringify({ company: 'Example', role: 'Engineer' }), env, encoding: 'utf8',
+  }));
+  assert.equal(ambiguousEngineer.duplicate, false);
+  assert.equal(ambiguousEngineer.possibleDuplicate, true);
+  assert.equal(ambiguousEngineer.reason, 'company-role');
+  assert.equal(ambiguousEngineer.match, null);
+
   const identifierError = /ledger check requires at least one identifier set: url, id, employerJobId\+company, or company\+role/;
   for (const input of [{}, { company: 'Example' }, { role: 'Senior Product Engineer' }]) {
     const failed = await runCli(script, ['ledger', 'check', '--stdin'], input, env);

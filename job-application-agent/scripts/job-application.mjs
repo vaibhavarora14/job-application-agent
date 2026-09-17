@@ -1043,9 +1043,10 @@ function duplicateResult(entries, candidate, outcomes = [], now = new Date()) {
   const hardUrl = candidateUrl ? entries.find((entry) => normalizeUrl(entry.url) === candidateUrl) : null;
   const hard = hardId ?? hardEmployerJobId ?? hardUrl;
   const hardReason = hardId ? 'id' : hardEmployerJobId ? 'employer-job-id' : hardUrl ? 'url' : null;
-  const possible = hard
-    ? null
-    : latestMatchingEntry(entries, exactCompanyRole) ?? latestMatchingEntry(entries, sameCompanyRole);
+  const exact = hard ? null : latestMatchingEntry(entries, exactCompanyRole);
+  const fuzzyMatches = hard || exact ? [] : entries.filter(sameCompanyRole);
+  const ambiguousCompanyRole = fuzzyMatches.length > 1;
+  const possible = hard ? null : exact ?? (fuzzyMatches.length === 1 ? fuzzyMatches[0] : null);
   const match = hard ?? possible;
   const historyCompany = candidateCompany || normalizedText(hard?.company);
   const sameCompanyEntries = historyCompany
@@ -1069,14 +1070,14 @@ function duplicateResult(entries, candidate, outcomes = [], now = new Date()) {
     : false;
   let companyReapplyDecision = 'fresh-company';
   if (hard) companyReapplyDecision = 'hard-duplicate';
-  else if (possible) companyReapplyDecision = 'same-role-review';
+  else if (possible || ambiguousCompanyRole) companyReapplyDecision = 'same-role-review';
   else if (latestCompanyApplication && hasFollowUp) companyReapplyDecision = 'follow-up-present';
   else if (latestCompanyApplication && daysSinceLatest < COMPANY_REAPPLY_COOLDOWN_DAYS) companyReapplyDecision = 'cooldown-active';
   else if (latestCompanyApplication) companyReapplyDecision = 'eligible-after-cooldown';
   return {
     duplicate: Boolean(hard),
-    possibleDuplicate: Boolean(possible),
-    reason: hardReason ?? (possible ? 'company-role' : null),
+    possibleDuplicate: Boolean(possible) || ambiguousCompanyRole,
+    reason: hardReason ?? (possible || ambiguousCompanyRole ? 'company-role' : null),
     match: match ? { id: match.id, company: match.company, role: match.role, submittedAt: match.submittedAt, url: match.url } : null,
     sameCompany: companyApplications.length > 0,
     companyApplications,
