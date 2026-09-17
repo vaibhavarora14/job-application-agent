@@ -76,7 +76,7 @@ Check `round status` after the initial discovery pass and before submitting. Pre
 
 1. When private cloud state is configured, run `cloud status`, acquire the application-run lease with `cloud lease-acquire`, and renew it at least every five minutes. A client without the live lease may research and draft but must not submit.
 2. Recheck employer, title, direct domain, posting status, eligibility, and `autoEligible` immediately before submission.
-3. Run `ledger check --stdin` with the internal ledger ID, canonical URL, employer job ID, company, and role when available. Review both requisition duplicate status and same-company history.
+3. Run `ledger check --stdin` with any one identifier set: job URL, internal application id, employer job id plus company, or company+role. Include more identifiers when known. A company+role match is a possible duplicate and returns the stored URL; never treat it as a hard already-applied. Review both requisition duplicate status and same-company history.
 4. Stop on a hard ledger-ID, canonical-URL, employer-job-ID, or requisition duplicate. Treat a same-company/same-role alias as a possible duplicate. Use `duplicateOverride: "NEW REQUISITION CONFIRMED"` only after verifying it is a distinct requisition.
 5. For a genuinely different role at a previously applied company, follow `companyReapply`: proceed automatically only when it returns `eligible-after-cooldown` (15 full days since the latest company application and no recorded outcome). `cooldown-active` and `follow-up-present` require the candidate's explicit approval and `companyReapplyOverride: "CANDIDATE APPROVED EARLY REAPPLICATION"`.
 6. Keep authentication in the existing browser session. Never inspect cookies, local storage, passwords, or session files.
@@ -95,6 +95,7 @@ Check `round status` after the initial discovery pass and before submitting. Pre
 
 - Keep `applications.ndjson` and `outcomes.ndjson` append-only. Never delete or rewrite historical rows.
 - Record outcomes with `ledger outcome --stdin`. Use structured rejection reasons and mark each as `explicit` or `inferred`. Do not treat an inference as a candidate fact.
+- Run `ledger outcome` and `ledger check` as two separate CLI processes. Do not combine them in one invocation. After recording mail, look up the row with `ledger check` using company+role when the URL is unknown; that hit is only a possible duplicate and includes the stored URL.
 - After an interview, optionally record `interviewQuality` (`promising`, `viable`, `weak`, or `dead`) and a bounded `failurePoint`. Keep free-form interview notes private.
 - Rely on idempotent outcome recording; identical events do not append rows or emit duplicate telemetry.
 - Audit matched delivery failures with authorized email tools when available; otherwise report delivery not audited and continue. Keep delivery failures separate from hiring rejections.

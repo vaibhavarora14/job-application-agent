@@ -208,6 +208,10 @@ function string(value, label, max = 5000) {
   return value.trim();
 }
 
+function optionalTrimmed(value) {
+  return typeof value === 'string' && value.trim() ? value.trim() : '';
+}
+
 function stringArray(value, label, required = false) {
   if (!Array.isArray(value) || (required && value.length === 0)) throw new Error(`${label} must be ${required ? 'a non-empty' : 'an'} array of strings.`);
   return value.map((item, index) => string(item, `${label}[${index}]`, 300));
@@ -479,6 +483,31 @@ export function validateLedgerEntry(input) {
     string(value, `answer ${key}`, 5000);
   }
   return normalized;
+}
+
+export function validateLedgerCheckCandidate(input) {
+  const candidate = object(input, 'candidate');
+  const id = optionalTrimmed(candidate.id);
+  const url = optionalTrimmed(candidate.url);
+  const employerJobId = optionalTrimmed(candidate.employerJobId);
+  const company = optionalTrimmed(candidate.company);
+  const role = optionalTrimmed(candidate.role);
+  if (!url && !id && !(employerJobId && company) && !(company && role)) {
+    throw new Error('ledger check requires at least one identifier set: url, id, employerJobId, or company+role.');
+  }
+  if (id) string(id, 'candidate.id', 180);
+  if (url) string(url, 'candidate.url', 2048);
+  if (employerJobId) string(employerJobId, 'candidate.employerJobId', 300);
+  if (company) string(company, 'candidate.company', 300);
+  if (role) string(role, 'candidate.role', 300);
+  if (url) normalizeUrl(url);
+  return {
+    ...(id ? { id } : {}),
+    ...(url ? { url } : {}),
+    ...(employerJobId ? { employerJobId } : {}),
+    ...(company ? { company } : {}),
+    ...(role ? { role } : {}),
+  };
 }
 
 export function validateSubmissionTelemetry(input) {
@@ -995,15 +1024,15 @@ async function canonicalResumePath() {
 function duplicateResult(entries, candidate, outcomes = [], now = new Date()) {
   const candidateCompany = normalizedText(candidate.company);
   const candidateRole = normalizedText(candidate.role);
-  const candidateUrl = normalizeUrl(candidate.url);
+  const candidateUrl = candidate.url ? normalizeUrl(candidate.url) : null;
   const sameCompanyRole = (entry) => candidateCompany && candidateRole
     && normalizedText(entry.company) === candidateCompany
     && rolesLikelySame(entry.role, candidate.role);
-  const hardId = entries.find((entry) => entry.id === candidate.id);
+  const hardId = candidate.id ? entries.find((entry) => entry.id === candidate.id) : null;
   const hardEmployerJobId = entries.find((entry) => candidate.employerJobId && entry.employerJobId
     && normalizedText(entry.company) === candidateCompany
     && entry.employerJobId.toLowerCase() === String(candidate.employerJobId).toLowerCase());
-  const hardUrl = entries.find((entry) => normalizeUrl(entry.url) === candidateUrl);
+  const hardUrl = candidateUrl ? entries.find((entry) => normalizeUrl(entry.url) === candidateUrl) : null;
   const hard = hardId ?? hardEmployerJobId ?? hardUrl;
   const hardReason = hardId ? 'id' : hardEmployerJobId ? 'employer-job-id' : hardUrl ? 'url' : null;
   const possible = hard ? null : entries.find(sameCompanyRole);
@@ -1037,7 +1066,7 @@ function duplicateResult(entries, candidate, outcomes = [], now = new Date()) {
     duplicate: Boolean(hard),
     possibleDuplicate: Boolean(possible),
     reason: hardReason ?? (possible ? 'company-role' : null),
-    match: match ? { id: match.id, company: match.company, role: match.role, submittedAt: match.submittedAt } : null,
+    match: match ? { id: match.id, company: match.company, role: match.role, submittedAt: match.submittedAt, url: match.url } : null,
     sameCompany: companyApplications.length > 0,
     companyApplications,
     companyReapply: {
@@ -1052,12 +1081,11 @@ function duplicateResult(entries, candidate, outcomes = [], now = new Date()) {
 }
 
 async function ledgerCheck(candidate) {
-  object(candidate, 'candidate');
+  const normalized = validateLedgerCheckCandidate(candidate);
   const dir = await ensureStateDir();
   const entries = await jsonLines(join(dir, 'applications.ndjson'));
   const outcomes = await jsonLines(join(dir, 'outcomes.ndjson'));
-  string(candidate.url, 'candidate.url', 2048);
-  return duplicateResult(entries, candidate, outcomes);
+  return duplicateResult(entries, normalized, outcomes);
 }
 
 async function ledgerAdd(entryInput, duplicateOverride, companyReapplyOverride, cloudIntent = null) {

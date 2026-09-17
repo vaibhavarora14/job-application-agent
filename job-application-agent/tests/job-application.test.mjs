@@ -7,7 +7,7 @@ import test from 'node:test';
 import { fileURLToPath } from 'node:url';
 import { createServer } from 'node:http';
 
-import { buildReview, commandCategory, durationBucket, migrateProfile, profileStatus, scoreJob, telemetryErrorCode, telemetryJobAssessed, validateLedgerEntry, validateProfile, validateSubmissionTelemetry } from '../scripts/job-application.mjs';
+import { buildReview, commandCategory, durationBucket, migrateProfile, profileStatus, scoreJob, telemetryErrorCode, telemetryJobAssessed, validateLedgerCheckCandidate, validateLedgerEntry, validateProfile, validateSubmissionTelemetry } from '../scripts/job-application.mjs';
 
 const target = {
   name: 'Test Candidate',
@@ -345,6 +345,113 @@ test('warns on same-company role matches and serializes concurrent duplicate sub
   }));
   assert.equal(possible.duplicate, false);
   assert.equal(possible.possibleDuplicate, true);
+});
+
+test('accepts any one ledger check identifier set and never hard-matches company+role', () => {
+  assert.deepEqual(validateLedgerCheckCandidate({ url: 'https://jobs.example.com/123' }), { url: 'https://jobs.example.com/123' });
+  assert.deepEqual(validateLedgerCheckCandidate({ id: 'example-role-1' }), { id: 'example-role-1' });
+  assert.deepEqual(validateLedgerCheckCandidate({ employerJobId: 'example:123', company: 'Example' }), {
+    employerJobId: 'example:123', company: 'Example',
+  });
+  assert.deepEqual(validateLedgerCheckCandidate({ company: 'Example', role: 'Senior Product Engineer' }), {
+    company: 'Example', role: 'Senior Product Engineer',
+  });
+  const identifierError = /ledger check requires at least one identifier set: url, id, employerJobId, or company\+role/;
+  assert.throws(() => validateLedgerCheckCandidate({}), identifierError);
+  assert.throws(() => validateLedgerCheckCandidate({ company: 'Example' }), identifierError);
+  assert.throws(() => validateLedgerCheckCandidate({ role: 'Senior Product Engineer' }), identifierError);
+  assert.throws(() => validateLedgerCheckCandidate({ employerJobId: 'example:123' }), identifierError);
+  try {
+    validateLedgerCheckCandidate({});
+  } catch (error) {
+    assert.match(error.message, identifierError);
+    assert.doesNotMatch(error.message, /candidate\.url must/);
+  }
+  assert.throws(() => validateLedgerCheckCandidate({ url: 'not-a-url' }), /Invalid URL|invalid/i);
+});
+
+test('looks up ledger rows without requiring a URL on check', async (t) => {
+  const directory = await mkdtemp(join(tmpdir(), 'public-job-agent-check-lookup-'));
+  t.after(() => rm(directory, { recursive: true, force: true }));
+  const script = fileURLToPath(new URL('../scripts/job-application.mjs', import.meta.url));
+  await writeFile(join(directory, 'telemetry.json'), JSON.stringify({ version: 1, enabled: false, disclosed: true, graceConsumed: true, installationEventPending: false }));
+  const storedUrl = 'https://jobs.example.com/123';
+  await writeFile(join(directory, 'applications.ndjson'), `${JSON.stringify({
+    id: 'example-role-1', company: 'Example', role: 'Senior Product Engineer', url: storedUrl, source: 'company', score: 88,
+    status: 'submitted', submittedAt: '2026-01-15T10:00:00Z', approval: 'STANDING AUTHORIZATION', answers: {}, employerJobId: 'example:123',
+  })}\n`);
+  const env = isolatedCliEnv(directory);
+
+  const byUrl = JSON.parse(execFileSync(process.execPath, [script, 'ledger', 'check', '--stdin'], {
+    input: JSON.stringify({ url: 'https://jobs.example.com/123?utm_source=board' }), env, encoding: 'utf8',
+  }));
+  assert.equal(byUrl.duplicate, true);
+  assert.equal(byUrl.reason, 'url');
+
+  const byId = JSON.parse(execFileSync(process.execPath, [script, 'ledger', 'check', '--stdin'], {
+    input: JSON.stringify({ id: 'example-role-1' }), env, encoding: 'utf8',
+  }));
+  assert.equal(byId.duplicate, true);
+  assert.equal(byId.possibleDuplicate, false);
+  assert.equal(byId.reason, 'id');
+  assert.equal(byId.match.url, storedUrl);
+
+  const byEmployerJob = JSON.parse(execFileSync(process.execPath, [script, 'ledger', 'check', '--stdin'], {
+    input: JSON.stringify({ employerJobId: 'example:123', company: 'Example' }), env, encoding: 'utf8',
+  }));
+  assert.equal(byEmployerJob.duplicate, true);
+  assert.equal(byEmployerJob.possibleDuplicate, false);
+  assert.equal(byEmployerJob.reason, 'employer-job-id');
+
+  const byCompanyRole = JSON.parse(execFileSync(process.execPath, [script, 'ledger', 'check', '--stdin'], {
+    input: JSON.stringify({ company: 'Example', role: 'Senior Product Engineer' }), env, encoding: 'utf8',
+  }));
+  assert.equal(byCompanyRole.duplicate, false);
+  assert.equal(byCompanyRole.possibleDuplicate, true);
+  assert.equal(byCompanyRole.reason, 'company-role');
+  assert.equal(byCompanyRole.match.url, storedUrl);
+
+  const identifierError = /ledger check requires at least one identifier set: url, id, employerJobId, or company\+role/;
+  for (const input of [{}, { company: 'Example' }, { role: 'Senior Product Engineer' }]) {
+    const failed = await runCli(script, ['ledger', 'check', '--stdin'], input, env);
+    assert.equal(failed.code, 1);
+    assert.match(failed.stderr, identifierError);
+    assert.doesNotMatch(failed.stderr, /candidate\.url must/);
+  }
+
+  const invalidUrl = await runCli(script, ['ledger', 'check', '--stdin'], { url: 'not-a-url' }, env);
+  assert.equal(invalidUrl.code, 1);
+  assert.match(invalidUrl.stderr, /Invalid URL|invalid/i);
+
+  const missingAddUrl = await runCli(script, ['ledger', 'add', '--stdin'], {
+    id: 'example-role-2', company: 'Example', role: 'Staff Engineer', source: 'company', score: 80,
+    status: 'submitted', submittedAt: '2026-01-16T10:00:00Z', approval: 'STANDING AUTHORIZATION', answers: {},
+  }, env);
+  assert.equal(missingAddUrl.code, 1);
+  assert.match(missingAddUrl.stderr, /entry\.url must/);
+});
+
+test('records mail and looks up company+role in separate CLI processes', async (t) => {
+  const directory = await mkdtemp(join(tmpdir(), 'public-job-agent-outcome-then-check-'));
+  t.after(() => rm(directory, { recursive: true, force: true }));
+  const script = fileURLToPath(new URL('../scripts/job-application.mjs', import.meta.url));
+  await writeFile(join(directory, 'telemetry.json'), JSON.stringify({ version: 1, enabled: false, disclosed: true, graceConsumed: true, installationEventPending: false }));
+  const storedUrl = 'https://jobs.example.com/apollo-1';
+  await writeFile(join(directory, 'applications.ndjson'), `${JSON.stringify({
+    id: 'apollo-role-1', company: 'Apollo', role: 'Staff Engineer', url: storedUrl, source: 'company', score: 90,
+    status: 'submitted', submittedAt: '2026-01-15T10:00:00Z', approval: 'STANDING AUTHORIZATION', answers: {},
+  })}\n`);
+  const env = isolatedCliEnv(directory);
+  const outcome = JSON.parse(execFileSync(process.execPath, [script, 'ledger', 'outcome', '--stdin'], {
+    input: JSON.stringify({ id: 'apollo-role-1', status: 'rejected', occurredAt: '2026-01-20T09:00:00Z' }), env, encoding: 'utf8',
+  }));
+  assert.equal(outcome.recorded, true);
+  const check = JSON.parse(execFileSync(process.execPath, [script, 'ledger', 'check', '--stdin'], {
+    input: JSON.stringify({ company: 'Apollo', role: 'Staff Engineer' }), env, encoding: 'utf8',
+  }));
+  assert.equal(check.duplicate, false);
+  assert.equal(check.possibleDuplicate, true);
+  assert.equal(check.match.url, storedUrl);
 });
 
 test('records structured outcomes idempotently without duplicate rows', async (t) => {

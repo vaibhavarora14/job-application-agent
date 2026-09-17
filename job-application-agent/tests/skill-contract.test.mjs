@@ -43,6 +43,19 @@ test('documents durable autonomy, resumable rounds, attention and friction contr
   assert.match(agentBox, /DISPLAY=:99/);
 });
 
+test('documents flexible ledger check lookup as a separate process from outcome', async () => {
+  const skill = await readFile(new URL('../SKILL.md', import.meta.url), 'utf8');
+  const schemas = await readFile(new URL('../references/SCHEMAS.md', import.meta.url), 'utf8');
+
+  assert.match(skill, /two separate CLI processes/);
+  assert.match(skill, /company\+role/);
+  assert.match(skill, /possible duplicate/);
+  assert.match(skill, /never treat it as a hard already-applied/);
+  assert.match(schemas, /any one identifier set/);
+  assert.match(schemas, /Never promote a company\+role match to a hard already-applied/);
+  assert.match(schemas, /ledger add` still requires a real job URL/);
+});
+
 test('documents Free.ai as optional LLM assist only', async () => {
   const skill = await readFile(new URL('../SKILL.md', import.meta.url), 'utf8');
   const freeAi = await readFile(new URL('../references/FREE_AI.md', import.meta.url), 'utf8');

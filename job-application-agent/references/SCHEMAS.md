@@ -81,7 +81,7 @@ Assessment output retains `review`, `ask`, `skip`, and `exclude`, and adds `auto
 
 ## Duplicate check input
 
-Include as many identifiers as are known.
+`ledger check` accepts any one identifier set: job URL, internal application id, employer job id plus company, or company+role. Include more identifiers when known. Company-only, role-only, and empty objects are rejected.
 
 ```json
 {
@@ -93,7 +93,7 @@ Include as many identifiers as are known.
 }
 ```
 
-The check removes fragments and non-job query parameters while retaining recognized job or requisition identifiers. Matching ledger ID, canonical URL, or same-company employer job ID is a hard duplicate. Same company and role without a shared job ID is a possible duplicate.
+The check removes fragments and non-job query parameters while retaining recognized job or requisition identifiers. Matching ledger ID, canonical URL, or same-company employer job ID is a hard duplicate. Same company and role without a shared job ID is a possible duplicate and includes the stored URL. Never promote a company+role match to a hard already-applied. `ledger add` still requires a real job URL.
 
 `ledger check` also returns `companyReapply`. A genuinely different role is `eligible-after-cooldown` only when at least 15 full days have passed since the latest application to that company and no outcome has been recorded for that application. Hard duplicates are never eligible. Same-role matches, `cooldown-active`, and `follow-up-present` remain blocked at `ledger add` unless their exact documented override is present.
 
