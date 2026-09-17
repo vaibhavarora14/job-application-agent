@@ -208,6 +208,11 @@ function string(value, label, max = 5000) {
   return value.trim();
 }
 
+function optionalPresentString(candidate, key, max) {
+  if (!Object.hasOwn(candidate, key)) return '';
+  return string(candidate[key], `candidate.${key}`, max);
+}
+
 function stringArray(value, label, required = false) {
   if (!Array.isArray(value) || (required && value.length === 0)) throw new Error(`${label} must be ${required ? 'a non-empty' : 'an'} array of strings.`);
   return value.map((item, index) => string(item, `${label}[${index}]`, 300));
@@ -481,6 +486,26 @@ export function validateLedgerEntry(input) {
   return normalized;
 }
 
+export function validateLedgerCheckCandidate(input) {
+  const candidate = object(input, 'candidate');
+  const id = optionalPresentString(candidate, 'id', 180);
+  const url = optionalPresentString(candidate, 'url', 2048);
+  const employerJobId = optionalPresentString(candidate, 'employerJobId', 300);
+  const company = optionalPresentString(candidate, 'company', 300);
+  const role = optionalPresentString(candidate, 'role', 300);
+  if (!url && !id && !(employerJobId && company) && !(company && role)) {
+    throw new Error('ledger check requires at least one identifier set: url, id, employerJobId+company, or company+role.');
+  }
+  if (url) normalizeUrl(url);
+  return {
+    ...(id ? { id } : {}),
+    ...(url ? { url } : {}),
+    ...(employerJobId ? { employerJobId } : {}),
+    ...(company ? { company } : {}),
+    ...(role ? { role } : {}),
+  };
+}
+
 export function validateSubmissionTelemetry(input) {
   if (input == null) return {};
   const value = object(input, 'entry.telemetry');
@@ -517,6 +542,15 @@ function rolesLikelySame(left, right) {
   if (leftTokens.size === 0 || rightTokens.size === 0) return normalizedText(left) === normalizedText(right);
   const shared = [...leftTokens].filter((token) => rightTokens.has(token)).length;
   return shared / Math.min(leftTokens.size, rightTokens.size) >= 0.75;
+}
+
+function latestMatchingEntry(entries, predicate) {
+  const matches = entries.filter(predicate);
+  if (matches.length === 0) return null;
+  return [...matches]
+    .filter((entry) => !Number.isNaN(Date.parse(entry.submittedAt)))
+    .sort((left, right) => Date.parse(right.submittedAt) - Date.parse(left.submittedAt))[0]
+    ?? matches.at(-1);
 }
 
 const canonicalApplicationKey = accountingApplicationKey;
@@ -995,21 +1029,28 @@ async function canonicalResumePath() {
 function duplicateResult(entries, candidate, outcomes = [], now = new Date()) {
   const candidateCompany = normalizedText(candidate.company);
   const candidateRole = normalizedText(candidate.role);
-  const candidateUrl = normalizeUrl(candidate.url);
+  const candidateUrl = candidate.url ? normalizeUrl(candidate.url) : null;
   const sameCompanyRole = (entry) => candidateCompany && candidateRole
     && normalizedText(entry.company) === candidateCompany
     && rolesLikelySame(entry.role, candidate.role);
-  const hardId = entries.find((entry) => entry.id === candidate.id);
+  const exactCompanyRole = (entry) => candidateCompany && candidateRole
+    && normalizedText(entry.company) === candidateCompany
+    && normalizedText(entry.role) === candidateRole;
+  const hardId = candidate.id ? entries.find((entry) => entry.id === candidate.id) : null;
   const hardEmployerJobId = entries.find((entry) => candidate.employerJobId && entry.employerJobId
     && normalizedText(entry.company) === candidateCompany
     && entry.employerJobId.toLowerCase() === String(candidate.employerJobId).toLowerCase());
-  const hardUrl = entries.find((entry) => normalizeUrl(entry.url) === candidateUrl);
+  const hardUrl = candidateUrl ? entries.find((entry) => normalizeUrl(entry.url) === candidateUrl) : null;
   const hard = hardId ?? hardEmployerJobId ?? hardUrl;
   const hardReason = hardId ? 'id' : hardEmployerJobId ? 'employer-job-id' : hardUrl ? 'url' : null;
-  const possible = hard ? null : entries.find(sameCompanyRole);
+  const exact = hard ? null : latestMatchingEntry(entries, exactCompanyRole);
+  const fuzzyMatches = hard || exact ? [] : entries.filter(sameCompanyRole);
+  const ambiguousCompanyRole = fuzzyMatches.length > 1;
+  const possible = hard ? null : exact ?? (fuzzyMatches.length === 1 ? fuzzyMatches[0] : null);
   const match = hard ?? possible;
-  const sameCompanyEntries = candidateCompany
-    ? entries.filter((entry) => normalizedText(entry.company) === candidateCompany)
+  const historyCompany = candidateCompany || normalizedText(hard?.company);
+  const sameCompanyEntries = historyCompany
+    ? entries.filter((entry) => normalizedText(entry.company) === historyCompany)
     : [];
   const companyApplications = sameCompanyEntries.slice(-20).map((entry) => ({
       id: entry.id,
@@ -1029,15 +1070,15 @@ function duplicateResult(entries, candidate, outcomes = [], now = new Date()) {
     : false;
   let companyReapplyDecision = 'fresh-company';
   if (hard) companyReapplyDecision = 'hard-duplicate';
-  else if (possible) companyReapplyDecision = 'same-role-review';
+  else if (possible || ambiguousCompanyRole) companyReapplyDecision = 'same-role-review';
   else if (latestCompanyApplication && hasFollowUp) companyReapplyDecision = 'follow-up-present';
   else if (latestCompanyApplication && daysSinceLatest < COMPANY_REAPPLY_COOLDOWN_DAYS) companyReapplyDecision = 'cooldown-active';
   else if (latestCompanyApplication) companyReapplyDecision = 'eligible-after-cooldown';
   return {
     duplicate: Boolean(hard),
-    possibleDuplicate: Boolean(possible),
-    reason: hardReason ?? (possible ? 'company-role' : null),
-    match: match ? { id: match.id, company: match.company, role: match.role, submittedAt: match.submittedAt } : null,
+    possibleDuplicate: Boolean(possible) || ambiguousCompanyRole,
+    reason: hardReason ?? (possible || ambiguousCompanyRole ? 'company-role' : null),
+    match: match ? { id: match.id, company: match.company, role: match.role, submittedAt: match.submittedAt, url: match.url } : null,
     sameCompany: companyApplications.length > 0,
     companyApplications,
     companyReapply: {
@@ -1052,12 +1093,11 @@ function duplicateResult(entries, candidate, outcomes = [], now = new Date()) {
 }
 
 async function ledgerCheck(candidate) {
-  object(candidate, 'candidate');
+  const normalized = validateLedgerCheckCandidate(candidate);
   const dir = await ensureStateDir();
   const entries = await jsonLines(join(dir, 'applications.ndjson'));
   const outcomes = await jsonLines(join(dir, 'outcomes.ndjson'));
-  string(candidate.url, 'candidate.url', 2048);
-  return duplicateResult(entries, candidate, outcomes);
+  return duplicateResult(entries, normalized, outcomes);
 }
 
 async function ledgerAdd(entryInput, duplicateOverride, companyReapplyOverride, cloudIntent = null) {

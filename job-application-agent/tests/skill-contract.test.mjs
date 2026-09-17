@@ -43,6 +43,25 @@ test('documents durable autonomy, resumable rounds, attention and friction contr
   assert.match(agentBox, /DISPLAY=:99/);
 });
 
+test('documents flexible ledger check lookup as a separate process from outcome', async () => {
+  const skill = await readFile(new URL('../SKILL.md', import.meta.url), 'utf8');
+  const marketplaceSkill = await readFile(new URL('../../skills/job-application-agent/SKILL.md', import.meta.url), 'utf8');
+  const schemas = await readFile(new URL('../references/SCHEMAS.md', import.meta.url), 'utf8');
+
+  for (const copy of [skill, marketplaceSkill]) {
+    assert.match(copy, /two separate CLI processes/);
+    assert.match(copy, /company\+role/);
+    assert.match(copy, /possible duplicate/);
+    assert.match(copy, /never treat it as a hard already-applied/);
+    assert.match(copy, /look up the row with `ledger check` first/);
+    assert.match(copy, /pass the returned `match\.id` to `ledger outcome`/);
+    assert.match(copy, /If `match\.id` is absent, stop and ask/);
+  }
+  assert.match(schemas, /any one identifier set/);
+  assert.match(schemas, /Never promote a company\+role match to a hard already-applied/);
+  assert.match(schemas, /ledger add` still requires a real job URL/);
+});
+
 test('documents Free.ai as optional LLM assist only', async () => {
   const skill = await readFile(new URL('../SKILL.md', import.meta.url), 'utf8');
   const freeAi = await readFile(new URL('../references/FREE_AI.md', import.meta.url), 'utf8');
