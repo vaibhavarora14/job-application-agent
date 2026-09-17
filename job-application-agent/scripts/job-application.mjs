@@ -26,7 +26,7 @@ import {
   extractNarrativeQuestionsFromText,
   normalizeAttentionQuestions,
 } from './attention-questions.mjs';
-import { confirmOutreachTowardRound, loadSentVerifiedOutreach, projectOutreachRoundCounts } from './outreach-round.mjs';
+import { confirmOutreachTowardRound, loadSentVerifiedOutreach, outreachConfirmationEvents, projectOutreachRoundCounts, resolveOutreachRoundId } from './outreach-round.mjs';
 
 const SOURCES = new Set(['linkedin', 'greenhouse', 'lever', 'ashby', 'workable', 'comeet', 'workday', 'rippling', 'smartrecruiters', 'google-form', 'company', 'email', 'other']);
 const DISCOVERY_SOURCES = new Set(['direct-company', 'linkedin', 'x', 'yc', 'hacker-news', 'job-board', 'email', 'user-supplied', 'web-search', 'other']);
@@ -1524,7 +1524,7 @@ async function roundStatus(roundId = null) {
     recordedSubmissionCount: delivery.recordedSubmissionCount,
     applyConfirmationCount: outreachCounts.applyConfirmationCount,
     outreachConfirmationCount: outreachCounts.outreachConfirmationCount,
-    effectiveSubmissionCount: confirmedCount,
+    effectiveSubmissionCount: delivery.effectiveSubmissionCount,
     failedDeliveryCount: delivery.failedDeliveryCount,
     receiptUnknownEmailCount: delivery.receiptUnknownEmailCount,
     shortfallCount: Math.max(0, started.requestedCount - confirmedCount),
@@ -1577,8 +1577,17 @@ async function roundConfirm(input) {
   }
   if (!ids.length) throw new Error('round confirm requires outreachId or outreachIds.');
   const dir = await ensureStateDir();
+  const uniqueIds = [...new Set(ids)];
+  const roundEvents = await jsonLines(join(dir, 'rounds.ndjson'));
+  const sentVerified = new Set((await loadSentVerifiedOutreach(dir, cloudState)).map((item) => item.id));
+  for (const outreachId of uniqueIds) {
+    const targetRoundId = resolveOutreachRoundId(roundEvents, { outreachId, roundId });
+    if (!targetRoundId) throw new Error('Application round was not found.');
+    const alreadyAttached = outreachConfirmationEvents(roundEvents, targetRoundId).some((event) => event.outreachId === outreachId);
+    if (!alreadyAttached && !sentVerified.has(outreachId)) throw new Error(`Outreach ${outreachId} is not sent-verified.`);
+  }
   const confirmations = [];
-  for (const outreachId of [...new Set(ids)]) {
+  for (const outreachId of uniqueIds) {
     const result = await confirmOutreachTowardRound({
       directory: dir,
       outreachId,

@@ -92,16 +92,21 @@ export async function runOutreach(args, { input: suppliedInput, stateDirectory =
     result = await withLocalOutreach(stateDirectory, state => read ? { result: readOutreach(state, action, input) } : mutateOutreach(state, action, input, { ...context, actor: 'local' }));
   }
   if (action === 'policy-enable') await guard();
-  if (action === 'record' && result?.delivery === 'sent-verified' && input?.id) {
-    result = {
-      ...result,
-      roundConfirmation: await confirmOutreachTowardRound({
-        directory: stateDirectory,
-        outreachId: input.id,
-        cloudClient: cloud,
-        occurredAt: input.occurredAt,
-      }),
-    };
+  if (action === 'record' && input?.type === 'sent-verified' && result?.delivery === 'sent-verified' && input?.id) {
+    try {
+      result = {
+        ...result,
+        roundConfirmation: await confirmOutreachTowardRound({
+          directory: stateDirectory,
+          outreachId: input.id,
+          cloudClient: cloud,
+          occurredAt: input.occurredAt,
+        }),
+      };
+    } catch {
+      // The outreach observation already committed; attachment is a secondary result.
+      result = { ...result, roundConfirmation: { counted: false, reason: 'attachment-failed', outreachId: input.id } };
+    }
   }
   return result;
 }

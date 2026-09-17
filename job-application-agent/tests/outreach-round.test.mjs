@@ -151,6 +151,7 @@ test('CLI sent-verified outreach increments the active round', async (t) => {
   assert.equal(status.applyConfirmationCount, 0);
   assert.equal(status.outreachConfirmationCount, 1);
   assert.equal(status.confirmedCount, 1);
+  assert.equal(status.effectiveSubmissionCount, 0);
   const again = cli(['round', 'confirm', '--stdin'], { roundId, outreachId: 'noon' });
   assert.equal(again.confirmations[0].reason, 'already-recorded');
   assert.equal(again.confirmedCount, 1);
@@ -167,6 +168,7 @@ test('CLI apply plus outreach for the same company counts once', async (t) => {
   assert.equal(status.applyConfirmationCount, 1);
   assert.equal(status.outreachConfirmationCount, 0);
   assert.equal(status.confirmedCount, 1);
+  assert.equal(status.effectiveSubmissionCount, 1);
 });
 
 test('CLI apply-only still increments the round', async (t) => {
@@ -177,4 +179,49 @@ test('CLI apply-only still increments the round', async (t) => {
   assert.equal(status.applyConfirmationCount, 1);
   assert.equal(status.outreachConfirmationCount, 0);
   assert.equal(status.confirmedCount, 1);
+  assert.equal(status.effectiveSubmissionCount, 1);
+});
+
+test('later progression records do not auto-attach a historical send', async (t) => {
+  const { cli } = await fixture(t, 'reply-does-not-count');
+  const recorded = recordVerifiedOutreach(cli, { id: 'noon', company: 'Noon', domain: 'noon.com' });
+  assert.equal(recorded.roundConfirmation.counted, false);
+  assert.equal(recorded.roundConfirmation.reason, 'no-active-round');
+  const { roundId } = cli(['round', 'start', '--stdin'], { requestedCount: 30 });
+  const reply = cli(['outreach', 'record', '--stdin'], {
+    operationId: 'reply-noon',
+    id: 'noon',
+    type: 'replied',
+    occurredAt: new Date().toISOString(),
+    evidence: 'Recruiter replied in the conversation.',
+    replyTone: 'neutral',
+  });
+  assert.equal(reply.delivery, 'sent-verified');
+  assert.equal(reply.roundConfirmation, undefined);
+  const status = cli(['round', 'status', roundId]);
+  assert.equal(status.outreachConfirmationCount, 0);
+  assert.equal(status.confirmedCount, 0);
+});
+
+test('batch confirm validates every ID before committing any', async (t) => {
+  const { cli } = await fixture(t, 'batch-validate');
+  recordVerifiedOutreach(cli, { id: 'noon', company: 'Noon', domain: 'noon.com' });
+  const { roundId } = cli(['round', 'start', '--stdin'], { requestedCount: 30 });
+  assert.throws(
+    () => cli(['round', 'confirm', '--stdin'], { roundId, outreachIds: ['noon', 'missing'] }),
+    /not sent-verified/,
+  );
+  const status = cli(['round', 'status', roundId]);
+  assert.equal(status.outreachConfirmationCount, 0);
+  assert.equal(status.confirmedCount, 0);
+});
+
+test('round attachment failure does not disguise a committed send', async (t) => {
+  const { directory, cli } = await fixture(t, 'attachment-failed');
+  const { roundId } = cli(['round', 'start', '--stdin'], { requestedCount: 30 });
+  await writeFile(join(directory, 'rounds.ndjson'), `${JSON.stringify({ type: 'started', roundId, requestedCount: 30, occurredAt: '2026-09-14T10:00:00.000Z' })}\nnot-json\n`);
+  const recorded = recordVerifiedOutreach(cli, { id: 'noon', company: 'Noon', domain: 'noon.com' });
+  assert.equal(recorded.delivery, 'sent-verified');
+  assert.equal(recorded.roundConfirmation.counted, false);
+  assert.equal(recorded.roundConfirmation.reason, 'attachment-failed');
 });
