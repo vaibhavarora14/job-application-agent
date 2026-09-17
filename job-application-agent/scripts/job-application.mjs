@@ -1033,6 +1033,9 @@ function duplicateResult(entries, candidate, outcomes = [], now = new Date()) {
   const sameCompanyRole = (entry) => candidateCompany && candidateRole
     && normalizedText(entry.company) === candidateCompany
     && rolesLikelySame(entry.role, candidate.role);
+  const exactCompanyRole = (entry) => candidateCompany && candidateRole
+    && normalizedText(entry.company) === candidateCompany
+    && normalizedText(entry.role) === candidateRole;
   const hardId = candidate.id ? entries.find((entry) => entry.id === candidate.id) : null;
   const hardEmployerJobId = entries.find((entry) => candidate.employerJobId && entry.employerJobId
     && normalizedText(entry.company) === candidateCompany
@@ -1040,7 +1043,9 @@ function duplicateResult(entries, candidate, outcomes = [], now = new Date()) {
   const hardUrl = candidateUrl ? entries.find((entry) => normalizeUrl(entry.url) === candidateUrl) : null;
   const hard = hardId ?? hardEmployerJobId ?? hardUrl;
   const hardReason = hardId ? 'id' : hardEmployerJobId ? 'employer-job-id' : hardUrl ? 'url' : null;
-  const possible = hard ? null : latestMatchingEntry(entries, sameCompanyRole);
+  const possible = hard
+    ? null
+    : latestMatchingEntry(entries, exactCompanyRole) ?? latestMatchingEntry(entries, sameCompanyRole);
   const match = hard ?? possible;
   const historyCompany = candidateCompany || normalizedText(hard?.company);
   const sameCompanyEntries = historyCompany
