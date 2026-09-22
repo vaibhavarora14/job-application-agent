@@ -65,7 +65,7 @@ Company and title values are bounded and rejected when they resemble an email, p
 | `application_paused` | Job hash, ATS, stage, bounded reason |
 | `application_skipped` | Job hash, bounded reason, fit score, eligibility |
 | `application_submitted` | Company, title, job hash/domain, ATS, duration, fields filled, short-answer count, resume-upload Boolean, approval mode |
-| `round_completed` | Requested/submitted/assessed/skipped/paused/error counts, duration bucket; optional attempted/searched/blocked source counts, maximum source share percentage, bounded concentration reason |
+| `round_completed` | Requested/submitted/assessed/skipped/paused/error counts, duration bucket; optional attempted/searched/blocked source counts, maximum source share percentage, bounded concentration reason. `submittedCount` and `assessedCount` are ledger application totals only and never include attached outreach. |
 | `outcome_recorded` | Company, title, job hash/domain, ATS, outcome, days since submission, optional bounded interview quality/failure point |
 | `review_generated` | Canonical unique-submission and outcome counts, review-due Boolean |
 | `skill_error` | Stable error code, workflow stage, ATS/job hash when available, recoverable Boolean |

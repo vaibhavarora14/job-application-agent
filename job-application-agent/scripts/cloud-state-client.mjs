@@ -338,10 +338,17 @@ export class CloudStateClient {
     return (await this.request(`/v2/intents/${encodeURIComponent(intentId)}/confirm`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ application, leaseId, idempotencyKey }) })).json();
   }
 
-  async reconcile({ dryRun = true, provenance = 'local-reconcile' } = {}) {
+  async reconcile({ dryRun = true, provenance = 'local-reconcile', streams = null } = {}) {
     await this.requireAccounting();
     const report = { dryRun, streams: {}, imported: 0, downloaded: 0 };
-    for (const [stream, filename] of Object.entries(CLOUD_STREAM_FILES)) {
+    const selected = streams == null
+      ? Object.entries(CLOUD_STREAM_FILES)
+      : streams.map((stream) => {
+          const filename = CLOUD_STREAM_FILES[stream];
+          if (!filename) throw new Error(`Unknown cloud stream: ${stream}.`);
+          return [stream, filename];
+        });
+    for (const [stream, filename] of selected) {
       if (!dryRun) await this.flushAccountingWrites(stream);
       const normalize = value => stream === 'delivery' ? validateDelivery(value) : stream === 'discovery' && value.version === 1 && value.type === 'lead-reviewed' ? validateLead(value) : value;
       let local = (await readNdjson(join(this.stateDir, filename))).map(normalize);

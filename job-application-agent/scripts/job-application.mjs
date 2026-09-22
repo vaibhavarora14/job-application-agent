@@ -26,6 +26,7 @@ import {
   extractNarrativeQuestionsFromText,
   normalizeAttentionQuestions,
 } from './attention-questions.mjs';
+import { confirmOutreachTowardRound, loadOutreachRoundView, loadSentVerifiedOutreach, outreachConfirmationEvents, projectOutreachRoundCounts, resolveOutreachRoundId } from './outreach-round.mjs';
 
 const SOURCES = new Set(['linkedin', 'greenhouse', 'lever', 'ashby', 'workable', 'comeet', 'workday', 'rippling', 'smartrecruiters', 'google-form', 'company', 'email', 'other']);
 const DISCOVERY_SOURCES = new Set(['direct-company', 'linkedin', 'x', 'yc', 'hacker-news', 'job-board', 'email', 'user-supplied', 'web-search', 'other']);
@@ -1501,7 +1502,16 @@ async function roundStatus(roundId = null) {
   const delivery = deliveryProjection(matching, await jsonLines(join(dir, 'delivery.ndjson')));
   const effectiveKeys = new Set(matching.filter((entry,i) => delivery.applications[i].counted).map(canonicalApplicationKey));
   const effectiveApplications = applications.filter(entry => effectiveKeys.has(canonicalApplicationKey(entry)));
-  const confirmedCount = delivery.effectiveSubmissionCount;
+  const outreachView = await loadOutreachRoundView(dir, cloudState);
+  const outreachCounts = projectOutreachRoundCounts({
+    applications: matching,
+    delivery,
+    roundEvents: events,
+    sentVerified: outreachView.sentVerified,
+    invalidatedIds: outreachView.invalidatedIds,
+    roundId: id,
+  });
+  const confirmedCount = outreachCounts.confirmedCount;
   const audit = started.discoveryPolicyVersion === 2 ? discoveryProjection(await jsonLines(join(dir, 'discovery.ndjson')), { roundId: id }) : null;
   const attention = await attentionList(id);
   const completion = events.find((event) => event.type === 'completed' && event.roundId === id);
@@ -1514,7 +1524,9 @@ async function roundStatus(roundId = null) {
     completed: Boolean(completion),
     discoveryPolicyVersion: started.discoveryPolicyVersion ?? 1,
     recordedSubmissionCount: delivery.recordedSubmissionCount,
-    effectiveSubmissionCount: confirmedCount,
+    applyConfirmationCount: outreachCounts.applyConfirmationCount,
+    outreachConfirmationCount: outreachCounts.outreachConfirmationCount,
+    effectiveSubmissionCount: delivery.effectiveSubmissionCount,
     failedDeliveryCount: delivery.failedDeliveryCount,
     receiptUnknownEmailCount: delivery.receiptUnknownEmailCount,
     shortfallCount: Math.max(0, started.requestedCount - confirmedCount),
@@ -1552,6 +1564,44 @@ async function roundComplete(input) {
   }));
   if (result.completionRecorded) await appendCloudEvent('rounds', { type: 'completed', roundId: result.roundId, occurredAt: result.completedAt, ...(result.discovery.concentrationReason ? { concentrationReason: result.discovery.concentrationReason, concentrationEvidence: result.discovery.concentrationEvidence } : {}) });
   return result;
+}
+
+async function roundConfirm(input) {
+  const value = object(input, 'round confirmation');
+  const allowed = new Set(['roundId', 'outreachId', 'outreachIds']);
+  for (const key of Object.keys(value)) if (!allowed.has(key)) throw new Error(`Unknown round confirmation property: ${key}.`);
+  const roundId = string(value.roundId, 'round.roundId', 180);
+  const ids = [];
+  if (value.outreachId != null) ids.push(string(value.outreachId, 'round.outreachId', 100));
+  if (value.outreachIds != null) {
+    if (!Array.isArray(value.outreachIds) || value.outreachIds.length === 0 || value.outreachIds.length > 50) throw new Error('round.outreachIds must be a bounded array of outreach IDs.');
+    for (const [index, id] of value.outreachIds.entries()) ids.push(string(id, `round.outreachIds[${index}]`, 100));
+  }
+  if (!ids.length) throw new Error('round confirm requires outreachId or outreachIds.');
+  const dir = await ensureStateDir();
+  const uniqueIds = [...new Set(ids)];
+  const roundEvents = await jsonLines(join(dir, 'rounds.ndjson'));
+  const sentVerified = new Set((await loadSentVerifiedOutreach(dir, cloudState, { allowCache: false })).map((item) => item.id));
+  for (const outreachId of uniqueIds) {
+    const targetRoundId = resolveOutreachRoundId(roundEvents, { outreachId, roundId });
+    if (!targetRoundId) throw new Error('Application round was not found.');
+    const alreadyAttached = outreachConfirmationEvents(roundEvents, targetRoundId).some((event) => event.outreachId === outreachId);
+    if (!alreadyAttached && !sentVerified.has(outreachId)) throw new Error(`Outreach ${outreachId} is not sent-verified.`);
+  }
+  const confirmations = [];
+  for (const outreachId of uniqueIds) {
+    const result = await confirmOutreachTowardRound({
+      directory: dir,
+      outreachId,
+      roundId,
+      cloudClient: cloudState,
+      requireRoundId: true,
+    });
+    if (result.reason === 'round-not-found') throw new Error('Application round was not found.');
+    if (result.reason === 'not-sent-verified') throw new Error(`Outreach ${outreachId} is not sent-verified.`);
+    confirmations.push(result);
+  }
+  return { ...await roundStatus(roundId), confirmations };
 }
 
 async function frictionRecord(input) {
@@ -1751,12 +1801,13 @@ function reviewTelemetry(review) {
 }
 
 function roundCompletedTelemetry(round) {
+  const applicationCount = round.applyConfirmationCount ?? round.effectiveSubmissionCount ?? 0;
   return {
     event: 'round_completed',
     properties: {
       requestedCount: round.requestedCount,
-      submittedCount: round.confirmedCount,
-      assessedCount: round.confirmedCount,
+      submittedCount: applicationCount,
+      assessedCount: applicationCount,
       skippedCount: 0,
       pausedCount: round.blockedCount,
       errorCount: 0,
@@ -1828,6 +1879,7 @@ async function executeCommand([area, action, value], telemetry, session, communi
     } });
   }
   else if (area === 'round' && action === 'status') result = await roundStatus(value ?? null);
+  else if (area === 'round' && action === 'confirm' && value === '--stdin') result = await roundConfirm(await jsonStdin());
   else if (area === 'round' && action === 'complete' && value === '--stdin') {
     result = await roundComplete(await jsonStdin());
     if (result.completionRecorded) domainEvents.push(roundCompletedTelemetry(result));
@@ -1853,7 +1905,7 @@ async function executeCommand([area, action, value], telemetry, session, communi
   else if (area === 'attention' && action === 'resolve' && value === '--stdin') result = await attentionResolve(await jsonStdin());
   else if (area === 'friction' && action === 'record' && value === '--stdin') result = await frictionRecord(await jsonStdin());
   else if (area === 'friction' && action === 'list' && value == null) result = await frictionList();
-  else throw new Error('Usage: cloud status|configure --stdin|reconcile [--dry-run]|export [path]|lease-acquire|lease-renew|lease-release|intent-prepare --stdin|intent-sent --stdin|intent-confirm --stdin; profile set|migrate --stdin; profile check|field <name>; resume import <url-or-pdf>|path; score --stdin; ledger check|add|outcome|review-ack --stdin; ledger review; autonomy grant --stdin|status|preview|revoke; round start|source|complete --stdin|status [round-id]; sources list [--stdin]|jobs [--stdin]|suggest --stdin|pending|sync|sharing status|enable|disable|reset; attention add|resolve --stdin|list; friction record --stdin|list; telemetry status|enable|disable|reset|preview --stdin|record --stdin');
+  else throw new Error('Usage: cloud status|configure --stdin|reconcile [--dry-run]|export [path]|lease-acquire|lease-renew|lease-release|intent-prepare --stdin|intent-sent --stdin|intent-confirm --stdin; profile set|migrate --stdin; profile check|field <name>; resume import <url-or-pdf>|path; score --stdin; ledger check|add|outcome|review-ack --stdin; ledger review; autonomy grant --stdin|status|preview|revoke; round start|source|confirm|complete --stdin|status [round-id]; sources list [--stdin]|jobs [--stdin]|suggest --stdin|pending|sync|sharing status|enable|disable|reset; attention add|resolve --stdin|list; friction record --stdin|list; telemetry status|enable|disable|reset|preview --stdin|record --stdin');
   for (const event of domainEvents) await telemetry.record(event, session);
   return result;
 }

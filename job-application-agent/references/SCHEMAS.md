@@ -155,7 +155,7 @@ Use `round source --stdin` for per-source search/blocker reports and optional at
 { "requestedCount": 30 }
 ```
 
-`round start --stdin` appends a `started` event to owner-only `rounds.ndjson` and returns a generated `roundId`. Add that ID to every confirmed ledger entry. `round complete --stdin` accepts `{ "roundId": "round-..." }`, plus concentration reason and evidence when required, and appends a completion event only after the target count, source coverage, attribution, and concentration requirements are satisfied.
+`round start --stdin` appends a `started` event to owner-only `rounds.ndjson` and returns a generated `roundId`. Add that ID to every confirmed ledger entry. A `sent-verified` outreach also counts toward `confirmedCount` for the active or attached open round when that company is not already a counted apply on the same round. Once attached, that confirmation stays after `outreach clear`; clear wipes message text and PII only. A later delivery correction to `not-sent` or `failed` stops counting that send. `round confirm` and auto-attach require an authoritative outreach snapshot; they do not mutate from a stale offline cache. `round confirm --stdin` accepts `{ "roundId": "round-...", "outreachId": "opportunity-..." }` (or `outreachIds`) to attach already sent-verified outreach without creating a second ledger application. `round complete --stdin` accepts `{ "roundId": "round-..." }`, plus concentration reason and evidence when required, and appends a completion event only after the target count, source coverage, attribution, and concentration requirements are satisfied. Discovery attribution and lead linkage still apply only to ledger applications.
 
 ## Attention input
 

@@ -173,8 +173,15 @@ are explicitly stale. On reconnect, the cache is replaced by authoritative cloud
 data, including clear tombstones. If a lower server revision suggests a restored
 backend or delayed response, the cache is discarded; another online read is
 required before offline inspection is available. Handoffs use atomic database reservations,
-not application submission leases. No operation changes application counts,
-round progress, or the existing application-autonomy grant.
+not application submission leases. Recording `sent-verified` increments the
+active application round (or the round already attached to that opportunity)
+when that company does not already have a counted apply on the same round.
+Auto-attach first does a targeted authenticated reconcile of cloud `rounds`
+events so a second or stale host can see the open round. Apply plus outreach
+at the same company is one confirmation, not two. The existing
+application-autonomy grant is unchanged. Use `round confirm --stdin`
+with `{ "roundId":"round-...","outreachId":"opportunity-..." }` to attach an
+already sent-verified opportunity to an open round.
 
 Outreach commands bypass telemetry, identity transmission, community sharing,
 and their automatic retry paths—including command errors. Only authenticated
@@ -183,11 +190,17 @@ evidence stay in sensitive content storage. Audit rows retain opaque IDs,
 timestamps, coarse transitions, and private keyed fingerprints.
 
 Clear input: `{"operationId":"clear-1","ids":["opportunity-1"]}`.
-Clearing removes sensitive content and blocks resurrection. Minimal outcomes,
-audit history, company/contact fingerprints and suppression remain. Do not
-describe this as deleting every personal-data trace. Disconnected host caches
-and user-managed exports cannot be remotely erased; backups retain old content
-until their existing 30-day expiry.
+Clearing removes sensitive content and blocks resurrection. It never
+un-confirms a counted round attachment: `confirmedCount` stays on the durable
+`submission-confirmed` event and uses the company already stored there.
+A later `not-sent` or `failed` correction of that send is different: the
+attachment event remains, but the projection drops it from `confirmedCount`.
+New attachments require a live outreach snapshot when cloud state is
+configured; cached reads may still power `round status`. Minimal
+outcomes, audit history, company/contact fingerprints and suppression remain.
+Do not describe this as deleting every personal-data trace. Disconnected host
+caches and user-managed exports cannot be remotely erased; backups retain old
+content until their existing 30-day expiry.
 
 Private backups include outreach tables. `cloud export` also includes the
 outreach snapshot and deletion manifest. A manifest must be obtained from the

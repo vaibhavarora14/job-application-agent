@@ -37,12 +37,16 @@ copyable text to the candidate for manual sending, and record actual observation
 Do not automate LinkedIn/X access or messaging. Existing application autonomy
 does not enable this module. Outreach commands bypass analytics and community
 transmissions; do not run updater/telemetry/community commands as part of an
-outreach-only workflow. Keep outreach separate from applications and never
-classify a proposed screen as scheduled. No scheduled follow-up is created.
+outreach-only workflow. Keep drafting and sending separate from ATS forms.
+A `sent-verified` outreach counts toward the active application round the same
+way a confirmed apply does, unless that company is already a confirmed apply on
+the same round. Clear does not un-confirm. A later `not-sent` or `failed`
+delivery correction does. Never classify a proposed screen as scheduled. No scheduled
+follow-up is created.
 
 ## Accounting
 
-Read [references/ACCOUNTING.md](references/ACCOUNTING.md) before recording delivery evidence, recovery attempts, or per-lead discovery. For new rounds, record each lead with `round lead --stdin` and derive source totals from those records. Email access is optional: visible browser success counts, verified email sends count with receipt unknown, and matched final delivery failures correct effective totals. Preserve historical events and use explicit corrections for conflicts.
+Read [references/ACCOUNTING.md](references/ACCOUNTING.md) before recording delivery evidence, recovery attempts, or per-lead discovery. For new rounds, record each lead with `round lead --stdin` and derive source totals from those records. Email access is optional: visible browser success counts, verified email sends count with receipt unknown, and matched final delivery failures correct effective totals. A sent-verified outreach counts toward the same round `confirmedCount` unless that company already has a counted apply. Preserve historical events and use explicit corrections for conflicts.
 
 ## Discover and assess
 
@@ -132,7 +136,7 @@ node scripts/job-application.mjs ledger review
 node scripts/job-application.mjs ledger review-ack --stdin
 node scripts/job-application.mjs autonomy grant --stdin
 node scripts/job-application.mjs autonomy status|preview|revoke
-node scripts/job-application.mjs round start|source|complete --stdin
+node scripts/job-application.mjs round start|source|confirm|complete --stdin
 node scripts/job-application.mjs round status [round-id]
 node scripts/job-application.mjs sources list [--stdin]
 node scripts/job-application.mjs sources jobs [--stdin]
