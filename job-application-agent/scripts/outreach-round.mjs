@@ -2,13 +2,13 @@ import { appendFile, chmod, mkdir, open, readFile, unlink } from 'node:fs/promis
 import { basename, join } from 'node:path';
 import { deliveryProjection } from './application-accounting.mjs';
 import { CloudStateClient, defaultCloudConfigPath } from './cloud-state-client.mjs';
-import { readOutreach } from './outreach-domain.mjs';
+import { OUTREACH_CAPABILITY, readOutreach } from './outreach-domain.mjs';
 import { withLocalOutreach } from './outreach-store.mjs';
 
 export const OUTREACH_ROUND_CHANNEL = 'outreach';
 
 export function companyCountKey(value) {
-  return String(value ?? '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+  return String(value ?? '').toLowerCase().replace(/[^a-z0-9]/g, '');
 }
 
 export function outreachConfirmationEvents(roundEvents, roundId) {
@@ -43,9 +43,14 @@ export function sentVerifiedFromOutreachState(state, now = new Date().toISOStrin
 }
 
 export function resolveOutreachRoundId(roundEvents, { outreachId, roundId = null } = {}) {
-  if (roundId) return roundId;
   const attached = roundEvents.find((event) => event.type === 'submission-confirmed' && event.outreachId === outreachId && event.channel === OUTREACH_ROUND_CHANNEL);
-  if (attached) return attached.roundId;
+  if (attached) {
+    if (roundId && attached.roundId !== roundId) {
+      throw new Error(`Outreach ${outreachId} is already attached to another round.`);
+    }
+    return attached.roundId;
+  }
+  if (roundId) return roundId;
   const completed = new Set(roundEvents.filter((event) => event.type === 'completed').map((event) => event.roundId));
   const open = roundEvents.filter((event) => event.type === 'started' && !completed.has(event.roundId));
   return open.at(-1)?.roundId ?? null;
@@ -60,10 +65,10 @@ export function projectOutreachRoundCounts({ applications, delivery, roundEvents
   const countedOutreachIds = [];
   for (const event of confirmations) {
     const item = verified.get(event.outreachId);
-    if (!item) continue;
-    if (countedCompanies.has(item.companyKey)) continue;
-    countedCompanies.add(item.companyKey);
-    countedOutreachIds.push(item.id);
+    const companyKey = item?.companyKey ?? companyCountKey(event.company);
+    if (countedCompanies.has(companyKey)) continue;
+    countedCompanies.add(companyKey);
+    countedOutreachIds.push(event.outreachId);
   }
   const outreachConfirmationCount = countedOutreachIds.length;
   return {
@@ -82,10 +87,18 @@ function alreadyCountedOutreachCompany(confirmations, sentVerified, companyKey) 
   });
 }
 
+function confirmationItem(event) {
+  if (!event?.company) return undefined;
+  return { id: event.outreachId, company: event.company, companyKey: companyCountKey(event.company) };
+}
+
 function shouldCountOutreach({ sentVerified, applications, delivery, confirmations, outreachId }) {
+  const recorded = confirmations.find((event) => event.outreachId === outreachId);
+  if (recorded) {
+    return { count: false, reason: 'already-recorded', item: sentVerified.find((entry) => entry.id === outreachId) ?? confirmationItem(recorded) };
+  }
   const item = sentVerified.find((entry) => entry.id === outreachId);
   if (!item) return { count: false, reason: 'not-sent-verified' };
-  if (confirmations.some((event) => event.outreachId === outreachId)) return { count: false, reason: 'already-recorded', item };
   if (countedApplyCompanies(applications, delivery).has(item.companyKey)) return { count: false, reason: 'already-applied', item };
   if (alreadyCountedOutreachCompany(confirmations, sentVerified, item.companyKey)) return { count: false, reason: 'already-counted-outreach', item };
   return { count: true, item };
@@ -134,13 +147,22 @@ async function snapshotItemsFromCache(directory) {
   }
 }
 
+function isOutreachMigrationRequired(error) {
+  return /\(409\): Outreach backend migration required/i.test(error.message) || /Outreach backend migration required/i.test(error.message);
+}
+
 export async function loadSentVerifiedOutreach(directory, cloudClient) {
   const cloud = cloudClient ?? new CloudStateClient({ stateDir: directory, configPath: process.env.JOB_APPLICATION_AGENT_CLOUD_CONFIG ?? defaultCloudConfigPath() });
   if (await cloud.configured()) {
     try {
+      if (typeof cloud.status === 'function') {
+        const status = await cloud.status();
+        if (!status.capabilities?.includes(OUTREACH_CAPABILITY)) return [];
+      }
       const snapshot = await (await cloud.request('/v2/outreach/snapshot')).json();
       if (Array.isArray(snapshot.items)) return sentVerifiedFromOutreachItems(snapshot.items);
     } catch (error) {
+      if (isOutreachMigrationRequired(error)) return [];
       if (!/^Cloud state unavailable:/.test(error.message)) throw error;
     }
     return sentVerifiedFromOutreachItems(await snapshotItemsFromCache(directory));
@@ -148,8 +170,10 @@ export async function loadSentVerifiedOutreach(directory, cloudClient) {
   try {
     return await withLocalOutreach(directory, (state) => ({ result: sentVerifiedFromOutreachState(state) }));
   } catch (error) {
-    if (error.code === 'ENOENT' || /Outreach storage locked|sql/i.test(error.message)) return [];
-    return [];
+    if (error.code === 'ENOENT') return [];
+    const wrapped = new Error(`Outreach store is unavailable: ${error.message}`);
+    wrapped.cause = error;
+    throw wrapped;
   }
 }
 
@@ -165,6 +189,13 @@ export async function confirmOutreachTowardRound({
   if (!/^[a-zA-Z0-9][a-zA-Z0-9_-]{0,99}$/.test(id)) throw new Error('Invalid opaque outreach ID.');
   const cloud = cloudClient ?? new CloudStateClient({ stateDir: directory, configPath: process.env.JOB_APPLICATION_AGENT_CLOUD_CONFIG ?? defaultCloudConfigPath() });
   return withFileLock(directory, 'rounds', async () => {
+    if (await cloud.configured()) {
+      try {
+        await cloud.reconcile({ dryRun: false, provenance: 'outreach-round-attach', streams: ['rounds'] });
+      } catch (error) {
+        if (!/^Cloud state unavailable:/.test(error.message)) throw error;
+      }
+    }
     const roundEvents = await jsonLines(join(directory, 'rounds.ndjson'));
     const targetRoundId = resolveOutreachRoundId(roundEvents, { outreachId: id, roundId });
     if (!targetRoundId) return { counted: false, reason: requireRoundId ? 'round-not-found' : 'no-active-round', outreachId: id, roundId: null };

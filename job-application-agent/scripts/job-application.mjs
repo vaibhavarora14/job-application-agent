@@ -1799,12 +1799,13 @@ function reviewTelemetry(review) {
 }
 
 function roundCompletedTelemetry(round) {
+  const applicationCount = round.applyConfirmationCount ?? round.effectiveSubmissionCount ?? 0;
   return {
     event: 'round_completed',
     properties: {
       requestedCount: round.requestedCount,
-      submittedCount: round.confirmedCount,
-      assessedCount: round.confirmedCount,
+      submittedCount: applicationCount,
+      assessedCount: applicationCount,
       skippedCount: 0,
       pausedCount: round.blockedCount,
       errorCount: 0,

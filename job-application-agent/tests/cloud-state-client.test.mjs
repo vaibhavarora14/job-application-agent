@@ -86,6 +86,18 @@ sqliteTest('reconcile includes the owner-only discovery review ledger', async ()
   assert.deepEqual((await ctx.client.listStream('discovery'))[0].value, lead);
 });
 
+sqliteTest('targeted reconcile only syncs the requested stream', async () => {
+  const ctx = await setup();
+  await writeFile(join(ctx.stateDir, 'applications.ndjson'), `${JSON.stringify({ id: 'app-1', company: 'A', submittedAt: '2026-01-01T00:00:00.000Z' })}\n`);
+  await writeFile(join(ctx.stateDir, 'rounds.ndjson'), `${JSON.stringify({ type: 'started', roundId: 'round-1', requestedCount: 1, occurredAt: '2026-01-01T00:00:00.000Z' })}\n`);
+  const report = await ctx.client.reconcile({ dryRun: false, streams: ['rounds'] });
+  assert.equal(report.imported, 1);
+  assert.ok(report.streams.rounds);
+  assert.equal(report.streams.applications, undefined);
+  assert.equal((await ctx.bindings.DB.prepare("SELECT COUNT(*) AS count FROM records WHERE stream = 'applications'").first()).count, 0);
+  assert.equal((await ctx.bindings.DB.prepare("SELECT COUNT(*) AS count FROM records WHERE stream = 'rounds'").first()).count, 1);
+});
+
 sqliteTest('resume download verifies checksum and creates a private path cache', async () => {
   const ctx = await setup();
   const bytes = Buffer.from('%PDF-1.7\ncloud-resume-fixture');
