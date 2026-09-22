@@ -192,7 +192,11 @@ timestamps, coarse transitions, and private keyed fingerprints.
 Clear input: `{"operationId":"clear-1","ids":["opportunity-1"]}`.
 Clearing removes sensitive content and blocks resurrection. It never
 un-confirms a counted round attachment: `confirmedCount` stays on the durable
-`submission-confirmed` event and uses the company already stored there. Minimal
+`submission-confirmed` event and uses the company already stored there.
+A later `not-sent` or `failed` correction of that send is different: the
+attachment event remains, but the projection drops it from `confirmedCount`.
+New attachments require a live outreach snapshot when cloud state is
+configured; cached reads may still power `round status`. Minimal
 outcomes, audit history, company/contact fingerprints and suppression remain.
 Do not describe this as deleting every personal-data trace. Disconnected host
 caches and user-managed exports cannot be remotely erased; backups retain old

@@ -12,6 +12,7 @@ import {
   OUTREACH_ROUND_CHANNEL,
   companyCountKey,
   confirmOutreachTowardRound,
+  invalidatedOutreachIds,
   loadSentVerifiedOutreach,
   projectOutreachRoundCounts,
   resolveOutreachRoundId,
@@ -266,6 +267,25 @@ test('batch confirm validates every ID before committing any', async (t) => {
   assert.equal(status.confirmedCount, 0);
 });
 
+test('CLI delivery correction drops confirmedCount after a counted send', async (t) => {
+  const { cli } = await fixture(t, 'delivery-correction');
+  const { roundId } = cli(['round', 'start', '--stdin'], { requestedCount: 30 });
+  recordVerifiedOutreach(cli, { id: 'noon', company: 'Noon', domain: 'noon.com' });
+  assert.equal(cli(['round', 'status', roundId]).confirmedCount, 1);
+  cli(['outreach', 'record', '--stdin'], {
+    operationId: 'correct-noon',
+    id: 'noon',
+    attemptId: 'handoff-noon',
+    type: 'not-sent',
+    occurredAt: new Date().toISOString(),
+    evidence: 'Visible conversation shows the message was not sent.',
+    supersedes: ['sent-noon'],
+  });
+  const after = cli(['round', 'status', roundId]);
+  assert.equal(after.confirmedCount, 0);
+  assert.equal(after.outreachConfirmationCount, 0);
+});
+
 test('sent-verified confirm then clear leaves confirmedCount unchanged', async (t) => {
   const { cli } = await fixture(t, 'clear-keeps-count');
   const { roundId } = cli(['round', 'start', '--stdin'], { requestedCount: 30 });
@@ -350,6 +370,112 @@ test('local outreach read failures stay visible to round status', async (t) => {
     () => loadSentVerifiedOutreach(directory, { configured: async () => false }),
     /Outreach store is unavailable/,
   );
+});
+
+test('delivery correction invalidates a counted confirmation; clear does not', () => {
+  const confirmation = { type: 'submission-confirmed', roundId: 'round-1', outreachId: 'noon', channel: OUTREACH_ROUND_CHANNEL, company: 'Noon' };
+  const failed = {
+    id: 'noon',
+    delivery: 'failed',
+    cleared: false,
+    attempts: [{ id: 'handoff-noon', purpose: 'initial', delivery: 'failed' }],
+    content: { assessment: { company: { name: 'Noon' }, role: 'Staff Product Engineer' } },
+  };
+  const failedCounts = projectOutreachRoundCounts({
+    applications: [],
+    delivery: deliveryProjection([], []),
+    roundEvents: [confirmation],
+    sentVerified: sentVerifiedFromOutreachItems([failed]),
+    invalidatedIds: invalidatedOutreachIds([failed]),
+    roundId: 'round-1',
+  });
+  assert.equal(failedCounts.outreachConfirmationCount, 0);
+  assert.equal(failedCounts.confirmedCount, 0);
+
+  const cleared = {
+    id: 'noon',
+    delivery: 'sent-verified',
+    cleared: true,
+    attempts: [{ id: 'handoff-noon', purpose: 'initial', delivery: 'sent-verified' }],
+    content: { assessment: { company: { name: 'Noon' }, role: 'Staff Product Engineer' } },
+  };
+  const clearedCounts = projectOutreachRoundCounts({
+    applications: [],
+    delivery: deliveryProjection([], []),
+    roundEvents: [confirmation],
+    sentVerified: sentVerifiedFromOutreachItems([cleared]),
+    invalidatedIds: invalidatedOutreachIds([cleared]),
+    roundId: 'round-1',
+  });
+  assert.equal(clearedCounts.outreachConfirmationCount, 1);
+  assert.equal(clearedCounts.confirmedCount, 1);
+});
+
+test('attached company identity stays on the confirmation event', () => {
+  const applications = [application('round-1', 'Acme')];
+  const delivery = deliveryProjection(applications, []);
+  const renamed = verifiedItem('acme', 'Acme Holdings');
+  const counts = projectOutreachRoundCounts({
+    applications,
+    delivery,
+    roundEvents: [{ type: 'submission-confirmed', roundId: 'round-1', outreachId: 'acme', channel: OUTREACH_ROUND_CHANNEL, company: 'Acme' }],
+    sentVerified: sentVerifiedFromOutreachItems([renamed]),
+    invalidatedIds: invalidatedOutreachIds([renamed]),
+    roundId: 'round-1',
+  });
+  assert.equal(counts.applyConfirmationCount, 1);
+  assert.equal(counts.outreachConfirmationCount, 0);
+  assert.equal(counts.confirmedCount, 1);
+});
+
+test('non-ASCII company names keep distinct count keys', () => {
+  assert.equal(companyCountKey('Made Card'), companyCountKey('MadeCard'));
+  assert.notEqual(companyCountKey('ソニー'), '');
+  assert.notEqual(companyCountKey('トヨタ'), '');
+  assert.notEqual(companyCountKey('ソニー'), companyCountKey('トヨタ'));
+});
+
+test('an earlier sent-verified attempt still qualifies after a later pending follow-up', () => {
+  const item = {
+    id: 'noon',
+    delivery: 'pending-handoff',
+    attempts: [
+      { id: 'handoff-noon', purpose: 'initial', delivery: 'sent-verified' },
+      { id: 'follow-noon', purpose: 'follow-up', delivery: 'pending-handoff' },
+    ],
+    content: { assessment: { company: { name: 'Noon' }, role: 'Staff Product Engineer' } },
+  };
+  const verified = sentVerifiedFromOutreachItems([item]);
+  assert.equal(verified.length, 1);
+  assert.equal(verified[0].id, 'noon');
+});
+
+test('confirm refuses a cached outreach snapshot when cloud is unavailable', async (t) => {
+  const directory = await mkdtemp(join(tmpdir(), 'outreach-round-no-cache-confirm-'));
+  t.after(() => rm(directory, { recursive: true, force: true }));
+  await writeFile(join(directory, 'rounds.ndjson'), `${JSON.stringify({ type: 'started', roundId: 'round-1', requestedCount: 30, occurredAt: '2026-09-14T10:00:00.000Z' })}\n`);
+  await writeFile(join(directory, 'outreach-cloud-cache.json'), JSON.stringify({
+    snapshot: { items: [verifiedItem('noon', 'Noon')] },
+  }));
+  const cloudClient = {
+    configured: async () => true,
+    status: async () => ({ configured: true, capabilities: ['outreach-tracking-v1'] }),
+    request: async () => {
+      throw new Error('Cloud state unavailable: network down');
+    },
+    reconcile: async () => {
+      throw new Error('Cloud state unavailable: network down');
+    },
+    appendRecord: async () => {
+      throw new Error('should not append from cache');
+    },
+  };
+  await assert.rejects(
+    () => confirmOutreachTowardRound({ directory, outreachId: 'noon', cloudClient }),
+    /authoritative state/,
+  );
+  const cachedStatus = await loadSentVerifiedOutreach(directory, cloudClient, { allowCache: true });
+  assert.equal(cachedStatus.length, 1);
 });
 
 test('round attachment failure does not disguise a committed send', async (t) => {

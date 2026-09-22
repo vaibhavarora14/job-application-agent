@@ -40,7 +40,8 @@ transmissions; do not run updater/telemetry/community commands as part of an
 outreach-only workflow. Keep drafting and sending separate from ATS forms.
 A `sent-verified` outreach counts toward the active application round the same
 way a confirmed apply does, unless that company is already a confirmed apply on
-the same round. Never classify a proposed screen as scheduled. No scheduled
+the same round. Clear does not un-confirm. A later `not-sent` or `failed`
+delivery correction does. Never classify a proposed screen as scheduled. No scheduled
 follow-up is created.
 
 ## Accounting

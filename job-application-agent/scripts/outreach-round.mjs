@@ -8,7 +8,18 @@ import { withLocalOutreach } from './outreach-store.mjs';
 export const OUTREACH_ROUND_CHANNEL = 'outreach';
 
 export function companyCountKey(value) {
-  return String(value ?? '').toLowerCase().replace(/[^a-z0-9]/g, '');
+  return String(value ?? '').normalize('NFKC').toLowerCase().replace(/[^\p{L}\p{N}]+/gu, '');
+}
+
+export function hasActiveSentVerified(item) {
+  if (!item || item.cleared) return false;
+  const attempts = Array.isArray(item.attempts) ? item.attempts : [];
+  if (attempts.length > 0) return attempts.some((attempt) => attempt.delivery === 'sent-verified');
+  return item.delivery === 'sent-verified';
+}
+
+export function invalidatedOutreachIds(items = []) {
+  return items.filter((item) => item?.id && !item.cleared && !hasActiveSentVerified(item)).map((item) => item.id);
 }
 
 export function outreachConfirmationEvents(roundEvents, roundId) {
@@ -25,7 +36,7 @@ export function countedApplyCompanies(applications, delivery) {
 
 export function sentVerifiedFromOutreachItems(items = []) {
   return items.flatMap((item) => {
-    if (item?.delivery !== 'sent-verified' || item.cleared) return [];
+    if (!hasActiveSentVerified(item)) return [];
     const company = item.content?.assessment?.company?.name;
     if (!company) return [];
     return [{
@@ -56,16 +67,16 @@ export function resolveOutreachRoundId(roundEvents, { outreachId, roundId = null
   return open.at(-1)?.roundId ?? null;
 }
 
-export function projectOutreachRoundCounts({ applications, delivery, roundEvents, sentVerified, roundId }) {
+export function projectOutreachRoundCounts({ applications, delivery, roundEvents, sentVerified = [], roundId, invalidatedIds = [] }) {
   const applyConfirmationCount = delivery.effectiveSubmissionCount;
   const applyCompanies = countedApplyCompanies(applications, delivery);
   const confirmations = outreachConfirmationEvents(roundEvents, roundId);
-  const verified = new Map(sentVerified.map((item) => [item.id, item]));
+  const invalidated = new Set(invalidatedIds);
   const countedCompanies = new Set(applyCompanies);
   const countedOutreachIds = [];
   for (const event of confirmations) {
-    const item = verified.get(event.outreachId);
-    const companyKey = item?.companyKey ?? companyCountKey(event.company);
+    if (invalidated.has(event.outreachId)) continue;
+    const companyKey = companyCountKey(event.company);
     if (countedCompanies.has(companyKey)) continue;
     countedCompanies.add(companyKey);
     countedOutreachIds.push(event.outreachId);
@@ -79,12 +90,8 @@ export function projectOutreachRoundCounts({ applications, delivery, roundEvents
   };
 }
 
-function alreadyCountedOutreachCompany(confirmations, sentVerified, companyKey) {
-  const verified = new Map(sentVerified.map((entry) => [entry.id, entry]));
-  return confirmations.some((event) => {
-    const other = verified.get(event.outreachId);
-    return (other?.companyKey ?? companyCountKey(event.company)) === companyKey;
-  });
+function alreadyCountedOutreachCompany(confirmations, companyKey) {
+  return confirmations.some((event) => companyCountKey(event.company) === companyKey);
 }
 
 function confirmationItem(event) {
@@ -100,7 +107,7 @@ function shouldCountOutreach({ sentVerified, applications, delivery, confirmatio
   const item = sentVerified.find((entry) => entry.id === outreachId);
   if (!item) return { count: false, reason: 'not-sent-verified' };
   if (countedApplyCompanies(applications, delivery).has(item.companyKey)) return { count: false, reason: 'already-applied', item };
-  if (alreadyCountedOutreachCompany(confirmations, sentVerified, item.companyKey)) return { count: false, reason: 'already-counted-outreach', item };
+  if (alreadyCountedOutreachCompany(confirmations, item.companyKey)) return { count: false, reason: 'already-counted-outreach', item };
   return { count: true, item };
 }
 
@@ -151,7 +158,13 @@ function isOutreachMigrationRequired(error) {
   return /\(409\): Outreach backend migration required/i.test(error.message) || /Outreach backend migration required/i.test(error.message);
 }
 
-export async function loadSentVerifiedOutreach(directory, cloudClient) {
+function authoritativeSnapshotError(cause) {
+  const error = new Error('Outreach snapshot is unavailable; attachment requires authoritative state.');
+  if (cause) error.cause = cause;
+  return error;
+}
+
+export async function loadOutreachSnapshotItems(directory, cloudClient, { allowCache = true } = {}) {
   const cloud = cloudClient ?? new CloudStateClient({ stateDir: directory, configPath: process.env.JOB_APPLICATION_AGENT_CLOUD_CONFIG ?? defaultCloudConfigPath() });
   if (await cloud.configured()) {
     try {
@@ -160,21 +173,37 @@ export async function loadSentVerifiedOutreach(directory, cloudClient) {
         if (!status.capabilities?.includes(OUTREACH_CAPABILITY)) return [];
       }
       const snapshot = await (await cloud.request('/v2/outreach/snapshot')).json();
-      if (Array.isArray(snapshot.items)) return sentVerifiedFromOutreachItems(snapshot.items);
+      return Array.isArray(snapshot.items) ? snapshot.items : [];
     } catch (error) {
       if (isOutreachMigrationRequired(error)) return [];
       if (!/^Cloud state unavailable:/.test(error.message)) throw error;
+      if (!allowCache) throw authoritativeSnapshotError(error);
     }
-    return sentVerifiedFromOutreachItems(await snapshotItemsFromCache(directory));
+    if (!allowCache) throw authoritativeSnapshotError();
+    return snapshotItemsFromCache(directory);
   }
   try {
-    return await withLocalOutreach(directory, (state) => ({ result: sentVerifiedFromOutreachState(state) }));
+    return await withLocalOutreach(directory, (state) => ({
+      result: Object.keys(state.opportunities).map((id) => readOutreach(state, 'show', { id })),
+    }));
   } catch (error) {
     if (error.code === 'ENOENT') return [];
     const wrapped = new Error(`Outreach store is unavailable: ${error.message}`);
     wrapped.cause = error;
     throw wrapped;
   }
+}
+
+export async function loadSentVerifiedOutreach(directory, cloudClient, options) {
+  return sentVerifiedFromOutreachItems(await loadOutreachSnapshotItems(directory, cloudClient, options));
+}
+
+export async function loadOutreachRoundView(directory, cloudClient, options) {
+  const items = await loadOutreachSnapshotItems(directory, cloudClient, options);
+  return {
+    sentVerified: sentVerifiedFromOutreachItems(items),
+    invalidatedIds: invalidatedOutreachIds(items),
+  };
 }
 
 export async function confirmOutreachTowardRound({
@@ -207,7 +236,7 @@ export async function confirmOutreachTowardRound({
     }
     const applications = (await jsonLines(join(directory, 'applications.ndjson'))).filter((entry) => entry.roundId === targetRoundId && entry.status === 'submitted');
     const delivery = deliveryProjection(applications, await jsonLines(join(directory, 'delivery.ndjson')));
-    const sentVerified = await loadSentVerifiedOutreach(directory, cloud);
+    const sentVerified = await loadSentVerifiedOutreach(directory, cloud, { allowCache: false });
     const confirmations = outreachConfirmationEvents(roundEvents, targetRoundId);
     const decision = shouldCountOutreach({ sentVerified, applications, delivery, confirmations, outreachId: id });
     if (!decision.count) {

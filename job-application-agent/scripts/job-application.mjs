@@ -26,7 +26,7 @@ import {
   extractNarrativeQuestionsFromText,
   normalizeAttentionQuestions,
 } from './attention-questions.mjs';
-import { confirmOutreachTowardRound, loadSentVerifiedOutreach, outreachConfirmationEvents, projectOutreachRoundCounts, resolveOutreachRoundId } from './outreach-round.mjs';
+import { confirmOutreachTowardRound, loadOutreachRoundView, loadSentVerifiedOutreach, outreachConfirmationEvents, projectOutreachRoundCounts, resolveOutreachRoundId } from './outreach-round.mjs';
 
 const SOURCES = new Set(['linkedin', 'greenhouse', 'lever', 'ashby', 'workable', 'comeet', 'workday', 'rippling', 'smartrecruiters', 'google-form', 'company', 'email', 'other']);
 const DISCOVERY_SOURCES = new Set(['direct-company', 'linkedin', 'x', 'yc', 'hacker-news', 'job-board', 'email', 'user-supplied', 'web-search', 'other']);
@@ -1502,11 +1502,13 @@ async function roundStatus(roundId = null) {
   const delivery = deliveryProjection(matching, await jsonLines(join(dir, 'delivery.ndjson')));
   const effectiveKeys = new Set(matching.filter((entry,i) => delivery.applications[i].counted).map(canonicalApplicationKey));
   const effectiveApplications = applications.filter(entry => effectiveKeys.has(canonicalApplicationKey(entry)));
+  const outreachView = await loadOutreachRoundView(dir, cloudState);
   const outreachCounts = projectOutreachRoundCounts({
     applications: matching,
     delivery,
     roundEvents: events,
-    sentVerified: await loadSentVerifiedOutreach(dir, cloudState),
+    sentVerified: outreachView.sentVerified,
+    invalidatedIds: outreachView.invalidatedIds,
     roundId: id,
   });
   const confirmedCount = outreachCounts.confirmedCount;
@@ -1579,7 +1581,7 @@ async function roundConfirm(input) {
   const dir = await ensureStateDir();
   const uniqueIds = [...new Set(ids)];
   const roundEvents = await jsonLines(join(dir, 'rounds.ndjson'));
-  const sentVerified = new Set((await loadSentVerifiedOutreach(dir, cloudState)).map((item) => item.id));
+  const sentVerified = new Set((await loadSentVerifiedOutreach(dir, cloudState, { allowCache: false })).map((item) => item.id));
   for (const outreachId of uniqueIds) {
     const targetRoundId = resolveOutreachRoundId(roundEvents, { outreachId, roundId });
     if (!targetRoundId) throw new Error('Application round was not found.');
