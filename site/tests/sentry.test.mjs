@@ -20,7 +20,6 @@ test("siteSentryOptions reads DSN from env and tags service site", () => {
   assert.equal(options.dsn, "https://examplePublicKey@o0.ingest.sentry.io/0");
   assert.equal(options.environment, "production");
   assert.equal(options.tracesSampleRate, 0);
-  assert.equal(options.sendDefaultPii, false);
   assert.equal(options.initialScope?.tags?.service, SITE_SENTRY_SERVICE);
   assert.equal(options.dataCollection?.userInfo, false);
   assert.deepEqual(options.dataCollection?.httpBodies, []);

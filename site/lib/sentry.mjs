@@ -29,7 +29,6 @@ export function siteSentryOptions(env) {
     environment: resolveSentryEnvironment(env),
     // Errors only — no performance tracing of request content.
     tracesSampleRate: 0,
-    sendDefaultPii: false,
     dataCollection: {
       userInfo: false,
       cookies: false,
