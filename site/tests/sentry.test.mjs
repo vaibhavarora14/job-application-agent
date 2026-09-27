@@ -15,14 +15,24 @@ test("siteSentryOptions reads DSN from env and tags service site", () => {
   const options = siteSentryOptions({
     SENTRY_DSN: "https://examplePublicKey@o0.ingest.sentry.io/0",
     PUBLIC_SITE_URL: "https://jobappagent.com",
+    SENTRY_RELEASE: "abc123def",
   });
   assert.ok(options);
   assert.equal(options.dsn, "https://examplePublicKey@o0.ingest.sentry.io/0");
   assert.equal(options.environment, "production");
+  assert.equal(options.release, "abc123def");
   assert.equal(options.tracesSampleRate, 0);
   assert.equal(options.initialScope?.tags?.service, SITE_SENTRY_SERVICE);
   assert.equal(options.dataCollection?.userInfo, false);
   assert.deepEqual(options.dataCollection?.httpBodies, []);
+});
+
+test("siteSentryOptions omits release when SENTRY_RELEASE is unset", () => {
+  const options = siteSentryOptions({
+    SENTRY_DSN: "https://examplePublicKey@o0.ingest.sentry.io/0",
+  });
+  assert.ok(options);
+  assert.equal("release" in options, false);
 });
 
 test("resolveSentryEnvironment prefers explicit override and parses hostnames", () => {

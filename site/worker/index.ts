@@ -20,6 +20,7 @@ interface Env {
   DB: D1Database;
   SENTRY_DSN?: string;
   SENTRY_ENVIRONMENT?: string;
+  SENTRY_RELEASE?: string;
   PUBLIC_SITE_URL?: string;
   ATTENTION_LIVE_SESSION_BASE_URL?: string;
   IMAGES: {

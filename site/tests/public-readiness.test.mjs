@@ -81,6 +81,7 @@ test("sets a restrictive browser security baseline", () => {
   assert.match(headers["content-security-policy"], /default-src 'self'/);
   assert.match(headers["content-security-policy"], /frame-ancestors 'none'/);
   assert.match(headers["content-security-policy"], /frame-src 'self'/);
+  assert.match(headers["content-security-policy"], /connect-src 'self' https:\/\/us\.i\.posthog\.com/);
   assert.equal(headers["strict-transport-security"], "max-age=31536000; includeSubDomains");
   assert.equal(headers["x-content-type-options"], "nosniff");
   assert.equal(headers["x-frame-options"], "DENY");
@@ -99,6 +100,7 @@ test("attention page CSP allows embed shell and configured noVNC frame-src", () 
   assert.match(csp, /https:\/\/apache-given-builders-narrative\.trycloudflare\.com/);
   assert.match(csp, /https:\/\/\*\.trycloudflare\.com/);
   assert.match(csp, /connect-src 'self'/);
+  assert.match(csp, /https:\/\/us\.i\.posthog\.com/);
   assert.match(csp, /wss:\/\/apache-given-builders-narrative\.trycloudflare\.com/);
   assert.match(csp, /wss:\/\/\*\.trycloudflare\.com/);
   assert.equal(headers["x-frame-options"], "DENY");
@@ -115,6 +117,7 @@ test("live-session embed headers allow same-origin framing and noVNC frame-src",
   assert.match(headers["content-security-policy"], /frame-ancestors 'self'/);
   assert.match(headers["content-security-policy"], /frame-src 'self' https:\/\/novnc\.example https:\/\/\*\.trycloudflare\.com/);
   assert.match(headers["content-security-policy"], /connect-src 'self' https:\/\/novnc\.example wss:\/\/novnc\.example/);
+  assert.match(headers["content-security-policy"], /https:\/\/us\.i\.posthog\.com/);
   assert.equal(headers["x-frame-options"], "SAMEORIGIN");
   assert.equal(
     isAttentionLiveSessionEmbedPath("/api/attention/attention-1/live-session", new URLSearchParams("embed=1")),
