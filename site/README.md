@@ -37,6 +37,30 @@ commit populated environment files.
 - `DODO_PAYMENTS_WEBHOOK_KEY`: signing secret for the configured endpoint
 - `DODO_PRODUCT_ID`: one-time founding-access product
 - `DODO_PAYMENTS_ENVIRONMENT`: `test_mode` during verification, then `live_mode`
+- `SENTRY_DSN`: Sentry project DSN for Worker error monitoring (secret; see below)
+- `SENTRY_ENVIRONMENT`: optional environment tag; defaults to `production` when `PUBLIC_SITE_URL` is jobappagent.com
+
+### Sentry (error monitoring)
+
+The site Worker uses [`@sentry/cloudflare`](https://docs.sentry.io/platforms/javascript/guides/cloudflare/) with tag `service: site`. Unhandled exceptions are captured automatically. Swallowed money-path failures (`/api/checkout`, `/api/checkout/status`, `/api/webhooks/dodo`) call `captureException`, and other `/api/*` 5xx responses are reported as messages.
+
+Set the DSN as a Wrangler secret (never commit the value):
+
+```bash
+cd site
+npx wrangler secret put SENTRY_DSN --config wrangler.jsonc
+```
+
+Optional environment override:
+
+```bash
+npx wrangler secret put SENTRY_ENVIRONMENT --config wrangler.jsonc
+# or a non-secret var in the Cloudflare dashboard
+```
+
+**Verify:** after deploy with the secret set, force a controlled 5xx (for example briefly unset `DODO_PAYMENTS_API_KEY` and `POST /api/checkout`, or throw once in a throwaway preview). Confirm an Issue appears in the shared Sentry project (org `jobappagent`) tagged `service:site`. Clear/restore the secret after the test. Leave `SENTRY_DSN` unset locally to keep Sentry disabled.
+
+Do not add Sentry to the npm skill / agent client — privacy posture forbids shipping raw agent errors.
 
 Attention / resume MVP details: [`docs/ATTENTION.md`](docs/ATTENTION.md).
 The Dodo webhook endpoint is `https://jobappagent.com/api/webhooks/dodo`.

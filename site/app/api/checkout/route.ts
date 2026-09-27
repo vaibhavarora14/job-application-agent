@@ -2,6 +2,7 @@ import { buildCheckoutRequest, isAllowedCheckoutUrl, validatePurchaseId } from "
 import { createDodoClient, getPaymentConfig } from "../../../lib/dodo";
 import { createPurchase, findReusablePurchase, savePurchaseCheckout } from "../../../lib/registration-store";
 import { enforcePublicRateLimit } from "../../../lib/rate-limit";
+import { captureRouteError } from "../../../lib/sentry.mjs";
 
 const COOKIE_NAME = "founding_purchase";
 
@@ -42,7 +43,8 @@ export async function POST(request: Request) {
       status: 201,
       headers: { "set-cookie": cookieHeader(purchaseId) },
     });
-  } catch {
+  } catch (error) {
+    captureRouteError(error, { route: "/api/checkout", status: 502 });
     return Response.json({ error: "Secure checkout is temporarily unavailable. Please try again." }, { status: 502 });
   }
 }

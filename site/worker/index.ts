@@ -1,4 +1,5 @@
 /** Cloudflare Worker entry point for the vinext-starter template. */
+import * as Sentry from "@sentry/cloudflare";
 import { handleImageOptimization, DEFAULT_DEVICE_SIZES, DEFAULT_IMAGE_SIZES } from "vinext/server/image-optimization";
 import handler from "vinext/server/app-router-entry";
 import {
@@ -12,10 +13,14 @@ import {
   liveSessionConnectSrcOrigins,
   liveSessionFrameSrcOrigins,
 } from "../lib/attention-live-session.mjs";
+import { captureApiServerError, siteSentryOptions } from "../lib/sentry.mjs";
 
 interface Env {
   ASSETS: Fetcher;
   DB: D1Database;
+  SENTRY_DSN?: string;
+  SENTRY_ENVIRONMENT?: string;
+  PUBLIC_SITE_URL?: string;
   ATTENTION_LIVE_SESSION_BASE_URL?: string;
   IMAGES: {
     input(stream: ReadableStream): {
@@ -50,10 +55,14 @@ const worker = {
           return result.response();
         },
       }, allowedWidths);
-      return withPublicSecurityHeaders(response, request, env);
+      const secured = withPublicSecurityHeaders(response, request, env);
+      captureApiServerError(request, secured);
+      return secured;
     }
 
-    return withPublicSecurityHeaders(await handler.fetch(request, env, ctx), request, env);
+    const secured = withPublicSecurityHeaders(await handler.fetch(request, env, ctx), request, env);
+    captureApiServerError(request, secured);
+    return secured;
   },
 };
 
@@ -77,4 +86,4 @@ function withPublicSecurityHeaders(response: Response, request: Request, env: En
   return new Response(response.body, { status: response.status, statusText: response.statusText, headers });
 }
 
-export default worker;
+export default Sentry.withSentry((env: Env) => siteSentryOptions(env), worker);

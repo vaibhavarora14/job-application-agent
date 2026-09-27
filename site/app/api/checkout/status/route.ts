@@ -1,6 +1,7 @@
 import { hasPaidAccess, validatePurchaseId } from "../../../../lib/payment-core.mjs";
 import { getPurchaseStatus } from "../../../../lib/registration-store";
 import { enforcePublicRateLimit } from "../../../../lib/rate-limit";
+import { captureRouteError } from "../../../../lib/sentry.mjs";
 
 export async function GET(request: Request) {
   const limited = await enforcePublicRateLimit(request, "checkout_status", 120);
@@ -18,7 +19,8 @@ export async function GET(request: Request) {
       accessExpiresAt: purchase.accessExpiresAt,
       activationDeadlineAt: purchase.activationDeadlineAt,
     }, { headers: { "cache-control": "no-store" } });
-  } catch {
+  } catch (error) {
+    captureRouteError(error, { route: "/api/checkout/status", status: 503 });
     return Response.json({ error: "Payment status is temporarily unavailable." }, { status: 503 });
   }
 }
