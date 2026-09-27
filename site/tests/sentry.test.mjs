@@ -4,7 +4,7 @@ import {
   SITE_SENTRY_SERVICE,
   resolveSentryEnvironment,
   siteSentryOptions,
-} from "../lib/sentry.mjs";
+} from "../lib/sentry-options.mjs";
 
 test("siteSentryOptions is disabled when SENTRY_DSN is missing", () => {
   assert.equal(siteSentryOptions({}), undefined);
@@ -25,7 +25,7 @@ test("siteSentryOptions reads DSN from env and tags service site", () => {
   assert.deepEqual(options.dataCollection?.httpBodies, []);
 });
 
-test("resolveSentryEnvironment prefers explicit override", () => {
+test("resolveSentryEnvironment prefers explicit override and parses hostnames", () => {
   assert.equal(
     resolveSentryEnvironment({
       SENTRY_ENVIRONMENT: "staging",
@@ -34,7 +34,20 @@ test("resolveSentryEnvironment prefers explicit override", () => {
     "staging",
   );
   assert.equal(
+    resolveSentryEnvironment({ PUBLIC_SITE_URL: "https://jobappagent.com" }),
+    "production",
+  );
+  assert.equal(
+    resolveSentryEnvironment({ PUBLIC_SITE_URL: "https://stats.jobappagent.com" }),
+    "production",
+  );
+  assert.equal(
     resolveSentryEnvironment({ PUBLIC_SITE_URL: "http://localhost:3000" }),
+    "development",
+  );
+  // Substring spoof must not count as production.
+  assert.equal(
+    resolveSentryEnvironment({ PUBLIC_SITE_URL: "https://evil-jobappagent.com.example" }),
     "development",
   );
 });
@@ -43,6 +56,7 @@ test("source and docs never embed a committed Sentry DSN value", async () => {
   const { readFile } = await import("node:fs/promises");
   const files = [
     new URL("../lib/sentry.mjs", import.meta.url),
+    new URL("../lib/sentry-options.mjs", import.meta.url),
     new URL("../worker/index.ts", import.meta.url),
     new URL("../README.md", import.meta.url),
     new URL("../docs/SENTRY.md", import.meta.url),

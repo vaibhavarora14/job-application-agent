@@ -5,47 +5,13 @@
  * Privacy: no user PII, cookies, HTTP bodies, or query params in events.
  */
 import * as Sentry from "@sentry/cloudflare";
+import {
+  SITE_SENTRY_SERVICE,
+  resolveSentryEnvironment,
+  siteSentryOptions,
+} from "./sentry-options.mjs";
 
-export const SITE_SENTRY_SERVICE = "site";
-
-/** @param {{ SENTRY_ENVIRONMENT?: string, PUBLIC_SITE_URL?: string }} env */
-export function resolveSentryEnvironment(env) {
-  if (env.SENTRY_ENVIRONMENT?.trim()) return env.SENTRY_ENVIRONMENT.trim();
-  const site = env.PUBLIC_SITE_URL ?? "";
-  if (site.includes("jobappagent.com")) return "production";
-  return "development";
-}
-
-/**
- * Options callback for `Sentry.withSentry`. Returns undefined when DSN is unset (no-op).
- * @param {{ SENTRY_DSN?: string, SENTRY_ENVIRONMENT?: string, PUBLIC_SITE_URL?: string }} env
- */
-export function siteSentryOptions(env) {
-  const dsn = env.SENTRY_DSN?.trim();
-  if (!dsn) return undefined;
-
-  return {
-    dsn,
-    environment: resolveSentryEnvironment(env),
-    // Errors only — no performance tracing of request content.
-    tracesSampleRate: 0,
-    dataCollection: {
-      userInfo: false,
-      cookies: false,
-      httpHeaders: false,
-      httpBodies: [],
-      urlQueryParams: false,
-      stackFrameVariables: false,
-      databaseQueryData: false,
-      genAI: { inputs: false, outputs: false },
-    },
-    initialScope: {
-      tags: {
-        service: SITE_SENTRY_SERVICE,
-      },
-    },
-  };
-}
+export { SITE_SENTRY_SERVICE, resolveSentryEnvironment, siteSentryOptions };
 
 /**
  * Report a swallowed route error (e.g. checkout catch → 502).
