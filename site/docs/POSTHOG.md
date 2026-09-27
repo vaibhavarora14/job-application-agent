@@ -1,10 +1,10 @@
 # PostHog ops (site — founding buyer + landing)
 
-Prefer PostHog project **556627** (JobAppAgent). Events are personless (`$process_person_profile: false`) with GeoIP disabled. Never send buyer email, résumé content, form bodies, or buyer↔skill/installation joins.
+Prefer PostHog project **556627** (JobAppAgent). Ingest host: `https://us.i.posthog.com` (US Cloud capture; `us.posthog.com` is the app UI). Events are personless (`$process_person_profile: false`) with GeoIP disabled. Never send buyer email, résumé content, form bodies, or buyer↔skill/installation joins.
 
 ## Secrets and vars
 
-Server-side money-path capture (Worker):
+Server-side money-path capture (Worker secret — never commit):
 
 ```bash
 cd site
@@ -13,19 +13,21 @@ npx wrangler secret put POSTHOG_PROJECT_API_KEY --config wrangler.jsonc
 
 `POSTHOG_HOST` defaults to `https://us.i.posthog.com` via `wrangler.jsonc` vars (override only if the project host changes).
 
-Landing client capture (public project API key — safe for the browser, still never commit):
+Landing client capture (public project API key — safe for the browser, still never commit). Uses the existing `PUBLIC_*` vinext / Worker-var pattern (same family as `PUBLIC_SITE_URL`):
 
 ```bash
 # Cloudflare dashboard → Worker → Settings → Variables, or:
-npx wrangler secret put NEXT_PUBLIC_POSTHOG_KEY --config wrangler.jsonc
-# Prefer a plain Worker var (not a secret) once set: same phc_ project key is designed for client use.
+npx wrangler secret put PUBLIC_POSTHOG_KEY --config wrangler.jsonc
+# Prefer a plain Worker var once set: the phc_ project key is designed for client use.
 ```
 
-Optional browser host override: `NEXT_PUBLIC_POSTHOG_HOST` (defaults to `POSTHOG_HOST` / US Cloud).
+Optional browser host override: `PUBLIC_POSTHOG_HOST` (defaults to `POSTHOG_HOST` / `https://us.i.posthog.com`).
 
 The landing client loads `{ apiKey, host }` from `GET /api/analytics-config` (204 when unset), then captures `$pageview` / CTA / return events. CSP allows `connect-src` to `https://us.i.posthog.com`.
 
-Leave keys unset locally to disable capture. Redeploy after setting production values.
+Leave keys unset locally to disable capture. Redeploy after setting production values. Real keys are set on the Worker via wrangler after merge — this repo only wires env names + docs.
+
+## Event names
 
 | Event | Where | Distinct id | Notes |
 |---|---|---|---|
@@ -39,7 +41,7 @@ Leave keys unset locally to disable capture. Redeploy after setting production v
 
 ## Verify ingest
 
-1. Set `POSTHOG_PROJECT_API_KEY` (and optionally `NEXT_PUBLIC_POSTHOG_KEY`) on the Worker; redeploy.
+1. Set `POSTHOG_PROJECT_API_KEY` (and optionally `PUBLIC_POSTHOG_KEY`) on the Worker; redeploy.
 2. Open `https://jobappagent.com/?utm_source=verify` — confirm `$pageview` in PostHog Live events.
 3. Click **Reserve founding access** — confirm `founding_cta_clicked` then `founding_checkout_created`.
 4. Complete a test-mode checkout and return — confirm `founding_checkout_returned`, then webhook `founding_payment_confirmed`.

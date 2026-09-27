@@ -169,6 +169,6 @@ test("docs and source never embed committed PostHog project keys", async () => {
     const text = await readFile(file, "utf8");
     assert.doesNotMatch(text, /phc_[A-Za-z0-9]{20,}/);
     assert.doesNotMatch(text, /POSTHOG_PROJECT_API_KEY\s*=\s*phc_/);
-    assert.doesNotMatch(text, /NEXT_PUBLIC_POSTHOG_KEY\s*=\s*phc_/);
+    assert.doesNotMatch(text, /PUBLIC_POSTHOG_KEY\s*=\s*phc_/);
   }
 });

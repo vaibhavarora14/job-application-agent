@@ -42,8 +42,8 @@ commit populated environment files.
 - `SENTRY_RELEASE`: git SHA stamped by `deploy-site.yml` (`--var SENTRY_RELEASE:$GITHUB_SHA`)
 - `POSTHOG_PROJECT_API_KEY`: PostHog project API key for server-side founding funnel capture (secret; project 556627)
 - `POSTHOG_HOST`: PostHog ingest host (var; default `https://us.i.posthog.com`)
-- `NEXT_PUBLIC_POSTHOG_KEY`: public project API key for landing `$pageview` / CTA client capture (Worker var; never commit)
-- `NEXT_PUBLIC_POSTHOG_HOST`: optional browser PostHog host override
+- `PUBLIC_POSTHOG_KEY`: public project API key for landing `$pageview` / CTA client capture (Worker var; `PUBLIC_*` vinext pattern; never commit)
+- `PUBLIC_POSTHOG_HOST`: optional browser PostHog host override
 
 ### Sentry (error monitoring)
 
@@ -69,12 +69,12 @@ Do not add Sentry to the npm skill / agent client — privacy posture forbids sh
 
 ### PostHog (founding buyer + landing)
 
-Server-side events on checkout create and payment webhook confirmation use `POSTHOG_PROJECT_API_KEY`. Landing pageviews, UTM, and founding CTA clicks use `NEXT_PUBLIC_POSTHOG_KEY` from the browser (CSP allows `https://us.i.posthog.com`). Properties stay privacy-tight: `purchaseIdHash` only, never buyer email. Full ops notes: [`docs/POSTHOG.md`](docs/POSTHOG.md).
+Server-side events on checkout create and payment webhook confirmation use `POSTHOG_PROJECT_API_KEY`. Landing pageviews, UTM, and founding CTA clicks use `PUBLIC_POSTHOG_KEY` from the browser (CSP allows `https://us.i.posthog.com`). Properties stay privacy-tight: `purchaseIdHash` only, never buyer email. Full ops notes: [`docs/POSTHOG.md`](docs/POSTHOG.md).
 
 ```bash
 cd site
 npx wrangler secret put POSTHOG_PROJECT_API_KEY --config wrangler.jsonc
-# Set NEXT_PUBLIC_POSTHOG_KEY as a Worker var (same project key is client-safe).
+# Set PUBLIC_POSTHOG_KEY as a Worker var (same project key is client-safe).
 ```
 
 Attention / resume MVP details: [`docs/ATTENTION.md`](docs/ATTENTION.md).

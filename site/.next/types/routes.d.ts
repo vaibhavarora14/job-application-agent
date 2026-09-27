@@ -20,19 +20,37 @@ declare global {
 }
 
 declare namespace VinextRouteTypes {
-  type PageRoute = "/" | "/checkout/return" | "/privacy" | "/terms";
+  type PageRoute = "/" | "/attention/[id]" | "/checkout/return" | "/community-view" | "/jobs" | "/platforms" | "/platforms/[platform]" | "/privacy" | "/terms";
   type LayoutRoute = "/";
-  type RouteHandlerRoute = "/api/checkout" | "/api/checkout/status" | "/api/founding" | "/api/founding/intent" | "/api/webhooks/dodo";
-  type AppRoute = "/" | "/api/checkout" | "/api/checkout/status" | "/api/founding" | "/api/founding/intent" | "/api/webhooks/dodo" | "/checkout/return" | "/privacy" | "/terms";
+  type RouteHandlerRoute = "/api/analytics-config" | "/api/attention/[id]/answers" | "/api/attention/[id]/draft" | "/api/attention/[id]/live-session" | "/api/attention/[id]/signal" | "/api/attention/[id]/wake" | "/api/checkout" | "/api/checkout/status" | "/api/community-jobs" | "/api/community-stats" | "/api/founding" | "/api/founding/intent" | "/api/health" | "/api/internal/attention-notify" | "/api/internal/attention-signals/[id]" | "/api/internal/attention-wake" | "/api/internal/refunds" | "/api/webhooks/dodo";
+  type AppRoute = "/" | "/api/analytics-config" | "/api/attention/[id]/answers" | "/api/attention/[id]/draft" | "/api/attention/[id]/live-session" | "/api/attention/[id]/signal" | "/api/attention/[id]/wake" | "/api/checkout" | "/api/checkout/status" | "/api/community-jobs" | "/api/community-stats" | "/api/founding" | "/api/founding/intent" | "/api/health" | "/api/internal/attention-notify" | "/api/internal/attention-signals/[id]" | "/api/internal/attention-wake" | "/api/internal/refunds" | "/api/webhooks/dodo" | "/attention/[id]" | "/checkout/return" | "/community-view" | "/jobs" | "/platforms" | "/platforms/[platform]" | "/privacy" | "/terms";
 
   interface ParamMap {
     "/": {};
+    "/api/analytics-config": {};
+    "/api/attention/[id]/answers": { id: string; };
+    "/api/attention/[id]/draft": { id: string; };
+    "/api/attention/[id]/live-session": { id: string; };
+    "/api/attention/[id]/signal": { id: string; };
+    "/api/attention/[id]/wake": { id: string; };
     "/api/checkout": {};
     "/api/checkout/status": {};
+    "/api/community-jobs": {};
+    "/api/community-stats": {};
     "/api/founding": {};
     "/api/founding/intent": {};
+    "/api/health": {};
+    "/api/internal/attention-notify": {};
+    "/api/internal/attention-signals/[id]": { id: string; };
+    "/api/internal/attention-wake": {};
+    "/api/internal/refunds": {};
     "/api/webhooks/dodo": {};
+    "/attention/[id]": { id: string; };
     "/checkout/return": {};
+    "/community-view": {};
+    "/jobs": {};
+    "/platforms": {};
+    "/platforms/[platform]": { platform: string; };
     "/privacy": {};
     "/terms": {};
   }
