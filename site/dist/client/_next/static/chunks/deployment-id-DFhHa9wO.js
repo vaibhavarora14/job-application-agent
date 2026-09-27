@@ -1,0 +1,1 @@
+var e=`x-deployment-id`;function t(){}function n(t,n=void 0){n&&t.set(e,n)}export{t as n,n as t};
