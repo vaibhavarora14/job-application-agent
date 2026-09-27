@@ -1,6 +1,10 @@
 declare namespace Cloudflare {
   interface Env {
     DB: D1Database;
+    /** Set via `wrangler secret put SENTRY_DSN` — never commit the value. */
+    SENTRY_DSN?: string;
+    /** Optional override; defaults to production when PUBLIC_SITE_URL is jobappagent.com. */
+    SENTRY_ENVIRONMENT?: string;
     DODO_PAYMENTS_API_KEY?: string;
     DODO_PAYMENTS_WEBHOOK_KEY?: string;
     DODO_PRODUCT_ID?: string;

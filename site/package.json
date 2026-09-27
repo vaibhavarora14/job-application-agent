@@ -15,6 +15,7 @@
     "db:generate": "drizzle-kit generate"
   },
   "dependencies": {
+    "@sentry/cloudflare": "^11.0.0",
     "dodopayments": "^2.47.0",
     "drizzle-orm": "0.45.2",
     "react": "19.2.8",
