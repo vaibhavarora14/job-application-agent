@@ -13,7 +13,8 @@
   "vars": {
     "PUBLIC_SITE_URL": "https://jobappagent.com",
     "COMMUNITY_STATS_UPSTREAM": "https://job-application-agent-telemetry.varora1406.workers.dev/api/public-stats",
-    "COMMUNITY_JOBS_UPSTREAM": "https://job-application-agent-telemetry.varora1406.workers.dev/v1/jobs"
+    "COMMUNITY_JOBS_UPSTREAM": "https://job-application-agent-telemetry.varora1406.workers.dev/v1/jobs",
+    "POSTHOG_HOST": "https://us.i.posthog.com"
   },
   "d1_databases": [
     {

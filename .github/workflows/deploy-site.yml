@@ -33,10 +33,17 @@ jobs:
       - name: Build site
         run: npm --prefix site run build
       - name: Deploy Worker
-        run: npx --yes wrangler@4.130.0 deploy --config site/wrangler.jsonc --keep-vars
+        # Stamp Sentry release with the commit SHA. Source maps for Workers are
+        # out of scope for P0 — release tagging alone is enough to group issues.
+        run: >
+          npx --yes wrangler@4.130.0 deploy
+          --config site/wrangler.jsonc
+          --keep-vars
+          --var "SENTRY_RELEASE:${GITHUB_SHA}"
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          GITHUB_SHA: ${{ github.sha }}
       - name: Verify site deployment
         run: |
           curl --fail --silent --show-error --retry 6 --retry-all-errors --retry-delay 2 --retry-max-time 30 "$SITE_WORKER_URL/api/health"

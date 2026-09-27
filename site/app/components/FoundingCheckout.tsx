@@ -1,17 +1,26 @@
 "use client";
 
 import { useState } from "react";
+import { readUtmFromLocation } from "../../lib/landing-analytics.mjs";
+import { trackFoundingCtaClicked, useLandingAnalytics } from "./LandingAnalytics";
 
 type CheckoutResult = { checkoutUrl?: string; error?: string };
 
 export function FoundingCheckout({ compact = false }: { compact?: boolean }) {
   const [opening, setOpening] = useState(false);
   const [error, setError] = useState("");
+  const analytics = useLandingAnalytics();
 
   async function startCheckout() {
     setOpening(true); setError("");
+    trackFoundingCtaClicked(analytics);
     try {
-      const response = await fetch("/api/checkout", { method: "POST" });
+      const utm = readUtmFromLocation();
+      const response = await fetch("/api/checkout", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(utm),
+      });
       const result = await response.json() as CheckoutResult;
       if (!response.ok || !result.checkoutUrl) throw new Error(result.error ?? "Secure checkout is temporarily unavailable.");
       window.location.assign(result.checkoutUrl);

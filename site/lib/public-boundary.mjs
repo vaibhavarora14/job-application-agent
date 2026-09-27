@@ -1,4 +1,14 @@
+import { POSTHOG_CONNECT_SRC } from "./posthog.mjs";
+
 const encoder = new TextEncoder();
+
+function withAnalyticsConnectSrc(sources) {
+  const base = Array.isArray(sources) && sources.length ? [...sources] : ["'self'"];
+  for (const host of POSTHOG_CONNECT_SRC) {
+    if (!base.includes(host)) base.push(host);
+  }
+  return base;
+}
 
 export async function readJsonRequest(request, maxBytes) {
   if (!request.headers.get("content-type")?.toLowerCase().includes("application/json")) {
@@ -36,11 +46,12 @@ function joinCspSources(sources, fallback = "'self'") {
 }
 
 export function publicSecurityHeaders() {
+  const connectSrc = withAnalyticsConnectSrc(["'self'"]).join(" ");
   return {
     "content-security-policy": [
       "default-src 'self'",
       "base-uri 'self'",
-      "connect-src 'self'",
+      `connect-src ${connectSrc}`,
       "font-src 'self'",
       "form-action 'self'",
       "frame-ancestors 'none'",
@@ -71,7 +82,7 @@ export function publicSecurityHeaders() {
  */
 export function attentionPageSecurityHeaders(frameSrcOrigins = ["'self'"], connectSrcOrigins = ["'self'"]) {
   const frameSrc = joinCspSources(frameSrcOrigins);
-  const connectSrc = joinCspSources(connectSrcOrigins);
+  const connectSrc = joinCspSources(withAnalyticsConnectSrc(connectSrcOrigins));
   return {
     "content-security-policy": [
       "default-src 'self'",
@@ -105,7 +116,7 @@ export function attentionPageSecurityHeaders(frameSrcOrigins = ["'self'"], conne
  */
 export function liveSessionEmbedSecurityHeaders(frameSrcOrigins = ["'self'"], connectSrcOrigins = ["'self'"]) {
   const frameSrc = joinCspSources(frameSrcOrigins);
-  const connectSrc = joinCspSources(connectSrcOrigins);
+  const connectSrc = joinCspSources(withAnalyticsConnectSrc(connectSrcOrigins));
   return {
     "content-security-policy": [
       "default-src 'self'",

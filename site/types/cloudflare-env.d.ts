@@ -5,6 +5,16 @@ declare namespace Cloudflare {
     SENTRY_DSN?: string;
     /** Optional override; defaults to production when PUBLIC_SITE_URL is jobappagent.com. */
     SENTRY_ENVIRONMENT?: string;
+    /** Git SHA stamped on deploy (`--var SENTRY_RELEASE:$GITHUB_SHA`). */
+    SENTRY_RELEASE?: string;
+    /** Server-side PostHog project API key (wrangler secret). Prefer project 556627. */
+    POSTHOG_PROJECT_API_KEY?: string;
+    /** PostHog ingest host; defaults to https://us.i.posthog.com */
+    POSTHOG_HOST?: string;
+    /** Public PostHog project key for landing client capture (Worker var; PUBLIC_* vinext pattern). */
+    PUBLIC_POSTHOG_KEY?: string;
+    /** Optional public PostHog host override for the browser client. */
+    PUBLIC_POSTHOG_HOST?: string;
     DODO_PAYMENTS_API_KEY?: string;
     DODO_PAYMENTS_WEBHOOK_KEY?: string;
     DODO_PRODUCT_ID?: string;

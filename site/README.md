@@ -39,10 +39,15 @@ commit populated environment files.
 - `DODO_PAYMENTS_ENVIRONMENT`: `test_mode` during verification, then `live_mode`
 - `SENTRY_DSN`: Sentry project DSN for Worker error monitoring (secret; see below)
 - `SENTRY_ENVIRONMENT`: optional environment tag; defaults to `production` when `PUBLIC_SITE_URL` is jobappagent.com
+- `SENTRY_RELEASE`: git SHA stamped by `deploy-site.yml` (`--var SENTRY_RELEASE:$GITHUB_SHA`)
+- `POSTHOG_PROJECT_API_KEY`: PostHog project API key for server-side founding funnel capture (secret; project 556627)
+- `POSTHOG_HOST`: PostHog ingest host (var; default `https://us.i.posthog.com`)
+- `PUBLIC_POSTHOG_KEY`: public project API key for landing `$pageview` / CTA client capture (Worker var; `PUBLIC_*` vinext pattern; never commit)
+- `PUBLIC_POSTHOG_HOST`: optional browser PostHog host override
 
 ### Sentry (error monitoring)
 
-The site Worker uses [`@sentry/cloudflare`](https://docs.sentry.io/platforms/javascript/guides/cloudflare/) with tag `service: site`. Unhandled exceptions are captured automatically. Swallowed money-path failures (`/api/checkout`, `/api/checkout/status`, `/api/webhooks/dodo`) call `captureException`, and other `/api/*` 5xx responses are reported as messages.
+The site Worker uses [`@sentry/cloudflare`](https://docs.sentry.io/platforms/javascript/guides/cloudflare/) with tag `service: site`. Unhandled exceptions are captured automatically. Swallowed money-path failures (`/api/checkout`, `/api/checkout/status`, `/api/webhooks/dodo`) call `captureException`, and other `/api/*` 5xx responses are reported as messages. Deploys stamp `SENTRY_RELEASE` from `GITHUB_SHA` so Issues are release-tagged. Worker source maps are out of scope for P0 — see [`docs/SENTRY.md`](docs/SENTRY.md).
 
 Set the DSN as a Wrangler secret (never commit the value):
 
@@ -58,9 +63,19 @@ npx wrangler secret put SENTRY_ENVIRONMENT --config wrangler.jsonc
 # or a non-secret var in the Cloudflare dashboard
 ```
 
-**Verify:** after deploy with the secret set, force a controlled 5xx (for example briefly unset `DODO_PAYMENTS_API_KEY` and `POST /api/checkout`, or throw once in a throwaway preview). Confirm an Issue appears in the shared Sentry project (org `jobappagent`) tagged `service:site`. Clear/restore the secret after the test. Leave `SENTRY_DSN` unset locally to keep Sentry disabled.
+**Verify:** after deploy with the secret set, force a controlled 5xx (for example briefly unset `DODO_PAYMENTS_API_KEY` and `POST /api/checkout`, or throw once in a throwaway preview). Confirm an Issue appears in the shared Sentry project (org `jobappagent`) tagged `service:site` with the deploy release SHA. Clear/restore the secret after the test. Leave `SENTRY_DSN` unset locally to keep Sentry disabled.
 
 Do not add Sentry to the npm skill / agent client — privacy posture forbids shipping raw agent errors.
+
+### PostHog (founding buyer + landing)
+
+Server-side events on checkout create and payment webhook confirmation use `POSTHOG_PROJECT_API_KEY`. Landing pageviews, UTM, and founding CTA clicks use `PUBLIC_POSTHOG_KEY` from the browser (CSP allows `https://us.i.posthog.com`). Properties stay privacy-tight: `purchaseIdHash` only, never buyer email. Full ops notes: [`docs/POSTHOG.md`](docs/POSTHOG.md).
+
+```bash
+cd site
+npx wrangler secret put POSTHOG_PROJECT_API_KEY --config wrangler.jsonc
+# Set PUBLIC_POSTHOG_KEY as a Worker var (same project key is client-safe).
+```
 
 Attention / resume MVP details: [`docs/ATTENTION.md`](docs/ATTENTION.md).
 The Dodo webhook endpoint is `https://jobappagent.com/api/webhooks/dodo`.

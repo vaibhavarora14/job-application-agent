@@ -1,5 +1,12 @@
+import { env } from "cloudflare:workers";
 import { buildCheckoutRequest, isAllowedCheckoutUrl, validatePurchaseId } from "../../../lib/payment-core.mjs";
 import { createDodoClient, getPaymentConfig } from "../../../lib/dodo";
+import {
+  FOUNDING_EVENTS,
+  captureSitePostHogEvent,
+  extractUtmParams,
+  foundingEventProperties,
+} from "../../../lib/posthog.mjs";
 import { createPurchase, findReusablePurchase, savePurchaseCheckout } from "../../../lib/registration-store";
 import { enforcePublicRateLimit } from "../../../lib/rate-limit";
 import { captureRouteError } from "../../../lib/sentry.mjs";
@@ -18,15 +25,40 @@ function cookieHeader(purchaseId: string) {
   return `${COOKIE_NAME}=${purchaseId}; Path=/; Max-Age=86400; HttpOnly; Secure; SameSite=Lax`;
 }
 
+async function readCheckoutUtm(request: Request) {
+  try {
+    const contentType = request.headers.get("content-type")?.toLowerCase() ?? "";
+    if (!contentType.includes("application/json")) return {};
+    const raw = await request.json();
+    return extractUtmParams(raw);
+  } catch {
+    return {};
+  }
+}
+
+async function trackCheckoutCreated(purchaseId: string, extra: Record<string, unknown>) {
+  const properties = await foundingEventProperties(purchaseId, {
+    status: "checkout_created",
+    ...extra,
+  });
+  await captureSitePostHogEvent(env, {
+    event: FOUNDING_EVENTS.CHECKOUT_CREATED,
+    distinctId: String(properties.purchaseIdHash),
+    properties,
+  });
+}
+
 export async function POST(request: Request) {
   const limited = await enforcePublicRateLimit(request, "checkout", 10);
   if (limited) return limited;
   const configured = getPaymentConfig();
   if (!configured.ok) return Response.json({ error: "Secure checkout is being prepared. Please try again shortly." }, { status: 503 });
+  const utm = await readCheckoutUtm(request);
   try {
     const existingId = purchaseCookie(request);
     const reusable = existingId ? await findReusablePurchase(existingId) : null;
     if (reusable && isAllowedCheckoutUrl(reusable.checkoutUrl)) {
+      void trackCheckoutCreated(reusable.id, { reused: true, ...utm });
       return Response.json({ purchaseId: reusable.id, checkoutUrl: reusable.checkoutUrl }, { headers: { "set-cookie": cookieHeader(reusable.id) } });
     }
     const purchaseId = await createPurchase(configured.config.productId);
@@ -39,6 +71,7 @@ export async function POST(request: Request) {
     if (!session.checkout_url || !isAllowedCheckoutUrl(session.checkout_url)) throw new Error("Invalid checkout URL");
     const saved = await savePurchaseCheckout({ purchaseId, checkoutSessionId: session.session_id, checkoutUrl: session.checkout_url });
     if (!saved) throw new Error("Checkout could not be persisted");
+    void trackCheckoutCreated(purchaseId, { reused: false, ...utm });
     return Response.json({ purchaseId, checkoutUrl: session.checkout_url }, {
       status: 201,
       headers: { "set-cookie": cookieHeader(purchaseId) },

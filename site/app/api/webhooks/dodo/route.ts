@@ -1,5 +1,11 @@
+import { env } from "cloudflare:workers";
 import { createDodoClient, getPaymentConfig } from "../../../../lib/dodo";
 import { normalizePaymentWebhook } from "../../../../lib/payment-core.mjs";
+import {
+  FOUNDING_EVENTS,
+  captureSitePostHogEvent,
+  foundingEventProperties,
+} from "../../../../lib/posthog.mjs";
 import { applyPurchaseWebhook } from "../../../../lib/registration-store";
 import { readTextRequest } from "../../../../lib/public-boundary.mjs";
 import { captureRouteError } from "../../../../lib/sentry.mjs";
@@ -24,6 +30,19 @@ export async function POST(request: Request) {
   if (!normalized.ok || "ignored" in normalized || !normalized.payment) return Response.json({ received: true, ignored: true });
   try {
     await applyPurchaseWebhook(webhookHeaders["webhook-id"], normalized.payment);
+    if (normalized.payment.status === "succeeded" && normalized.payment.purchaseId) {
+      const properties = await foundingEventProperties(normalized.payment.purchaseId, {
+        status: "succeeded",
+        amount: normalized.payment.amount,
+        currency: normalized.payment.currency,
+        eventType: normalized.payment.eventType,
+      });
+      void captureSitePostHogEvent(env, {
+        event: FOUNDING_EVENTS.PAYMENT_CONFIRMED,
+        distinctId: String(properties.purchaseIdHash),
+        properties,
+      });
+    }
     return Response.json({ received: true });
   } catch (error) {
     captureRouteError(error, { route: "/api/webhooks/dodo", status: 503 });
