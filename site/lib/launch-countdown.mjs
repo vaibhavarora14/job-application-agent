@@ -27,9 +27,11 @@ export function getCountdownParts(releaseAt, now = Date.now()) {
 /**
  * Map timer completion + hosted readiness to public launch UI copy.
  * Reaching the marketing date alone must not imply activatable cloud access.
+ *
+ * @param {{ complete?: boolean, hostedContinuityStatus?: string }} [options]
  */
 export function getLaunchDisplayState({
-  complete,
+  complete = false,
   hostedContinuityStatus = HOSTED_CONTINUITY_STATUS,
 } = {}) {
   const hostedVerifying = hostedContinuityStatus === "VERIFYING";
