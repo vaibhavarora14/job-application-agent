@@ -13,8 +13,10 @@ import {
   normalizeAttentionQuestions,
 } from "../scripts/attention-questions.mjs";
 import {
+  CAPTCHA_FRICTION,
   checkCaptchaSpendCap,
   detectChallenge,
+  injectCaptchaToken,
   resolveCaptchaVendorConfig,
   tryCaptchaVendorAssist,
 } from "../scripts/captcha-vendor.mjs";
@@ -22,6 +24,30 @@ import {
   RESUME_EXIT,
   decideResumeSubmit,
 } from "../scripts/attention-resume-submit.mjs";
+
+const FAKE_SITEKEY = "6LeTestSitekeyAAAAAAAAAAAAAFakeKeyXX";
+const FAKE_TOKEN = "03AGdBq-FAKE-CAPTCHA-TOKEN-DO-NOT-LOG";
+
+function jsonResponse(body, status = 200) {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { "Content-Type": "application/json" },
+  });
+}
+
+/** Assert CAPTCHA tokens never leak into friction / human-facing message strings. */
+function assertNoTokenInFrictionMessages(result, token = FAKE_TOKEN) {
+  const frictionFields = [
+    result.message,
+    result.friction,
+    result.reason,
+    result.fallback,
+    result.error,
+  ].filter((v) => typeof v === "string");
+  for (const field of frictionFields) {
+    assert.equal(field.includes(token), false, `token leaked into friction field: ${field}`);
+  }
+}
 
 const binding = {
   version: 1,
@@ -166,4 +192,347 @@ test("still_blocked captcha surfaces vendor_off assist note", () => {
   });
   assert.equal(decision.action, "still_blocked");
   assert.equal(decision.captchaAssist.reason, "vendor_off");
+});
+
+test("CapSolver create+poll mocked success returns token and inject plan", async () => {
+  const calls = [];
+  const fetchImpl = async (url, init) => {
+    calls.push({ url: String(url), body: JSON.parse(String(init?.body ?? "{}")) });
+    if (String(url).includes("createTask")) {
+      assert.equal(calls.at(-1).body.clientKey, "test-capsolver-key");
+      assert.equal(calls.at(-1).body.task.type, "ReCaptchaV2TaskProxyLess");
+      assert.equal(calls.at(-1).body.task.websiteKey, FAKE_SITEKEY);
+      assert.ok(!("cookies" in calls.at(-1).body.task));
+      assert.ok(!("apiKey" in calls.at(-1).body));
+      return jsonResponse({ errorId: 0, taskId: "cap-task-1" });
+    }
+    if (String(url).includes("getTaskResult")) {
+      if (calls.filter((c) => String(c.url).includes("getTaskResult")).length === 1) {
+        return jsonResponse({ errorId: 0, status: "processing" });
+      }
+      return jsonResponse({
+        errorId: 0,
+        status: "ready",
+        solution: { gRecaptchaResponse: FAKE_TOKEN },
+      });
+    }
+    throw new Error(`unexpected url ${url}`);
+  };
+
+  const result = await tryCaptchaVendorAssist({
+    env: {
+      CAPTCHA_VENDOR: "capsolver",
+      CAPTCHA_VENDOR_API_KEY: "test-capsolver-key",
+      CAPTCHA_BUYER_OPT_IN: "on",
+    },
+    fetchImpl,
+    sleepImpl: async () => {},
+    pollInitialDelayMs: 0,
+    snapshot: {
+      pageUrl: "https://jobs.ashbyhq.com/confluent/application",
+      pageHtml: `<div class="g-recaptcha" data-sitekey="${FAKE_SITEKEY}"></div>`,
+    },
+  });
+
+  assert.equal(result.ok, true);
+  assert.equal(result.assisted, true);
+  assert.equal(result.networkCalled, true);
+  assert.equal(result.token, FAKE_TOKEN);
+  assert.equal(result.type, "recaptcha_v2");
+  assert.equal(result.friction, CAPTCHA_FRICTION.success);
+  assert.ok(result.estimatedCostUsd > 0);
+  assert.equal(result.inject.ok, true);
+  assert.ok(result.inject.selectors.some((s) => s.includes("g-recaptcha-response")));
+  assert.equal(result.inject.token, FAKE_TOKEN);
+  assertNoTokenInFrictionMessages(result);
+  assert.ok(calls.length >= 2);
+});
+
+test("CapSolver poll timeout fails closed without token in messages", async () => {
+  let polls = 0;
+  const fetchImpl = async (url) => {
+    if (String(url).includes("createTask")) {
+      return jsonResponse({ errorId: 0, taskId: "cap-timeout" });
+    }
+    polls += 1;
+    return jsonResponse({ errorId: 0, status: "processing" });
+  };
+
+  const result = await tryCaptchaVendorAssist({
+    env: {
+      CAPTCHA_VENDOR: "capsolver",
+      CAPTCHA_VENDOR_API_KEY: "test-capsolver-key",
+      CAPTCHA_BUYER_OPT_IN: "on",
+    },
+    fetchImpl,
+    sleepImpl: async () => {},
+    pollTimeoutMs: 5,
+    pollInitialDelayMs: 0,
+    snapshot: {
+      pageUrl: "https://jobs.ashbyhq.com/x/application",
+      pageHtml: `<div class="g-recaptcha" data-sitekey="${FAKE_SITEKEY}"></div>`,
+    },
+  });
+
+  assert.equal(result.ok, false);
+  assert.equal(result.assisted, false);
+  assert.equal(result.reason, "poll_timeout");
+  assert.equal(result.fallback, "complete-captcha");
+  assert.equal(result.networkCalled, true);
+  assert.equal("token" in result && result.token, false);
+  assertNoTokenInFrictionMessages(result);
+  assert.ok(polls >= 1);
+});
+
+test("2Captcha create+poll mocked success for turnstile", async () => {
+  const calls = [];
+  const fetchImpl = async (url, init) => {
+    const body = JSON.parse(String(init?.body ?? "{}"));
+    calls.push({ url: String(url), body });
+    if (String(url).includes("api.2captcha.com/createTask")) {
+      assert.equal(body.clientKey, "test-2captcha-key");
+      assert.equal(body.task.type, "TurnstileTaskProxyless");
+      return jsonResponse({ errorId: 0, taskId: 998877 });
+    }
+    return jsonResponse({
+      errorId: 0,
+      status: "ready",
+      solution: { token: FAKE_TOKEN },
+      cost: "0.00145",
+    });
+  };
+
+  const result = await tryCaptchaVendorAssist({
+    env: {
+      CAPTCHA_VENDOR: "2captcha",
+      CAPTCHA_VENDOR_API_KEY: "test-2captcha-key",
+      CAPTCHA_ASSIST: "on",
+    },
+    fetchImpl,
+    sleepImpl: async () => {},
+    pollInitialDelayMs: 0,
+    snapshot: {
+      pageUrl: "https://example.com/apply",
+      pageHtml: `<div class="cf-turnstile" data-sitekey="${FAKE_SITEKEY}"></div>`,
+    },
+  });
+
+  assert.equal(result.ok, true);
+  assert.equal(result.assisted, true);
+  assert.equal(result.networkCalled, true);
+  assert.equal(result.token, FAKE_TOKEN);
+  assert.equal(result.type, "turnstile");
+  assert.equal(result.inject.ok, true);
+  assert.ok(result.inject.selectors.some((s) => s.includes("cf-turnstile-response")));
+  assert.equal(result.estimatedCostUsd, 0.00145);
+  assertNoTokenInFrictionMessages(result);
+});
+
+test("2Captcha Ashby reCAPTCHA v2 create→poll→inject (Confluent-shaped)", async () => {
+  const pollBodies = [];
+  let createCalls = 0;
+  let pollCalls = 0;
+  const fetchImpl = async (url, init) => {
+    const body = JSON.parse(String(init?.body ?? "{}"));
+    if (String(url) === "https://api.2captcha.com/createTask") {
+      createCalls += 1;
+      assert.equal(body.clientKey, "test-2captcha-key");
+      assert.equal(body.task.type, "RecaptchaV2TaskProxyless");
+      assert.equal(body.task.websiteURL, "https://jobs.ashbyhq.com/confluent/application");
+      assert.equal(body.task.websiteKey, FAKE_SITEKEY);
+      assert.equal(Object.keys(body.task).sort().join(","), "type,websiteKey,websiteURL");
+      assert.ok(!("cookies" in body));
+      assert.ok(!("session" in body));
+      return jsonResponse({ errorId: 0, taskId: 72345678901 });
+    }
+    if (String(url) === "https://api.2captcha.com/getTaskResult") {
+      pollCalls += 1;
+      pollBodies.push(body);
+      assert.equal(body.clientKey, "test-2captcha-key");
+      assert.equal(body.taskId, 72345678901);
+      assert.equal(typeof body.taskId, "number");
+      if (pollCalls === 1) {
+        return jsonResponse({ errorId: 0, status: "processing" });
+      }
+      return jsonResponse({
+        errorId: 0,
+        status: "ready",
+        solution: {
+          gRecaptchaResponse: FAKE_TOKEN,
+          token: FAKE_TOKEN,
+        },
+        cost: "0.00299",
+      });
+    }
+    throw new Error(`unexpected url ${url}`);
+  };
+
+  const result = await tryCaptchaVendorAssist({
+    env: {
+      CAPTCHA_VENDOR: "2captcha",
+      CAPTCHA_VENDOR_API_KEY: "test-2captcha-key",
+      CAPTCHA_BUYER_OPT_IN: "on",
+    },
+    fetchImpl,
+    sleepImpl: async () => {},
+    pollInitialDelayMs: 0,
+    snapshot: {
+      pageUrl: "https://jobs.ashbyhq.com/confluent/application",
+      pageHtml: `<div class="g-recaptcha" data-sitekey="${FAKE_SITEKEY}"></div>`,
+      challengeType: "recaptcha_v2",
+    },
+  });
+
+  assert.equal(createCalls, 1);
+  assert.equal(pollCalls, 2);
+  assert.equal(result.ok, true);
+  assert.equal(result.assisted, true);
+  assert.equal(result.networkCalled, true);
+  assert.equal(result.token, FAKE_TOKEN);
+  assert.equal(result.type, "recaptcha_v2");
+  assert.equal(result.friction, CAPTCHA_FRICTION.success);
+  assert.equal(result.estimatedCostUsd, 0.00299);
+  assert.equal(result.inject.ok, true);
+  assert.deepEqual(result.inject.fieldNames, ["g-recaptcha-response"]);
+  assert.ok(result.inject.selectors.includes('textarea[name="g-recaptcha-response"]'));
+  assert.equal(result.inject.guidance.invokeCallback, "grecaptcha_callback_if_present");
+  assert.equal(result.inject.guidance.doNotPersistToken, true);
+  assert.equal(result.message.includes(FAKE_TOKEN), false);
+  assertNoTokenInFrictionMessages(result);
+});
+
+test("2Captcha create failure (zero balance) fails closed", async () => {
+  const fetchImpl = async (url) => {
+    if (String(url).includes("createTask")) {
+      return jsonResponse({
+        errorId: 1,
+        errorCode: "ERROR_ZERO_BALANCE",
+        errorDescription: "Account has zero balance",
+      });
+    }
+    throw new Error("should not poll after create failure");
+  };
+
+  const result = await tryCaptchaVendorAssist({
+    env: {
+      CAPTCHA_VENDOR: "2captcha",
+      CAPTCHA_VENDOR_API_KEY: "test-2captcha-key",
+      CAPTCHA_BUYER_OPT_IN: "on",
+    },
+    fetchImpl,
+    snapshot: {
+      pageUrl: "https://jobs.ashbyhq.com/confluent/application",
+      pageHtml: `<div class="g-recaptcha" data-sitekey="${FAKE_SITEKEY}"></div>`,
+    },
+  });
+
+  assert.equal(result.ok, false);
+  assert.equal(result.assisted, false);
+  assert.equal(result.reason, "zero_balance");
+  assert.equal(result.fallback, "complete-captcha");
+  assert.equal(result.networkCalled, true);
+  assert.ok(result.message.includes("balance"));
+  assert.equal("token" in result && Boolean(result.token), false);
+  assertNoTokenInFrictionMessages(result);
+});
+
+test("2Captcha poll unsolvable fails closed", async () => {
+  const fetchImpl = async (url) => {
+    if (String(url).includes("createTask")) {
+      return jsonResponse({ errorId: 0, taskId: 42 });
+    }
+    return jsonResponse({
+      errorId: 12,
+      errorCode: "ERROR_CAPTCHA_UNSOLVABLE",
+    });
+  };
+
+  const result = await tryCaptchaVendorAssist({
+    env: {
+      CAPTCHA_VENDOR: "2captcha",
+      CAPTCHA_VENDOR_API_KEY: "test-2captcha-key",
+      CAPTCHA_BUYER_OPT_IN: "1",
+    },
+    fetchImpl,
+    sleepImpl: async () => {},
+    pollInitialDelayMs: 0,
+    snapshot: {
+      pageUrl: "https://jobs.ashbyhq.com/confluent/application",
+      pageHtml: `<div class="g-recaptcha" data-sitekey="${FAKE_SITEKEY}"></div>`,
+    },
+  });
+
+  assert.equal(result.ok, false);
+  assert.equal(result.reason, "unsolvable");
+  assert.equal(result.fallback, "complete-captcha");
+  assert.equal(result.networkCalled, true);
+  assertNoTokenInFrictionMessages(result);
+});
+
+test("injectCaptchaToken returns structured selectors when enabled", () => {
+  const config = resolveCaptchaVendorConfig({
+    CAPTCHA_VENDOR: "capsolver",
+    CAPTCHA_VENDOR_API_KEY: "k",
+    CAPTCHA_BUYER_OPT_IN: "on",
+  });
+  const plan = injectCaptchaToken({ token: FAKE_TOKEN, type: "recaptcha_v2" }, config);
+  assert.equal(plan.ok, true);
+  assert.deepEqual(plan.fieldNames, ["g-recaptcha-response"]);
+  assert.equal(plan.token, FAKE_TOKEN);
+  assert.equal(plan.guidance.doNotPersistToken, true);
+  assert.equal(plan.guidance.invokeCallback, "grecaptcha_callback_if_present");
+
+  const off = injectCaptchaToken({ token: FAKE_TOKEN }, resolveCaptchaVendorConfig({}));
+  assert.equal(off.ok, false);
+  assert.equal(off.error, "vendor_off");
+});
+
+test("spend cap still hard-stops before network", async () => {
+  let network = 0;
+  const result = await tryCaptchaVendorAssist({
+    env: {
+      CAPTCHA_VENDOR: "capsolver",
+      CAPTCHA_VENDOR_API_KEY: "k",
+      CAPTCHA_BUYER_OPT_IN: "on",
+      CAPTCHA_SPEND_CAP_USD_MONTH: "5",
+      CAPTCHA_SPEND_MONTH_USD: "5",
+    },
+    fetchImpl: async () => {
+      network += 1;
+      return jsonResponse({});
+    },
+    snapshot: {
+      pageUrl: "https://jobs.ashbyhq.com/x/application",
+      pageHtml: `<div class="g-recaptcha" data-sitekey="${FAKE_SITEKEY}"></div>`,
+    },
+  });
+  assert.equal(result.reason, "spend_cap_hit");
+  assert.equal(result.friction, CAPTCHA_FRICTION.cap_hit);
+  assert.equal(network, 0);
+});
+
+test("still_blocked surfaces inject guidance when vendor assist succeeded", () => {
+  const decision = decideResumeSubmit({
+    binding,
+    captchaAssist: {
+      ok: true,
+      assisted: true,
+      token: FAKE_TOKEN,
+      inject: {
+        ok: true,
+        selectors: ['textarea[name="g-recaptcha-response"]'],
+        token: FAKE_TOKEN,
+      },
+      networkCalled: true,
+    },
+    snapshot: {
+      pageUrl: "https://jobs.ashbyhq.com/livekit/application",
+      pageText: "Please complete the reCAPTCHA",
+      leaseHeld: true,
+      answersInjected: true,
+    },
+  });
+  assert.equal(decision.action, "still_blocked");
+  assert.ok(decision.next.some((line) => line.includes("inject via captchaAssist.inject")));
+  assert.equal(JSON.stringify(decision.next).includes(FAKE_TOKEN), false);
 });
