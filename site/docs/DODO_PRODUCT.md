@@ -23,8 +23,13 @@ Canonical strings also live in code as `FOUNDING_DODO_PRODUCT_DISPLAY` in `lib/p
    `https://jobappagent.com/checkout/return?design=success`  
    (`design=success` is a UI fixture only; it never marks a purchase paid).
 
-## Out of scope for this lane
+## Related ops
 
-- Automatic seat mint / webhook money-path ops
+- Money-path option A (paid → D1 succeeded + Support alert, manual seat activate):
+  [`FOUNDING_ACTIVATION.md`](FOUNDING_ACTIVATION.md)
+
+## Out of scope for product-display ops
+
+- Automatic seat mint on webhook (paid ≠ activated)
 - Calling `products.update` from the checkout Worker on every session
 - Claiming Cloud OPEN on the SKU
