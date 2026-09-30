@@ -50,5 +50,8 @@ jobs:
           curl --fail --silent --show-error --retry 6 --retry-all-errors --retry-delay 2 --retry-max-time 30 "$SITE_WORKER_URL/api/community-stats"
           curl --fail --silent --show-error --retry 6 --retry-all-errors --retry-delay 2 --retry-max-time 30 "$SITE_WORKER_URL/api/community-jobs?limit=1"
           curl --fail --silent --show-error --retry 6 --retry-all-errors --retry-delay 2 --retry-max-time 30 "$SITE_WORKER_URL/jobs" > /dev/null
+          community_html="$(curl --fail --silent --show-error --retry 6 --retry-all-errors --retry-delay 2 --retry-max-time 30 "$SITE_WORKER_URL/community-view")"
+          printf '%s' "$community_html" | grep -Fq 'Activate founding access · $49'
+          ! printf '%s' "$community_html" | grep -Eiq 'Reserve 90-day access|Reserve founding access'
         env:
           SITE_WORKER_URL: https://job-application-agent-site.varora1406.workers.dev

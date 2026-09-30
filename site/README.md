@@ -96,9 +96,12 @@ API cannot override them). Ops must keep the founding SKU on Hosted wording —
 see [`docs/DODO_PRODUCT.md`](docs/DODO_PRODUCT.md). Design can recheck the
 post-pay success UI without a card charge at `/checkout/return?design=success`.
 
-`stats.jobappagent.com` is attached to the same Sites project. Host-aware routing
-serves the community dashboard at that origin while the telemetry Worker remains
-the ingestion and aggregate-data service.
+`stats.jobappagent.com` is attached to the same Sites Worker via the Vercel
+proxy (`site-proxy/`). Host-aware routing serves the community dashboard at that
+origin while the telemetry Worker remains the ingestion and aggregate-data
+service. Keep the `stats` DNS `CNAME` on `cname.vercel-dns.com` (not
+`custom-domains.chatgpt.site`) so founding CTA copy stays in lockstep with
+`jobappagent.com`.
 
 ## Release checks
 
