@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {
+  FOUNDING_CTA_LABEL,
   FOUNDING_DODO_PRODUCT_DISPLAY,
   buildCheckoutRequest,
   canonicalCheckoutReturnUrl,
@@ -41,6 +42,11 @@ test("documents hosted founding product display copy for Dodo ops", () => {
   assert.doesNotMatch(FOUNDING_DODO_PRODUCT_DISPLAY.description, /\bcloud access\b.*\bopen\b/i);
 });
 
+test("exports a single Activate founding CTA label for site + Dodo pay button", () => {
+  assert.equal(FOUNDING_CTA_LABEL, "Activate founding access · $49");
+  assert.doesNotMatch(FOUNDING_CTA_LABEL, /Reserve/i);
+});
+
 test("builds a hosted checkout that collects customer details at Dodo", () => {
   assert.deepEqual(buildCheckoutRequest({
     productId: "pdt_founding", purchaseId,
@@ -63,7 +69,7 @@ test("builds a hosted checkout that collects customer details at Dodo", () => {
         font_secondary_url: "https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&display=swap",
         font_size: "md",
         font_weight: "medium",
-        pay_button_text: "Activate founding access · $49",
+        pay_button_text: FOUNDING_CTA_LABEL,
         radius: "0.6rem",
         light: {
           bg_primary: "#f7f9fc",

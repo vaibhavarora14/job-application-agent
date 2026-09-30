@@ -1,5 +1,7 @@
 declare module "*/payment-core.mjs" {
   export const FOUNDING_DODO_PRODUCT_DISPLAY: { readonly name: string; readonly description: string };
+  export const FOUNDING_CTA_LABEL: "Activate founding access · $49";
+
   export function validateCheckoutInput(input: unknown): { ok: true; registrationId: string } | { ok: false; error: string };
   export function validatePurchaseId(input: unknown): { ok: true; purchaseId: string } | { ok: false; error: string };
   export function validatePaymentConfig(input: unknown): { ok: true; config: { apiKey: string; productId: string; webhookKey: string; environment: "test_mode" | "live_mode"; publicSiteUrl: string } } | { ok: false; error: string };

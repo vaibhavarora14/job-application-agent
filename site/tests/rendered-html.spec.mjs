@@ -112,6 +112,8 @@ test("community and homepage CTAs use Activate founding access · $49", async ()
   for (const html of [await home.text(), await community.text()]) {
     assert.match(html, /Activate founding access · \$49/);
     assert.doesNotMatch(html, /Reserve 90-day access/i);
+    assert.doesNotMatch(html, /Reserve founding access/i);
+    assert.doesNotMatch(html, />Reserve\b/i);
   }
 });
 

@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { readUtmFromLocation } from "../../lib/landing-analytics.mjs";
+import { FOUNDING_CTA_LABEL } from "../../lib/payment-core.mjs";
 import { trackFoundingCtaClicked, useLandingAnalytics } from "./LandingAnalytics";
 
 type CheckoutResult = { checkoutUrl?: string; error?: string };
@@ -32,7 +33,7 @@ export function FoundingCheckout({ compact = false }: { compact?: boolean }) {
 
   return <div className={`checkout-action${compact ? " checkout-action-compact" : ""}`}>
     <button className={`button${compact ? " button-small" : ""}`} type="button" onClick={startCheckout} disabled={opening}>
-      {opening ? "Opening secure checkout…" : "Activate founding access · $49"}
+      {opening ? "Opening secure checkout…" : FOUNDING_CTA_LABEL}
     </button>
     {error && <p className="action-error" role="alert">{error}</p>}
   </div>;

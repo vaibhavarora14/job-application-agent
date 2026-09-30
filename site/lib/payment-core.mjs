@@ -16,6 +16,9 @@ export const FOUNDING_DODO_PRODUCT_DISPLAY = Object.freeze({
   description: "90 days of founding hosted access. Your window starts when we activate your seat and email access details — not on payment alone. Cloud access remains coming soon.",
 });
 
+/** Sitewide founding CTA + Dodo pay-button label (homepage, stats/community, checkout). */
+export const FOUNDING_CTA_LABEL = "Activate founding access · $49";
+
 export function validatePurchaseId(input) {
   const purchaseId = typeof input === "string" ? input.trim() : "";
   return uuidPattern.test(purchaseId)
@@ -58,7 +61,7 @@ export function buildCheckoutRequest({ productId, purchaseId, publicSiteUrl }) {
         font_secondary_url: "https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&display=swap",
         font_size: "md",
         font_weight: "medium",
-        pay_button_text: "Activate founding access · $49",
+        pay_button_text: FOUNDING_CTA_LABEL,
         radius: "0.6rem",
         light: {
           bg_primary: "#f7f9fc",
