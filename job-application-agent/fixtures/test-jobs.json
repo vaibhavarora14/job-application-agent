@@ -1,0 +1,87 @@
+[
+  {
+    "id": "fixture-greenhouse",
+    "url": "https://jobappagent.com/fixtures/greenhouse/",
+    "pathPrefixes": ["/fixtures/greenhouse"],
+    "ats": "greenhouse",
+    "kind": "fixture",
+    "allowSubmit": true,
+    "title": "Senior Software Engineer (Fixture)"
+  },
+  {
+    "id": "fixture-greenhouse-confirmation",
+    "url": "https://jobappagent.com/fixtures/greenhouse/confirmation.html",
+    "pathPrefixes": ["/fixtures/greenhouse/confirmation"],
+    "ats": "greenhouse",
+    "kind": "fixture",
+    "allowSubmit": false,
+    "title": "Greenhouse fixture confirmation"
+  },
+  {
+    "id": "fixture-lever",
+    "url": "https://jobappagent.com/fixtures/lever/",
+    "pathPrefixes": ["/fixtures/lever"],
+    "ats": "lever",
+    "kind": "fixture",
+    "allowSubmit": true,
+    "title": "Product Engineer (Fixture)"
+  },
+  {
+    "id": "fixture-lever-confirmation",
+    "url": "https://jobappagent.com/fixtures/lever/confirmation.html",
+    "pathPrefixes": ["/fixtures/lever/confirmation"],
+    "ats": "lever",
+    "kind": "fixture",
+    "allowSubmit": false,
+    "title": "Lever fixture confirmation"
+  },
+  {
+    "id": "fixture-ashby",
+    "url": "https://jobappagent.com/fixtures/ashby/",
+    "pathPrefixes": ["/fixtures/ashby"],
+    "ats": "ashby",
+    "kind": "fixture",
+    "allowSubmit": true,
+    "title": "Full-Stack Engineer (Fixture)"
+  },
+  {
+    "id": "fixture-ashby-confirmation",
+    "url": "https://jobappagent.com/fixtures/ashby/confirmation.html",
+    "pathPrefixes": ["/fixtures/ashby/confirmation"],
+    "ats": "ashby",
+    "kind": "fixture",
+    "allowSubmit": false,
+    "title": "Ashby fixture confirmation"
+  },
+  {
+    "id": "vendor-ashby-embed-demo",
+    "url": "https://jobs.ashbyhq.com/ashby-embed-demo-org",
+    "hostPathPrefixes": [
+      { "host": "jobs.ashbyhq.com", "pathPrefix": "/ashby-embed-demo-org" }
+    ],
+    "ats": "ashby",
+    "kind": "vendor-sandbox",
+    "allowSubmit": true,
+    "title": "Ashby embed demo org (vendor sandbox)"
+  },
+  {
+    "id": "vendor-ashby-for-testing",
+    "url": "https://jobs.ashbyhq.com/",
+    "requiresTitleContains": "[ASHBY] - For Testing Use Only",
+    "ats": "ashby",
+    "kind": "vendor-sandbox",
+    "allowSubmit": true,
+    "title": "Ashby posts marked For Testing Use Only"
+  },
+  {
+    "id": "vendor-leverdemo",
+    "url": "https://jobs.lever.co/leverdemo",
+    "hostPathPrefixes": [
+      { "host": "jobs.lever.co", "pathPrefix": "/leverdemo" }
+    ],
+    "ats": "lever",
+    "kind": "vendor-sandbox",
+    "allowSubmit": true,
+    "title": "Leverdemo board (vendor sandbox)"
+  }
+]

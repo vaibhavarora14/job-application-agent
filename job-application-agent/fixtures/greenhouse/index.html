@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Senior Software Engineer (Fixture) — Greenhouse-shaped</title>
+  <style>
+    :root { color-scheme: light; --ink: #1a1a1a; --muted: #5c5c5c; --line: #d8d8d8; --bg: #f7f7f5; --card: #fff; --accent: #1f7a4d; }
+    * { box-sizing: border-box; }
+    body { margin: 0; font-family: "IBM Plex Sans", "Segoe UI", sans-serif; background: linear-gradient(180deg, #eef2ef 0%, var(--bg) 40%); color: var(--ink); }
+    header { padding: 1.5rem 1.25rem 0.5rem; max-width: 40rem; margin: 0 auto; }
+    .badge { display: inline-block; font-size: 0.75rem; letter-spacing: 0.04em; text-transform: uppercase; color: var(--muted); margin-bottom: 0.5rem; }
+    h1 { font-size: 1.6rem; margin: 0 0 0.35rem; }
+    .meta { color: var(--muted); font-size: 0.95rem; margin-bottom: 1rem; }
+    form { max-width: 40rem; margin: 0 auto 3rem; padding: 1.25rem; background: var(--card); border: 1px solid var(--line); }
+    label { display: block; font-size: 0.9rem; margin: 0.85rem 0 0.35rem; }
+    input, select, textarea { width: 100%; padding: 0.55rem 0.65rem; border: 1px solid var(--line); font: inherit; background: #fff; }
+    .row { display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem; }
+    button { margin-top: 1.25rem; background: var(--accent); color: #fff; border: 0; padding: 0.7rem 1.1rem; font: inherit; cursor: pointer; }
+    .note { max-width: 40rem; margin: 0 auto 1rem; padding: 0 1.25rem; color: var(--muted); font-size: 0.85rem; }
+    @media (max-width: 640px) { .row { grid-template-columns: 1fr; } }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="badge">JobAppAgent owned fixture · Greenhouse-shaped</div>
+    <h1>Senior Software Engineer</h1>
+    <p class="meta">Fixture Co · Remote · Not a real employer posting</p>
+  </header>
+  <p class="note">This page is for prove/smoke/E2E only. Submissions stay on jobappagent.com fixtures and never reach a real ATS.</p>
+  <form id="gh-apply" action="./confirmation.html" method="get">
+    <div class="row">
+      <div>
+        <label for="first_name">First name *</label>
+        <input id="first_name" name="first_name" autocomplete="given-name" required />
+      </div>
+      <div>
+        <label for="last_name">Last name *</label>
+        <input id="last_name" name="last_name" autocomplete="family-name" required />
+      </div>
+    </div>
+    <label for="email">Email *</label>
+    <input id="email" name="email" type="email" autocomplete="email" required />
+    <label for="phone">Phone *</label>
+    <input id="phone" name="phone" type="tel" autocomplete="tel" required />
+    <label for="location">Location *</label>
+    <input id="location" name="location" placeholder="City, Region" autocomplete="address-level2" required />
+    <label for="country">Country *</label>
+    <select id="country" name="country" required>
+      <option value="">Select…</option>
+      <option value="US">United States</option>
+      <option value="CA">Canada</option>
+      <option value="IN">India</option>
+      <option value="GB">United Kingdom</option>
+      <option value="DE">Germany</option>
+    </select>
+    <label for="resume">Resume *</label>
+    <input id="resume" name="resume" type="file" accept=".pdf,.doc,.docx" />
+    <label for="linkedin">LinkedIn profile</label>
+    <input id="linkedin" name="linkedin" type="url" placeholder="https://linkedin.com/in/…" />
+    <button type="submit" data-testid="submit-application">Submit application</button>
+  </form>
+</body>
+</html>

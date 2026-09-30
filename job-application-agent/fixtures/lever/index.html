@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Product Engineer (Fixture) — Lever-shaped /apply</title>
+  <style>
+    :root { --ink: #111; --muted: #666; --line: #ddd; --accent: #0b5fff; }
+    * { box-sizing: border-box; }
+    body { margin: 0; font-family: "Source Serif 4", Georgia, serif; background: radial-gradient(circle at top left, #dfe9ff, #f5f5f3 55%); color: var(--ink); }
+    .wrap { max-width: 42rem; margin: 0 auto; padding: 2rem 1.25rem 3rem; }
+    .eyebrow { font-family: "IBM Plex Sans", sans-serif; font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); }
+    h1 { font-weight: 600; font-size: 2rem; margin: 0.4rem 0; }
+    .lede { font-family: "IBM Plex Sans", sans-serif; color: var(--muted); margin-bottom: 1.5rem; }
+    form { background: rgba(255,255,255,0.92); border: 1px solid var(--line); padding: 1.25rem; font-family: "IBM Plex Sans", sans-serif; }
+    label { display: block; margin: 0.9rem 0 0.3rem; font-size: 0.92rem; }
+    input, textarea { width: 100%; padding: 0.55rem 0.65rem; border: 1px solid var(--line); font: inherit; }
+    button { margin-top: 1.2rem; background: var(--accent); color: #fff; border: 0; padding: 0.7rem 1.2rem; font: inherit; cursor: pointer; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="eyebrow">JobAppAgent owned fixture · Lever-shaped /apply</div>
+    <h1>Product Engineer</h1>
+    <p class="lede">Fixture Labs · Remote · Apply flow for prove/smoke only</p>
+    <form id="lever-apply" action="./confirmation.html" method="get">
+      <label for="name">Full name *</label>
+      <input id="name" name="name" autocomplete="name" required />
+      <label for="email">Email *</label>
+      <input id="email" name="email" type="email" autocomplete="email" required />
+      <label for="phone">Phone *</label>
+      <input id="phone" name="phone" type="tel" autocomplete="tel" required />
+      <label for="org">Current company</label>
+      <input id="org" name="org" autocomplete="organization" />
+      <label for="resume">Resume *</label>
+      <input id="resume" name="resume" type="file" accept=".pdf,.doc,.docx" />
+      <label for="additional">Additional information</label>
+      <textarea id="additional" name="additional" rows="4" placeholder="Optional notes"></textarea>
+      <button type="submit">Submit application</button>
+    </form>
+  </div>
+</body>
+</html>

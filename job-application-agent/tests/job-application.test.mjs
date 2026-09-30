@@ -279,10 +279,12 @@ test('accepts only confirmed submission ledger shapes', () => {
     approval: 'APPROVE SUBMIT',
     answers: {},
   };
-  assert.deepEqual(validateLedgerEntry(entry), entry);
+  assert.deepEqual(validateLedgerEntry(entry), { ...entry, applyKind: 'live' });
   assert.equal(validateLedgerEntry({ ...entry, employerJobId: 'greenhouse:123' }).employerJobId, 'greenhouse:123');
   assert.equal(validateLedgerEntry({ ...entry, id: 'workday-role', source: 'workday' }).source, 'workday');
+  assert.equal(validateLedgerEntry({ ...entry, applyKind: 'fixture' }).applyKind, 'fixture');
   assert.throws(() => validateLedgerEntry({ ...entry, status: 'draft' }), /submitted/);
+  assert.throws(() => validateLedgerEntry({ ...entry, applyKind: 'demo' }), /applyKind/);
 });
 
 test('validates structured submission metrics without adding them to the ledger shape', () => {

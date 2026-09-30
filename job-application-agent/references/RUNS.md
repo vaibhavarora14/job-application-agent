@@ -117,6 +117,8 @@ node scripts/attention-resume-submit.mjs --attention-id attention-… --stdin
 
 After `resume_requested` (exit 0): renew the lease; load session binding; inject approved `answers[]` from the poll payload into matching textareas when present; re-inspect the **same** filled ATS tab; if clear, **submit**; wait for visible confirmation; confirm the ledger intent. CAPTCHA vendor assist is Off by default (`CAPTCHA_VENDOR=off`). If unsure or still blocked, re-open attention. On skip: resolve attention, no submit, continue the round. On abort: release the lease and end the round. Full contract: `site/docs/ATTENTION.md`.
 
+Prove / smoke / E2E apply runners enforce the owned-fixture allowlist (`fixtures/test-jobs.json`) whenever `CI=true`, `PROVE_APPLY=1`, or `APPLY_URL_GATE=1`. Non-allowlisted employer URLs require `LIVE_APPLY=1` (explicit, logged). Prefer `https://jobappagent.com/fixtures/{greenhouse,lever,ashby}/` (or the local fixture server). Ledger entries for those URLs store `applyKind: "fixture"` so metrics do not treat them as real employer applies. Details: [`fixtures/README.md`](../fixtures/README.md).
+
 ## Friction queue
 
 Record bounded general workflow failures without candidate data:

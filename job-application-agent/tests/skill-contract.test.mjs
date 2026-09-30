@@ -62,6 +62,16 @@ test('documents flexible ledger check lookup as a separate process from outcome'
   assert.match(schemas, /ledger add` still requires a real job URL/);
 });
 
+test('documents LIVE_APPLY fixture allowlist for prove/smoke applies', async () => {
+  const runs = await readFile(new URL('../references/RUNS.md', import.meta.url), 'utf8');
+  const fixtures = await readFile(new URL('../fixtures/README.md', import.meta.url), 'utf8');
+  const schemas = await readFile(new URL('../references/SCHEMAS.md', import.meta.url), 'utf8');
+  assert.match(runs, /LIVE_APPLY/);
+  assert.match(fixtures, /jobappagent\.com\/fixtures\/greenhouse/);
+  assert.match(fixtures, /LIVE_APPLY=1/);
+  assert.match(schemas, /applyKind/);
+});
+
 test('documents Free.ai as optional LLM assist only', async () => {
   const skill = await readFile(new URL('../SKILL.md', import.meta.url), 'utf8');
   const freeAi = await readFile(new URL('../references/FREE_AI.md', import.meta.url), 'utf8');
