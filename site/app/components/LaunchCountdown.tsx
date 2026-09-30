@@ -1,7 +1,11 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { getCountdownParts } from "../../lib/launch-countdown.mjs";
+import {
+  getCountdownParts,
+  getLaunchDisplayState,
+  HOSTED_CONTINUITY_STATUS,
+} from "../../lib/launch-countdown.mjs";
 
 type LaunchCountdownProps = {
   releaseAt: string;
@@ -39,12 +43,17 @@ export function LaunchCountdown({ releaseAt }: LaunchCountdownProps) {
     };
   }, [releaseAt]);
 
-  const complete = remaining?.complete ?? false;
+  const display = remaining
+    ? getLaunchDisplayState({
+      complete: remaining.complete,
+      hostedContinuityStatus: HOSTED_CONTINUITY_STATUS,
+    })
+    : null;
 
-  return <section className={`launch-countdown${complete ? " launch-countdown-complete" : ""}`} aria-labelledby="launch-countdown-title">
+  return <section className={`launch-countdown${display?.timerComplete ? " launch-countdown-complete" : ""}`} aria-labelledby="launch-countdown-title">
     <div className="launch-countdown-heading">
       <div><p className="eyebrow">Pre-launch run</p><h2 id="launch-countdown-title">Cloud launch sequence</h2></div>
-      <span className="launch-state"><i aria-hidden="true" />{remaining ? (complete ? "WINDOW OPEN" : "T− ACTIVE") : "SYNCING"}</span>
+      <span className="launch-state"><i aria-hidden="true" />{display ? display.launchStateLabel : "SYNCING"}</span>
     </div>
 
     <div className="countdown-grid" role="timer" aria-label="Time remaining until cloud launch">
@@ -56,15 +65,15 @@ export function LaunchCountdown({ releaseAt }: LaunchCountdownProps) {
 
     <div className="launch-target">
       <span>Scheduled start</span>
-      <time dateTime={releaseAt}>October 1, 2026 · 12:00 AM IST</time>
+      <time dateTime={releaseAt}>October 15, 2026 · 12:00 AM IST</time>
     </div>
 
     <div className="launch-sequence" aria-label="Launch readiness">
       <div><span>Agent foundation</span><strong>RELEASED</strong></div>
-      <div><span>Hosted continuity</span><strong>VERIFYING</strong></div>
-      <div><span>Cloud access</span><strong>{complete ? "OPEN" : "SCHEDULED"}</strong></div>
+      <div><span>Hosted continuity</span><strong>{display?.hostedContinuityLabel ?? HOSTED_CONTINUITY_STATUS}</strong></div>
+      <div><span>Cloud access</span><strong>{display?.cloudAccessLabel ?? "SCHEDULED"}</strong></div>
     </div>
 
-    <p className="launch-message" aria-live="polite">{remaining ? (complete ? "The cloud launch window is now open." : "The timer is synced to the scheduled India launch window.") : "Synchronizing with the launch schedule…"}</p>
+    <p className="launch-message" aria-live="polite">{display ? display.message : "Synchronizing with the launch schedule…"}</p>
   </section>;
 }

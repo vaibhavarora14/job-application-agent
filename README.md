@@ -217,7 +217,7 @@ Updates are staged and validated before replacement. Private candidate state liv
 
 ## 📍 Where to find it
 
-- [jobappagent.com](https://jobappagent.com) — product site (cloud launch Oct 1; open-source skill on GitHub/npm)
+- [jobappagent.com](https://jobappagent.com) — product site (cloud launch Oct 15; open-source skill on GitHub/npm)
 - [GitHub](https://github.com/vaibhavarora14/job-application-agent)
 - [npm](https://www.npmjs.com/package/job-application-agent)
 - [skills.sh](https://skills.sh/vaibhavarora14/job-application-agent)
