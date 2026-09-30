@@ -9,7 +9,7 @@ Update the live founding product in the Dodo Payments dashboard:
 | Field | Required value |
 | --- | --- |
 | **Product name** | `Job Application Agent — Founding Hosted Access` |
-| **Product description** | `90 days of founding hosted access. Your window starts when we activate your seat and email access details — not on payment alone. Cloud access remains coming soon.` |
+| **Product description** | `90 days of founding hosted access. Your window starts when we activate your seat and email access details — not on payment alone. Cloud access remains coming soon. Listed at $49 USD; when billing to India, checkout shows the intentional India founding price plus GST.` |
 
 Do **not** use “Founding Cloud Access”, “founding cloud access”, or any wording that implies Cloud is what the buyer purchased while marketing still shows Cloud **COMING SOON**.
 

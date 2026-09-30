@@ -27,8 +27,8 @@ button, input { font: inherit; }
 .page-width { width: min(73.75rem, calc(100% - 3rem)); margin-inline: auto; }
 .eyebrow { margin: 0; color: var(--green); font: 600 .75rem/1.4 var(--font-mono), monospace; letter-spacing: .1em; text-transform: uppercase; }
 
-.site-nav { position: sticky; top: 0; z-index: 20; height: 4.75rem; border-bottom: 1px solid var(--line); background: rgb(242 233 216 / 94%); backdrop-filter: blur(.875rem); }
-.nav-inner { height: 100%; display: flex; align-items: center; justify-content: space-between; gap: 1.5rem; }
+.site-nav { position: sticky; top: 0; z-index: 20; min-height: 4.75rem; border-bottom: 1px solid var(--line); background: rgb(242 233 216 / 94%); backdrop-filter: blur(.875rem); }
+.nav-inner { min-height: 4.75rem; padding-block: .55rem; display: flex; align-items: center; justify-content: space-between; gap: 1.5rem; }
 .brand { min-height: 2.75rem; display: flex; align-items: center; gap: .7rem; text-decoration: none; }
 .brand-mark { width: 2.25rem; height: 2.25rem; flex: 0 0 auto; border: 1px solid rgb(23 63 53 / 12%); border-radius: .7rem; background: url("/brand-mark.png") center / contain no-repeat; }
 .brand-lockup { display: grid; gap: .05rem; line-height: 1; }
@@ -46,8 +46,10 @@ button, input { font: inherit; }
 .button-small { min-height: 2.75rem; padding: .65rem .95rem; font-size: .8rem; }
 .button-secondary { border: 1px solid var(--line); background: var(--surface); color: var(--ink); }
 .button-secondary:hover:not(:disabled) { background: var(--accent-soft); color: var(--ink); }
-.checkout-action { display: grid; gap: .55rem; }
-.checkout-action-compact { display: block; }
+.checkout-action { display: grid; gap: .55rem; justify-items: start; }
+.checkout-action-compact { gap: .3rem; justify-items: end; max-width: 15.5rem; }
+.checkout-regional-note { max-width: 22rem; margin: 0; color: var(--muted); font-size: .75rem; line-height: 1.4; }
+.checkout-action-compact .checkout-regional-note { max-width: 15.5rem; font-size: .65rem; line-height: 1.35; text-align: right; }
 .action-error { max-width: 30rem; margin: 0; color: var(--coral); font-size: .8rem; }
 
 .hero { padding-block: 6.25rem 6.75rem; display: grid; grid-template-columns: minmax(0, .95fr) minmax(28rem, 1.05fr); gap: 5rem; align-items: center; }
