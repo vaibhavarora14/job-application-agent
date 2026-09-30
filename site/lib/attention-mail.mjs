@@ -3,69 +3,34 @@
  * Fails closed when the mailer is unconfigured or upstream errors.
  */
 
-import { ACTION_LABELS } from "./attention-action-labels.mjs";
+import { normalizeAttentionQuestions } from "./attention-questions.mjs";
 
-const BLOCKER_COPY = {
-  captcha: "Prove you're human in the live browser session.",
-  authentication: "Sign in or approve access in the live browser session.",
-  mfa: "Complete multi-factor approval on your phone or device.",
-  "legal-attestation": "Read and acknowledge the legal attestation in the live browser.",
-  judgment: "Answer the judgment or narrative question in your own voice.",
-  demographic: "We paused on a demographic question — choose only what you are willing to share.",
-  "government-id": "A government ID field appeared; handle it yourself in the live session.",
-  "ambiguous-authorization": "Work authorization needs your judgment.",
-  "ambiguous-compensation": "Compensation needs your judgment.",
-  "unverifiable-claim": "We don't have a verified fact for a required field.",
-  video: "A video prompt needs you in the live session.",
-  upload: "An upload gate needs you in the live session.",
-  "site-error": "The site hit an error; inspect and decide in the live session.",
-  other: "The hosted run paused and needs you.",
-};
-
-/**
- * @param {object} input
- */
+/** Buyer mail exists only for actual employer questions, never technical actions. */
 export function buildAttentionEmail(input) {
   const company = String(input?.company ?? "Company").trim() || "Company";
   const role = String(input?.role ?? "Role").trim() || "Role";
-  const blocker = String(input?.blocker ?? "other").trim().toLowerCase();
-  const why = BLOCKER_COPY[blocker] ?? BLOCKER_COPY.other;
-  const actions = Array.isArray(input?.requiredActions) ? input.requiredActions : [];
-  const checklist = actions.length
-    ? actions.map((action) => `- ${ACTION_LABELS[action] ?? action}`).join("\n")
-    : "- Open the live session and finish the paused step";
+  const questions = normalizeAttentionQuestions(input?.questions);
+  if (!questions.length) return null;
   const magicLinkUrl = String(input?.magicLinkUrl ?? "").trim();
-  const subject = `Action needed: ${company} — ${role}`;
+  const subject = `Needs your answer: ${company} — ${role}`;
+  const why = questions.length === 1
+    ? "One question from the employer needs your input before we continue applying."
+    : "A few questions from the employer need your input before we continue applying.";
   const text = [
-    `JobAppAgent paused while applying to ${role} at ${company}.`,
+    `${role} at ${company}`,
+    "", why, "",
+    ...questions.map((question) => `- ${question.prompt}`),
     "",
-    why,
-    "",
-    "Required actions:",
-    checklist,
-    "",
-    magicLinkUrl ? `Open live session: ${magicLinkUrl}` : "Open live session: (link unavailable)",
-    "",
-    "This link expires in about 45–60 minutes. It does not include any VNC password.",
-    "filled ≠ applied until the agent sees a visible confirmation after you resume.",
+    magicLinkUrl ? `Continue applying: ${magicLinkUrl}` : "Open your newest JobAppAgent link to answer.",
+    "", "This secure link expires in about 45 minutes.",
   ].join("\n");
-
-  const checklistHtml = actions.length
-    ? `<ul>${actions.map((action) => `<li>${escapeHtml(ACTION_LABELS[action] ?? action)}</li>`).join("")}</ul>`
-    : "<ul><li>Open the live session and finish the paused step</li></ul>";
-
   const html = [
-    `<p>JobAppAgent paused while applying to <strong>${escapeHtml(role)}</strong> at <strong>${escapeHtml(company)}</strong>.</p>`,
+    `<p><strong>${escapeHtml(role)}</strong> at <strong>${escapeHtml(company)}</strong></p>`,
     `<p>${escapeHtml(why)}</p>`,
-    "<p><strong>Required actions</strong></p>",
-    checklistHtml,
-    magicLinkUrl
-      ? `<p><a href="${escapeAttribute(magicLinkUrl)}">Open live session</a></p>`
-      : "<p>Open live session: (link unavailable)</p>",
-    "<p>This link expires in about 45–60 minutes. It does not include any VNC password.</p>",
-    "<p>filled ≠ applied until the agent sees a visible confirmation after you resume.</p>",
+    `<ul>${questions.map((q) => `<li>${escapeHtml(q.prompt)}</li>`).join("")}</ul>`,
+    magicLinkUrl ? `<p><a href="${escapeAttribute(magicLinkUrl)}">Continue applying</a></p>` : "",
+    "<p>This secure link expires in about 45 minutes.</p>",
   ].join("");
-
   return { subject, text, html, why };
 }
 
@@ -104,6 +69,7 @@ export async function sendAttentionEmail(input, config = {}) {
   }
 
   const template = buildAttentionEmail(input);
+  if (!template) return { ok: false, error: "no_employer_questions" };
   const fetchImpl = config.fetchImpl ?? fetch;
 
   try {
@@ -135,5 +101,3 @@ export async function sendAttentionEmail(input, config = {}) {
     return { ok: false, error: "mailer_failed" };
   }
 }
-
-export { BLOCKER_COPY };

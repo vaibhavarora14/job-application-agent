@@ -5,7 +5,6 @@ import {
   ACTION_LABELS,
   BLOCKER_LABELS,
   actionLabel,
-  attentionPanelActionClasses,
   blockerLabel,
 } from "../lib/attention-action-labels.mjs";
 
@@ -39,38 +38,10 @@ test("ACTION_LABELS covers the documented attention action set", () => {
   assert.deepEqual(Object.keys(ACTION_LABELS).sort(), [...expected].sort());
 });
 
-test("blockerLabel maps Quiet Trust buyer chips", () => {
+test("blockerLabel maps internal ops labels", () => {
   assert.equal(blockerLabel("legal-attestation"), "Legal attestation");
   assert.equal(blockerLabel("captcha"), "CAPTCHA");
   assert.equal(blockerLabel(""), "Paused");
   assert.equal(blockerLabel("custom-gate"), "custom gate");
   assert.ok(BLOCKER_LABELS.judgment);
-});
-
-test("attentionPanelActionClasses: live required + panel closed → Open live primary", () => {
-  assert.deepEqual(attentionPanelActionClasses({ liveRequired: true, panelOpen: false }), {
-    liveBrowser: "button",
-    resume: "button button-secondary",
-  });
-});
-
-test("attentionPanelActionClasses: live required + panel open → Resume primary, Hide secondary", () => {
-  assert.deepEqual(attentionPanelActionClasses({ liveRequired: true, panelOpen: true }), {
-    liveBrowser: "button button-secondary",
-    resume: "button",
-  });
-});
-
-test("attentionPanelActionClasses: live not required → both secondary when closed", () => {
-  assert.deepEqual(attentionPanelActionClasses({ liveRequired: false, panelOpen: false }), {
-    liveBrowser: "button button-secondary",
-    resume: "button button-secondary",
-  });
-});
-
-test("attentionPanelActionClasses: live not required + panel open → Resume primary", () => {
-  assert.deepEqual(attentionPanelActionClasses({ liveRequired: false, panelOpen: true }), {
-    liveBrowser: "button button-secondary",
-    resume: "button",
-  });
 });

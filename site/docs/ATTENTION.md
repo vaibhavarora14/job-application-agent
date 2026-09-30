@@ -1,445 +1,174 @@
-# P1 Attention / Resume (hosted MVP)
+# Quiet Trust hosted buyer workflow (locked)
 
-Productizes the hosted-run attention pause: email notify → magic-link attention page → **in-browser live panel** → resume/skip/abort signals → GCP runner poll.
+Design source: the local `jaa-full-flow-gstack/index.html`, `PLAN.md`, and
+`shots/{preflight,choose,queue,judgment,done,admin}.png` pack, locked by Vaibhav/CoS.
+The hosted buyer extension uses Inter, Instrument Serif, background `#F7F4EF`,
+ink `#1B3D2F`, and primary `#2F6B5A`. Marketing retains its existing Quiet Trust styles.
 
-## Design fixtures (read-only UI harness)
+## Buyer contract
 
-Quiet Trust attention states for Design review **without** a magic-link token. Mirrors checkout `?design=success`: known keys only; invalid/missing `design=` keeps the normal token gate.
+| Step | Behavior | Primary |
+| --- | --- | --- |
+| Preflight | Resume ready / Profile ready, before a queue starts | Start applying |
+| Choose | Toggle role cards; selected count updates; zero disables the action | Apply to N jobs / Select at least 1 job |
+| Queue | In progress / Waiting on you; View queue reveals the role list | View queue |
+| Judgment | Actual packaged employer questions; every required answer must contain non-whitespace text | Continue applying |
+| Done | Submission confirmed on the employer site | Back to search |
 
-| State | URL |
-|-------|-----|
-| Judgment Q&A | `/attention/design?design=questions` |
-| Live browser required | `/attention/design?design=live-required` |
-| Live unavailable | `/attention/design?design=unavailable` |
-| Live load-fail + Retry | `/attention/design?design=retry` |
-| Resume requested note | `/attention/design?design=resume-requested` |
+Only actual employer questions interrupt a buyer. Do not synthesize generic
+questions from a `provide-judgment` action code. A technical-only pause renders
+Queue. A mixed pause renders the employer questions and separately records an ops
+alert. Technical blocker codes, browser panels, retry controls, session recovery,
+and live-session instructions do not appear in the buyer page or buyer email.
+Skip this role / Stop application live in the overflow disclosure.
 
-Production examples: `https://jobappagent.com/attention/design?design=questions`, etc.
+`Continue applying` still sends the authenticated `resume` coordination signal.
+It does **not** mean submitted. After a successful save the page shows Queue;
+a failed save preserves the answer and gives a short save notice. The server also
+rejects whitespace/missing required answers and unknown question IDs. Reopening
+a link with a stored signal shows Queue or the saved skip/stop acknowledgment.
+The runner must re-inspect before submitting and confirm visible ATS success.
 
-Fixtures are stubs — no signal/wake/apply/CAPTCHA/LIVE_APPLY/webhook/email. CTAs no-op. Resolver: `site/lib/attention-design-fixtures.mjs`.
+## Review fixtures and backend boundaries
 
-## Env vars (site Worker)
+Open `/attention/design?design=preflight|choose|queue|judgment|done|admin`.
+The design strip switches steps and mobile/laptop widths. Preflight → Choose →
+Queue is interactive; answers gate Continue applying → Queue. Done → Choose
+provides the Back to search preview. Queue expands the selected role list.
 
-| Variable | Required | Purpose |
-|----------|----------|---------|
-| `ATTENTION_NOTIFY_SECRET` | yes (to enable) | Bearer secret for internal attention APIs (`attention-notify`, `attention-signals`, `attention-wake`) and runner poll |
-| `ATTENTION_MAGIC_LINK_SECRET` | yes (to enable) | HMAC secret for signed `/attention/:id?token=…` links (≥16 chars; use `openssl rand -hex 32`) |
-| `RESEND_API_KEY` | yes (to send mail) | Resend API key. **Fail-closed** when missing — notify returns 503 and logs |
-| `RESEND_FROM_EMAIL` | no | Default `JobAppAgent <attention@jobappagent.com>` |
-| `PUBLIC_SITE_URL` | yes | Origin used to build magic links (already used for checkout) |
-| `ATTENTION_LIVE_SESSION_BASE_URL` | no | Public HTTPS front for agent-box noVNC (historically port **6080**). Example: `https://novnc.example/vnc.html`. When set, live-session embeds/redirects here after magic-link verify. **Required for buyer live panel.** When unset, buyers see a soft “temporarily unavailable” message |
-| `ATTENTION_NOVNC_PASSWORD` | no | VNC password held only on the Worker. Injected into the **URL fragment** for the embed iframe / redirect — **never emailed**. Omit to let noVNC prompt |
-| `ATTENTION_IAP_HELPER_COMMAND` | no | **Founder/dev only.** Override the IAP tunnel one-liner documented below. Never rendered on buyer attention surfaces |
-| `ATTENTION_WAKE_URL` | no | Optional HTTPS webhook for on-demand VM wake. When set, opening live session / `POST /api/internal/attention-wake` POSTs a signed wake payload here (Bearer `ATTENTION_NOTIFY_SECRET`). Wire to `gcloud compute instances start` outside the Worker |
-| `ATTENTION_WAKE_INSTRUCTIONS` | no | **Founder/dev / internal wake API only.** Override wake instructions returned when `ATTENTION_WAKE_URL` is unset. Never shown in the buyer live panel |
-| `ATTENTION_DRAFT_API_KEY` | no | Optional OpenAI-compatible key for judgment **Draft** on `/attention/:id`. When unset, Draft returns `draft_unconfigured` and typed answers still work |
-| `ATTENTION_DRAFT_BASE_URL` | no | Optional chat-completions base URL (default OpenAI-compatible `/v1`) |
-| `ATTENTION_DRAFT_MODEL` | no | Optional model id (default `gpt-4o-mini`) |
+Aliases remain: `questions` → Judgment; `live-required`, `unavailable`, `retry`,
+and `resume-requested` → Queue. Unknown/missing keys and **any non-design path ID**
+still require a signed token. A query parameter never grants admin access.
 
-## CLI / runner host env (agent-box)
+All fixtures use synthetic Acme/Northstar/FieldKit/Gridline data. The persistent
+strip labels all states as design fixtures with sample data. No fixture calls signal,
+wake, apply, answers, drafts, live-session, email, or ops APIs. Admin is a dark,
+explicitly **ADMIN ONLY · DESIGN-ONLY · NOT BUYER UI** contrast; Open session is a
+local explanatory stub. It cannot display real ops data or open a real session.
+
+Preflight, Choose, and Done currently ship **only as fixtures**. There is no hosted
+readiness/search/queue-creation API or submission-confirmation feed yet. Do not
+connect these screens to production by inventing ready/success values. Real
+attention links display one known role; the queue count is 1, not a fabricated
+account-wide total. Done must eventually consume verified employer confirmation;
+a resume signal, elapsed time, or button click cannot select it in production.
+
+## Ops/admin alert seam
+
+`POST /api/internal/attention-notify` remains bearer-authenticated with
+`ATTENTION_NOTIFY_SECRET`. On an accepted notification:
+
+1. Normalize the employer questions and classify ops work.
+2. For CAPTCHA, unsolvable/session/site issues, unmirrorable actions, or missing
+   questions, invoke `recordAttentionAdminAlert` **before** checking buyer mail
+   configuration. This also happens when employer questions coexist with ops work.
+3. With zero questions, return `buyerNotified: false` and the alert result. No
+   buyer email, magic-link signing, Resend key, or recipient email is needed.
+4. With questions, sign the existing judgment magic link and send a **Needs your
+   answer: Company — Role** email. It contains employer prompts and **Continue
+   applying**, never a technical-action checklist.
+
+**Explicit stub:** `site/lib/attention-admin-alert.mjs` writes a structured
+`[attention-admin-alert]` operational warning containing only attention ID, blocker,
+`status: "stubbed"`, and `buyerState: "in_progress"`. This is not a delivered page
+or email and is not a durable ops inbox. Wire a private dispatcher/durable inbox
+at this seam before relying on automatic paging. No messages were sent or external
+notification service enabled by this change. There is no claim that ops was notified
+when the result is stubbed. No candidate answers, email, credentials, session URL,
+or private state is sent to telemetry/community Workers.
+
+For technical-only events the notify response is:
+
+```json
+{
+  "ok": true,
+  "attentionId": "attention-example",
+  "buyerNotified": false,
+  "adminAlert": {
+    "type": "attention_admin_alert",
+    "attentionId": "attention-example",
+    "blocker": "captcha",
+    "status": "stubbed",
+    "buyerState": "in_progress"
+  }
+}
+```
+
+The job stays in progress for the buyer while ops resolves the issue. The stub
+never sends a resume signal, resolves an attention event, grants a consent, or
+claims application success. Legal attestations and other consent gates remain
+subject to the runner's existing authorization rules.
+
+## Authenticated coordination APIs
+
+| Endpoint | Authentication / purpose |
+| --- | --- |
+| `POST /api/internal/attention-notify` | Internal bearer; ops routing and/or judgment email |
+| `POST /api/attention/:id/signal` | Magic link; resume with employer answers, skip, abort |
+| `POST /api/attention/:id/draft` | Magic link; optional private draft, disabled when AI assistance is discouraged |
+| `GET /api/attention/:id/answers` | Magic link; prior answers, never silently inserted |
+| `GET /api/internal/attention-signals/:id` | Internal bearer; runner coordination poll |
+| `POST /api/internal/attention-wake` | Internal bearer; optional VM wake webhook or recorded ops instructions |
+
+Signal body remains `{ token, action: "resume" | "skip" | "abort", answers }`.
+Answers carry `{ questionId, text, source: "typed" | "draft_approved" | "bank" }`.
+Site D1 stores coordination signals and approved answer-bank entries, **not** the
+application ledger. State-worker remains the attention/ledger source of truth.
+Draft and prior-answer controls sit in the optional Answer options disclosure.
+Drafts require explicit approval; postings discouraging AI retain typed answers.
+
+The legacy magic-link `/api/attention/:id/live-session` and `/wake` endpoints
+remain available for compatibility with existing integrations. New buyer pages
+and emails never link to or call them. This PR does not redesign or enable the
+underlying noVNC or CAPTCHA vendor infrastructure. Real ops still use internal
+wake tooling and their existing authorized agent-box session; the public admin
+fixture supplies neither credentials nor access.
+
+## Configuration
 
 | Variable | Purpose |
-|----------|---------|
-| `ATTENTION_NOTIFY_URL` | e.g. `https://jobappagent.com/api/internal/attention-notify` |
-| `ATTENTION_NOTIFY_SECRET` | Same bearer as the site Worker |
-| `PUBLIC_SITE_URL` | Optional; poll client uses this (or derives origin from `ATTENTION_NOTIFY_URL`) |
-| `JOB_APPLICATION_AGENT_STATE_DIR` | Local state root; session bindings live under `session-bindings/` (never cloud) |
-| `DISPLAY` | Fill display — must be **`:99`** for headed Chrome |
+| --- | --- |
+| `ATTENTION_NOTIFY_SECRET` | Internal notify/signals/wake bearer |
+| `ATTENTION_MAGIC_LINK_SECRET` | Judgment HMAC signing, at least 16 characters |
+| `PUBLIC_SITE_URL` | Origin for judgment links |
+| `RESEND_API_KEY` | Judgment mail delivery; fail closed when absent |
+| `RESEND_FROM_EMAIL` | Optional sender, defaults to `JobAppAgent <attention@jobappagent.com>` |
+| `ATTENTION_DRAFT_API_KEY`, `ATTENTION_DRAFT_BASE_URL`, `ATTENTION_DRAFT_MODEL` | Optional private draft provider |
+| `ATTENTION_WAKE_URL`, `ATTENTION_WAKE_INSTRUCTIONS` | Optional internal wake webhook / manual ops instructions |
+| `ATTENTION_LIVE_SESSION_BASE_URL`, `ATTENTION_NOVNC_PASSWORD` | Existing noVNC compatibility configuration; never passed to buyer components |
+| `ATTENTION_IAP_HELPER_COMMAND` | Founder/dev IAP helper only |
 
-### Live display hard rule
+No new secret or database migration is needed for this slice. Existing D1
+`attention_signals` and `attention_answer_bank` storage is reused. Single-tenant
+answer-bank scoping is unchanged.
 
-**Buyer live noVNC must show the fill session:** Xvfb `DISPLAY=:99` → x11vnc **`localhost:5900`** → websockify/noVNC (HTTP historically `:6080`).
+## Runner and ops contract
 
-- **Never** TigerVNC `:1` / port **`5901`** (cold desktop / jobs listing = product failure).
-- Guard: `node job-application-agent/scripts/novnc-display-guard.mjs --unit /etc/systemd/system/novnc.service`
-- Example unit: `job-application-agent/references/agent-box/novnc.service.example`
-- Agent-box notes: `job-application-agent/references/agent-box/README.md`
+Use the installed `job-application-agent` CLI for private state operations. Acquire
+and renew the shared application-run lease, download the canonical résumé via
+`resume path`, and upload its absolute path. Keep session bindings local-only:
+attention ID, job URL, persistent profile, `DISPLAY=:99`, VNC `5900`, optional tab
+hint. Do not switch to TigerVNC `:1` / `5901` or lose the filled form tab.
 
-After `attention add`, the skill CLI POSTs to the site notify API when notify URL + secret are set. Uses profile email + optional `company`/`role` (or ledger lookup). Notify failure is logged and does not roll back the attention event.
+The existing `scripts/attention-runner-poll.mjs` exits 0 for `resume_requested`,
+10 for skip, 11 for abort, 20 for still waiting/timeout. On resume: renew lease,
+reattach the same tab, inject approved answers, re-inspect all absolute gates,
+create the submission intent immediately before transmitting, then confirm it
+only after visible ATS success. Sent-but-unverified is not permission to retry.
+No buyer UI signal authorizes bypassing a remaining technical or consent gate.
+See `state-worker/AGENT.md` and the runner/session-binding documentation.
 
-## APIs
+## Validation
 
-### `POST /api/internal/attention-notify`
+Run the attention unit and component-render tests from `site/`:
 
-Bearer `ATTENTION_NOTIFY_SECRET`. Body:
-
-```json
-{
-  "attentionId": "attention-…",
-  "email": "candidate@example.com",
-  "company": "LiveKit",
-  "role": "Forward Deployed Engineer",
-  "url": "https://…",
-  "stage": "submission",
-  "blocker": "legal-attestation",
-  "requiredActions": ["review-legal", "provide-judgment", "complete-captcha"],
-  "questions": [
-    { "id": "why", "prompt": "Why this role at LiveKit?", "kind": "why-us", "required": true }
-  ],
-  "postingText": "optional — used to detect “don’t use AI assistance”",
-  "aiAssistanceDiscouraged": false
-}
+```sh
+node --test tests/attention-*.test.mjs tests/attention-*.spec.mjs
+npm run typecheck
 ```
 
-Sends email subject `Action needed: {company} — {role}` with checklist + **Open live session** magic link (~45 min TTL). Never includes VNC passwords. `questions[]` and `aiAssistanceDiscouraged` are signed into the magic-link payload for the attention UI.
-
-### `GET /api/attention/:id/live-session?token=…&embed=1`
-
-Auth’d live-session entry (buyer path = **in-page embed**):
-
-1. Verifies the same magic-link token as `/attention/:id`.
-2. **Fire-and-forget wake** (see below) so on-demand agent-box can start — does **not** block the embed on wake recorded.
-3. If `ATTENTION_LIVE_SESSION_BASE_URL` is set:
-   - **`embed=1`** (attention panel) → same-origin HTML shell that iframes noVNC with `autoconnect=true` and optional `ATTENTION_NOVNC_PASSWORD` in the **hash fragment** (not query). Soft “Connecting…” clears once the iframe loads / after a short timeout. Soft “Live browser failed to load — retry” if the frame errors or stays blank. Worker CSP: attention page `frame-src` allows `'self'` + configured live origin + `https://*.trycloudflare.com`; embed shell allows `frame-ancestors 'self'` and the same noVNC `frame-src` / `wss:` `connect-src`.
-   - Without `embed` → **302** to noVNC (new-tab / email deep-link fallback). Attention-page CSP must still allow the live origin so a redirected iframe can paint.
-4. If unset → soft buyer HTML: **“Live browser is temporarily unavailable. Try again shortly.”** No IAP / gcloud / SSH paste blocks on this route.
-
-Full WebSocket reverse-proxy through the Worker remains out of scope; public HTTPS noVNC embed is the buyer path.
-
-### `POST /api/attention/:id/wake`
-
-Magic-link body `{ "token": "…" }`. Same wake seam as the internal route; used fire-and-forget by the attention page before loading the live panel. Returns `{ status: "dispatched" | "recorded", message }` with **buyer-safe** soft status only — **no `instructions` field** on this buyer route.
-
-### `POST /api/internal/attention-wake`
-
-Bearer `ATTENTION_NOTIFY_SECRET`. Body:
-
-```json
-{ "attentionId": "attention-…", "reason": "live_session", "source": "ops" }
-```
-
-- If `ATTENTION_WAKE_URL` is set → POSTs `{ type: "attention_wake", attentionId, reason, source, requestedAt }` to that webhook (Bearer secret).
-- If unset → `{ status: "recorded", instructions: "gcloud compute instances start …" }` for **Personal/ops** to start agent-box manually (founder tooling — not buyer UI).
-
-No GCP credentials are required inside the Worker for this MVP.
-
-### `POST /api/attention/:id/signal`
-
-Magic-link body:
-
-```json
-{
-  "token": "…",
-  "action": "resume" | "skip" | "abort",
-  "answers": [
-    { "questionId": "why", "text": "…", "source": "typed" | "draft_approved" | "bank" }
-  ]
-}
-```
-
-Stores a coordination row in site D1 (`attention_signals`), including `answers[]` on `payload_json` for the runner. On resume, approved answers are also upserted into the site **answer bank** (`attention_answer_bank` — fingerprint, prompt, text, tags). **Not** the application ledger — state-worker attention stream remains SoT for opened/resolved. Never stores CAPTCHA/MFA/cookies.
-
-### `POST /api/attention/:id/draft`
-
-Magic-link body `{ "token", "questionId?", "prompt?", "candidateNotes?" }`. Returns a short first-person draft for edit/Approve, or `draft_unconfigured` when `ATTENTION_DRAFT_API_KEY` is unset. Disabled with `403 ai_assistance_discouraged` when the posting bans AI assistance. Drafts are private scratch until Approve — never silent-pasted into the ATS.
-
-### `GET /api/attention/:id/answers?token=…&prompt=…`
-
-Magic-link prior-answer suggestions from the site D1 answer bank (fuzzy prompt match). Never auto-fills without showing the text.
-
-### `GET /api/internal/attention-signals/:id`
-
-Bearer poll for the GCP runner.
-
-```json
-{
-  "attentionId": "attention-…",
-  "signal": "resume_requested",
-  "pending": true,
-  "resumeRequested": true,
-  "skipped": false,
-  "aborted": false,
-  "answers": [
-    { "questionId": "why", "text": "…", "source": "typed" }
-  ],
-  "updatedAt": "…"
-}
-```
-
-`signal: null` / `pending: false` means still waiting — keep polling while the lease is held.
-
-## Runner poll client
-
-```bash
-node job-application-agent/scripts/attention-runner-poll.mjs \
-  --attention-id attention-… \
-  --interval 5 \
-  --timeout 3600
-```
-
-| Exit | Meaning | Next action |
-|------|---------|-------------|
-| `0` | `resume_requested` | Renew lease → load **session binding** → same-tab re-inspect → **submit if possible** → visible confirm → intent confirm |
-| `10` | `skipped` | `attention resolve`, no submit, continue round |
-| `11` | `aborted` | `cloud lease-release`, end round |
-| `20` | timeout / `--once` still waiting | Renew lease or re-notify |
-| `1` | config/HTTP error | Fix `ATTENTION_NOTIFY_SECRET` / site URL |
-
-Helpers after exit `0`:
-
-```bash
-node job-application-agent/scripts/attention-resume-submit.mjs --checklist
-node job-application-agent/scripts/attention-resume-submit.mjs \
-  --attention-id attention-… --stdin <<'JSON'
-{ "pageUrl": "https://…/application", "submitEnabled": true, "leaseHeld": true }
-JSON
-```
-
-## Session binding (same-tab contract)
-
-Paused runs must record enough to reattach — **local-only** (browser profile paths never enter cloud state):
-
-| Field | Required | Notes |
-|-------|----------|-------|
-| `attentionId` | yes | Ties binding to attention event |
-| `jobUrl` | yes | Filled ATS form URL (`attention.url`) |
-| `browserProfilePath` | yes | Chrome user-data-dir for the headed fill |
-| `display` | yes | Must be `:99` |
-| `vncPort` | yes | Must be `5900` |
-| `tabHint` | no | Optional `{ title, urlContains }` |
-| `applicationId` / `roundId` | no | Join keys |
-
-Write via optional fields on `attention add` (`browserProfilePath`, `display`, `vncPort`, `tabHint`) or:
-
-```bash
-node job-application-agent/scripts/session-binding.mjs write --stdin
-```
-
-**Hard invariant:** keep headed Chrome on that exact filled form tab through the pause. Cold Chrome / jobs listing in the live panel is a bug.
-
-## Resume re-inspect → submit checklist (agent)
-
-After exit `0` / `resume_requested`:
-
-1. `cloud lease-renew` (lease must stay held through the pause). If lease lost → new attention `session-expired`; fail closed.
-2. Load session binding; refuse resume if missing or if live URL **drifts** from `jobUrl`.
-3. Focus the **same** ATS tab the candidate used in the live session (`DISPLAY=:99` / profile path).
-4. Load `answers[]` from the poll payload. Inject into matching textareas (`scripts/ats/answer-inject.mjs`, Ashby-first) before submit classification.
-5. Re-check live DOM for remaining absolute blockers — do not trust prior fill state blindly.
-6. **CAPTCHA vendor is Off by default** (`CAPTCHA_VENDOR=off`). Live panel remains the path for CAPTCHA. See CAPTCHA section below.
-7. **If clear → agent submits** (submit bias). No extra in-app “please confirm submit” unless a new absolute gate appeared.
-8. Wait for a **visible** success/confirmation surface (Ashby/generic selectors in `scripts/ats/submit-adapters.mjs`).
-9. `cloud intent-confirm` / `ledger add` only after that visible confirm. **filled ≠ applied.**
-10. If confirmation is missing after click → `cloud intent-sent` / sent-unverified; **never retry** until verified.
-11. If still blocked → `attention add` again honestly (never invent success).
-12. On skip (`10`): `attention resolve`, do not submit, continue the round.
-13. On abort (`11`): `cloud lease-release`, end the round.
-
-Ledger/intent rules are unchanged from `SKILL.md` / `RUNS.md` / `state-worker/AGENT.md`.
-
-## P1.5 — Judgment answers + drafts
-
-Quiet Trust attention card can collect narrative answers **in-app** so the live panel is reserved for unmirrorable blockers (CAPTCHA / MFA / legal widgets).
-
-| Surface | Behavior |
-|---------|----------|
-| Pause packaging | `attention add` accepts `questions[]`, optional `postingText`, `aiAssistanceDiscouraged` |
-| UI | Textareas per question; optional **Use prior answer**; optional **Draft** → edit → **Approve** / Discard |
-| AI policy | When posting copy discourages AI assistance, Draft is hidden/disabled (“Answer in your own voice”) |
-| Resume | Runner injects approved answers, then re-inspects / submits |
-| Storage | Site D1 `attention_answer_bank` (reusable prompts/text). Signal `payload_json` carries answers for the poll. Attention queue still never stores CAPTCHA/MFA/cookies |
-
-D1 binding name is **`job-application-agent-public-stats`** (see `site/wrangler.jsonc`). After deploy, apply migration `0006_attention_answer_bank.sql` if it has not already run:
-
-```bash
-cd site && npx wrangler d1 migrations apply job-application-agent-public-stats --remote
-```
-
-## CAPTCHA vendor (scaffolded, Off by default)
-
-Optional buyer-opt-in CAPTCHA assist lives in `job-application-agent/scripts/captcha-vendor.mjs`.
-
-| Env / pref | Default | Meaning |
-|------------|---------|---------|
-| `CAPTCHA_VENDOR` | `off` | `off` \| `capsolver` \| `2captcha` |
-| `CAPTCHA_VENDOR_API_KEY` | unset | Runner-only secret |
-| `CAPTCHA_BUYER_OPT_IN` / `CAPTCHA_ASSIST` | off | Must be `on` for assist |
-| `CAPTCHA_SPEND_CAP_USD_MONTH` | `5` | Fail closed to live panel when exceeded |
-
-When Off (or missing key / unsupported type / spend cap), behavior is identical to today: attention `complete-captcha` + live panel. Adapters are stubs until an explicit spike go — **no vendor calls in CI**, no production enable in this slice.
-
-Buyer disclosure (Quiet Trust):
-
-> Optional CAPTCHA assist uses a third-party solver on public challenge tokens. Some employers disallow automation. You can turn this off anytime; we fall back to the live browser.
-
-## UI
-
-`/attention/:id?token=…` — Quiet Trust attention card: blocker chip, required actions, lease badge, judgment answer fields when packaged.
-
-**Open live browser** expands an **in-page live panel** (iframe → `/api/attention/:id/live-session?token=…&embed=1`). Shown as the primary CTA when CAPTCHA/MFA/unmirrorable actions remain; otherwise secondary beside in-card answers. Resume / Skip / Abort stay visible beside the panel.
-
-Soft status line may show **Connecting…** briefly, then clears once the iframe loads (or after a short timeout). Buyers never see wake-recorded / ops / IAP / gcloud / SSH helper copy.
-
-When `ATTENTION_LIVE_SESSION_BASE_URL` is unset, the panel shows **Live browser is temporarily unavailable. Try again shortly.**
-
-## On-demand agent-box wake
-
-agent-box may be **stopped** for cost. Opening the live panel triggers the wake seam in the background (fire-and-forget):
-
-1. Attention page → `POST /api/attention/:id/wake` (no UI stall; no instructions rendered)
-2. Live-session route also fire-and-forget dispatches wake
-3. Ops can call `POST /api/internal/attention-wake` directly
-
-Wire `ATTENTION_WAKE_URL` later to a small starter that runs:
-
-```bash
-gcloud compute instances start agent-box \
-  --zone=asia-south1-a \
-  --project=agent-runner-vaibhav-4500
-```
-
-Cold-start still needs Xvfb `:99` + x11vnc **`5900`** + noVNC on `:6080` (websockify → `localhost:5900`) after the instance is RUNNING. Never stop while a cloud lease is held or `/tmp/jaa-hosted-fill.running` exists. Run `novnc-display-guard.mjs` after cold start.
-
-## Founder / dev: IAP tunnel helper (not buyer UI)
-
-When there is no public noVNC front yet, founders can still reach agent-box port **6080** via IAP for local debugging. This is **ops tooling** — the buyer attention page and live-session route do **not** render these commands.
-
-```bash
-gcloud compute start-iap-tunnel AGENT_BOX_INSTANCE 6080 \
-  --local-host-port=localhost:6080 \
-  --zone=AGENT_BOX_ZONE \
-  --project=AGENT_BOX_PROJECT
-```
-
-Then open `http://127.0.0.1:6080/vnc.html?autoconnect=true`. Override the documented one-liner with `ATTENTION_IAP_HELPER_COMMAND` if instance/zone/project differ. Prefer setting `ATTENTION_LIVE_SESSION_BASE_URL` for the real buyer path.
-
-## Golden-path E2E runbook (founder on agent-box)
-
-LiveKit-class: **pause on prefilled form → magic link live panel → human gates → resume → submit → ledger**.
-
-### Preconditions
-
-1. Worker secrets as in the “One-time Worker secrets” section below (`ATTENTION_LIVE_SESSION_BASE_URL` must front noVNC whose websockify targets **`localhost:5900`**).
-2. agent-box: Xvfb `:99`, x11vnc on **5900**, noVNC on **6080** per `references/agent-box/`.
-3. `node job-application-agent/scripts/novnc-display-guard.mjs --unit /etc/systemd/system/novnc.service` exits 0.
-4. Headed Chrome uses a persistent fill profile on `DISPLAY=:99`.
-
-### Steps
-
-1. `cloud lease-acquire` (application-run). Hold/renew through the pause.
-2. Navigate to a real ATS application URL on the fill display; fill verified résumé facts only.
-3. Stop on absolute blockers (CAPTCHA / legal / judgment). **Do not submit.** Keep the **same filled tab** open.
-4. Open attention **with session binding**:
-
-```bash
-node job-application-agent/scripts/job-application.mjs attention add --stdin <<'JSON'
-{
-  "roundId": "round-e2e",
-  "applicationId": "app-e2e",
-  "url": "https://jobs.ashbyhq.com/…/application",
-  "stage": "submission",
-  "blocker": "legal-attestation",
-  "requiredActions": ["review-legal", "provide-judgment", "complete-captcha"],
-  "company": "LiveKit",
-  "role": "Forward Deployed Engineer",
-  "browserProfilePath": "/home/runner/.jaa-chrome-fill",
-  "display": ":99",
-  "vncPort": 5900,
-  "tabHint": { "urlContains": "/application" }
-}
-JSON
-```
-
-5. Open the magic link → Quiet Trust `/attention/:id` → **Open live browser**.
-6. **Accept only if** the panel shows the **already-filled** ATS form (fields visible). If you see TigerVNC desktop, blank XFCE, or a fresh jobs listing → **fail the run** (fix/VNC misbind); fix `novnc.service` → 5900.
-7. Candidate completes only listed absolute actions in that live tab.
-8. Click **I’ve finished — resume**.
-9. Runner poll:
-
-```bash
-node job-application-agent/scripts/attention-runner-poll.mjs --attention-id attention-…
-# expect exit 0
-```
-
-10. Resume → submit:
-
-```bash
-# Agent / automation: re-inspect same tab, then:
-node job-application-agent/scripts/attention-resume-submit.mjs --attention-id attention-… --stdin <<'JSON'
-{
-  "pageUrl": "https://jobs.ashbyhq.com/…/application",
-  "submitEnabled": true,
-  "leaseHeld": true
-}
-JSON
-# exit 13 → click submit using Ashby/generic selectors
-# re-probe until exit 0 (visible confirmation) → intent-confirm / ledger add
-```
-
-11. Confirm: ledger row exists; attention resolved; **filled ≠ applied** held until step 10 confirmation.
-12. Skip / Abort: exit 10 → resolve, no submit; exit 11 → release lease, end round.
-
-### One-time Worker secrets
-
-```bash
-cd site
-npx wrangler secret put ATTENTION_NOTIFY_SECRET
-npx wrangler secret put ATTENTION_MAGIC_LINK_SECRET   # openssl rand -hex 32
-npx wrangler secret put RESEND_API_KEY
-# Required for buyer live panel:
-npx wrangler secret put ATTENTION_LIVE_SESSION_BASE_URL
-npx wrangler secret put ATTENTION_NOVNC_PASSWORD
-# Optional wake webhook (otherwise internal wake returns founder instructions only):
-# npx wrangler secret put ATTENTION_WAKE_URL
-```
-
-Ensure `PUBLIC_SITE_URL=https://jobappagent.com` is set (wrangler vars already default this).
-
-### Agent-box env
-
-```bash
-export ATTENTION_NOTIFY_URL=https://jobappagent.com/api/internal/attention-notify
-export ATTENTION_NOTIFY_SECRET=…   # same as Worker
-export PUBLIC_SITE_URL=https://jobappagent.com
-export DISPLAY=:99
-```
-
-### Notify-only smoke (no fill session)
-
-For mail/UI wiring without a headed fill, the shorter “Playable demo” loop below still works — but it does **not** satisfy golden-path acceptance (same-tab + submit).
-
-## Playable demo (notify + poll smoke)
-
-1. Hold an application-run lease (`cloud lease-acquire`).
-2. Open attention (CLI or curl notify):
-
-```bash
-node job-application-agent/scripts/job-application.mjs attention add --stdin <<'JSON'
-{
-  "roundId": "round-demo",
-  "applicationId": "app-demo",
-  "url": "https://jobs.example.com/role",
-  "stage": "submission",
-  "blocker": "captcha",
-  "requiredActions": ["complete-captcha"],
-  "company": "DemoCo",
-  "role": "Demo Role"
-}
-JSON
-```
-
-3. Open the magic link from email (or `magicLinkUrl` from the notify JSON response).
-4. Click **Open live browser**:
-   - With base URL + password secrets → in-page panel embeds noVNC autoconnected.
-   - Without → soft “temporarily unavailable” in the panel (use founder IAP docs above for local ops).
-5. Finish the blocker in the live browser.
-6. Click **I’ve finished — resume**.
-7. On the runner:
-
-```bash
-node job-application-agent/scripts/attention-runner-poll.mjs \
-  --attention-id attention-…   # id from step 2
-# expect exit 0 and printed resume checklist
-```
-
-8. Follow the resume → submit checklist above (session binding required for golden path).
-
-## Out of scope (follow-ups)
-
-- Full WebSocket noVNC reverse-proxy through the site Worker (next slice after embed works)
-- Named Cloudflare tunnel DNS / VM wake automation (`live.jobappagent.com`)
-- Browserbase / Steel
-- Enabling CAPTCHA vendor in production (scaffold only — `CAPTCHA_VENDOR=off`)
-- Attestation auto-grants UI
-- Multi-tenant paid→slot / billing
-- Multi-tenant answer-bank scoping beyond founding single-tenant fingerprints
+Tests cover the six fixtures and aliases, auth-gate boundaries, CTA text, whitespace
+answer gating, buyer/ops notification routing (all mail/network mocked), actual
+rendered buyer markup, and the absence of troubleshooting/admin chrome. Preview
+all six screens at mobile and laptop widths and exercise card toggles, zero
+selection, whitespace input, the overflow, and the queue transition before shipping.

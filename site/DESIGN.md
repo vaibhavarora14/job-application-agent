@@ -29,3 +29,12 @@ The boundary-run mark is intentionally limited to three shapes: a parchment tile
 - Lead cloud conversion with verified aggregate community proof. Label installations as installations, never as people.
 - Keep the public journey focused on the hosted product; open-source provenance may remain in supporting copy without competing calls to action.
 - Use this same system across `jobappagent.com` and `stats.jobappagent.com`.
+
+## Locked hosted buyer flow
+
+The Vaibhav/CoS-locked local `jaa-full-flow-gstack` design-html and shots define the
+hosted Preflight → Choose → Queue → Judgment → Done flow. Its scoped product
+extension uses Inter + Instrument Serif, `#F7F4EF` background, `#1B3D2F` ink, and
+`#2F6B5A` primary. Buyer attention is only for employer questions; technical issues
+stay in progress and take a separate ops path. See [ATTENTION.md](docs/ATTENTION.md)
+for fixture URLs, auth boundaries, and explicit backend/notification stubs.

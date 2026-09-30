@@ -16,7 +16,7 @@ export const ACTION_LABELS = {
   "retry-site": "Retry site",
 };
 
-/** Buyer-facing blocker chips — Quiet Trust (no raw kebab enums). */
+/** Internal ops labels only. Buyer status comes from attention-buyer-flow.mjs. */
 export const BLOCKER_LABELS = {
   captcha: "CAPTCHA",
   authentication: "Sign-in",
@@ -51,21 +51,4 @@ export function blockerLabel(blocker) {
   const key = String(blocker ?? "").trim().toLowerCase();
   if (!key) return BLOCKER_LABELS.paused;
   return BLOCKER_LABELS[key] ?? key.replace(/-/g, " ");
-}
-
-/**
- * Non-blocking CTA hierarchy for live browser vs resume when live is required.
- * Open live stays filled primary while the panel is closed; once open, Hide is
- * secondary and I’ve finished — resume takes the filled primary.
- *
- * @param {{ liveRequired?: boolean, panelOpen?: boolean }} [options]
- * @returns {{ liveBrowser: string, resume: string }}
- */
-export function attentionPanelActionClasses(options = {}) {
-  const liveRequired = Boolean(options.liveRequired);
-  const panelOpen = Boolean(options.panelOpen);
-  return {
-    liveBrowser: liveRequired && !panelOpen ? "button" : "button button-secondary",
-    resume: panelOpen ? "button" : "button button-secondary",
-  };
 }

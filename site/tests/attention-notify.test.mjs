@@ -68,21 +68,19 @@ test("rejects forged, mismatched, and expired magic links", async () => {
   assert.equal((await signAttentionMagicLink({ attentionId: "x" }, "short")).ok, false);
 });
 
-test("builds attention email with checklist and Open live session CTA", () => {
+test("buyer email asks only employer questions even in a mixed pause", () => {
   const email = buildAttentionEmail({
-    company: "LiveKit",
-    role: "Forward Deployed Engineer",
-    blocker: "legal-attestation",
-    requiredActions: ["review-legal", "provide-judgment", "complete-captcha"],
+    company: "LiveKit", role: "Forward Deployed Engineer", blocker: "captcha",
+    requiredActions: ["complete-captcha"],
+    questions: [{ id: "why", prompt: "Why this company?" }],
     magicLinkUrl: "https://jobappagent.com/attention/attention-1?token=abc",
   });
-  assert.equal(email.subject, "Action needed: LiveKit — Forward Deployed Engineer");
-  assert.match(email.text, /Required actions:/);
-  assert.match(email.text, /- Review legal attestation/);
-  assert.match(email.text, /Open live session: https:\/\/jobappagent\.com\/attention\/attention-1\?token=abc/);
-  assert.match(email.html, /Open live session/);
-  assert.match(email.text, /does not include any VNC password/);
-  assert.doesNotMatch(email.text, /vnc password:\s*\S+/i);
+  assert.equal(email.subject, "Needs your answer: LiveKit — Forward Deployed Engineer");
+  assert.match(email.text, /Why this company/);
+  assert.match(email.text, /Continue applying:/);
+  assert.match(email.html, /Continue applying/);
+  assert.doesNotMatch(email.text + email.html, /captcha|live session|live browser|try again|resume application|VNC/i);
+  assert.equal(buildAttentionEmail({ blocker: "captcha" }), null);
 });
 
 test("sendAttentionEmail fails closed without API key or on upstream error", async () => {
@@ -91,8 +89,9 @@ test("sendAttentionEmail fails closed without API key or on upstream error", asy
     to: "candidate@example.com",
     company: "Acme",
     role: "Eng",
-    blocker: "captcha",
-    requiredActions: ["complete-captcha"],
+    blocker: "judgment",
+    requiredActions: ["provide-judgment"],
+    questions: [{ id: "why", prompt: "Why this company?", required: true }],
     magicLinkUrl: "https://jobappagent.com/attention/a?token=t",
   }, { apiKey: "", logger: { error: (message) => logs.push(message) } });
   assert.equal(missing.ok, false);
@@ -103,8 +102,9 @@ test("sendAttentionEmail fails closed without API key or on upstream error", asy
     to: "candidate@example.com",
     company: "Acme",
     role: "Eng",
-    blocker: "captcha",
-    requiredActions: ["complete-captcha"],
+    blocker: "judgment",
+    requiredActions: ["provide-judgment"],
+    questions: [{ id: "why", prompt: "Why this company?", required: true }],
     magicLinkUrl: "https://jobappagent.com/attention/a?token=t",
   }, {
     apiKey: "re_test",
@@ -121,8 +121,9 @@ test("notifyAttentionOpened signs a link and sends mail when configured", async 
     email: "candidate@example.com",
     company: "LiveKit",
     role: "FDE",
-    blocker: "captcha",
-    requiredActions: ["complete-captcha"],
+    blocker: "judgment",
+    requiredActions: ["provide-judgment"],
+    questions: [{ id: "why", prompt: "Why this company?", required: true }],
   });
   assert.equal(validated.ok, true);
 
@@ -139,8 +140,8 @@ test("notifyAttentionOpened signs a link and sends mail when configured", async 
   });
   assert.equal(result.ok, true);
   assert.match(result.magicLinkUrl, /\/attention\/attention-1\?token=/);
-  assert.equal(sentBody.subject, "Action needed: LiveKit — FDE");
-  assert.match(sentBody.text, /Open live session:/);
+  assert.equal(sentBody.subject, "Needs your answer: LiveKit — FDE");
+  assert.match(sentBody.text, /Continue applying:/);
 });
 
 test("notifyAttentionOpened fails closed without magic secret or mailer", async () => {
@@ -149,8 +150,9 @@ test("notifyAttentionOpened fails closed without magic secret or mailer", async 
     email: "candidate@example.com",
     company: "LiveKit",
     role: "FDE",
-    blocker: "captcha",
-    requiredActions: ["complete-captcha"],
+    blocker: "judgment",
+    requiredActions: ["provide-judgment"],
+    questions: [{ id: "why", prompt: "Why this company?", required: true }],
   };
   const noSecret = await notifyAttentionOpened(base, {
     magicLinkSecret: "",
@@ -188,4 +190,36 @@ test("validates resume/skip/abort signals and runner poll shape", () => {
   });
   assert.equal(poll.resumeRequested, true);
   assert.equal(poll.skipped, false);
+});
+
+test("technical-only pauses record ops stub immediately without mail, magic links or network", async () => {
+  const logs = [];
+  for (const blocker of ["captcha", "unsolvable", "live-required", "session-lost", "site-error", "judgment"]) {
+    const result = await notifyAttentionOpened({
+      attentionId: "attention-ops", company: "Acme", role: "Engineer", blocker,
+      requiredActions: ["complete-captcha"],
+    }, {
+      logger: { warn: (message) => logs.push(message) },
+      fetchImpl: () => { throw new Error("must not send"); },
+    });
+    assert.equal(result.ok, true);
+    assert.equal(result.buyerNotified, false);
+    assert.equal(result.adminAlert.status, "stubbed");
+    assert.equal(result.adminAlert.buyerState, "in_progress");
+    assert.equal(result.magicLinkUrl, undefined);
+  }
+  assert.equal(logs.length, 6);
+  assert.doesNotMatch(logs.join(""), /candidate@|token|password|Acme|Engineer/);
+});
+
+test("mixed pause alerts ops before buyer mail configuration can fail", async () => {
+  const logs = [];
+  const result = await notifyAttentionOpened({
+    attentionId: "attention-mixed", email: "candidate@example.com", company: "Acme", role: "Engineer",
+    blocker: "captcha", requiredActions: ["complete-captcha", "provide-judgment"],
+    questions: [{ id: "why", prompt: "Why this company?" }],
+  }, { logger: { warn: (message) => logs.push(message), error: () => {} } });
+  assert.equal(logs.length, 1);
+  assert.match(logs[0], /attention_admin_alert/);
+  assert.equal(result.error, "magic_link_unconfigured");
 });

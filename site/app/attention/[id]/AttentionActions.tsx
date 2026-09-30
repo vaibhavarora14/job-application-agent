@@ -1,395 +1,63 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
-import { attentionPanelActionClasses } from "../../../lib/attention-action-labels.mjs";
-import {
-  liveBrowserLoadFailedMessage,
-  liveBrowserUnavailableMessage,
-} from "../../../lib/attention-live-session.mjs";
-import { attentionResumeRequestedNote } from "../../../lib/attention-design-fixtures.mjs";
-import { needsLiveBrowser } from "../../../lib/attention-questions.mjs";
-import { AttentionAnswerFields, type AttentionQuestion } from "./AttentionAnswerFields";
+import { useRef, useState } from "react";
+import { canContinueApplying } from "../../../lib/attention-buyer-flow.mjs";
+import type { AttentionQuestion } from "./AttentionAnswerFields";
 
-type AttentionView = {
+export type AttentionView = {
   attentionId: string;
   company: string;
   role: string;
-  url: string;
-  stage: string;
-  blocker: string;
-  requiredActions: string[];
   questions: AttentionQuestion[];
   aiAssistanceDiscouraged: boolean;
-  why: string;
-  liveSessionUrl: string | null;
-  liveSessionEmbedUrl: string | null;
-  /** True when ATTENTION_LIVE_SESSION_BASE_URL is configured on the Worker. */
-  liveSessionAvailable: boolean;
   token: string;
-  expiresAt: number;
 };
+export type AttentionAction = "resume" | "skip" | "abort";
+export type AnswerEntry = { text: string; source: "typed" | "draft_approved" | "bank" };
 
-type DesignFixtureUi = {
-  panelOpen?: boolean;
-  loadFailed?: boolean;
-  connecting?: boolean;
-  status?: string | null;
-  iframeSrc?: string | null;
-};
-
-type SignalResponse = {
-  error?: string;
-  note?: string;
-  signal?: string;
-};
-
-type AnswerEntry = { text: string; source: "typed" | "draft_approved" | "bank" };
-
-const CONNECTING_CLEAR_MS = 2500;
-/** Soft blank watchdog — CSP blocks often never fire iframe onError. */
-const LOAD_FAIL_MS = 12000;
-
-export function AttentionActions({
-  view,
-  designFixture = null,
-  designFixtureUi = null,
-}: {
-  view: AttentionView;
-  /** When set, CTAs are stubs — no signal/wake POSTs. */
-  designFixture?: string | null;
-  designFixtureUi?: DesignFixtureUi | null;
-}) {
-  const isDesignFixture = Boolean(designFixture);
-  const [status, setStatus] = useState<string | null>(designFixtureUi?.status ?? null);
-  const [busy, setBusy] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [panelOpen, setPanelOpen] = useState(Boolean(designFixtureUi?.panelOpen));
-  const [panelExpanded, setPanelExpanded] = useState(false);
-  const [iframeSrc, setIframeSrc] = useState<string | null>(designFixtureUi?.iframeSrc ?? null);
-  const [frameKey, setFrameKey] = useState(0);
-  const [connecting, setConnecting] = useState(Boolean(designFixtureUi?.connecting));
-  const [loadFailed, setLoadFailed] = useState(Boolean(designFixtureUi?.loadFailed));
-  const [opening, setOpening] = useState(false);
+/** Operational signals stay behind auth; design transitions are entirely local. */
+export function useAttentionActions(view: AttentionView, designFixture: boolean) {
   const [answers, setAnswers] = useState<Record<string, AnswerEntry>>({});
-  const clearConnectingTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const loadFailTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const sending = useRef(false);
 
-  const showLivePrimary = needsLiveBrowser(view.requiredActions);
-
-  useEffect(() => {
-    return () => {
-      if (clearConnectingTimer.current) clearTimeout(clearConnectingTimer.current);
-      if (loadFailTimer.current) clearTimeout(loadFailTimer.current);
-    };
-  }, []);
-
-  function scheduleClearConnecting() {
-    if (clearConnectingTimer.current) clearTimeout(clearConnectingTimer.current);
-    clearConnectingTimer.current = setTimeout(() => {
-      setConnecting(false);
-      clearConnectingTimer.current = null;
-    }, CONNECTING_CLEAR_MS);
+  function setAnswer(id: string, text: string, source: AnswerEntry["source"]) {
+    setAnswers((previous) => ({ ...previous, [id]: { text, source } }));
+    setError(null);
   }
 
-  function clearConnectingNow() {
-    if (clearConnectingTimer.current) {
-      clearTimeout(clearConnectingTimer.current);
-      clearConnectingTimer.current = null;
-    }
-    setConnecting(false);
-  }
-
-  function clearLoadFailWatchdog() {
-    if (loadFailTimer.current) {
-      clearTimeout(loadFailTimer.current);
-      loadFailTimer.current = null;
-    }
-  }
-
-  function scheduleLoadFailWatchdog() {
-    if (isDesignFixture) return;
-    clearLoadFailWatchdog();
-    loadFailTimer.current = setTimeout(() => {
-      loadFailTimer.current = null;
-      setLoadFailed(true);
-      clearConnectingNow();
-    }, LOAD_FAIL_MS);
-  }
-
-  function markFrameLoaded() {
-    if (isDesignFixture && designFixture === "retry") {
-      // Keep the load-fail overlay for the retry fixture.
-      return;
-    }
-    clearLoadFailWatchdog();
-    clearConnectingNow();
-    setLoadFailed(false);
-  }
-
-  function markFrameFailed() {
-    clearLoadFailWatchdog();
-    clearConnectingNow();
-    setLoadFailed(true);
-  }
-
-  function setAnswer(questionId: string, text: string, source: AnswerEntry["source"]) {
-    setAnswers((prev) => ({ ...prev, [questionId]: { text, source } }));
-  }
-
-  function missingRequiredAnswers() {
-    return view.questions
-      .filter((question) => question.required)
-      .filter((question) => !String(answers[question.id]?.text ?? "").trim());
-  }
-
-  async function send(action: "resume" | "skip" | "abort") {
-    setBusy(action);
+  async function send(action: AttentionAction) {
+    if (sending.current || (action === "resume" && !canContinueApplying(view.questions, answers))) return false;
+    if (designFixture) return true;
+    sending.current = true;
+    setBusy(true);
     setError(null);
     try {
-      if (action === "resume") {
-        const missing = missingRequiredAnswers();
-        if (missing.length && !isDesignFixture) {
-          setError(`Answer required: ${missing[0].prompt}`);
-          setBusy(null);
-          return;
-        }
-      }
-
-      if (isDesignFixture) {
-        setStatus(
-          action === "resume"
-            ? attentionResumeRequestedNote()
-            : action === "skip"
-              ? "Skip recorded. This role will be left without submitting."
-              : "Stopped. This application session will end.",
-        );
-        return;
-      }
-
-      const payload: Record<string, unknown> = { token: view.token, action };
-      if (action === "resume") {
-        payload.answers = Object.entries(answers)
-          .filter(([, entry]) => entry.text.trim())
-          .map(([questionId, entry]) => ({
-            questionId,
-            text: entry.text.trim(),
-            source: entry.source,
-          }));
-      }
-
       const response = await fetch(`/api/attention/${encodeURIComponent(view.attentionId)}/signal`, {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify(payload),
+        body: JSON.stringify({
+          token: view.token,
+          action,
+          answers: action === "resume" ? Object.entries(answers)
+            .filter(([, entry]) => entry.text.trim())
+            .map(([questionId, entry]) => ({ questionId, text: entry.text.trim(), source: entry.source })) : [],
+        }),
       });
-      const body = await response.json() as SignalResponse;
-      if (!response.ok) {
-        setError(typeof body.error === "string" ? body.error : "Signal failed.");
-        return;
-      }
-      setStatus(typeof body.note === "string" ? body.note : `Saved: ${body.signal ?? action}`);
+      const body = await response.json() as { ok?: boolean; signal?: string };
+      const expected = { resume: "resume_requested", skip: "skipped", abort: "aborted" }[action];
+      if (!response.ok || !body.ok || body.signal !== expected) throw new Error("not_saved");
+      return true;
     } catch {
-      setError("Network error while saving your choice.");
+      // Keep the answer and gate intact; never present a failed save as progress.
+      setError("Your choice hasn’t been saved yet. Your answer is still here.");
+      return false;
     } finally {
-      setBusy(null);
+      sending.current = false;
+      setBusy(false);
     }
   }
 
-  function fireAndForgetWake() {
-    if (isDesignFixture) return;
-    void fetch(`/api/attention/${encodeURIComponent(view.attentionId)}/wake`, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ token: view.token }),
-    }).catch(() => {
-      /* ignore — buyer path does not depend on wake response */
-    });
-  }
-
-  function mountLiveFrame() {
-    if (!view.liveSessionEmbedUrl) return;
-    setLoadFailed(false);
-    setConnecting(true);
-    scheduleClearConnecting();
-    scheduleLoadFailWatchdog();
-    setFrameKey((value) => value + 1);
-    setIframeSrc(view.liveSessionEmbedUrl);
-  }
-
-  function openLivePanel() {
-    if (!view.liveSessionEmbedUrl) {
-      setError("Magic-link token missing for live session.");
-      return;
-    }
-    setOpening(true);
-    setError(null);
-    setPanelOpen(true);
-
-    fireAndForgetWake();
-
-    if (!view.liveSessionAvailable) {
-      clearLoadFailWatchdog();
-      setIframeSrc(null);
-      setConnecting(false);
-      setLoadFailed(false);
-      setOpening(false);
-      return;
-    }
-
-    if (isDesignFixture && designFixture === "retry") {
-      setIframeSrc(view.liveSessionEmbedUrl);
-      setConnecting(false);
-      setLoadFailed(true);
-      setOpening(false);
-      return;
-    }
-
-    mountLiveFrame();
-    setOpening(false);
-  }
-
-  function retryLivePanel() {
-    if (isDesignFixture) {
-      // Stub: re-show the fail overlay without wake / real embed.
-      setConnecting(false);
-      setLoadFailed(true);
-      setIframeSrc(view.liveSessionEmbedUrl);
-      return;
-    }
-    fireAndForgetWake();
-    mountLiveFrame();
-  }
-
-  function closeLivePanel() {
-    clearConnectingNow();
-    clearLoadFailWatchdog();
-    setPanelOpen(false);
-    setPanelExpanded(false);
-    setIframeSrc(null);
-    setLoadFailed(false);
-  }
-
-  const unavailableCopy = liveBrowserUnavailableMessage();
-  const loadFailedCopy = liveBrowserLoadFailedMessage();
-  const { liveBrowser: liveButtonClass, resume: resumeButtonClass } = attentionPanelActionClasses({
-    liveRequired: showLivePrimary,
-    panelOpen,
-  });
-
-  return (
-    <div
-      className="attention-actions-stack"
-      data-design-fixture={designFixture || undefined}
-    >
-      <AttentionAnswerFields
-        attentionId={view.attentionId}
-        token={view.token}
-        questions={view.questions}
-        aiAssistanceDiscouraged={view.aiAssistanceDiscouraged}
-        answers={answers}
-        onChange={setAnswer}
-        designFixture={isDesignFixture}
-      />
-
-      {!showLivePrimary && view.questions.length ? (
-        <p className="attention-answers-lead">
-          Live browser is optional unless CAPTCHA, MFA, or another unmirrorable step remains.
-        </p>
-      ) : null}
-
-      <div className="attention-actions">
-        {view.liveSessionEmbedUrl ? (
-          <button
-            type="button"
-            className={liveButtonClass}
-            disabled={opening}
-            onClick={() => (panelOpen ? closeLivePanel() : openLivePanel())}
-          >
-            {opening ? "Starting…" : panelOpen ? "Hide live browser" : "Open live browser"}
-          </button>
-        ) : (
-          <button type="button" className={liveButtonClass} disabled title="Magic-link token missing for live session">
-            Open live browser
-          </button>
-        )}
-        {panelOpen && view.liveSessionAvailable && view.liveSessionUrl ? (
-          isDesignFixture ? (
-            <button type="button" className="button button-secondary" disabled title="Design fixture — no live tab">
-              Open in new tab
-            </button>
-          ) : (
-            <a className="button button-secondary" href={view.liveSessionUrl} target="_blank" rel="noreferrer">
-              Open in new tab
-            </a>
-          )
-        ) : null}
-        {panelOpen && view.liveSessionAvailable ? (
-          <button
-            type="button"
-            className="button button-secondary"
-            onClick={() => setPanelExpanded((value) => !value)}
-          >
-            {panelExpanded ? "Exit full view" : "Expand live view"}
-          </button>
-        ) : null}
-        <button type="button" className={resumeButtonClass} disabled={Boolean(busy)} onClick={() => send("resume")}>
-          {busy === "resume" ? "Saving…" : "I’ve finished — resume"}
-        </button>
-        <button type="button" className="button button-secondary" disabled={Boolean(busy)} onClick={() => send("skip")}>
-          {busy === "skip" ? "Saving…" : "Skip this role"}
-        </button>
-        <button type="button" className="button button-danger" disabled={Boolean(busy)} onClick={() => send("abort")}>
-          {busy === "abort" ? "Saving…" : "Stop this application"}
-        </button>
-        {error ? <p className="action-error" role="alert">{error}</p> : null}
-        {status ? <p className="attention-status" role="status">{status}</p> : null}
-        {connecting && !loadFailed ? <p className="attention-wake-status" role="status">Connecting…</p> : null}
-      </div>
-
-      {panelOpen ? (
-        <section
-          className={panelExpanded ? "attention-live-panel attention-live-panel-expanded" : "attention-live-panel"}
-          aria-label="Live browser"
-        >
-          <div className="attention-live-panel-chrome">
-            <p className="attention-live-panel-label">Live browser</p>
-            <p className="attention-live-panel-hint">
-              Finish CAPTCHA, MFA, or other steps that need the real page here.
-              Answers above are used when you resume — not applied until you see confirmation on the employer site.
-            </p>
-          </div>
-          {!view.liveSessionAvailable ? (
-            <div className="attention-live-unavailable" role="status">
-              {unavailableCopy}
-            </div>
-          ) : iframeSrc ? (
-            <div className={panelExpanded ? "attention-live-frame-wrap attention-live-frame-wrap-expanded" : "attention-live-frame-wrap"}>
-              <iframe
-                key={frameKey}
-                className="attention-live-frame"
-                title="Live browser"
-                src={iframeSrc}
-                allow="clipboard-read; clipboard-write"
-                referrerPolicy="no-referrer"
-                onLoad={() => markFrameLoaded()}
-                onError={() => markFrameFailed()}
-              />
-              {loadFailed ? (
-                <div className="attention-live-frame-fail" role="alert">
-                  <p>{loadFailedCopy}</p>
-                  <button type="button" className="button" onClick={retryLivePanel}>
-                    Retry
-                  </button>
-                </div>
-              ) : null}
-            </div>
-          ) : (
-            <div className="attention-live-frame attention-live-frame-pending" role="status">
-              Connecting…
-            </div>
-          )}
-        </section>
-      ) : null}
-    </div>
-  );
+  return { answers, busy, error, setAnswer, send };
 }
