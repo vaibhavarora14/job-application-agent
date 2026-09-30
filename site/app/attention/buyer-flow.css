@@ -66,9 +66,17 @@
 .buyer-primary:disabled { background: rgba(47,107,90,.38); box-shadow: none; }
 .buyer-footer .buyer-save-note { margin-bottom: 12px; font-size: 14px; }
 .buyer-preview { background: #E8E4DC; }
+/* Cap phone frame to viewport so sticky primary stays at frame bottom (not mid-frame) in short windows. */
 .buyer-preview .buyer-stage { padding: 20px 0 34px; }
-.buyer-preview .buyer-screen { width: min(390px, 100%); min-height: 784px; }
-.buyer-preview-laptop .buyer-screen { width: min(760px, 100%); min-height: 720px; }
+.buyer-preview .buyer-screen {
+  --buyer-preview-chrome: 96px; /* design strip (~41) + stage padding (54) */
+  width: min(390px, 100%);
+  height: min(784px, calc(100dvh - var(--buyer-preview-chrome)));
+  min-height: 0; /* override .buyer-screen 100dvh */
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+.buyer-preview-laptop .buyer-screen { width: min(760px, 100%); height: min(720px, calc(100dvh - var(--buyer-preview-chrome))); }
 .buyer-preview-laptop .buyer-screen > :not(.buyer-admin-banner) { width: min(480px, 100%); margin-left: auto; margin-right: auto; }
 .buyer-design-strip { position: sticky; top: 0; z-index: 20; display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 10px 14px; padding: 7px 12px; background: #1A1A1A; color: #E8E4DC; line-height: 1; }
 .buyer-design-strip strong, .buyer-design-strip span, .buyer-design-strip small { font-size: 10px; font-weight: 600; letter-spacing: .12em; text-transform: uppercase; }
@@ -87,6 +95,7 @@
 @media (max-width: 520px) {
   .buyer-design-strip { justify-content: flex-start; }
   .buyer-preview .buyer-stage { padding-bottom: 0; }
+  .buyer-preview .buyer-screen { --buyer-preview-chrome: 62px; /* strip + top stage padding only */ }
 }
 
 .buyer-admin .buyer-prompt { color: #D9D0C3; }
