@@ -62,22 +62,14 @@ button, input { font: inherit; }
 .launch-countdown h2 { max-width: 22rem; margin: .55rem 0 0; font-family: var(--font-display), serif; font-size: clamp(1.75rem, 3vw, 2.45rem); font-weight: 400; line-height: 1.02; letter-spacing: -.045em; }
 .launch-state { flex: 0 0 auto; padding: .55rem .7rem; border: 1px solid #b8d9ca; border-radius: 999px; background: var(--green-soft); color: var(--green); font: 600 .66rem var(--font-mono), monospace; letter-spacing: .06em; }
 .launch-state i { width: .48rem; height: .48rem; margin-right: .5rem; border-radius: 50%; display: inline-block; background: var(--accent); box-shadow: 0 0 0 .25rem rgb(99 185 149 / 15%); animation: launch-pulse 2s ease-out infinite; }
-.countdown-grid { padding: 1.55rem 1.7rem; display: grid; grid-template-columns: repeat(4, 1fr); gap: .7rem; }
-.countdown-unit { min-width: 0; padding: 1.2rem .8rem 1rem; border-radius: .8rem; display: grid; justify-items: center; background: var(--accent-soft); }
-.countdown-unit:nth-child(2) { background: var(--ink); color: #fff; }
-.countdown-unit:nth-child(3) { background: #eadfcb; }
-.countdown-unit strong { font: 500 clamp(2rem, 4.3vw, 3.5rem)/.9 var(--font-mono), monospace; letter-spacing: -.07em; font-variant-numeric: tabular-nums; }
-.countdown-unit span { margin-top: .75rem; color: var(--text); font: 500 .62rem var(--font-mono), monospace; letter-spacing: .08em; text-transform: uppercase; }
-.countdown-unit:nth-child(2) span { color: #dce9e2; }
 .launch-target { margin: 0 1.7rem; padding: 1.2rem 0; display: flex; align-items: center; justify-content: space-between; gap: 1rem; border-bottom: 1px solid var(--line); font: 500 .72rem/1.5 var(--font-mono), monospace; }
 .launch-target span { color: var(--muted); text-transform: uppercase; }
-.launch-target time { color: var(--ink); text-align: right; }
+.launch-soft-timing { color: var(--ink); text-align: right; font: 600 .78rem/1.5 var(--font-mono), monospace; letter-spacing: .04em; }
 .launch-sequence { padding: 1.15rem 1.7rem .6rem; }
 .launch-sequence div { padding: .55rem 0; display: flex; justify-content: space-between; gap: 1rem; color: var(--text); font-size: .78rem; }
 .launch-sequence strong { color: var(--green); font: 600 .66rem var(--font-mono), monospace; letter-spacing: .04em; }
 .launch-sequence div:nth-child(2) strong { color: var(--accent-hover); }
 .launch-message { margin: 0; padding: .7rem 1.7rem 1.4rem; color: var(--muted); font-size: .75rem; }
-.launch-countdown-complete .launch-state i { animation: none; }
 .community-section { padding-bottom: 1.5rem; }
 .community-section .community-proof { box-shadow: none; }
 
@@ -241,9 +233,8 @@ footer a { min-width: 2.75rem; min-height: 2.75rem; margin-left: 1.25rem; paddin
   .hero-actions { display: grid; }
   .hero-actions .button { width: 100%; }
   .launch-countdown-heading { align-items: start; flex-direction: column; }
-  .countdown-grid { grid-template-columns: repeat(2, 1fr); }
   .launch-target { align-items: start; flex-direction: column; }
-  .launch-target time { text-align: left; }
+  .launch-soft-timing { text-align: left; }
   .proof-heading { align-items: start; flex-direction: column; }
   .metric-grid, .process-grid, .dashboard-metrics, .dashboard-grid { grid-template-columns: 1fr; }
   .metric-card { min-height: 8rem; }

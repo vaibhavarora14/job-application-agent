@@ -15,21 +15,19 @@ const steps = [
   ["03", "Review the record", "Every decision, application, pause, and outcome stays visible so the search improves instead of becoming noise."],
 ] as const;
 
-const cloudLaunchAt = "2026-10-15T00:00:00+05:30";
-
 export default function Home() {
   return <>
     <SiteHeader />
     <main id="top">
       <header className="hero page-width">
         <div className="hero-copy">
-          <p className="eyebrow">Launching October 15 · Pre-launch reservations open</p>
+          <p className="eyebrow">Coming soon · Pre-launch reservations open</p>
           <h1>Set the goal.<span>Keep the search moving.</span></h1>
           <p className="hero-summary">Job Application Agent finds direct roles, filters weak fits, submits truthful applications, pauses for real decisions, and keeps learning from outcomes—even while you are away.</p>
           <div className="hero-actions"><FoundingCheckout /><a className="button button-secondary" href="https://stats.jobappagent.com">See community momentum</a></div>
           <ul className="hero-proof"><li>Verified facts only</li><li>You set the boundaries</li><li>Every action recorded</li></ul>
         </div>
-        <LaunchCountdown releaseAt={cloudLaunchAt} />
+        <LaunchCountdown />
       </header>
 
       <section className="community-section page-width" aria-label="Community momentum"><CommunityProof /></section>
@@ -49,14 +47,14 @@ export default function Home() {
 
       <section className="section page-width" id="founding">
         <div className="founding-card">
-          <div><p className="eyebrow">Pre-launch reservation</p><h2>Reserve the agent that keeps running.</h2><p>Job Application Agent launches October 15, 2026. Pay $49 now to hold the founding price for cloud access when it ships. Hosted continuity is still verifying. Access details come when cloud access is ready.</p></div>
-          <div className="offer-panel"><div><span>FOUNDING PRICE</span><strong>$49</strong><small>Reservation for 90 days when cloud opens · launches October 15</small></div><ul><li>Scheduled job discovery</li><li>Persistent, resumable runs</li><li>Decision notifications</li><li>Secure checkout by Dodo Payments</li></ul><FoundingCheckout /></div>
+          <div><p className="eyebrow">Pre-launch reservation</p><h2>Reserve the agent that keeps running.</h2><p>Job Application Agent cloud is coming soon. Pay $49 now to hold the founding price for cloud access when it ships. Hosted continuity is still verifying. Access details come when cloud access is ready.</p></div>
+          <div className="offer-panel"><div><span>FOUNDING PRICE</span><strong>$49</strong><small>Reservation for 90 days when cloud opens · coming soon</small></div><ul><li>Scheduled job discovery</li><li>Persistent, resumable runs</li><li>Decision notifications</li><li>Secure checkout by Dodo Payments</li></ul><FoundingCheckout /></div>
         </div>
       </section>
 
       <section className="section faq page-width">
         <div className="section-heading"><p className="eyebrow">Straight answers</p><h2>Before you reserve.</h2></div>
-        <details><summary>When does Job Application Agent launch?</summary><p>The cloud product is scheduled to launch on October 15, 2026. This countdown runs to the start of launch day in India.</p></details>
+        <details><summary>When does Job Application Agent launch?</summary><p>The cloud product is coming soon. Hosted continuity is still verifying. We will share access details when cloud access is ready — there is no fixed public launch date.</p></details>
         <details><summary>Is this a mass-application bot?</summary><p>No. It filters aggressively and applies only inside rules you set. Unclear or sensitive decisions pause for you.</p></details>
         <details><summary>When do my 90 days begin?</summary><p>When cloud access opens for your reservation, not on the payment date. We will share the exact start details once hosted access is ready.</p></details>
         <details><summary>What if access is not ready?</summary><p>Your $49 is a pre-launch reservation of founding cloud access. Hosted continuity is still verifying. We will follow up with access details when cloud access ships.</p></details>
