@@ -36,6 +36,7 @@ test("server-renders the focused cloud offer and honest community proof", async 
   assert.doesNotMatch(html, /WINDOW OPEN|cloud launch window is now open/i);
   assert.doesNotMatch(html, /Cloud access<\/span><strong>OPEN<\/strong>/);
   assert.doesNotMatch(html, /filled\s*[≠!=]+\s*applied/i);
+  assert.doesNotMatch(html, /no fixed public launch date|no hard (?:launch )?date|there is no fixed/i);
   assert.doesNotMatch(html, /class="topbar"/);
   assert.doesNotMatch(html, /Run it locally|Install from GitHub|Join early access|first 50/i);
   assert.doesNotMatch(html, /codex-preview|react-loading-skeleton|Your site is taking shape/i);
