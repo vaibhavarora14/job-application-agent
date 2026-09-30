@@ -6,6 +6,7 @@ import {
   liveBrowserLoadFailedMessage,
   liveBrowserUnavailableMessage,
 } from "../../../lib/attention-live-session.mjs";
+import { attentionResumeRequestedNote } from "../../../lib/attention-design-fixtures.mjs";
 import { needsLiveBrowser } from "../../../lib/attention-questions.mjs";
 import { AttentionAnswerFields, type AttentionQuestion } from "./AttentionAnswerFields";
 
@@ -28,6 +29,14 @@ type AttentionView = {
   expiresAt: number;
 };
 
+type DesignFixtureUi = {
+  panelOpen?: boolean;
+  loadFailed?: boolean;
+  connecting?: boolean;
+  status?: string | null;
+  iframeSrc?: string | null;
+};
+
 type SignalResponse = {
   error?: string;
   note?: string;
@@ -40,16 +49,26 @@ const CONNECTING_CLEAR_MS = 2500;
 /** Soft blank watchdog — CSP blocks often never fire iframe onError. */
 const LOAD_FAIL_MS = 12000;
 
-export function AttentionActions({ view }: { view: AttentionView }) {
-  const [status, setStatus] = useState<string | null>(null);
+export function AttentionActions({
+  view,
+  designFixture = null,
+  designFixtureUi = null,
+}: {
+  view: AttentionView;
+  /** When set, CTAs are stubs — no signal/wake POSTs. */
+  designFixture?: string | null;
+  designFixtureUi?: DesignFixtureUi | null;
+}) {
+  const isDesignFixture = Boolean(designFixture);
+  const [status, setStatus] = useState<string | null>(designFixtureUi?.status ?? null);
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [panelOpen, setPanelOpen] = useState(false);
+  const [panelOpen, setPanelOpen] = useState(Boolean(designFixtureUi?.panelOpen));
   const [panelExpanded, setPanelExpanded] = useState(false);
-  const [iframeSrc, setIframeSrc] = useState<string | null>(null);
+  const [iframeSrc, setIframeSrc] = useState<string | null>(designFixtureUi?.iframeSrc ?? null);
   const [frameKey, setFrameKey] = useState(0);
-  const [connecting, setConnecting] = useState(false);
-  const [loadFailed, setLoadFailed] = useState(false);
+  const [connecting, setConnecting] = useState(Boolean(designFixtureUi?.connecting));
+  const [loadFailed, setLoadFailed] = useState(Boolean(designFixtureUi?.loadFailed));
   const [opening, setOpening] = useState(false);
   const [answers, setAnswers] = useState<Record<string, AnswerEntry>>({});
   const clearConnectingTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -88,6 +107,7 @@ export function AttentionActions({ view }: { view: AttentionView }) {
   }
 
   function scheduleLoadFailWatchdog() {
+    if (isDesignFixture) return;
     clearLoadFailWatchdog();
     loadFailTimer.current = setTimeout(() => {
       loadFailTimer.current = null;
@@ -97,6 +117,10 @@ export function AttentionActions({ view }: { view: AttentionView }) {
   }
 
   function markFrameLoaded() {
+    if (isDesignFixture && designFixture === "retry") {
+      // Keep the load-fail overlay for the retry fixture.
+      return;
+    }
     clearLoadFailWatchdog();
     clearConnectingNow();
     setLoadFailed(false);
@@ -124,11 +148,22 @@ export function AttentionActions({ view }: { view: AttentionView }) {
     try {
       if (action === "resume") {
         const missing = missingRequiredAnswers();
-        if (missing.length) {
+        if (missing.length && !isDesignFixture) {
           setError(`Answer required: ${missing[0].prompt}`);
           setBusy(null);
           return;
         }
+      }
+
+      if (isDesignFixture) {
+        setStatus(
+          action === "resume"
+            ? attentionResumeRequestedNote()
+            : action === "skip"
+              ? "Skip recorded. This role will be left without submitting."
+              : "Stopped. This application session will end.",
+        );
+        return;
       }
 
       const payload: Record<string, unknown> = { token: view.token, action };
@@ -161,6 +196,7 @@ export function AttentionActions({ view }: { view: AttentionView }) {
   }
 
   function fireAndForgetWake() {
+    if (isDesignFixture) return;
     void fetch(`/api/attention/${encodeURIComponent(view.attentionId)}/wake`, {
       method: "POST",
       headers: { "content-type": "application/json" },
@@ -200,11 +236,26 @@ export function AttentionActions({ view }: { view: AttentionView }) {
       return;
     }
 
+    if (isDesignFixture && designFixture === "retry") {
+      setIframeSrc(view.liveSessionEmbedUrl);
+      setConnecting(false);
+      setLoadFailed(true);
+      setOpening(false);
+      return;
+    }
+
     mountLiveFrame();
     setOpening(false);
   }
 
   function retryLivePanel() {
+    if (isDesignFixture) {
+      // Stub: re-show the fail overlay without wake / real embed.
+      setConnecting(false);
+      setLoadFailed(true);
+      setIframeSrc(view.liveSessionEmbedUrl);
+      return;
+    }
     fireAndForgetWake();
     mountLiveFrame();
   }
@@ -226,7 +277,10 @@ export function AttentionActions({ view }: { view: AttentionView }) {
   });
 
   return (
-    <div className="attention-actions-stack">
+    <div
+      className="attention-actions-stack"
+      data-design-fixture={designFixture || undefined}
+    >
       <AttentionAnswerFields
         attentionId={view.attentionId}
         token={view.token}
@@ -234,6 +288,7 @@ export function AttentionActions({ view }: { view: AttentionView }) {
         aiAssistanceDiscouraged={view.aiAssistanceDiscouraged}
         answers={answers}
         onChange={setAnswer}
+        designFixture={isDesignFixture}
       />
 
       {!showLivePrimary && view.questions.length ? (
@@ -258,9 +313,15 @@ export function AttentionActions({ view }: { view: AttentionView }) {
           </button>
         )}
         {panelOpen && view.liveSessionAvailable && view.liveSessionUrl ? (
-          <a className="button button-secondary" href={view.liveSessionUrl} target="_blank" rel="noreferrer">
-            Open in new tab
-          </a>
+          isDesignFixture ? (
+            <button type="button" className="button button-secondary" disabled title="Design fixture — no live tab">
+              Open in new tab
+            </button>
+          ) : (
+            <a className="button button-secondary" href={view.liveSessionUrl} target="_blank" rel="noreferrer">
+              Open in new tab
+            </a>
+          )
         ) : null}
         {panelOpen && view.liveSessionAvailable ? (
           <button

@@ -421,6 +421,13 @@ footer a { min-width: 2.75rem; min-height: 2.75rem; margin-left: 1.25rem; paddin
   font-size: .9rem;
   line-height: 1.55;
 }
+.attention-fixture-note {
+  margin: .85rem 0 0;
+  max-width: 36rem;
+  color: var(--coral);
+  font-size: .9rem;
+  line-height: 1.55;
+}
 .attention-live-panel {
   display: grid;
   gap: .75rem;
