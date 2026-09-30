@@ -43,7 +43,7 @@ Leave keys unset locally to disable capture. Redeploy after setting production v
 
 1. Set `POSTHOG_PROJECT_API_KEY` (and optionally `PUBLIC_POSTHOG_KEY`) on the Worker; redeploy.
 2. Open `https://jobappagent.com/?utm_source=verify` — confirm `$pageview` in PostHog Live events.
-3. Click **Reserve founding access** — confirm `founding_cta_clicked` then `founding_checkout_created`.
+3. Click **Activate founding access** — confirm `founding_cta_clicked` then `founding_checkout_created`.
 4. Complete a test-mode checkout and return — confirm `founding_checkout_returned`, then webhook `founding_payment_confirmed`.
 5. Spot-check event properties: no `email`, no raw `purchaseId`, UTM only when present.
 
