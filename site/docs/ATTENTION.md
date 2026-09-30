@@ -426,5 +426,4 @@ node job-application-agent/scripts/attention-runner-poll.mjs \
 - Enabling CAPTCHA vendor in production (scaffold only — `CAPTCHA_VENDOR=off`)
 - Attestation auto-grants UI
 - Multi-tenant paid→slot / billing
-- VERIFYING badge flip / founding checkout copy changes
 - Multi-tenant answer-bank scoping beyond founding single-tenant fingerprints

@@ -21,7 +21,7 @@ export default function Home() {
     <main id="top">
       <header className="hero page-width">
         <div className="hero-copy">
-          <p className="eyebrow">Coming soon · Pre-launch reservations open</p>
+          <p className="eyebrow">Founding hosted open · $49</p>
           <h1>Set the goal.<span>Keep the search moving.</span></h1>
           <p className="hero-summary">Job Application Agent finds direct roles, filters weak fits, submits truthful applications, pauses for real decisions, and keeps learning from outcomes—even while you are away.</p>
           <div className="hero-actions"><FoundingCheckout /><a className="button button-secondary" href="https://stats.jobappagent.com">See community momentum</a></div>
@@ -47,17 +47,17 @@ export default function Home() {
 
       <section className="section page-width" id="founding">
         <div className="founding-card">
-          <div><p className="eyebrow">Pre-launch reservation</p><h2>Reserve the agent that keeps running.</h2><p>Job Application Agent cloud is coming soon. Pay $49 now to hold the founding price for cloud access when it ships. Hosted continuity is still verifying. Access details come when cloud access is ready.</p></div>
-          <div className="offer-panel"><div><span>FOUNDING PRICE</span><strong>$49</strong><small>Reservation for 90 days when cloud opens · coming soon</small></div><ul><li>Scheduled job discovery</li><li>Persistent, resumable runs</li><li>Decision notifications</li><li>Secure checkout by Dodo Payments</li></ul><FoundingCheckout /></div>
+          <div><p className="eyebrow">Founding hosted access</p><h2>Activate the agent that keeps running.</h2><p>Hosted continuity is open for founding members. Pay $49 to unlock activatable hosted access at the founding price. After payment, we email access details to the address collected at checkout. Cloud access remains coming soon.</p></div>
+          <div className="offer-panel"><div><span>FOUNDING PRICE</span><strong>$49</strong><small>90 days of hosted access · starts when we activate your seat</small></div><ul><li>Scheduled job discovery</li><li>Persistent, resumable runs</li><li>Decision notifications</li><li>Secure checkout by Dodo Payments</li></ul><FoundingCheckout /></div>
         </div>
       </section>
 
       <section className="section faq page-width">
-        <div className="section-heading"><p className="eyebrow">Straight answers</p><h2>Before you reserve.</h2></div>
-        <details><summary>When does Job Application Agent launch?</summary><p>The cloud product is coming soon. Hosted continuity is still verifying. We will share access details when cloud access is ready.</p></details>
+        <div className="section-heading"><p className="eyebrow">Straight answers</p><h2>Before you activate.</h2></div>
+        <details><summary>When does Job Application Agent launch?</summary><p>Hosted continuity is open for founding members now. Cloud access is still coming soon. After founding payment, we email hosted access details.</p></details>
         <details><summary>Is this a mass-application bot?</summary><p>No. It filters aggressively and applies only inside rules you set. Unclear or sensitive decisions pause for you.</p></details>
-        <details><summary>When do my 90 days begin?</summary><p>When cloud access opens for your reservation, not on the payment date. We will share the exact start details once hosted access is ready.</p></details>
-        <details><summary>What if access is not ready?</summary><p>Your $49 is a pre-launch reservation of founding cloud access. Hosted continuity is still verifying. We will follow up with access details when cloud access ships.</p></details>
+        <details><summary>When do my 90 days begin?</summary><p>When we activate your hosted seat and email access details — not on the payment date alone.</p></details>
+        <details><summary>How do I get access after paying?</summary><p>Checkout collects your email. After payment is verified, we email founding hosted access details. There is no instant self-serve dashboard yet.</p></details>
         <details><summary>Does it guarantee a job?</summary><p>No. It reduces repetitive search and application work. Employers make every hiring decision.</p></details>
       </section>
     </main>

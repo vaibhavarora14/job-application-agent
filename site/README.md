@@ -84,10 +84,12 @@ collects the customer email; the landing page does not require a lead form.
 Keep the Site in test mode until a checkout and signed `payment.succeeded`
 delivery have both been verified.
 
-Paid access is activated separately from payment. The 90-day entitlement starts
-at activation. `.github/workflows/refund-unactivated-purchases.yml` calls the
-protected refund endpoint daily and requests full, idempotent refunds for paid
-purchases that remain unactivated after 60 days.
+Paid access is activated separately from payment (ops emails hosted access
+details after a verified founding purchase; `activatePurchase` starts the
+90-day window when the seat is actually handed over). The public site never
+promises instant self-serve dashboard access or automatic refunds. Internal
+`.github/workflows/refund-unactivated-purchases.yml` calls the protected refund
+endpoint for ops only.
 
 `stats.jobappagent.com` is attached to the same Sites project. Host-aware routing
 serves the community dashboard at that origin while the telemetry Worker remains

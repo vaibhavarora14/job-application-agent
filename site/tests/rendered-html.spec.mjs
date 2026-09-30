@@ -17,24 +17,27 @@ test("server-renders the focused cloud offer and honest community proof", async 
   assert.equal(response.headers.get("x-frame-options"), "DENY");
   const html = await response.text();
   assert.match(html, /Set the goal/);
-  assert.match(html, /Cloud launch sequence/);
-  assert.match(html, /Coming soon/);
+  assert.match(html, /Hosted \+ cloud sequence/);
+  assert.match(html, /Founding hosted open/);
   assert.doesNotMatch(html, /October\s*1(?:5)?,?\s*2026|2026-10-(?:01|15)|datetime="2026-10/i);
   assert.doesNotMatch(html, /Time remaining until cloud launch|Scheduled start|T− ACTIVE|DATE REACHED/i);
   assert.match(html, /Active installations · last 30 days/);
   assert.match(html, /Verified applications submitted/);
   assert.match(html, /Jobs assessed/);
-  assert.match(html, /Reserve founding access · \$49/);
+  assert.match(html, /Activate founding access · \$49/);
   assert.match(html, /Verified facts only/);
   assert.match(html, /Secure checkout by Dodo Payments/);
-  assert.match(html, /Pre-launch reservation/);
-  assert.match(html, /hold the founding price/);
-  assert.match(html, /Hosted continuity is still verifying/);
-  assert.doesNotMatch(html, /60 days|automatically refund/i);
-  assert.match(html, /Hosted continuity<\/span><strong>VERIFYING<\/strong>/);
+  assert.match(html, /Founding hosted access/);
+  assert.match(html, /unlock activatable hosted access/);
+  assert.match(html, /we email access details/);
+  assert.doesNotMatch(html, /60 days|automatically refund|money-back|money back/i);
+  assert.doesNotMatch(html, /Pre-launch reservation|Reserve founding|still verifying|when cloud opens|when cloud access is ready|hold the founding price/i);
+  assert.match(html, /Hosted continuity<\/span><strong>READY<\/strong>/);
   assert.match(html, /Cloud access<\/span><strong>COMING SOON<\/strong>/);
+  assert.match(html, /HOSTED OPEN/);
   assert.doesNotMatch(html, /WINDOW OPEN|cloud launch window is now open/i);
   assert.doesNotMatch(html, /Cloud access<\/span><strong>OPEN<\/strong>/);
+  assert.doesNotMatch(html, /Hosted continuity<\/span><strong>VERIFYING<\/strong>/);
   assert.doesNotMatch(html, /filled\s*[≠!=]+\s*applied/i);
   assert.doesNotMatch(html, /no fixed public launch date|no hard (?:launch )?date|there is no fixed/i);
   assert.doesNotMatch(html, /class="topbar"/);
@@ -48,9 +51,9 @@ test("server-renders human-readable privacy and terms pages", async () => {
   const privacyHtml = await privacy.text();
   const termsHtml = await terms.text();
   assert.match(privacyHtml, /Privacy, in plain language/);
-  assert.match(termsHtml, /one-time \$49 pre-launch reservation/);
-  assert.doesNotMatch(termsHtml, /60 days|automatically request a full refund|Activation and refund promise/i);
-  assert.doesNotMatch(privacyHtml, /60-day activation promise|support refunds/i);
+  assert.match(termsHtml, /one-time \$49 payment for founding hosted access/);
+  assert.doesNotMatch(termsHtml, /60 days|automatically request a full refund|Activation and refund promise|pre-launch reservation|money-back|money back/i);
+  assert.doesNotMatch(privacyHtml, /60-day activation promise|support refunds|founding reservation/i);
 });
 
 test("platform guides render usable prompts and publish only known platform routes", async () => {
