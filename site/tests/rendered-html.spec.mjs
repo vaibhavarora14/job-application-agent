@@ -25,11 +25,13 @@ test("server-renders the focused cloud offer and honest community proof", async 
   assert.match(html, /Verified applications submitted/);
   assert.match(html, /Jobs assessed/);
   assert.match(html, /Activate founding access · \$49/);
+  assert.match(html, /India\/regional founding price \+ GST may appear at checkout/);
   assert.match(html, /Verified facts only/);
   assert.match(html, /Secure checkout by Dodo Payments/);
   assert.match(html, /Founding hosted access/);
   assert.match(html, /unlock activatable hosted access/);
   assert.match(html, /we email access details/);
+  assert.doesNotMatch(html, /41\.73/);
   assert.doesNotMatch(html, /60 days|automatically refund|money-back|money back/i);
   assert.doesNotMatch(html, /Pre-launch reservation|Reserve founding|still verifying|when cloud opens|when cloud access is ready|hold the founding price/i);
   assert.match(html, /Hosted continuity<\/span><strong>READY<\/strong>/);
@@ -147,9 +149,11 @@ test("community and homepage CTAs use Activate founding access · $49", async ()
   assert.equal(community.status, 200);
   for (const html of [await home.text(), await community.text()]) {
     assert.match(html, /Activate founding access · \$49/);
+    assert.match(html, /India\/regional founding price \+ GST may appear at checkout/);
     assert.doesNotMatch(html, /Reserve 90-day access/i);
     assert.doesNotMatch(html, /Reserve founding access/i);
     assert.doesNotMatch(html, />Reserve\b/i);
+    assert.doesNotMatch(html, /41\.73/);
   }
 });
 

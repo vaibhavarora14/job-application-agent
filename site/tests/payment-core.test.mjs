@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import {
   FOUNDING_CTA_LABEL,
   FOUNDING_DODO_PRODUCT_DISPLAY,
+  FOUNDING_REGIONAL_PRICE_NOTE,
   buildCheckoutRequest,
   canonicalCheckoutReturnUrl,
   hasPaidAccess,
@@ -38,13 +39,22 @@ test("requires an explicit Dodo environment and HTTPS public site URL", () => {
 test("documents hosted founding product display copy for Dodo ops", () => {
   assert.match(FOUNDING_DODO_PRODUCT_DISPLAY.name, /Founding Hosted Access/i);
   assert.match(FOUNDING_DODO_PRODUCT_DISPLAY.description, /hosted access/i);
+  assert.match(FOUNDING_DODO_PRODUCT_DISPLAY.description, /Listed at \$49 USD/i);
+  assert.match(FOUNDING_DODO_PRODUCT_DISPLAY.description, /India founding price plus GST/i);
   assert.doesNotMatch(FOUNDING_DODO_PRODUCT_DISPLAY.name, /cloud/i);
   assert.doesNotMatch(FOUNDING_DODO_PRODUCT_DISPLAY.description, /\bcloud access\b.*\bopen\b/i);
+  assert.doesNotMatch(FOUNDING_DODO_PRODUCT_DISPLAY.description, /41\.73/);
 });
 
 test("exports a single Activate founding CTA label for site + Dodo pay button", () => {
   assert.equal(FOUNDING_CTA_LABEL, "Activate founding access · $49");
   assert.doesNotMatch(FOUNDING_CTA_LABEL, /Reserve/i);
+});
+
+test("exports a calm regional founding price note without a second marketing price", () => {
+  assert.match(FOUNDING_REGIONAL_PRICE_NOTE, /India\/regional founding price \+ GST/i);
+  assert.doesNotMatch(FOUNDING_REGIONAL_PRICE_NOTE, /41\.73|\$\d+/);
+  assert.doesNotMatch(FOUNDING_REGIONAL_PRICE_NOTE, /refund|Reserve/i);
 });
 
 test("builds a hosted checkout that collects customer details at Dodo", () => {
