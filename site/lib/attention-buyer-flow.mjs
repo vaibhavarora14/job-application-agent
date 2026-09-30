@@ -49,3 +49,18 @@ export function canContinueApplying(questions, answers) {
     && questions.some((q) => String(answers[q.id]?.text ?? "").trim())
     && questions.filter((q) => q.required).every((q) => String(answers[q.id]?.text ?? "").trim());
 }
+
+/**
+ * Signal-route gate for resume_requested: reject unknown question ids and
+ * require the same non-whitespace answers as the Continue applying button.
+ * Technical-only pauses (no packaged questions) cannot resume this way.
+ * @param {{ id: string, required?: boolean }[]} questions
+ * @param {{ questionId: string, text?: string }[]} answerList
+ */
+export function employerAnswersAllowResume(questions, answerList) {
+  const list = Array.isArray(answerList) ? answerList : [];
+  const knownIds = new Set((questions ?? []).map((question) => question.id));
+  if (list.some((answer) => !knownIds.has(answer.questionId))) return false;
+  const answers = Object.fromEntries(list.map((answer) => [answer.questionId, answer]));
+  return canContinueApplying(questions ?? [], answers);
+}

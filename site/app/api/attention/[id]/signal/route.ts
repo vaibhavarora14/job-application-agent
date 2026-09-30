@@ -1,4 +1,4 @@
-import { canContinueApplying } from "../../../../../lib/attention-buyer-flow.mjs";
+import { employerAnswersAllowResume } from "../../../../../lib/attention-buyer-flow.mjs";
 import { attentionEnv } from "../../../../../lib/attention-auth";
 import { upsertAnswerBankEntries } from "../../../../../lib/attention-answer-bank";
 import { verifyAttentionMagicLink } from "../../../../../lib/attention-magic-link.mjs";
@@ -66,14 +66,9 @@ export async function POST(request: Request, { params }: Params) {
     return Response.json({ error: "token_invalid" }, { status: 401 });
   }
 
-  if (validated.data.signal === "resume_requested") {
-    const questions = payload.questions ?? [];
-    const knownIds = new Set(questions.map((question) => question.id));
-    const answers = Object.fromEntries(validated.data.answers.map((answer) => [answer.questionId, answer]));
-    if (validated.data.answers.some((answer) => !knownIds.has(answer.questionId))
-      || !canContinueApplying(questions, answers)) {
-      return Response.json({ error: "employer_answers_required" }, { status: 400 });
-    }
+  if (validated.data.signal === "resume_requested"
+    && !employerAnswersAllowResume(payload.questions ?? [], validated.data.answers)) {
+    return Response.json({ error: "employer_answers_required" }, { status: 400 });
   }
 
   const record = buildAttentionSignalRecord(attentionId, validated.data.signal, {
