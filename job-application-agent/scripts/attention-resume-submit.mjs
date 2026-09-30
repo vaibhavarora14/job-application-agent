@@ -45,6 +45,10 @@ import {
   shouldInjectAnswersBeforeSubmit,
 } from "./ats/answer-inject.mjs";
 import { tryCaptchaVendorAssist } from "./captcha-vendor.mjs";
+import {
+  assertApplyUrlAllowed,
+  shouldEnforceApplyUrlGate,
+} from "./ats/apply-url-gate.mjs";
 
 export const RESUME_EXIT = Object.freeze({
   SUBMITTED: 0,
@@ -142,6 +146,26 @@ export function decideResumeSubmit(input) {
         "Re-run resume probe once the bound tab is focused",
       ],
     };
+  }
+
+  if (shouldEnforceApplyUrlGate(input.env ?? process.env)) {
+    try {
+      assertApplyUrlAllowed(snapshot.pageUrl, {
+        env: input.env ?? process.env,
+        pageTitle: snapshot.pageTitle,
+        liveApply: undefined,
+      });
+    } catch (error) {
+      return {
+        action: "url_not_allowlisted",
+        exitCode: RESUME_EXIT.ERROR,
+        message: error instanceof Error ? error.message : String(error),
+        next: [
+          "Use owned fixtures under /fixtures/{greenhouse,lever,ashby}/ for prove/smoke/E2E",
+          "Or set LIVE_APPLY=1 for an explicit one-off real employer apply (logged)",
+        ],
+      };
+    }
   }
 
   const adapter = resolveAtsAdapter(snapshot.pageUrl);
@@ -280,9 +304,10 @@ export function resumeSubmitChecklist() {
     "8. If still blocked → update attention honestly; keep binding; do not submit",
     "9. If clear → SUBMIT (no extra in-app confirm). Prefer Ashby/generic submit selectors.",
     "10. Wait for visible confirmation surface (selectors / thank-you URL)",
-    "11. Only then: cloud intent-confirm / ledger add. filled ≠ applied.",
+    "11. Only then: cloud intent-confirm / ledger add (applyKind=fixture for owned fixtures). filled ≠ applied.",
     "12. If submit ambiguous → intent-sent; never retry until verified",
     "13. attention resolve; continue round or release lease",
+    "14. Prove/smoke/E2E: allowlisted fixture URLs only unless LIVE_APPLY=1",
   ];
 }
 

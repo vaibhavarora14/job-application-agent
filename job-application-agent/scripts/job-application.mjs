@@ -27,8 +27,10 @@ import {
   normalizeAttentionQuestions,
 } from './attention-questions.mjs';
 import { confirmOutreachTowardRound, loadOutreachRoundView, loadSentVerifiedOutreach, outreachConfirmationEvents, projectOutreachRoundCounts, resolveOutreachRoundId } from './outreach-round.mjs';
+import { isFixtureOrSandboxApply, resolveApplyKind } from './ats/apply-url-gate.mjs';
 
 const SOURCES = new Set(['linkedin', 'greenhouse', 'lever', 'ashby', 'workable', 'comeet', 'workday', 'rippling', 'smartrecruiters', 'google-form', 'company', 'email', 'other']);
+const APPLY_KINDS = new Set(['fixture', 'vendor-sandbox', 'live']);
 const DISCOVERY_SOURCES = new Set(['direct-company', 'linkedin', 'x', 'yc', 'hacker-news', 'job-board', 'email', 'user-supplied', 'web-search', 'other']);
 const ELIGIBILITY = new Set(['eligible', 'unclear', 'ineligible']);
 const POSTING_STATUS = new Set(['active', 'closed', 'unclear']);
@@ -472,6 +474,11 @@ export function validateLedgerEntry(input) {
   }
   if (entry.applicationChannel != null) normalized.applicationChannel = string(entry.applicationChannel, 'entry.applicationChannel', 40).toLowerCase();
   if (entry.roundId != null) normalized.roundId = string(entry.roundId, 'entry.roundId', 180);
+  // applyKind marks fixture/vendor-sandbox applies so metrics/community treat them as non-employer.
+  // Equivalent to "source=fixture" without overloading ATS channel `source`.
+  const applyKind = resolveApplyKind(normalized.url, { applyKind: entry.applyKind });
+  if (!APPLY_KINDS.has(applyKind)) throw new Error('entry.applyKind is invalid.');
+  normalized.applyKind = applyKind;
   if (!SOURCES.has(normalized.source)) throw new Error('entry.source is invalid.');
   if (normalized.discoverySource != null && !DISCOVERY_SOURCES.has(normalized.discoverySource)) throw new Error('entry.discoverySource is invalid.');
   if (normalized.applicationChannel != null && !SOURCES.has(normalized.applicationChannel)) throw new Error('entry.applicationChannel is invalid.');
@@ -569,7 +576,9 @@ function businessDaysBetween(startValue, endValue) {
 }
 
 export function buildReview(entries, outcomeEntries = [], acknowledgements = [], now = new Date(), deliveryEvents = []) {
-  const submissions = entries.filter((entry) => !Number.isNaN(Date.parse(entry.submittedAt)));
+  const submissions = entries
+    .filter((entry) => !Number.isNaN(Date.parse(entry.submittedAt)))
+    .filter((entry) => !isFixtureOrSandboxApply(entry));
   const delivery = deliveryProjection(submissions, deliveryEvents);
   const effectiveKeys = new Set(submissions.filter((entry, i) => delivery.applications[i].counted).map(canonicalApplicationKey));
   const explicitOutcomes = outcomeEntries.length > 0;
@@ -829,6 +838,7 @@ export async function communityJobsPending() {
   let unshareable = 0;
   for (const entry of applications) {
     if (shared.has(entry.id)) continue;
+    if (isFixtureOrSandboxApply(entry)) continue;
     try {
       pending.push({ applicationId: entry.id, job: shareableLedgerJob(entry) });
     } catch {
@@ -1497,7 +1507,9 @@ async function roundStatus(roundId = null) {
   if (!id) throw new Error('No application round has been started.');
   const started = starts.find((event) => event.roundId === id);
   if (!started) throw new Error('Application round was not found.');
-  const matching = (await jsonLines(join(dir, 'applications.ndjson'))).filter((entry) => entry.roundId === id && entry.status === 'submitted');
+  const matching = (await jsonLines(join(dir, 'applications.ndjson')))
+    .filter((entry) => entry.roundId === id && entry.status === 'submitted')
+    .filter((entry) => !isFixtureOrSandboxApply(entry));
   const applications = [...new Map(matching.map((entry, index) => [canonicalApplicationKey(entry, String(index)), entry])).values()];
   const delivery = deliveryProjection(matching, await jsonLines(join(dir, 'delivery.ndjson')));
   const effectiveKeys = new Set(matching.filter((entry,i) => delivery.applications[i].counted).map(canonicalApplicationKey));
@@ -1852,7 +1864,9 @@ async function executeCommand([area, action, value], telemetry, session, communi
     const entry = validateLedgerEntry(input);
     result = await ledgerAdd(entry, input.duplicateOverride, input.companyReapplyOverride, input.cloudIntentId && input.cloudLeaseId ? { intentId: input.cloudIntentId, leaseId: input.cloudLeaseId } : null);
     result.communityJob = await communityJobsSync(community, { limit: 1, applicationIds: [entry.id] });
-    domainEvents.push(await telemetryApplicationSubmitted(entry, telemetryDetails));
+    if (!isFixtureOrSandboxApply(entry)) {
+      domainEvents.push(await telemetryApplicationSubmitted(entry, telemetryDetails));
+    }
   } else if (area === 'ledger' && action === 'outcome' && value === '--stdin') {
     const outcome = await ledgerOutcome(await jsonStdin());
     result = outcome.result;

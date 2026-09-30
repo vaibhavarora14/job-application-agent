@@ -62,6 +62,9 @@ const binding = {
   ],
 };
 
+/** Captcha/inject unit tests use Ashby-shaped employer URLs; disable apply-URL gate. */
+const gateOff = { APPLY_URL_GATE: "0" };
+
 test("mapAnswersToFields matches by id and label", () => {
   const mapped = mapAnswersToFields(
     [
@@ -101,6 +104,7 @@ test("pause packaging extracts questions and AI policy", () => {
 test("decideResumeSubmit injects answers before submit", () => {
   const decision = decideResumeSubmit({
     binding,
+    env: gateOff,
     answers: [{ questionId: "why", text: "I want to build realtime systems.", source: "typed" }],
     snapshot: {
       pageUrl: "https://jobs.ashbyhq.com/livekit/application",
@@ -114,6 +118,7 @@ test("decideResumeSubmit injects answers before submit", () => {
 
   const after = decideResumeSubmit({
     binding,
+    env: gateOff,
     answers: [{ questionId: "why", text: "I want to build realtime systems.", source: "typed" }],
     snapshot: {
       pageUrl: "https://jobs.ashbyhq.com/livekit/application",
@@ -178,6 +183,7 @@ test("captcha vendor off → no network and fail closed", async () => {
 test("still_blocked captcha surfaces vendor_off assist note", () => {
   const decision = decideResumeSubmit({
     binding,
+    env: gateOff,
     captchaAssist: {
       reason: "vendor_off",
       fallback: "complete-captcha",
@@ -514,6 +520,7 @@ test("spend cap still hard-stops before network", async () => {
 test("still_blocked surfaces inject guidance when vendor assist succeeded", () => {
   const decision = decideResumeSubmit({
     binding,
+    env: gateOff,
     captchaAssist: {
       ok: true,
       assisted: true,

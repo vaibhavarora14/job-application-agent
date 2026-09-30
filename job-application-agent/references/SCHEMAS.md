@@ -119,6 +119,7 @@ Add only after visible success confirmation.
   "approval": "STANDING AUTHORIZATION",
   "duplicateOverride": "NEW REQUISITION CONFIRMED",
   "companyReapplyOverride": "CANDIDATE APPROVED EARLY REAPPLICATION",
+  "applyKind": "live",
   "answers": { "Resume": "Canonical resume.pdf" },
   "telemetry": {
     "durationBucket": "5-15m",
@@ -136,6 +137,8 @@ Use `duplicateOverride` only for a verified distinct requisition after a possibl
 `cloudIntentId` and `cloudLeaseId` are transient coordination fields. They are required for the strongest atomic cloud path and are never written into the application payload itself.
 
 `discoverySource`, `discoverySourceId`, `applicationChannel`, and `roundId` are optional for backward compatibility and should be supplied for new resumable rounds. `discoverySourceId` accepts stable packaged and `community-…` source IDs; per-application attribution stays in private state and is not included in telemetry. Separate source-coverage events may include packaged source IDs, while community IDs are collapsed to `community`. After a visibly confirmed submission, `ledger add` automatically contributes only the canonical public URL, company, role, application channel, optional coarse discovery source, and derived provider URL to the pending community job registry. Existing installations receive a one-command disclosure grace period before historical backfill; `sources sharing disable` opts out. Private answers, score, submission time, IDs, and round remain in the owner-only local or configured cloud state, and no job appears publicly before maintainer review. `ledger check` returns hard duplicate status, bounded same-company history, and the same `companyReapply` decision enforced by `ledger add` while holding the application lock.
+
+Optional `applyKind` is `live` (default), `fixture`, or `vendor-sandbox`. Owned fixture / vendor-sandbox URLs from [`fixtures/test-jobs.json`](../fixtures/test-jobs.json) auto-set `applyKind` so metrics, round confirmation counts, community contribution, and `application_submitted` telemetry do not treat them as real employer applies. ATS channel remains in `source` / `applicationChannel`. See [`fixtures/README.md`](../fixtures/README.md) and `LIVE_APPLY`.
 
 ## Autonomy grant input
 

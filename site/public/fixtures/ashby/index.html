@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Full-Stack Engineer (Fixture) — Ashby-shaped</title>
+  <style>
+    :root { --ink: #161616; --muted: #5a5a5a; --line: #e2e2e2; --accent: #111; --yes: #0f6b4c; }
+    * { box-sizing: border-box; }
+    body { margin: 0; font-family: "DM Sans", "Segoe UI", sans-serif; background: linear-gradient(135deg, #f3f0ea, #e7ece8 50%, #f8f8f8); color: var(--ink); }
+    .shell { max-width: 40rem; margin: 0 auto; padding: 2rem 1.2rem 3rem; }
+    .badge { font-size: 0.72rem; letter-spacing: 0.05em; text-transform: uppercase; color: var(--muted); }
+    h1 { font-size: 1.7rem; margin: 0.45rem 0; }
+    .meta { color: var(--muted); margin-bottom: 1.25rem; }
+    form { background: #fff; border: 1px solid var(--line); padding: 1.2rem; }
+    label { display: block; margin: 0.85rem 0 0.3rem; font-size: 0.9rem; }
+    input[type="text"], input[type="email"], input[type="tel"], input[type="file"], textarea { width: 100%; padding: 0.55rem 0.65rem; border: 1px solid var(--line); font: inherit; }
+    .yn { display: flex; gap: 1rem; margin-top: 0.35rem; font-size: 0.92rem; }
+    .legal { display: flex; gap: 0.55rem; align-items: flex-start; margin-top: 1rem; font-size: 0.88rem; color: var(--muted); }
+    .legal input { margin-top: 0.2rem; }
+    button { margin-top: 1.2rem; background: var(--accent); color: #fff; border: 0; padding: 0.7rem 1.15rem; font: inherit; cursor: pointer; }
+  </style>
+</head>
+<body>
+  <div class="shell">
+    <div class="badge">JobAppAgent owned fixture · Ashby-shaped</div>
+    <h1>Full-Stack Engineer</h1>
+    <p class="meta">Ashby Fixture Org · Remote · Yes/no + legal fields for prove/smoke</p>
+    <form id="ashby-apply" action="./confirmation.html" method="get">
+      <label for="name">Full name *</label>
+      <input id="name" name="name" autocomplete="name" required />
+      <label for="email">Email *</label>
+      <input id="email" name="email" type="email" autocomplete="email" required />
+      <label for="phone">Phone *</label>
+      <input id="phone" name="phone" type="tel" autocomplete="tel" required />
+      <label for="resume">Resume *</label>
+      <input id="resume" name="resume" type="file" accept=".pdf,.doc,.docx" />
+      <fieldset style="border:0;padding:0;margin:0.9rem 0 0;">
+        <legend style="font-size:0.9rem;">Are you authorized to work in this location? *</legend>
+        <div class="yn">
+          <label><input type="radio" name="work_auth" value="yes" required /> Yes</label>
+          <label><input type="radio" name="work_auth" value="no" /> No</label>
+        </div>
+      </fieldset>
+      <fieldset style="border:0;padding:0;margin:0.9rem 0 0;">
+        <legend style="font-size:0.9rem;">Will you now or in the future require sponsorship? *</legend>
+        <div class="yn">
+          <label><input type="radio" name="sponsorship" value="yes" required /> Yes</label>
+          <label><input type="radio" name="sponsorship" value="no" /> No</label>
+        </div>
+      </fieldset>
+      <label for="why">Why do you want to work here?</label>
+      <textarea id="why" name="why" rows="4" placeholder="Short truthful answer for fixture fill tests"></textarea>
+      <label class="legal">
+        <input id="legal" name="legal" type="checkbox" required />
+        <span>I acknowledge this is a JobAppAgent fixture form and agree to the synthetic terms for testing. *</span>
+      </label>
+      <button type="submit" data-testid="submit-application">Submit application</button>
+    </form>
+  </div>
+</body>
+</html>
