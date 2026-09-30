@@ -2,20 +2,10 @@ import { readJsonRequest } from "../../../../lib/public-boundary.mjs";
 import { authorizedAttentionInternal, attentionEnv } from "../../../../lib/attention-auth";
 import { notifyAttentionOpened } from "../../../../lib/attention-notify.mjs";
 
-type NotifyOk = {
-  ok: true;
-  attentionId: string;
-  emailId: string | null;
-  subject: string;
-  expiresAt: number;
-  magicLinkUrl: string;
-};
-type NotifyErr = { ok: false; error: string; status?: number };
-
 /**
  * POST /api/internal/attention-notify
  * Called when an attention item opens (CLI hook or runner).
- * Bearer ATTENTION_NOTIFY_SECRET. Fail-closed without mailer/secrets.
+ * Bearer ATTENTION_NOTIFY_SECRET. Only employer questions require mailer/signing secrets.
  */
 export async function POST(request: Request) {
   if (!await authorizedAttentionInternal(request)) {
@@ -35,7 +25,7 @@ export async function POST(request: Request) {
     resendFrom: config.resendFrom,
     ttlSeconds: 2700,
     logger: console,
-  }) as NotifyOk | NotifyErr;
+  });
 
   if (!result.ok) {
     return Response.json(
@@ -44,12 +34,5 @@ export async function POST(request: Request) {
     );
   }
 
-  return Response.json({
-    ok: true,
-    attentionId: result.attentionId,
-    emailId: result.emailId,
-    subject: result.subject,
-    expiresAt: result.expiresAt,
-    magicLinkUrl: result.magicLinkUrl,
-  }, { headers: { "cache-control": "no-store" } });
+  return Response.json(result, { headers: { "cache-control": "no-store" } });
 }

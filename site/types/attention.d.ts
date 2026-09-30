@@ -4,60 +4,37 @@ declare module "*/attention-action-labels.mjs" {
 
   export function actionLabel(action: string): string;
   export function blockerLabel(blocker: string): string;
-  export function attentionPanelActionClasses(options?: {
-    liveRequired?: boolean;
-    panelOpen?: boolean;
-  }): { liveBrowser: string; resume: string };
+}
+
+declare module "*/attention-buyer-flow.mjs" {
+  type Question = { id: string; prompt?: string; required: boolean };
+  type View = { questions?: Question[]; blocker?: string; requiredActions?: string[] };
+  export const BUYER_FLOW_COPY: Record<"preflight" | "choose" | "queue" | "judgment" | "done", {
+    eyebrow: string; title: string; pill: string; prompt: string; primary: string;
+  }>;
+  export function chooseActionLabel(count: number): string;
+  export function buyerAttentionStep(view: View): "judgment" | "queue";
+  export function needsAdminAttention(view: View): boolean;
+  export function canContinueApplying(questions: Question[], answers: Record<string, { text: string }>): boolean;
 }
 
 declare module "*/attention-design-fixtures.mjs" {
+  type Step = "preflight" | "choose" | "queue" | "judgment" | "done" | "admin";
   export const ATTENTION_DESIGN_FIXTURE_ID: "design";
-  export const ATTENTION_DESIGN_FIXTURE_KEYS: readonly [
-    "questions",
-    "live-required",
-    "unavailable",
-    "retry",
-    "resume-requested",
-  ];
-
-  export type AttentionDesignFixtureKey =
-    | "questions"
-    | "live-required"
-    | "unavailable"
-    | "retry"
-    | "resume-requested";
-
-  export function attentionResumeRequestedNote(): string;
-  export function parseAttentionDesignKey(searchParams: unknown): AttentionDesignFixtureKey | null;
-  export function resolveAttentionDesignFixture(searchParams: unknown): {
-    key: AttentionDesignFixtureKey;
+  export const ATTENTION_DESIGN_STEPS: readonly Step[];
+  export const ATTENTION_DESIGN_FIXTURE_KEYS: readonly string[];
+  export const DESIGN_JOBS: readonly { id: string; role: string; company: string; detail: string }[];
+  export function parseAttentionDesignKey(searchParams: unknown): string | null;
+  export function resolveAttentionDesignFixture(searchParams: unknown, attentionId?: string): {
+    key: string;
+    step: Step;
     view: {
-      attentionId: string;
-      company: string;
-      role: string;
-      url: string;
-      stage: string;
-      blocker: string;
-      requiredActions: string[];
-      questions: { id: string; prompt: string; kind: string; required: boolean }[];
+      attentionId: string; company: string; role: string; token: string;
       aiAssistanceDiscouraged: boolean;
-      why: string;
-      liveSessionUrl: string | null;
-      liveSessionEmbedUrl: string | null;
-      liveSessionAvailable: boolean;
-      token: string;
-      expiresAt: number;
-    };
-    ui: {
-      panelOpen: boolean;
-      loadFailed: boolean;
-      connecting: boolean;
-      status: string | null;
-      iframeSrc: string | null;
+      questions: { id: string; prompt: string; kind: string; required: boolean }[];
     };
   } | null;
   export function buildAttentionDesignFixture(key: string): ReturnType<typeof resolveAttentionDesignFixture>;
-  export function attentionDesignFixtureCopy(key: string): string | null;
 }
 
 declare module "*/attention-live-session.mjs" {
@@ -234,15 +211,14 @@ declare module "*/attention-magic-link.mjs" {
 }
 
 declare module "*/attention-mail.mjs" {
-  export const BLOCKER_COPY: Record<string, string>;
-
   export function buildAttentionEmail(input: {
     company?: string;
     role?: string;
     blocker?: string;
     requiredActions?: string[];
     magicLinkUrl?: string;
-  }): { subject: string; text: string; html: string; why: string };
+    questions?: { id?: string; prompt: string; required?: boolean }[];
+  }): { subject: string; text: string; html: string; why: string } | null;
 
   export function sendAttentionEmail(
     input: {
@@ -252,6 +228,7 @@ declare module "*/attention-mail.mjs" {
       blocker?: string;
       requiredActions?: string[];
       magicLinkUrl?: string;
+      questions?: { id?: string; prompt: string; required?: boolean }[];
     },
     config?: {
       apiKey?: string;
@@ -296,6 +273,8 @@ declare module "*/attention-notify.mjs" {
     | {
       ok: true;
       attentionId: string;
+      buyerNotified: true;
+      adminAlert: { status: "stubbed"; buyerState: "in_progress" } | null;
       emailId: string | null;
       subject: string;
       expiresAt: number;
@@ -303,6 +282,7 @@ declare module "*/attention-notify.mjs" {
       questions: { id: string; prompt: string; kind: string; required: boolean }[];
       aiAssistanceDiscouraged: boolean;
     }
+    | { ok: true; attentionId: string; buyerNotified: false; adminAlert: { status: "stubbed"; buyerState: "in_progress" } }
     | { ok: false; error: string; status?: number }
   >;
 }

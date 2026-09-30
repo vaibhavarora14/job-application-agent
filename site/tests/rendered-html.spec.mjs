@@ -107,40 +107,18 @@ test("attention missing-token UI includes a Back home recovery CTA", async () =>
   assert.match(source, /needs a secure token/i);
 });
 
-test("attention design fixtures are wired for Quiet Trust review without weakening token gate", async () => {
-  // Attention pages import cloudflare:workers via attention-auth, so Node worker.fetch
-  // cannot SSR /attention/* (same reason missing-token is source-asserted). Fixture
-  // copy/state markers are covered in attention-design-fixtures.test.mjs.
+test("attention design harness and judgment have no operational preview actions", async () => {
   const fs = await import("node:fs/promises");
   const page = await fs.readFile(new URL("../app/attention/[id]/page.tsx", import.meta.url), "utf8");
   const actions = await fs.readFile(new URL("../app/attention/[id]/AttentionActions.tsx", import.meta.url), "utf8");
   const answers = await fs.readFile(new URL("../app/attention/[id]/AttentionAnswerFields.tsx", import.meta.url), "utf8");
-  const fixtures = await fs.readFile(new URL("../lib/attention-design-fixtures.mjs", import.meta.url), "utf8");
-
-  assert.match(page, /resolveAttentionDesignFixture/);
-  assert.match(page, /Design preview/);
-  assert.match(page, /Design fixture only/);
-  assert.match(page, /data-design-fixture=\{key\}/);
-  assert.match(page, /designFixture=\{key\}/);
-  // Known design= keys must be resolved before the token gate.
-  const designIdx = page.indexOf("resolveAttentionDesignFixture");
-  const tokenGateIdx = page.indexOf("This link needs a secure token");
-  assert.ok(designIdx > 0 && tokenGateIdx > designIdx);
-
-  for (const key of ["questions", "live-required", "unavailable", "retry", "resume-requested"]) {
-    assert.match(fixtures, new RegExp(`"${key}"`));
-  }
-  assert.match(fixtures, /attentionResumeRequestedNote|Resume requested/);
-  assert.match(fixtures, /liveBrowserUnavailableMessage|liveSessionAvailable: false/);
-  assert.match(fixtures, /loadFailed: true/);
-  assert.match(fixtures, /ATTENTION_DESIGN_FIXTURE_KEYS/);
-
-  // Invalid design= falls through — only known keys resolve.
-  assert.match(fixtures, /FIXTURE_SET\.has\(key\)/);
-  assert.match(actions, /if \(isDesignFixture\) return;/); // wake no-op
-  assert.match(actions, /if \(isDesignFixture\) \{\s*setStatus/); // signal stub
-  assert.match(answers, /if \(designFixture\) return;/); // answers prefetch skip
-  assert.match(answers, /designFixture \|\| aiAssistanceDiscouraged/); // draft off
+  assert.match(page, /resolveAttentionDesignFixture\(query, attentionId\)/);
+  assert.ok(page.indexOf("if (fixture)") < page.indexOf("if (!token)"));
+  assert.match(actions, /if \(designFixture\) return true/);
+  assert.match(actions, /canContinueApplying/);
+  assert.doesNotMatch(actions, /\/wake|\/live-session|Open live|Try again|I’ve finished/);
+  assert.match(answers, /if \(designFixture\) return;/);
+  assert.match(answers, /designFixture \|\| aiAssistanceDiscouraged/);
 });
 
 test("community and homepage CTAs use Activate founding access · $49", async () => {

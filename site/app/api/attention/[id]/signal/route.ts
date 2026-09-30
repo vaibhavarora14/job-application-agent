@@ -1,3 +1,4 @@
+import { canContinueApplying } from "../../../../../lib/attention-buyer-flow.mjs";
 import { attentionEnv } from "../../../../../lib/attention-auth";
 import { upsertAnswerBankEntries } from "../../../../../lib/attention-answer-bank";
 import { verifyAttentionMagicLink } from "../../../../../lib/attention-magic-link.mjs";
@@ -65,6 +66,16 @@ export async function POST(request: Request, { params }: Params) {
     return Response.json({ error: "token_invalid" }, { status: 401 });
   }
 
+  if (validated.data.signal === "resume_requested") {
+    const questions = payload.questions ?? [];
+    const knownIds = new Set(questions.map((question) => question.id));
+    const answers = Object.fromEntries(validated.data.answers.map((answer) => [answer.questionId, answer]));
+    if (validated.data.answers.some((answer) => !knownIds.has(answer.questionId))
+      || !canContinueApplying(questions, answers)) {
+      return Response.json({ error: "employer_answers_required" }, { status: 400 });
+    }
+  }
+
   const record = buildAttentionSignalRecord(attentionId, validated.data.signal, {
     answers: validated.data.answers,
   });
@@ -101,7 +112,7 @@ export async function POST(request: Request, { params }: Params) {
     updatedAt: stored.updatedAt,
     answersStored: validated.data.answers.length,
     note: stored.signal === "resume_requested"
-      ? "Resume requested. Your answers will be used on the open application page. Filling a form is not an application until you see confirmation on the employer site."
+      ? "Your answers are saved. We’re continuing with your application."
       : stored.signal === "skipped"
         ? "Skip recorded. This role will be left without submitting."
         : "Stopped. This application session will end.",

@@ -122,7 +122,7 @@ export function AttentionAnswerFields({
         [question.id]: {
           status: "ready",
           text: String(body.draft ?? ""),
-          message: "Private scratch — edit, then Approve to use on resume.",
+          message: "Edit, then approve to use this answer.",
         },
       }));
     } catch {
@@ -154,54 +154,55 @@ export function AttentionAnswerFields({
 
   return (
     <div className="attention-answers">
-      <p className="attention-answers-lead">
-        {aiAssistanceDiscouraged
-          ? "This posting asks for your own voice. Answer below — draft assist is off."
-          : "Answer judgment questions here. Optional Draft is private until you Approve."}
-      </p>
       {questions.map((question, index) => {
         const value = answers[question.id]?.text ?? "";
         const draft = drafts[question.id];
         const suggestions = priors[question.id] ?? [];
         return (
-          <div key={question.id} className="attention-answer-card">
+          <div key={question.id} className="attention-answer-card buyer-card">
+            <p className="buyer-question-index">Question {index + 1} of {questions.length}{question.required ? "" : " · Optional"}</p>
             <label className="attention-answer-label" htmlFor={`attention-q-${question.id}`}>
-              <span className="attention-answer-index">{index + 1}.</span>{" "}
               {question.prompt}
-              {question.required ? <span className="attention-answer-required"> *</span> : null}
             </label>
             <textarea
               id={`attention-q-${question.id}`}
               className="attention-answer-textarea"
               rows={5}
               value={value}
-              placeholder="Write in your own voice…"
+              placeholder="Write a short answer..."
+              required={question.required}
+              maxLength={5000}
               onChange={(event) => onChange(question.id, event.target.value, "typed")}
             />
-            <div className="attention-answer-tools">
-              {aiAssistanceDiscouraged || designFixture ? (
-                <span className="attention-answer-hint">
-                  {designFixture ? "Design fixture — draft assist off" : "Answer in your own voice"}
-                </span>
-              ) : (
-                <button
-                  type="button"
-                  className="button button-secondary"
-                  disabled={draft?.status === "loading"}
-                  onClick={() => requestDraft(question)}
-                >
-                  {draft?.status === "loading" ? "Drafting…" : "Draft"}
-                </button>
-              )}
-              <button
-                type="button"
-                className="button button-secondary"
-                disabled={designFixture || !suggestions.length}
-                onClick={() => setPriorOpen((id) => (id === question.id ? null : question.id))}
-              >
-                Use prior answer{suggestions.length ? ` (${suggestions.length})` : ""}
-              </button>
-            </div>
+            {!designFixture && (
+              <details className="buyer-answer-help">
+                <summary>Answer options</summary>
+                <div className="attention-answer-tools">
+                  {aiAssistanceDiscouraged ? (
+                    <span className="attention-answer-hint">
+                      Answer in your own voice
+                    </span>
+                  ) : (
+                    <button
+                      type="button"
+                      className="button button-secondary"
+                      disabled={draft?.status === "loading"}
+                      onClick={() => requestDraft(question)}
+                    >
+                      {draft?.status === "loading" ? "Drafting…" : "Draft"}
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    className="button button-secondary"
+                    disabled={!suggestions.length}
+                    onClick={() => setPriorOpen((id) => (id === question.id ? null : question.id))}
+                  >
+                    Use prior answer{suggestions.length ? ` (${suggestions.length})` : ""}
+                  </button>
+                </div>
+              </details>
+            )}
             {priorOpen === question.id && suggestions.length ? (
               <ul className="attention-prior-list">
                 {suggestions.map((item) => (
@@ -227,6 +228,8 @@ export function AttentionAnswerFields({
                 <textarea
                   className="attention-answer-textarea"
                   rows={5}
+                  aria-label={`Draft answer: ${question.prompt}`}
+                  maxLength={5000}
                   value={draft.text}
                   onChange={(event) => setDrafts((prev) => ({
                     ...prev,

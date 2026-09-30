@@ -1,12 +1,14 @@
 /**
- * Attention notify orchestration: validate payload → magic link → email.
- * Fail-closed when secrets or mailer are missing.
+ * Attention notify orchestration: validate → ops alert and/or judgment email.
+ * Judgment mail fails closed when signing secrets or the mailer are missing.
  */
 
 import {
   buildAttentionMagicLinkUrl,
   signAttentionMagicLink,
 } from "./attention-magic-link.mjs";
+import { needsAdminAttention } from "./attention-buyer-flow.mjs";
+import { recordAttentionAdminAlert } from "./attention-admin-alert.mjs";
 import { sendAttentionEmail } from "./attention-mail.mjs";
 import {
   detectAiAssistanceDiscouraged,
@@ -38,7 +40,7 @@ export function validateAttentionNotifyRequest(input) {
     || detectAiAssistanceDiscouraged(postingText);
 
   if (!attentionId || attentionId.length > 180) return { ok: false, error: "attention_id_invalid", status: 400 };
-  if (!emailPattern.test(email)) return { ok: false, error: "email_invalid", status: 400 };
+  if (questions.length && !emailPattern.test(email)) return { ok: false, error: "email_invalid", status: 400 };
   if (!company || company.length > 200) return { ok: false, error: "company_invalid", status: 400 };
   if (!role || role.length > 200) return { ok: false, error: "role_invalid", status: 400 };
   if (url && url.length > 2048) return { ok: false, error: "url_invalid", status: 400 };
@@ -68,6 +70,15 @@ export function validateAttentionNotifyRequest(input) {
 export async function notifyAttentionOpened(request, config) {
   const validated = validateAttentionNotifyRequest(request);
   if (!validated.ok) return validated;
+
+  // Technical issues are ops work even when the same pause also has questions.
+  // Alert before checking mail configuration so a missing mailer never hides ops work.
+  const adminAlert = needsAdminAttention(validated.data)
+    ? recordAttentionAdminAlert(validated.data, { logger: config?.logger ?? console })
+    : null;
+  if (!validated.data.questions.length) {
+    return { ok: true, attentionId: validated.data.attentionId, buyerNotified: false, adminAlert };
+  }
 
   const magicSecret = typeof config?.magicLinkSecret === "string" ? config.magicLinkSecret : "";
   const publicSiteUrl = typeof config?.publicSiteUrl === "string" ? config.publicSiteUrl : "";
@@ -101,7 +112,7 @@ export async function notifyAttentionOpened(request, config) {
     company: validated.data.company,
     role: validated.data.role,
     blocker: validated.data.blocker,
-    requiredActions: validated.data.requiredActions,
+    questions: validated.data.questions,
     magicLinkUrl,
   }, {
     apiKey: config?.resendApiKey,
@@ -117,6 +128,8 @@ export async function notifyAttentionOpened(request, config) {
   return {
     ok: true,
     attentionId: validated.data.attentionId,
+    buyerNotified: true,
+    adminAlert,
     emailId: mailed.id,
     subject: mailed.subject,
     expiresAt: signed.expiresAt,
