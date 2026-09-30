@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { attentionEnv } from "../../../lib/attention-auth";
-import { actionLabel } from "../../../lib/attention-action-labels.mjs";
+import { actionLabel, blockerLabel } from "../../../lib/attention-action-labels.mjs";
 import { buildLiveSessionProxyPath } from "../../../lib/attention-live-session.mjs";
 import { verifyAttentionMagicLink } from "../../../lib/attention-magic-link.mjs";
 import { BLOCKER_COPY } from "../../../lib/attention-mail.mjs";
@@ -44,8 +44,8 @@ export default async function AttentionPage({ params, searchParams }: PageProps)
   if (!token) {
     return <AttentionShell>
       <AttentionError
-        title="This attention link needs a token."
-        body="Open the signed link from your email. VNC passwords are never emailed — only a short-lived magic link."
+        title="This link needs a secure token."
+        body="Open the signed link from your email to continue this pause."
       />
     </AttentionShell>;
   }
@@ -54,8 +54,8 @@ export default async function AttentionPage({ params, searchParams }: PageProps)
   if (!verified.ok) {
     return <AttentionShell>
       <AttentionError
-        title={verified.error === "token_expired" ? "This live-session link expired." : "This attention link is not valid."}
-        body="Request a fresh notify from the hosted run, or ask the operator to re-send attention mail. Lease hold is typically 45–60 minutes."
+        title={verified.error === "token_expired" ? "This link has expired." : "This attention link is not valid."}
+        body="Request a fresh link from your Hosted apply notification. Links usually last under an hour."
       />
     </AttentionShell>;
   }
@@ -89,17 +89,15 @@ export default async function AttentionPage({ params, searchParams }: PageProps)
           {why}
         </p>
         <div className="attention-meta">
-          <span className="attention-chip">{view.blocker || "paused"}</span>
-          {view.stage ? <span className="attention-meta-item">stage · {view.stage}</span> : null}
-          <span className="attention-meta-item lease">lease held</span>
+          <span className="attention-chip">{blockerLabel(view.blocker)}</span>
           {view.aiAssistanceDiscouraged ? (
-            <span className="attention-meta-item">own voice</span>
+            <span className="attention-meta-item">Own voice</span>
           ) : null}
         </div>
       </header>
 
       <section className="attention-panel" aria-labelledby="required-actions-heading">
-        <h2 id="required-actions-heading">Required actions</h2>
+        <h2 id="required-actions-heading">What needs you</h2>
         <ul className="attention-checklist">
           {(view.requiredActions.length ? view.requiredActions : ["open-live-session"]).map((action) => (
             <li key={action}>{action === "open-live-session" ? "Open the live browser and finish the paused step" : actionLabel(action)}</li>
@@ -107,7 +105,7 @@ export default async function AttentionPage({ params, searchParams }: PageProps)
         </ul>
         {view.url ? (
           <p className="attention-url">
-            Application URL:{" "}
+            Application page:{" "}
             <a href={view.url} target="_blank" rel="noreferrer">{view.url}</a>
           </p>
         ) : null}
@@ -117,11 +115,11 @@ export default async function AttentionPage({ params, searchParams }: PageProps)
         <h2 id="act-heading">{judgmentUi ? "Answer & resume" : "Act in the live browser"}</h2>
         <p>
           {judgmentUi
-            ? "Judgment answers stay in this card and are injected on resume. Use the live browser for CAPTCHA, MFA, or widgets that cannot be mirrored."
+            ? "Judgment answers stay on this card and are used when you resume. Use the live browser for CAPTCHA, MFA, or widgets that cannot be mirrored."
             : "Complete CAPTCHA, MFA, or legal attestation yourself in the live browser."}
           {" "}
           JobAppAgent will not store codes, cookies, or CAPTCHA answers.
-          filled ≠ applied until you resume and the runner sees a visible confirmation.
+          Filling a form is not an application until you resume and see confirmation on the employer site.
           {!liveNeeded && judgmentUi
             ? " Live browser is optional for this pause."
             : null}

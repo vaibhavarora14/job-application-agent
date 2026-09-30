@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { attentionPanelActionClasses } from "../../../lib/attention-action-labels.mjs";
 import {
   liveBrowserLoadFailedMessage,
   liveBrowserUnavailableMessage,
@@ -151,9 +152,9 @@ export function AttentionActions({ view }: { view: AttentionView }) {
         setError(typeof body.error === "string" ? body.error : "Signal failed.");
         return;
       }
-      setStatus(typeof body.note === "string" ? body.note : `Recorded: ${body.signal ?? action}`);
+      setStatus(typeof body.note === "string" ? body.note : `Saved: ${body.signal ?? action}`);
     } catch {
-      setError("Network error while recording your choice.");
+      setError("Network error while saving your choice.");
     } finally {
       setBusy(null);
     }
@@ -219,7 +220,10 @@ export function AttentionActions({ view }: { view: AttentionView }) {
 
   const unavailableCopy = liveBrowserUnavailableMessage();
   const loadFailedCopy = liveBrowserLoadFailedMessage();
-  const liveButtonClass = showLivePrimary ? "button" : "button button-secondary";
+  const { liveBrowser: liveButtonClass, resume: resumeButtonClass } = attentionPanelActionClasses({
+    liveRequired: showLivePrimary,
+    panelOpen,
+  });
 
   return (
     <div className="attention-actions-stack">
@@ -267,14 +271,14 @@ export function AttentionActions({ view }: { view: AttentionView }) {
             {panelExpanded ? "Exit full view" : "Expand live view"}
           </button>
         ) : null}
-        <button type="button" className="button button-secondary" disabled={Boolean(busy)} onClick={() => send("resume")}>
-          {busy === "resume" ? "Recording…" : "I’ve finished — resume"}
+        <button type="button" className={resumeButtonClass} disabled={Boolean(busy)} onClick={() => send("resume")}>
+          {busy === "resume" ? "Saving…" : "I’ve finished — resume"}
         </button>
         <button type="button" className="button button-secondary" disabled={Boolean(busy)} onClick={() => send("skip")}>
-          {busy === "skip" ? "Recording…" : "Skip this role"}
+          {busy === "skip" ? "Saving…" : "Skip this role"}
         </button>
         <button type="button" className="button button-danger" disabled={Boolean(busy)} onClick={() => send("abort")}>
-          {busy === "abort" ? "Recording…" : "Abort run"}
+          {busy === "abort" ? "Saving…" : "Stop this application"}
         </button>
         {error ? <p className="action-error" role="alert">{error}</p> : null}
         {status ? <p className="attention-status" role="status">{status}</p> : null}
@@ -284,13 +288,13 @@ export function AttentionActions({ view }: { view: AttentionView }) {
       {panelOpen ? (
         <section
           className={panelExpanded ? "attention-live-panel attention-live-panel-expanded" : "attention-live-panel"}
-          aria-label="Live remote browser"
+          aria-label="Live browser"
         >
           <div className="attention-live-panel-chrome">
             <p className="attention-live-panel-label">Live browser</p>
             <p className="attention-live-panel-hint">
-              Finish CAPTCHA, MFA, or unmirrorable widgets here. Judgment answers above are injected on resume.
-              filled ≠ applied until you resume and the runner confirms visible success.
+              Finish CAPTCHA, MFA, or other steps that need the real page here.
+              Answers above are used when you resume — not applied until you see confirmation on the employer site.
             </p>
           </div>
           {!view.liveSessionAvailable ? (
@@ -302,7 +306,7 @@ export function AttentionActions({ view }: { view: AttentionView }) {
               <iframe
                 key={frameKey}
                 className="attention-live-frame"
-                title="Remote live browser"
+                title="Live browser"
                 src={iframeSrc}
                 allow="clipboard-read; clipboard-write"
                 referrerPolicy="no-referrer"

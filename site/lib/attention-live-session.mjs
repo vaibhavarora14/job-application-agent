@@ -151,7 +151,7 @@ export const LIVE_SESSION_TRYCLOUDFLARE_FRAME_SRC = "https://*.trycloudflare.com
  * Quiet Trust — no gcloud / IAP / ops instructions.
  */
 export function liveBrowserLoadFailedMessage() {
-  return "Live browser failed to load — retry";
+  return "Live browser failed to load. You can retry when ready.";
 }
 
 /**
