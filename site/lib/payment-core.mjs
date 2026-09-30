@@ -5,6 +5,17 @@ const paymentEvents = new Set([
   "dispute.cancelled", "dispute.won", "dispute.expired", "dispute.challenged",
 ]);
 
+/**
+ * Expected Dodo product display copy for founding checkout.
+ * Checkout Sessions only accept `product_id` — Name + Description are owned by the
+ * Dodo dashboard product record (see site/docs/DODO_PRODUCT.md). Keep these strings
+ * hosted-honest; never claim Cloud OPEN on the SKU the buyer just purchased.
+ */
+export const FOUNDING_DODO_PRODUCT_DISPLAY = Object.freeze({
+  name: "Job Application Agent — Founding Hosted Access",
+  description: "90 days of founding hosted access. Your window starts when we activate your seat and email access details — not on payment alone. Cloud access remains coming soon.",
+});
+
 export function validatePurchaseId(input) {
   const purchaseId = typeof input === "string" ? input.trim() : "";
   return uuidPattern.test(purchaseId)
@@ -27,11 +38,18 @@ export function validatePaymentConfig(input) {
 export function buildCheckoutRequest({ productId, purchaseId, publicSiteUrl }) {
   const base = new URL(publicSiteUrl).origin;
   // Validate the SDK contract without widening its literal customization options.
+  // Product title/description are NOT part of CheckoutSessionCreateParams.product_cart —
+  // they come from the Dodo product record (FOUNDING_DODO_PRODUCT_DISPLAY / DODO_PRODUCT.md).
   return /** @satisfies {import("dodopayments/resources/checkout-sessions").CheckoutSessionCreateParams} */ ({
     product_cart: [{ product_id: productId, quantity: 1 }],
     return_url: `${base}/checkout/return?purchase_id=${purchaseId}`,
     cancel_url: `${base}/#founding`,
-    metadata: { purchase_id: purchaseId, offer: "founding_90_days" },
+    metadata: {
+      purchase_id: purchaseId,
+      offer: "founding_90_days",
+      product_surface: "hosted",
+      product_display_name: FOUNDING_DODO_PRODUCT_DISPLAY.name,
+    },
     customization: {
       force_language: "en",
       theme: "light",
@@ -65,18 +83,41 @@ export function buildCheckoutRequest({ productId, purchaseId, publicSiteUrl }) {
   });
 }
 
+/** Design-only success fixture for `/checkout/return` — never confirms a live payment. */
+export function isCheckoutDesignSuccess(searchParams) {
+  const params = searchParams && typeof searchParams === "object" ? searchParams : {};
+  const rawDesign = params.design;
+  const design = Array.isArray(rawDesign) ? rawDesign[0] : rawDesign;
+  if (design !== "success") return false;
+  const rawPurchaseId = params.purchase_id;
+  const purchaseId = Array.isArray(rawPurchaseId) ? rawPurchaseId[0] : rawPurchaseId;
+  // Refuse to pair the fixture with a purchase id so it cannot look like paid status.
+  return !validatePurchaseId(purchaseId ?? "").ok;
+}
+
 export function canonicalCheckoutReturnUrl(searchParams) {
   const params = searchParams && typeof searchParams === "object" ? searchParams : {};
   const entries = Object.entries(params).filter(([, value]) => value !== undefined);
   const rawPurchaseId = params.purchase_id;
   const purchaseId = Array.isArray(rawPurchaseId) ? rawPurchaseId[0] : rawPurchaseId;
   const validated = validatePurchaseId(purchaseId ?? "");
-  const alreadyCanonical = entries.length === 1
-    && entries[0][0] === "purchase_id"
-    && typeof rawPurchaseId === "string"
-    && validated.ok;
-  if (alreadyCanonical) return null;
-  if (validated.ok) return `/checkout/return?purchase_id=${encodeURIComponent(validated.purchaseId)}`;
+
+  // Real purchase returns win: strip design= and other extras down to purchase_id only.
+  if (validated.ok) {
+    const alreadyCanonical = entries.length === 1
+      && entries[0][0] === "purchase_id"
+      && typeof rawPurchaseId === "string";
+    return alreadyCanonical ? null : `/checkout/return?purchase_id=${encodeURIComponent(validated.purchaseId)}`;
+  }
+
+  // Design success fixture (no purchase_id): keep a stable, evidencable URL.
+  if (isCheckoutDesignSuccess(params)) {
+    const alreadyCanonical = entries.length === 1
+      && entries[0][0] === "design"
+      && (Array.isArray(params.design) ? params.design[0] : params.design) === "success";
+    return alreadyCanonical ? null : "/checkout/return?design=success";
+  }
+
   return entries.length > 0 ? "/checkout/return" : null;
 }
 

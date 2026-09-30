@@ -27,7 +27,7 @@ export function CommunityDashboard() {
     <section className="dashboard-hero">
       <div><p className="eyebrow">Aggregate product evidence</p><h1>See the work the agent is doing.</h1><p>Verified, anonymous activity from Job Application Agent installations. This page shows adoption, execution, and reported outcomes—not job listings or individual profiles.</p></div>
       <div className="dashboard-hero-meta">
-        <div className={`live-status${error ? " live-status-error" : ""}`} role="status"><span />{error ? "Live feed unavailable" : loading ? "Connecting to live aggregate data" : "Live anonymous community data"}</div>
+        <div className={`live-status${error ? " live-status-error" : ""}`} role="status"><span />{error ? "Live feed resting" : loading ? "Connecting to live aggregate data" : "Live anonymous community data"}</div>
         <a className="dashboard-method-link" href="#methodology">How this evidence works ↓</a>
       </div>
     </section>
@@ -38,10 +38,11 @@ export function CommunityDashboard() {
         <p>Installations show recent activity. Assessed jobs show research volume. Submitted applications require a confirmed employer or ATS success state.</p>
       </div>
       <div className="dashboard-metrics" aria-label="Community totals" aria-busy={loading}>
-        <article><strong>{data ? compactNumber.format(data.metrics.activeInstallations30d) : "—"}</strong><span>Active installations · last 30 days</span></article>
-        <article><strong>{data ? compactNumber.format(data.metrics.applicationsSubmitted) : "—"}</strong><span>Verified applications submitted</span></article>
-        <article><strong>{data ? compactNumber.format(data.metrics.jobsAssessed) : "—"}</strong><span>Jobs assessed</span></article>
+        <article><strong>{data ? compactNumber.format(data.metrics.activeInstallations30d) : loading ? <span className="metric-pending">Loading</span> : <span className="metric-empty">—</span>}</strong><span>Active installations · last 30 days</span></article>
+        <article><strong>{data ? compactNumber.format(data.metrics.applicationsSubmitted) : loading ? <span className="metric-pending">Loading</span> : <span className="metric-empty">—</span>}</strong><span>Verified applications submitted</span></article>
+        <article><strong>{data ? compactNumber.format(data.metrics.jobsAssessed) : loading ? <span className="metric-pending">Loading</span> : <span className="metric-empty">—</span>}</strong><span>Jobs assessed</span></article>
       </div>
+      {error ? <p className="data-note data-note-error" role="status">Live aggregate data is resting. Evidence will return when the feed is available — we do not invent placeholder counts.</p> : null}
     </section>
 
     <section className="dashboard-section" aria-labelledby="execution-heading">
