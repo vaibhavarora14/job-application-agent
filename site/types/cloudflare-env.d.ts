@@ -37,5 +37,7 @@ declare namespace Cloudflare {
     ATTENTION_DRAFT_MODEL?: string;
     RESEND_API_KEY?: string;
     RESEND_FROM_EMAIL?: string;
+    /** Support inbox for founding payment-succeeded ops alerts (default founders@jobappagent.com). */
+    FOUNDING_SUPPORT_ALERT_EMAIL?: string;
   }
 }

@@ -26,8 +26,9 @@ commit populated environment files.
 - `REFUND_CRON_SECRET`: bearer secret shared with the daily refund workflow
 - `ATTENTION_NOTIFY_SECRET`: bearer secret for attention notify + runner signal poll
 - `ATTENTION_MAGIC_LINK_SECRET`: HMAC secret for `/attention/:id` magic links
-- `RESEND_API_KEY`: Resend key for attention email (notify fails closed when unset)
-- `RESEND_FROM_EMAIL`: optional From override for attention mail
+- `RESEND_API_KEY`: Resend key for attention email and founding Support pay-success alerts (attention notify fails closed when unset; founding alert still structured-logs)
+- `RESEND_FROM_EMAIL`: optional From override for attention / ops mail
+- `FOUNDING_SUPPORT_ALERT_EMAIL`: optional Support inbox for founding `payment.succeeded` alerts (default `founders@jobappagent.com`)
 - `ATTENTION_LIVE_SESSION_BASE_URL`: public noVNC/live-view base (agent-box port 6080); attention page embeds this after magic-link verify (required for buyer live panel)
 - `ATTENTION_NOVNC_PASSWORD`: optional VNC password for Worker embed/redirect fragment only (never emailed)
 - `ATTENTION_IAP_HELPER_COMMAND`: optional IAP tunnel one-liner for **founder/dev docs/ops only** (never shown in buyer UI)
@@ -86,10 +87,12 @@ delivery have both been verified.
 
 Paid access is activated separately from payment (ops emails hosted access
 details after a verified founding purchase; `activatePurchase` starts the
-90-day window when the seat is actually handed over). The public site never
-promises instant self-serve dashboard access or automatic refunds. Internal
-`.github/workflows/refund-unactivated-purchases.yml` calls the protected refund
-endpoint for ops only.
+90-day window when the seat is actually handed over). Verified
+`payment.succeeded` persists D1 `succeeded` and alerts Support — see
+[`docs/FOUNDING_ACTIVATION.md`](docs/FOUNDING_ACTIVATION.md). The public site
+never promises instant self-serve dashboard access or automatic refunds.
+Internal `.github/workflows/refund-unactivated-purchases.yml` calls the
+protected refund endpoint for ops only.
 
 Dodo checkout **product name/description** are dashboard-owned (Checkout Session
 API cannot override them). Ops must keep the founding SKU on Hosted wording —
