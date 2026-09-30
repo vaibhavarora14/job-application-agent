@@ -18,7 +18,9 @@ test("server-renders the focused cloud offer and honest community proof", async 
   const html = await response.text();
   assert.match(html, /Set the goal/);
   assert.match(html, /Cloud launch sequence/);
-  assert.match(html, /October 1, 2026/);
+  assert.match(html, /October 15, 2026/);
+  assert.match(html, /datetime="2026-10-15T00:00:00\+05:30"/i);
+  assert.doesNotMatch(html, /October 1, 2026|2026-10-01/);
   assert.match(html, /aria-label="Time remaining until cloud launch"/);
   assert.match(html, /Active installations · last 30 days/);
   assert.match(html, /Verified applications submitted/);
