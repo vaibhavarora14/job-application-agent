@@ -8,12 +8,45 @@ import { useLandingAnalytics } from "./LandingAnalytics";
 
 type View = "checking" | "paid" | "processing" | "failed";
 
-export function PaymentReturnStatus() {
-  const [view, setView] = useState<View>("checking");
+function SuccessBody({ fixture }: { fixture: boolean }) {
+  return <>
+    <span className="success-mark">✓</span>
+    <p className="eyebrow">{fixture ? "Success preview" : "Payment verified"}</p>
+    <h1>Your founding hosted access is on its way.</h1>
+    <p>Thank you. Here is what happens next:</p>
+    <ul className="payment-return-next">
+      <li>We email hosted access details to the address collected at checkout, usually within 24 hours.</li>
+      <li>Your 90 days start when we activate your seat — not on payment alone.</li>
+      <li>There is no instant self-serve dashboard yet.</li>
+    </ul>
+    {fixture
+      ? <p className="payment-return-fixture-note">Design fixture only — this URL does not confirm a live payment.</p>
+      : <p className="payment-return-secondary">Check the inbox for the email you used at checkout.</p>}
+    <Link className="button" href="/">Back home</Link>
+  </>;
+}
+
+export function PaymentReturnStatus({ designSuccess = false }: { designSuccess?: boolean }) {
+  const [view, setView] = useState<View>(designSuccess ? "paid" : "checking");
   const analytics = useLandingAnalytics();
   const returnedSent = useRef(false);
 
   useEffect(() => {
+    if (designSuccess) {
+      if (returnedSent.current || !analytics.ready) return;
+      returnedSent.current = true;
+      void captureLandingEvent({
+        apiKey: analytics.apiKey,
+        host: analytics.host,
+        event: FOUNDING_EVENTS.CHECKOUT_RETURNED,
+        properties: {
+          offer: "founding_90_days",
+          status: "design_fixture",
+        },
+      });
+      return;
+    }
+
     let attempts = 0;
     let active = true;
     let timer: number | undefined;
@@ -66,13 +99,12 @@ export function PaymentReturnStatus() {
     };
     void check();
     return () => { active = false; if (timer !== undefined) window.clearTimeout(timer); };
-  }, [analytics]);
+  }, [analytics, designSuccess]);
 
   return <div className="payment-return-card" aria-live="polite">
-    {view === "checking" && <><span className="live-dot"/><p className="eyebrow">Checking your payment</p><h1>Waiting for Dodo&apos;s verified webhook.</h1><p>Keep this page open. This normally takes only a few seconds.</p></>}
-    {view === "paid" && <><span className="success-mark">✓</span><p className="eyebrow">Payment verified</p><h1>Your founding hosted access is ready to activate.</h1><p>We will email hosted access details to the address collected at checkout.</p></>}
-    {view === "processing" && <><p className="eyebrow">Still processing</p><h1>Your payment is still being confirmed.</h1><p>It is safe to close this page. Dodo will send a receipt when confirmation arrives.</p></>}
-    {view === "failed" && <><p className="eyebrow">Not confirmed</p><h1>We could not verify this payment.</h1><p>No access has been granted. Return to the offer or contact Dodo Payments if you were charged.</p></>}
-    <Link className="button button-secondary" href="/">Return to Job Application Agent</Link>
+    {view === "checking" && <><span className="live-dot"/><p className="eyebrow">Checking your payment</p><h1>Waiting for Dodo&apos;s verified webhook.</h1><p>Keep this page open. This normally takes only a few seconds.</p><Link className="button button-secondary" href="/">Return to Job Application Agent</Link></>}
+    {view === "paid" && <SuccessBody fixture={designSuccess} />}
+    {view === "processing" && <><p className="eyebrow">Still processing</p><h1>Your payment is still being confirmed.</h1><p>It is safe to close this page. Dodo will send a receipt when confirmation arrives.</p><Link className="button button-secondary" href="/">Return to Job Application Agent</Link></>}
+    {view === "failed" && <><p className="eyebrow">Not confirmed</p><h1>We could not verify this payment.</h1><p>No access has been granted. Return to the offer or contact Dodo Payments if you were charged.</p><Link className="button button-secondary" href="/#founding">Back to founding offer</Link></>}
   </div>;
 }

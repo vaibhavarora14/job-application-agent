@@ -45,7 +45,7 @@ export default async function AttentionPage({ params, searchParams }: PageProps)
     return <AttentionShell>
       <AttentionError
         title="This link needs a secure token."
-        body="Open the signed link from your email to continue this pause."
+        body="Open the signed link from your Hosted attention email to continue this pause. If the message is missing, ask the run to send a fresh notify."
       />
     </AttentionShell>;
   }
@@ -55,7 +55,7 @@ export default async function AttentionPage({ params, searchParams }: PageProps)
     return <AttentionShell>
       <AttentionError
         title={verified.error === "token_expired" ? "This link has expired." : "This attention link is not valid."}
-        body="Request a fresh link from your Hosted apply notification. Links usually last under an hour."
+        body="Open the newest Hosted attention email for a fresh signed link, or ask the run to send another notify. Links usually last under an hour."
       />
     </AttentionShell>;
   }
@@ -157,12 +157,22 @@ function AttentionShell({ children }: { children: React.ReactNode }) {
   );
 }
 
-function AttentionError({ title, body }: { title: string; body: string }) {
+function AttentionError({
+  title,
+  body,
+}: {
+  title: string;
+  body: string;
+}) {
   return (
     <section className="attention-panel attention-error-panel">
       <p className="eyebrow">Attention</p>
       <h1>{title}</h1>
       <p>{body}</p>
+      <div className="attention-error-actions">
+        <Link className="button" href="/">Back home</Link>
+        <p className="attention-error-hint">Need a fresh link? Open your newest Hosted attention email, or ask the run to send another notify.</p>
+      </div>
     </section>
   );
 }

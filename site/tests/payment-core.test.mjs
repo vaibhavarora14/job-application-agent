@@ -1,10 +1,12 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {
+  FOUNDING_DODO_PRODUCT_DISPLAY,
   buildCheckoutRequest,
   canonicalCheckoutReturnUrl,
   hasPaidAccess,
   isAllowedCheckoutUrl,
+  isCheckoutDesignSuccess,
   normalizePaymentWebhook,
   validatePurchaseId,
   validatePaymentConfig,
@@ -32,6 +34,13 @@ test("requires an explicit Dodo environment and HTTPS public site URL", () => {
   }).ok, false);
 });
 
+test("documents hosted founding product display copy for Dodo ops", () => {
+  assert.match(FOUNDING_DODO_PRODUCT_DISPLAY.name, /Founding Hosted Access/i);
+  assert.match(FOUNDING_DODO_PRODUCT_DISPLAY.description, /hosted access/i);
+  assert.doesNotMatch(FOUNDING_DODO_PRODUCT_DISPLAY.name, /cloud/i);
+  assert.doesNotMatch(FOUNDING_DODO_PRODUCT_DISPLAY.description, /\bcloud access\b.*\bopen\b/i);
+});
+
 test("builds a hosted checkout that collects customer details at Dodo", () => {
   assert.deepEqual(buildCheckoutRequest({
     productId: "pdt_founding", purchaseId,
@@ -40,7 +49,12 @@ test("builds a hosted checkout that collects customer details at Dodo", () => {
     product_cart: [{ product_id: "pdt_founding", quantity: 1 }],
     return_url: `https://agent.example/checkout/return?purchase_id=${purchaseId}`,
     cancel_url: "https://agent.example/#founding",
-    metadata: { purchase_id: purchaseId, offer: "founding_90_days" },
+    metadata: {
+      purchase_id: purchaseId,
+      offer: "founding_90_days",
+      product_surface: "hosted",
+      product_display_name: FOUNDING_DODO_PRODUCT_DISPLAY.name,
+    },
     customization: {
       force_language: "en",
       theme: "light",
@@ -72,6 +86,10 @@ test("builds a hosted checkout that collects customer details at Dodo", () => {
       },
     },
   });
+  assert.doesNotMatch(JSON.stringify(buildCheckoutRequest({
+    productId: "pdt_founding", purchaseId,
+    publicSiteUrl: "https://agent.example",
+  })), /Founding Cloud|founding cloud/i);
 });
 
 test("removes Dodo buyer details from the checkout return URL", () => {
@@ -83,6 +101,18 @@ test("removes Dodo buyer details from the checkout return URL", () => {
   }), `/checkout/return?purchase_id=${purchaseId}`);
   assert.equal(canonicalCheckoutReturnUrl({ purchase_id: purchaseId }), null);
   assert.equal(canonicalCheckoutReturnUrl({ email: "founder@example.com" }), "/checkout/return");
+});
+
+test("preserves a design-only success fixture without faking paid status", () => {
+  assert.equal(isCheckoutDesignSuccess({ design: "success" }), true);
+  assert.equal(isCheckoutDesignSuccess({ design: "success", purchase_id: purchaseId }), false);
+  assert.equal(isCheckoutDesignSuccess({ design: "success", utm: "x" }), true);
+  assert.equal(canonicalCheckoutReturnUrl({ design: "success" }), null);
+  assert.equal(canonicalCheckoutReturnUrl({ design: "success", junk: "1" }), "/checkout/return?design=success");
+  assert.equal(
+    canonicalCheckoutReturnUrl({ design: "success", purchase_id: purchaseId }),
+    `/checkout/return?purchase_id=${purchaseId}`,
+  );
 });
 
 test("normalizes a verified payment webhook for the configured product", () => {

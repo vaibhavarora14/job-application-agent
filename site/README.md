@@ -91,6 +91,11 @@ promises instant self-serve dashboard access or automatic refunds. Internal
 `.github/workflows/refund-unactivated-purchases.yml` calls the protected refund
 endpoint for ops only.
 
+Dodo checkout **product name/description** are dashboard-owned (Checkout Session
+API cannot override them). Ops must keep the founding SKU on Hosted wording —
+see [`docs/DODO_PRODUCT.md`](docs/DODO_PRODUCT.md). Design can recheck the
+post-pay success UI without a card charge at `/checkout/return?design=success`.
+
 `stats.jobappagent.com` is attached to the same Sites project. Host-aware routing
 serves the community dashboard at that origin while the telemetry Worker remains
 the ingestion and aggregate-data service.

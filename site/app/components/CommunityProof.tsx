@@ -17,14 +17,22 @@ export function CommunityProof() {
     </div>
     <div className="metric-grid" aria-busy={loading}>
       {metrics.map(([key, label]) => <article className="metric-card" key={key}>
-        <strong>{data ? compactNumber.format(data.metrics[key]) : "—"}</strong>
+        <strong>
+          {data
+            ? compactNumber.format(data.metrics[key])
+            : loading
+              ? <span className="metric-pending">Loading</span>
+              : <span className="metric-empty">—</span>}
+        </strong>
         <span>{label}</span>
       </article>)}
     </div>
     <p className={`data-note${error ? " data-note-error" : ""}`} role="status">
-      {error ? "Live aggregate data is temporarily unavailable." : data
-        ? `Anonymous aggregate telemetry · Updated ${new Intl.DateTimeFormat("en", { dateStyle: "medium", timeStyle: "short" }).format(new Date(data.generatedAt))}`
-        : "Loading anonymous aggregate telemetry…"}
+      {error
+        ? "Live aggregate data is resting. Evidence will return here when the feed is available — we do not invent placeholder counts."
+        : data
+          ? `Anonymous aggregate telemetry · Updated ${new Intl.DateTimeFormat("en", { dateStyle: "medium", timeStyle: "short" }).format(new Date(data.generatedAt))}`
+          : "Loading anonymous aggregate telemetry…"}
     </p>
   </section>;
 }

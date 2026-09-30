@@ -82,6 +82,39 @@ test("server-renders a payment return page that waits for verified status", asyn
   assert.match(html, /verified webhook/);
 });
 
+test("server-renders a design-only checkout success fixture without claiming paid status", async () => {
+  const response = await render("/checkout/return?design=success");
+  assert.equal(response.status, 200);
+  const html = await response.text();
+  assert.match(html, /Success preview|founding hosted access is on its way/i);
+  assert.match(html, /email hosted access details/i);
+  assert.match(html, /90 days start when we activate your seat/i);
+  assert.match(html, /no instant self-serve dashboard/i);
+  assert.match(html, /Design fixture only/i);
+  assert.match(html, /Back home/);
+  assert.doesNotMatch(html, /Payment verified/);
+  assert.doesNotMatch(html, /Not confirmed|could not verify this payment/i);
+});
+
+test("attention missing-token UI includes a Back home recovery CTA", async () => {
+  const source = await import("node:fs/promises").then((fs) =>
+    fs.readFile(new URL("../app/attention/[id]/page.tsx", import.meta.url), "utf8"),
+  );
+  assert.match(source, /Back home/);
+  assert.match(source, /attention-error-actions/);
+  assert.match(source, /needs a secure token/i);
+});
+
+test("community and homepage CTAs use Activate founding access · $49", async () => {
+  const [home, community] = await Promise.all([render("/"), render("/community-view")]);
+  assert.equal(home.status, 200);
+  assert.equal(community.status, 200);
+  for (const html of [await home.text(), await community.text()]) {
+    assert.match(html, /Activate founding access · \$49/);
+    assert.doesNotMatch(html, /Reserve 90-day access/i);
+  }
+});
+
 test("server-renders the branded community dashboard", async () => {
   const response = await render("/community-view");
   assert.equal(response.status, 200);
