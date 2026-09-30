@@ -65,20 +65,32 @@
 .buyer-primary:hover:not(:disabled) { background: #285D4F; }
 .buyer-primary:disabled { background: rgba(47,107,90,.38); box-shadow: none; }
 .buyer-footer .buyer-save-note { margin-bottom: 12px; font-size: 14px; }
-.buyer-preview { background: #E8E4DC; }
-/* Cap phone frame to viewport so sticky primary stays at frame bottom (not mid-frame) in short windows. */
-.buyer-preview .buyer-stage { padding: 20px 0 34px; }
+.buyer-preview {
+  display: flex;
+  flex-direction: column;
+  height: 100dvh;
+  max-height: 100dvh;
+  overflow: hidden;
+  background: #E8E4DC;
+}
+/* Phone frame fills leftover viewport under the design strip so sticky primary stays at frame bottom. */
+.buyer-preview .buyer-stage {
+  flex: 1;
+  min-height: 0;
+  padding: 20px 0 34px;
+  box-sizing: border-box;
+}
 .buyer-preview .buyer-screen {
-  --buyer-preview-chrome: 96px; /* design strip (~41) + stage padding (54) */
   width: min(390px, 100%);
-  height: min(784px, calc(100dvh - var(--buyer-preview-chrome)));
+  height: 100%;
+  max-height: 784px;
   min-height: 0; /* override .buyer-screen 100dvh */
   overflow-y: auto;
   overscroll-behavior: contain;
 }
-.buyer-preview-laptop .buyer-screen { width: min(760px, 100%); height: min(720px, calc(100dvh - var(--buyer-preview-chrome))); }
+.buyer-preview-laptop .buyer-screen { width: min(760px, 100%); max-height: 720px; }
 .buyer-preview-laptop .buyer-screen > :not(.buyer-admin-banner) { width: min(480px, 100%); margin-left: auto; margin-right: auto; }
-.buyer-design-strip { position: sticky; top: 0; z-index: 20; display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 10px 14px; padding: 7px 12px; background: #1A1A1A; color: #E8E4DC; line-height: 1; }
+.buyer-design-strip { position: sticky; top: 0; z-index: 20; flex-shrink: 0; display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 10px 14px; padding: 7px 12px; background: #1A1A1A; color: #E8E4DC; line-height: 1; }
 .buyer-design-strip strong, .buyer-design-strip span, .buyer-design-strip small { font-size: 10px; font-weight: 600; letter-spacing: .12em; text-transform: uppercase; }
 .buyer-design-strip span { color: #9A9186; }
 .buyer-design-strip small { color: #B9B1A6; }
@@ -93,9 +105,8 @@
 .buyer-admin-meta dt { color: #B8ADA0; font-size: 10px; letter-spacing: .12em; text-transform: uppercase; }
 .buyer-admin-meta dd { margin: 0; color: #F7F4EF; font-size: 14px; font-weight: 600; }
 @media (max-width: 520px) {
-  .buyer-design-strip { justify-content: flex-start; }
+  .buyer-design-strip { justify-content: flex-start; flex-shrink: 0; }
   .buyer-preview .buyer-stage { padding-bottom: 0; }
-  .buyer-preview .buyer-screen { --buyer-preview-chrome: 62px; /* strip + top stage padding only */ }
 }
 
 .buyer-admin .buyer-prompt { color: #D9D0C3; }
