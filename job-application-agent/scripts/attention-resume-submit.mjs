@@ -204,6 +204,9 @@ export function decideResumeSubmit(input) {
         "attention add/update with remaining blockers + requiredActions",
         "Keep same-tab session binding; renew lease while waiting",
         "Do not submit",
+        captchaAssist && captchaAssist.assisted === true && captchaAssist.inject?.ok
+          ? "CAPTCHA vendor returned a token — inject via captchaAssist.inject selectors/callbacks, then re-inspect (do not store the token)"
+          : null,
         captchaAssist && captchaAssist.reason === "vendor_off"
           ? "CAPTCHA_VENDOR=off — use live panel complete-captcha (default)"
           : null,
