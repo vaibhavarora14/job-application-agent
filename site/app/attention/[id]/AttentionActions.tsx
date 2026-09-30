@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { attentionPanelActionClasses } from "../../../lib/attention-action-labels.mjs";
 import {
   liveBrowserLoadFailedMessage,
   liveBrowserUnavailableMessage,
@@ -219,7 +220,10 @@ export function AttentionActions({ view }: { view: AttentionView }) {
 
   const unavailableCopy = liveBrowserUnavailableMessage();
   const loadFailedCopy = liveBrowserLoadFailedMessage();
-  const liveButtonClass = showLivePrimary ? "button" : "button button-secondary";
+  const { liveBrowser: liveButtonClass, resume: resumeButtonClass } = attentionPanelActionClasses({
+    liveRequired: showLivePrimary,
+    panelOpen,
+  });
 
   return (
     <div className="attention-actions-stack">
@@ -267,7 +271,7 @@ export function AttentionActions({ view }: { view: AttentionView }) {
             {panelExpanded ? "Exit full view" : "Expand live view"}
           </button>
         ) : null}
-        <button type="button" className="button button-secondary" disabled={Boolean(busy)} onClick={() => send("resume")}>
+        <button type="button" className={resumeButtonClass} disabled={Boolean(busy)} onClick={() => send("resume")}>
           {busy === "resume" ? "Saving…" : "I’ve finished — resume"}
         </button>
         <button type="button" className="button button-secondary" disabled={Boolean(busy)} onClick={() => send("skip")}>

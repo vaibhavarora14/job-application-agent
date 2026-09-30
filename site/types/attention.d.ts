@@ -4,6 +4,10 @@ declare module "*/attention-action-labels.mjs" {
 
   export function actionLabel(action: string): string;
   export function blockerLabel(blocker: string): string;
+  export function attentionPanelActionClasses(options?: {
+    liveRequired?: boolean;
+    panelOpen?: boolean;
+  }): { liveBrowser: string; resume: string };
 }
 
 declare module "*/attention-live-session.mjs" {
