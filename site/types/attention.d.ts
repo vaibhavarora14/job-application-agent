@@ -10,6 +10,56 @@ declare module "*/attention-action-labels.mjs" {
   }): { liveBrowser: string; resume: string };
 }
 
+declare module "*/attention-design-fixtures.mjs" {
+  export const ATTENTION_DESIGN_FIXTURE_ID: "design";
+  export const ATTENTION_DESIGN_FIXTURE_KEYS: readonly [
+    "questions",
+    "live-required",
+    "unavailable",
+    "retry",
+    "resume-requested",
+  ];
+
+  export type AttentionDesignFixtureKey =
+    | "questions"
+    | "live-required"
+    | "unavailable"
+    | "retry"
+    | "resume-requested";
+
+  export function attentionResumeRequestedNote(): string;
+  export function parseAttentionDesignKey(searchParams: unknown): AttentionDesignFixtureKey | null;
+  export function resolveAttentionDesignFixture(searchParams: unknown): {
+    key: AttentionDesignFixtureKey;
+    view: {
+      attentionId: string;
+      company: string;
+      role: string;
+      url: string;
+      stage: string;
+      blocker: string;
+      requiredActions: string[];
+      questions: { id: string; prompt: string; kind: string; required: boolean }[];
+      aiAssistanceDiscouraged: boolean;
+      why: string;
+      liveSessionUrl: string | null;
+      liveSessionEmbedUrl: string | null;
+      liveSessionAvailable: boolean;
+      token: string;
+      expiresAt: number;
+    };
+    ui: {
+      panelOpen: boolean;
+      loadFailed: boolean;
+      connecting: boolean;
+      status: string | null;
+      iframeSrc: string | null;
+    };
+  } | null;
+  export function buildAttentionDesignFixture(key: string): ReturnType<typeof resolveAttentionDesignFixture>;
+  export function attentionDesignFixtureCopy(key: string): string | null;
+}
+
 declare module "*/attention-live-session.mjs" {
   export function buildNoVncLiveSessionUrl(
     baseUrl: string,

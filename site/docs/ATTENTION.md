@@ -2,6 +2,22 @@
 
 Productizes the hosted-run attention pause: email notify → magic-link attention page → **in-browser live panel** → resume/skip/abort signals → GCP runner poll.
 
+## Design fixtures (read-only UI harness)
+
+Quiet Trust attention states for Design review **without** a magic-link token. Mirrors checkout `?design=success`: known keys only; invalid/missing `design=` keeps the normal token gate.
+
+| State | URL |
+|-------|-----|
+| Judgment Q&A | `/attention/design?design=questions` |
+| Live browser required | `/attention/design?design=live-required` |
+| Live unavailable | `/attention/design?design=unavailable` |
+| Live load-fail + Retry | `/attention/design?design=retry` |
+| Resume requested note | `/attention/design?design=resume-requested` |
+
+Production examples: `https://jobappagent.com/attention/design?design=questions`, etc.
+
+Fixtures are stubs — no signal/wake/apply/CAPTCHA/LIVE_APPLY/webhook/email. CTAs no-op. Resolver: `site/lib/attention-design-fixtures.mjs`.
+
 ## Env vars (site Worker)
 
 | Variable | Required | Purpose |

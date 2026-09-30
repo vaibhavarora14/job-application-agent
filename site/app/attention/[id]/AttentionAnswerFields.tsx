@@ -29,6 +29,8 @@ type Props = {
   aiAssistanceDiscouraged: boolean;
   answers: Record<string, { text: string; source: "typed" | "draft_approved" | "bank" }>;
   onChange: (questionId: string, text: string, source: "typed" | "draft_approved" | "bank") => void;
+  /** Design harness: skip answers/draft network calls. */
+  designFixture?: boolean;
 };
 
 export function AttentionAnswerFields({
@@ -38,6 +40,7 @@ export function AttentionAnswerFields({
   aiAssistanceDiscouraged,
   answers,
   onChange,
+  designFixture = false,
 }: Props) {
   const [drafts, setDrafts] = useState<Record<string, DraftState>>({});
   const [priors, setPriors] = useState<Record<string, PriorSuggestion[]>>({});
@@ -46,6 +49,7 @@ export function AttentionAnswerFields({
   const questionIds = useMemo(() => questions.map((q) => q.id).join("|"), [questions]);
 
   useEffect(() => {
+    if (designFixture) return;
     // Prefetch prior suggestions once per question set.
     let cancelled = false;
     async function load() {
@@ -74,10 +78,10 @@ export function AttentionAnswerFields({
     return () => {
       cancelled = true;
     };
-  }, [attentionId, token, questionIds, questions]);
+  }, [attentionId, token, questionIds, questions, designFixture]);
 
   async function requestDraft(question: AttentionQuestion) {
-    if (aiAssistanceDiscouraged) return;
+    if (designFixture || aiAssistanceDiscouraged) return;
     setDrafts((prev) => ({
       ...prev,
       [question.id]: { status: "loading", text: "", message: null },
@@ -175,8 +179,10 @@ export function AttentionAnswerFields({
               onChange={(event) => onChange(question.id, event.target.value, "typed")}
             />
             <div className="attention-answer-tools">
-              {aiAssistanceDiscouraged ? (
-                <span className="attention-answer-hint">Answer in your own voice</span>
+              {aiAssistanceDiscouraged || designFixture ? (
+                <span className="attention-answer-hint">
+                  {designFixture ? "Design fixture — draft assist off" : "Answer in your own voice"}
+                </span>
               ) : (
                 <button
                   type="button"
@@ -190,7 +196,7 @@ export function AttentionAnswerFields({
               <button
                 type="button"
                 className="button button-secondary"
-                disabled={!suggestions.length}
+                disabled={designFixture || !suggestions.length}
                 onClick={() => setPriorOpen((id) => (id === question.id ? null : question.id))}
               >
                 Use prior answer{suggestions.length ? ` (${suggestions.length})` : ""}
