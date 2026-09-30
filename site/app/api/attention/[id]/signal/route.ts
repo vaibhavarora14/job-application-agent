@@ -101,9 +101,9 @@ export async function POST(request: Request, { params }: Params) {
     updatedAt: stored.updatedAt,
     answersStored: validated.data.answers.length,
     note: stored.signal === "resume_requested"
-      ? "Resume requested. Approved answers will be injected on the bound tab before submit. filled ≠ applied until the runner confirms visible ATS success."
+      ? "Resume requested. Your answers will be used on the open application page. Filling a form is not an application until you see confirmation on the employer site."
       : stored.signal === "skipped"
-        ? "Skip recorded. Runner should resolve attention without submit and continue the round."
-        : "Abort recorded. Runner should release the lease and end the round.",
+        ? "Skip recorded. This role will be left without submitting."
+        : "Stopped. This application session will end.",
   }, { headers: { "cache-control": "no-store" } });
 }

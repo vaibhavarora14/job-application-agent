@@ -33,7 +33,7 @@ export async function GET(request: Request, { params }: Params) {
   const token = (url.searchParams.get("token") ?? "").trim();
   if (!token) {
     return htmlResponse(400, "Missing live-session token",
-      "Open the signed attention link from your email, then use Open live browser. VNC passwords are never emailed.");
+      "Open the signed attention link from your email, then use Open live browser.");
   }
 
   const config = attentionEnv();
@@ -43,7 +43,7 @@ export async function GET(request: Request, { params }: Params) {
       ? "This live-session link expired."
       : "This live-session link is not valid.";
     return htmlResponse(401, title,
-      "Request a fresh attention notify from the hosted run. Lease hold is typically 45–60 minutes.");
+      "Request a fresh link from your Hosted apply notification. Links usually last under an hour.");
   }
 
   const target = resolveLiveSessionTarget({
@@ -133,7 +133,7 @@ function embedShellResponse(options: {
     <div class="frame-wrap">
       <iframe
         id="live-frame"
-        title="Remote live browser"
+        title="Live browser"
         src="${escapeAttr(options.frameUrl)}"
         allow="clipboard-read; clipboard-write"
         referrerpolicy="no-referrer"

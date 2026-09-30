@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { ACTION_LABELS, actionLabel } from "../lib/attention-action-labels.mjs";
+import { ACTION_LABELS, BLOCKER_LABELS, actionLabel, blockerLabel } from "../lib/attention-action-labels.mjs";
 
 test("actionLabel maps known required-action codes", () => {
   assert.equal(actionLabel("complete-captcha"), "Complete CAPTCHA");
@@ -31,4 +31,12 @@ test("ACTION_LABELS covers the documented attention action set", () => {
     "retry-site",
   ];
   assert.deepEqual(Object.keys(ACTION_LABELS).sort(), [...expected].sort());
+});
+
+test("blockerLabel maps Quiet Trust buyer chips", () => {
+  assert.equal(blockerLabel("legal-attestation"), "Legal attestation");
+  assert.equal(blockerLabel("captcha"), "CAPTCHA");
+  assert.equal(blockerLabel(""), "Paused");
+  assert.equal(blockerLabel("custom-gate"), "custom gate");
+  assert.ok(BLOCKER_LABELS.judgment);
 });
