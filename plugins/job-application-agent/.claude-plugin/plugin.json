@@ -1,0 +1,26 @@
+{
+  "name": "job-application-agent",
+  "displayName": "Job Application Agent",
+  "version": "3.7.2",
+  "description": "Privacy-first Agent Skill and CLI for evidence-based job discovery, application completion, and outcome tracking. Verified résumé facts only, OS-backed secrets, confirmed submissions.",
+  "author": {
+    "name": "Vaibhav Arora",
+    "email": "founders@jobappagent.com",
+    "url": "https://jobappagent.com"
+  },
+  "homepage": "https://jobappagent.com",
+  "repository": "https://github.com/vaibhavarora14/job-application-agent",
+  "license": "MIT",
+  "keywords": [
+    "agent-skills",
+    "skill",
+    "job-search",
+    "job-application",
+    "career",
+    "privacy",
+    "resume",
+    "browser-automation",
+    "claude",
+    "cli"
+  ]
+}

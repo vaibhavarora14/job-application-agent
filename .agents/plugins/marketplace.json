@@ -1,0 +1,20 @@
+{
+  "name": "jobappagent",
+  "interface": {
+    "displayName": "JobAppAgent"
+  },
+  "plugins": [
+    {
+      "name": "job-application-agent",
+      "source": {
+        "source": "local",
+        "path": "./plugins/job-application-agent"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Productivity"
+    }
+  ]
+}
