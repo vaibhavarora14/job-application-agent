@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 128 128" role="img" aria-label="JobAppAgent">
+  <rect width="128" height="128" rx="28" fill="#F2E9D8"/>
+  <rect x="14" y="14" width="100" height="100" rx="22" fill="#2F6B5A"/>
+  <path d="M40 86V42h14.5c8.8 0 14.2 4.6 14.2 12.2 0 5.2-2.6 9.1-7.1 11.1L76 86H60.8l-12.2-18.4H54V86H40zm14-28.2V54h.8c3.2 0 5.1-1.5 5.1-4s-1.9-4-5.1-4H54v11.8zM82 86V42h12v44H82z" fill="#FFFAF0"/>
+</svg>
