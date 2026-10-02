@@ -1,0 +1,17 @@
+{
+  "name": "jobappagent",
+  "owner": {
+    "name": "Vaibhav Arora",
+    "email": "founders@jobappagent.com"
+  },
+  "metadata": {
+    "description": "JobAppAgent Cursor plugins (open-source Agent Skill + CLI). Nested packages keep their own .cursor-plugin/plugin.json."
+  },
+  "plugins": [
+    {
+      "name": "job-application-agent",
+      "source": "plugins/job-application-agent",
+      "description": "Privacy-first Agent Skill and CLI for evidence-based job discovery, application completion, and outcome tracking — install via Marketplace or npx job-application-agent@latest install."
+    }
+  ]
+}
