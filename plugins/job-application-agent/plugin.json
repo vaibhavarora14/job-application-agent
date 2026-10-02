@@ -1,0 +1,55 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "job-application-agent",
+  "version": "3.7.2",
+  "description": "Privacy-first Agent Skill and CLI for evidence-based job discovery, application completion, and outcome tracking. Verified résumé facts only, OS-backed secrets, confirmed submissions.",
+  "author": {
+    "name": "Vaibhav Arora",
+    "email": "founders@jobappagent.com",
+    "url": "https://jobappagent.com"
+  },
+  "homepage": "https://jobappagent.com",
+  "repository": "https://github.com/vaibhavarora14/job-application-agent",
+  "license": "MIT",
+  "keywords": [
+    "agent-skills",
+    "skill",
+    "job-search",
+    "job-application",
+    "career",
+    "privacy",
+    "resume",
+    "browser-automation",
+    "codex",
+    "chatgpt",
+    "cli"
+  ],
+  "extensions": {
+    "com.openai": {
+      "interface": {
+        "displayName": "Job Application Agent",
+        "shortDescription": "Privacy-first job apply",
+        "longDescription": "Job Application Agent is a skills-only Agent Skill package for evidence-based job discovery, application completion, and outcome tracking.\n\nInstall the companion npm CLI (`npx job-application-agent@latest install`) for the full runtime (scripts, references, managed updater). Profile facts prefer OS-backed secret storage; ledgers stay owner-only. The skill uses verified résumé facts only, confirms submissions before recording them, and never stores passwords, MFA codes, government IDs, or browser session secrets.\n\nThis plugin ships Agent Skill guidance only — no MCP servers, apps, or hooks. Shared with Cursor and Claude packaging from the same plugin folder.",
+        "developerName": "Vaibhav Arora",
+        "category": "Productivity",
+        "capabilities": [
+          "Discover and assess open roles",
+          "Complete applications from verified résumé facts",
+          "Track confirmed submissions and outcomes",
+          "Install CLI runtime via npm"
+        ],
+        "websiteURL": "https://jobappagent.com",
+        "privacyPolicyURL": "https://jobappagent.com/privacy",
+        "supportURL": "https://github.com/vaibhavarora14/job-application-agent/blob/main/plugins/job-application-agent/SUPPORT.md",
+        "defaultPrompt": [
+          "Help me set up Job Application Agent and install the CLI runtime.",
+          "Assess this job posting against my verified profile and eligibility rules.",
+          "Walk me through applying to an authorized job URL with confirmed submission tracking."
+        ],
+        "brandColor": "#2F6B5A",
+        "composerIcon": "./assets/logo.png",
+        "logo": "./assets/logo.png"
+      }
+    }
+  }
+}
