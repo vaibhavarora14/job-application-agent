@@ -7,15 +7,17 @@ import { CLOUD_ROOT } from '../paths.mjs';
 import { fetchAshbyBoard } from './ashby.mjs';
 import { fetchGreenhouseBoard } from './greenhouse.mjs';
 import { fetchLeverBoard } from './lever.mjs';
+import { isTester, testerAuthorized } from '../tester-access.mjs';
 
 export async function loadBoards(env = process.env) {
   const file = env.CLOUD_BOARDS_PATH || join(CLOUD_ROOT, 'boards.json');
   const boards = JSON.parse(await readFile(file, 'utf8'));
   if (!Array.isArray(boards)) throw new Error('boards.json must be an array.');
-  return boards;
+  return isTester(env) ? boards.filter(board => board.channel === 'greenhouse') : boards;
 }
 
 export async function discoverBoards({ fetchImpl = fetch, env = process.env, roundId = null } = {}) {
+  if (isTester(env) && !testerAuthorized(env)) throw new Error('Redeemed invite required.');
   const db = openDb(env);
   const insert = db.prepare(`INSERT INTO jobs (id, company, role, title, description, url, employer_job_id, application_channel, discovery_source, locations, salary_maximum, salary_currency, work_mode, questions_json, raw_json, created_at)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)

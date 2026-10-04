@@ -2,6 +2,14 @@ import assert from 'node:assert/strict';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import test from 'node:test';
+import childProcess from 'node:child_process';
+import { syncBuiltinESMExports } from 'node:module';
+
+function withoutHostSecrets(t) {
+  t.mock.method(childProcess, 'execFileSync', () => { throw new Error('No test keyring'); });
+  syncBuiltinESMExports();
+  t.after(() => { t.mock.restoreAll(); syncBuiltinESMExports(); });
+}
 
 import { applyLocalDefaults, parseDotEnv } from '../src/env.mjs';
 import { startLocal } from '../src/local.mjs';
@@ -38,6 +46,7 @@ test('importLocalCandidate copies profile and résumé into cloud state', async 
 });
 
 test('onboard --from-skill explains a missing laptop profile', async (t) => {
+  withoutHostSecrets(t);
   const env = await isolatedEnv(t);
   const { runCli } = await import('../src/cli.mjs');
   await assert.rejects(() => runCli(['onboard', '--from-skill'], env), /laptop skill profile/);
@@ -58,6 +67,7 @@ test('importFromLocalSkill copies an injected laptop profile and résumé', asyn
 });
 
 test('local launcher starts the operator page without Playwright', async (t) => {
+  withoutHostSecrets(t);
   const env = await isolatedEnv(t);
   const started = await startLocal(env, { cloudRoot: env.CLOUD_DATA_DIR });
   t.after(() => started.close());

@@ -5,6 +5,8 @@ import { dirname, join } from 'node:path';
 import { dataDir } from './paths.mjs';
 
 const SCHEMA = `
+CREATE TABLE IF NOT EXISTS tester_ledger (id TEXT PRIMARY KEY, url TEXT UNIQUE NOT NULL, json TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS tester_submit_attempts (job_id TEXT PRIMARY KEY, created_at TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS profile (
   id INTEGER PRIMARY KEY CHECK (id = 1),
   json TEXT NOT NULL,

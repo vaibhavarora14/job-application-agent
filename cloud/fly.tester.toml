@@ -1,0 +1,31 @@
+# Future tester deployment only; separate from Paisewise and job-application-agent.
+app = "jobappagent-cloud-tester"
+primary_region = "iad"
+
+[build]
+  dockerfile = "cloud/Dockerfile"
+
+[processes]
+  tester = "node src/tester-server.mjs"
+
+[env]
+  HOST = "0.0.0.0"
+  PORT = "8788"
+  CLOUD_TESTER_DATA_DIR = "/private/tester-data"
+  CLOUD_TESTER_ORIGIN = "https://jobappagent-cloud-tester.fly.dev"
+  # Set CLOUD_TESTER_HOSTED=1 only on the deployed tester app, never locally.
+
+[http_service]
+  processes = ["tester"]
+  internal_port = 8788
+  force_https = true
+  auto_stop_machines = "off"
+
+[mounts]
+  source = "cloud_tester_data"
+  destination = "/private/tester-data"
+  processes = ["tester"]
+
+[[vm]]
+  size = "shared-cpu-2x"
+  memory = "2gb"

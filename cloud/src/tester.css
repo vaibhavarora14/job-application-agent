@@ -1,0 +1,8 @@
+:root { font: 17px/1.5 system-ui, sans-serif; color: #173f35; background: #f2e9d8; }
+* { box-sizing: border-box; }
+main { max-width: 42rem; margin: 3rem auto; padding: 0 1rem; }
+section { background: #fffaf0; padding: 1.5rem; border: 1px solid #d8ccb7; border-radius: 1rem; }
+label { display: grid; gap: .3rem; margin: 1rem 0; }
+input, select, textarea, button { min-width: 0; max-width: 100%; font: inherit; padding: .6rem; border: 1px solid #526b63; border-radius: .4rem; }
+button { background: #173f35; color: white; cursor: pointer; margin: .5rem 0; }
+a { color: inherit; } [hidden] { display: none; } #message { min-height: 1.5rem; }

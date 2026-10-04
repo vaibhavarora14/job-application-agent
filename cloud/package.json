@@ -7,6 +7,8 @@
     "node": ">=22.13.0"
   },
   "scripts": {
+    "tester": "node src/tester-server.mjs",
+    "join-link": "node src/tester-join.mjs",
     "start": "node src/server.mjs",
     "local": "node src/local.mjs",
     "worker": "node src/worker.mjs",
@@ -14,6 +16,6 @@
     "test": "node --test tests/*.test.mjs"
   },
   "dependencies": {
-    "playwright": "1.55.0"
+    "playwright": "1.55.1"
   }
 }

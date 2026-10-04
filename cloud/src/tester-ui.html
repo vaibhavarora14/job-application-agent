@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Your JobAppAgent workspace</title><link rel="stylesheet" href="/tester.css"><script src="/tester-ui.js" defer></script></head>
+<body><main>
+<p>JobAppAgent · Early access</p><h1>Your job search</h1>
+<p id="message" role="status" aria-live="polite"></p>
+<section id="access" hidden>
+<h2 id="access-title">Sign in</h2>
+<form id="auth"><label>Email <input name="email" type="email" autocomplete="username" required></label>
+<label>Password <input name="password" type="password" minlength="12" maxlength="128" autocomplete="current-password" required></label>
+<button id="auth-button">Sign in</button></form><a href="/sign-in">Already have an account? Sign in</a>
+</section>
+<section id="workspace" hidden>
+<p id="identity"></p><button id="sign-out" type="button">Sign out</button>
+<p>Greenhouse applications only. Sent means the employer displayed a confirmation after submission. Forms requiring your judgment stop for review.</p>
+<h2>Your profile</h2><form id="profile">
+<label>Name <input name="name" required autocomplete="name"></label>
+<label>Application email <input name="email" type="email" required autocomplete="email"></label>
+<label>Phone <input name="phone" required autocomplete="tel"></label>
+<label>Location <input name="location" required></label>
+<label>Work authorization <input name="workAuthorization" required></label>
+<label>Skills, separated by commas <input name="skills" required></label>
+<label>Role families, separated by commas <input name="roleFamilies" placeholder="e.g. frontend, backend" required></label>
+<label>Seniority, separated by commas <input name="seniority" placeholder="e.g. mid, senior" required></label>
+<label>Target locations, separated by commas <input name="targetLocations" required></label>
+<label>Work modes, separated by commas <input name="workModes" placeholder="e.g. remote, hybrid" required></label>
+<label>Years of experience <input name="yearsExperience" type="number" min="0" max="70" required></label>
+<label>LinkedIn URL (optional) <input name="linkedin" type="url"></label>
+<label>About you, in your own words <textarea name="motivationBlurb"></textarea></label>
+<label>Authorized without sponsorship <select name="authorizedWithoutSponsorship"><option value="unclear">Unclear</option><option value="yes">Yes</option><option value="no">No</option></select></label>
+<label>Needs sponsorship <select name="needsSponsorship"><option value="unclear">Unclear</option><option value="yes">Yes</option><option value="no">No</option></select></label>
+<label>Willing to relocate <select name="willingToRelocate"><option value="unclear">Unclear</option><option value="yes">Yes</option><option value="no">No</option></select></label>
+<label>Submission permission <select name="submissionMode"><option value="review-each">Review only</option><option value="routine-auto">Authorize routine Greenhouse applications</option></select></label>
+<label>Résumé PDF (up to 5 MB) <input name="resume" type="file" accept="application/pdf"></label>
+<button>Save profile and résumé</button></form>
+<h2>Start a round</h2><form id="round"><label>Maximum applications <input name="count" type="number" min="1" max="50" value="5"></label><button>Find Greenhouse jobs</button></form>
+<h2>Applications</h2><ul id="applications"></ul><h2>Confirmed submissions</h2><ul id="ledger"></ul>
+</section></main></body></html>
