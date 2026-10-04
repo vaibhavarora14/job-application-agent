@@ -3,8 +3,9 @@
 ## Early tester invitations — not merged, not deployed
 
 The invitation entry point is **`https://<tester-host>/invite#<single-use-token>`**.
-There is **no deployed tester host in this change**. The current Docker/Fly recipe
-starts the laptop operator, binds loopback, and provides no public HTTPS ingress.
+There is **no deployed tester host in this change**. The unchanged `Dockerfile`
+and `fly.toml` recipe starts the laptop operator, binds loopback, and provides no
+public HTTPS ingress. `fly.tester.toml` is a separate tester recipe, not a deployment.
 Do not send a localhost URL to a tester. Invites, sign-in, workspace access and
 tester submission fail closed until a separately authorized hosting deployment
 provides the prerequisites below. No real invite or employer submission was made
@@ -35,10 +36,49 @@ Prerequisites for a **future, separately authorized deployment**:
   match the protected ingress. Missing configuration returns HTTP 503 and does not
   run a tester worker. Public registration remains unavailable.
 
-Only after those prerequisites, run on that host:
+### Separate Fly tester recipe (not deployed)
+
+`cloud/fly.tester.toml` targets only the new app `jobappagent-cloud-tester`.
+Do not attach it to Paisewise or `job-application-agent`. It builds the existing
+`cloud/Dockerfile` with the repository root as build context and overrides its
+command only for the `tester` process: `node src/tester-server.mjs`. The operator
+Docker CMD and `cloud/fly.toml` remain unchanged. The tester process receives HTTPS
+ingress with `force_https` and stays running for its embedded worker.
+
+Provision one tester Machine in `iad` with a **new** `cloud_tester_data` volume
+mounted at `/private/tester-data`; restrict that directory to mode 0700. Never
+reuse `cloud_data` or any operator, pilot or buyer volume. Keep a single Machine
+for this SQLite-backed invite so requests use the same account/session database.
+
+The deployed tester server and its invite command must receive exactly these
+hosting values (the first four are supplied by the tester TOML):
+
+| Environment variable | Value |
+| --- | --- |
+| `HOST` | `0.0.0.0` |
+| `PORT` | `8788` (matches `http_service.internal_port`) |
+| `CLOUD_TESTER_DATA_DIR` | `/private/tester-data` |
+| `CLOUD_TESTER_ORIGIN` | `https://jobappagent-cloud-tester.fly.dev` (no trailing slash) |
+| `CLOUD_TESTER_HOSTED` | `1`, set **only on that deployed app** after hosting is provisioned |
+
+Do not put the hosted assertion in a laptop `.env`, the Dockerfile, or operator
+configuration. `hostingReady` still requires that assertion, an absolute data
+directory and an exact HTTPS origin whose hostname contains a dot and is neither
+localhost nor an IP. No access gate is changed by this recipe.
+
+Future deploy command, from the repository root, **not run in this change**:
 
 ```sh
-npm run invite -- new-tester@example.com /private/path/invite.txt
+fly deploy --config cloud/fly.tester.toml --app jobappagent-cloud-tester --ha=false
+```
+
+This config is not a deployment. No invite works until that app is deployed with
+the hosting values above and one invite is issued with `npm run invite`.
+Localhost is still not a tester workspace. Only after those prerequisites, run
+from `/repo/cloud` on that tester Machine:
+
+```sh
+npm run invite -- new-tester@example.com /private/tester-data/invite.txt
 ```
 
 The command writes the invitation URL to a new mode-0600 file; it does not print

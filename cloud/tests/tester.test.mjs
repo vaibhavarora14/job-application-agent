@@ -21,6 +21,14 @@ test('hosting fails closed without explicitly configured remote HTTPS hosting', 
     assert.equal(hostingReady({ CLOUD_TESTER_HOSTED: '1', CLOUD_TESTER_ORIGIN: origin, CLOUD_TESTER_DATA_DIR: '/tmp/test' }), false);
   }
   assert.equal(hostingReady({}), false);
+  const flyEnv = {
+    CLOUD_TESTER_ORIGIN: 'https://jobappagent-cloud-tester.fly.dev',
+    CLOUD_TESTER_DATA_DIR: '/private/tester-data',
+  };
+  assert.equal(hostingReady(flyEnv), false);
+  assert.equal(hostingReady({ ...flyEnv, CLOUD_TESTER_HOSTED: '1' }), true);
+  assert.equal(hostingReady({ ...flyEnv, CLOUD_TESTER_HOSTED: '1', CLOUD_TESTER_DATA_DIR: 'relative' }), false);
+  assert.equal(hostingReady({ ...flyEnv, CLOUD_TESTER_HOSTED: '1', CLOUD_TESTER_ORIGIN: `${flyEnv.CLOUD_TESTER_ORIGIN}/` }), false);
 });
 
 test('one invite creates one account; concurrent second redemption fails; real sign-in persists', async (t) => {
