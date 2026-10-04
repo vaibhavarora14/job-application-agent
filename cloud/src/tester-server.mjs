@@ -3,7 +3,7 @@ import { readFile, writeFile, unlink } from 'node:fs/promises';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { randomUUID } from 'node:crypto';
-import { allowAuthAttempt, authenticate, hostingReady, redeemInvite, signIn, signOut, testerAccounts, workspaceEnv } from './tester-access.mjs';
+import { allowAuthAttempt, authenticate, hostingReady, registerTester, joinAvailable, JOIN_CLOSED, signIn, signOut, testerAccounts, workspaceEnv } from './tester-access.mjs';
 import { ensureDataDirs, skillStateDir } from './paths.mjs';
 import { extrasFromBody, getProfile, saveProfile, storeResume } from './skill.mjs';
 import { openDb } from './db.mjs';
@@ -40,19 +40,21 @@ export function startTesterServer(env = process.env, { embedWorker = true } = {}
 }
 
 async function handle(req, res, env) {
-  if (!hostingReady(env)) return json(res, 503, { error: 'Tester workspace is not hosted. Invites, sign-in and submission are closed until a separately authorized HTTPS deployment exists.' });
+  if (!hostingReady(env)) return json(res, 503, { error: 'Tester workspace is not hosted. Sign-up, sign-in and submission are closed until a separately authorized HTTPS deployment exists.' });
   const path = new URL(req.url, 'http://request.invalid').pathname;
   if (!['GET', 'POST'].includes(req.method)) return json(res, 405, { error: 'Method unavailable.' });
   if (req.method === 'POST' && req.headers.origin !== env.CLOUD_TESTER_ORIGIN) return json(res, 403, { error: 'Origin rejected.' });
-  if (req.method === 'GET' && ['/invite', '/sign-in', '/tester-ui.js', '/tester.css'].includes(path)) return asset(res, path);
-  if (req.method === 'POST' && ['/api/redeem', '/api/sign-in'].includes(path)) {
+  if (req.method === 'GET' && ['/join', '/sign-in', '/tester-ui.js', '/tester.css'].includes(path)) return asset(res, path);
+  if (req.method === 'GET' && path === '/api/join') return json(res, 200, { open: joinAvailable(env), closedMessage: JOIN_CLOSED });
+  if (req.method === 'POST' && path === '/api/join' && !joinAvailable(env)) return json(res, 409, { error: JOIN_CLOSED });
+  if (req.method === 'POST' && ['/api/join', '/api/sign-in'].includes(path)) {
     const body = JSON.parse((await readBody(req, 4096)).toString());
-    if (!allowAuthAttempt(`ip:${req.socket.remoteAddress}`, env) || !allowAuthAttempt(`identity:${String(body.email || body.token || '').toLowerCase()}`, env)) return json(res, 429, { error: 'Too many attempts. Try again in 15 minutes.' });
-    if (path === '/api/redeem') {
+    if (!allowAuthAttempt(`ip:${req.socket.remoteAddress}`, env) || !allowAuthAttempt(`identity:${String(body.email || '').trim().toLowerCase()}`, env)) return json(res, 429, { error: 'Too many attempts. Try again in 15 minutes.' });
+    if (path === '/api/join') {
       try {
-        await redeemInvite(body.token, body.password, env);
+        await registerTester(body.email, body.password, env);
         return json(res, 201, { ok: true });
-      } catch { return json(res, 409, { error: 'Invite unavailable or password invalid (12–128 characters required).' }); }
+      } catch (error) { return json(res, 409, { error: error.cause === 'join-closed' ? JOIN_CLOSED : 'Sign-up unavailable. Use a new email and a password of 12–128 characters.' }); }
     }
     try {
       const session = await signIn(body.email, body.password, env);
@@ -62,7 +64,7 @@ async function handle(req, res, env) {
   }
   const token = tokenFrom(req);
   const account = authenticate(token, env);
-  if (!account) return json(res, 401, { error: 'Sign in with your invited account at /sign-in.' });
+  if (!account) return json(res, 401, { error: 'Sign in with your tester account at /sign-in.' });
   if (req.method === 'GET' && ['/', '/workspace'].includes(path)) return asset(res, '/workspace');
   if (req.method === 'POST' && path === '/api/sign-out') {
     signOut(token, env);

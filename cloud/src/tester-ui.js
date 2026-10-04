@@ -6,18 +6,19 @@ async function api(path, body) {
   if (!response.ok) throw new Error(result.error || 'Request failed.');
   return result;
 }
-const invite = location.pathname === '/invite';
-let token = invite ? location.hash.slice(1) : '';
-if (invite) history.replaceState(null, '', '/invite');
-if (invite || location.pathname === '/sign-in') {
+const joining = location.pathname === '/join';
+if (joining || location.pathname === '/sign-in') {
   $('access').hidden = false;
-  if (invite) {
-    $('access-title').textContent = 'Accept your invitation';
-    $('auth-button').textContent = 'Create invited account';
-    $('auth').elements.email.required = false;
-    $('auth').elements.email.closest('label').hidden = true;
+  if (joining) {
+    $('access-title').textContent = 'Join the first 25 testers';
+    $('auth-button').textContent = 'Create account';
     $('auth').elements.password.autocomplete = 'new-password';
-    message('Choose a password. Then sign in with the email your invitation was issued to.');
+    message('The first 25 completed sign-ups get a workspace. Choose your email and password, then sign in.');
+    $('auth-button').disabled = true;
+    api('/api/join').then(status => {
+      if (status.open) $('auth-button').disabled = false;
+      else { $('auth').hidden = true; message(status.closedMessage); }
+    }).catch(error => message(error.message));
   }
 } else {
   $('workspace').hidden = false;
@@ -28,9 +29,8 @@ $('auth').onsubmit = async event => {
   event.preventDefault();
   try {
     const form = event.target.elements;
-    if (invite) {
-      await api('/api/redeem', { token, password: form.password.value });
-      token = '';
+    if (joining) {
+      await api('/api/join', { email: form.email.value, password: form.password.value });
       location.assign('/sign-in');
     } else {
       await api('/api/sign-in', { email: form.email.value, password: form.password.value });

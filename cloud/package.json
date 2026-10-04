@@ -8,7 +8,7 @@
   },
   "scripts": {
     "tester": "node src/tester-server.mjs",
-    "invite": "node src/tester-invite.mjs",
+    "join-link": "node src/tester-join.mjs",
     "start": "node src/server.mjs",
     "local": "node src/local.mjs",
     "worker": "node src/worker.mjs",

@@ -5,7 +5,7 @@ import { mkdtemp } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { startTesterServer } from '../src/tester-server.mjs';
-import { issueInvite } from '../src/tester-access.mjs';
+import { joinUrl, registerTester } from '../src/tester-access.mjs';
 
 const root = await mkdtemp(join(tmpdir(), 'tester-browser-'));
 const env = { CLOUD_TESTER_HOSTED: '1', CLOUD_TESTER_ORIGIN: 'https://invites.example.test', CLOUD_TESTER_DATA_DIR: join(root, 'testers'), HOST: '127.0.0.1', PORT: '0' };
@@ -28,10 +28,10 @@ try {
   const page = await context.newPage();
   page.on('pageerror', error => errors.push(error.message));
   page.on('console', entry => { if (entry.type() === 'error') errors.push(entry.text()); });
-  const invitation = issueInvite('browser@example.test', env);
-  await page.goto(invitation.url);
+  await page.goto(joinUrl(env));
+  await page.getByLabel('Email', { exact: true }).fill('browser@example.test');
   await page.getByLabel('Password', { exact: true }).fill('browser-test-password');
-  await page.getByRole('button', { name: 'Create invited account' }).click();
+  await page.getByRole('button', { name: 'Create account' }).click();
   await page.waitForURL('**/sign-in');
   await page.getByLabel('Email', { exact: true }).fill('browser@example.test');
   await page.getByLabel('Password', { exact: true }).fill('browser-test-password');
@@ -58,8 +58,12 @@ try {
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
   await page.getByRole('button', { name: 'Sign out', exact: true }).click();
   await page.waitForURL('**/sign-in');
+  for (let i = 1; i < 25; i++) await registerTester(`browser${i}@example.test`, 'browser-test-password', env);
+  await page.goto(joinUrl(env));
+  await page.getByText('Sign-up is closed. All 25 tester accounts have been created.', { exact: true }).waitFor();
+  assert.equal(await page.locator('#auth').isVisible(), false);
   assert.deepEqual(errors, []);
-  console.log(`Browser smoke passed: invite, sign-in, profile/PDF, round, reload, mobile layout, logout. Screenshot: ${join(root, 'workspace.png')}`);
+  console.log(`Browser smoke passed: join, sign-in, profile/PDF, round, reload, mobile layout, logout, closed join. Screenshot: ${join(root, 'workspace.png')}`);
 } finally {
   await browser.close();
   await server.close();

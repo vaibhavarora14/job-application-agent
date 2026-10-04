@@ -1,25 +1,29 @@
 # Cloud apply (H0)
 
-## Early tester invitations — not merged, not deployed
+## First 25 tester sign-ups — not merged, not deployed
 
-The invitation entry point is **`https://<tester-host>/invite#<single-use-token>`**.
-There is **no deployed tester host in this change**. The unchanged `Dockerfile`
-and `fly.toml` recipe starts the laptop operator, binds loopback, and provides no
-public HTTPS ingress. `fly.tester.toml` is a separate tester recipe, not a deployment.
-Do not send a localhost URL to a tester. Invites, sign-in, workspace access and
-tester submission fail closed until a separately authorized hosting deployment
-provides the prerequisites below. No real invite or employer submission was made
-while implementing or testing this change.
+The single shared join URL is **`https://<tester-host>/join`**. Anyone can open
+it; there is no per-email invitation, token, or link expiry. There is **no deployed
+tester host in this change**, so the link does not work yet. Do not send a localhost
+URL to a tester. Sign-up, sign-in, workspace access and submission fail closed
+until a separately authorized HTTPS host provides the prerequisites below.
 
-The separate `npm run tester` entry point serves only invited accounts. It does
-not expose the laptop operator API. An operator issues an invitation for a new
-tester's email; accepting it creates that account and consumes the invitation in
-one SQLite transaction. Opening the link alone does not consume it (link previews
-are harmless); a second redemption fails. The tester then signs in at `/sign-in`
-with that email and their chosen password. `/workspace` uses only their server-side
-profile, PDF, ledger, queue and browser directory. It never imports a laptop profile
-or invokes the skill subprocess/Keychain. Existing buyers and checkout receive no
-access. `CLOUD_ACCESS_STATUS` and the $49 founding checkout are unchanged.
+Only the separate `npm run tester` server offers this join flow. The first **25
+new accounts successfully created** through `/api/join` are admitted. The count
+and account insertion commit in one SQLite write transaction, so simultaneous
+requests cannot exceed 25. Page views, link previews, invalid forms, duplicate
+emails and rolled-back sign-ups consume no places. Email addresses are normalized
+for uniqueness; there is no independent email or person verification. The cap
+counts accounts, not verified unique humans. A durable admission record means
+revocation or account removal does not free a place, and restarts do not reset it.
+Pre-existing invited tester accounts retain access and do not consume this link's
+25 places. Account 26 receives a closed message and no account or session.
+
+After sign-up, testers sign in at `/sign-in` with their email and chosen password.
+`/workspace` uses only their server-side profile, PDF, ledger, queue and browser
+directory. It never imports a laptop profile or invokes the skill subprocess or
+Keychain. The pilot, marketing site, existing buyers, checkout and candidate-001
+are unchanged. This does not set `CLOUD_ACCESS_STATUS` to `OPEN`.
 
 Prerequisites for a **future, separately authorized deployment**:
 
@@ -34,7 +38,7 @@ Prerequisites for a **future, separately authorized deployment**:
 - Set `CLOUD_TESTER_HOSTED=1` only after hosting is actually provisioned; this is an
   operator assertion, not a deployment or a reachability check. `HOST`/`PORT` must
   match the protected ingress. Missing configuration returns HTTP 503 and does not
-  run a tester worker. Public registration remains unavailable.
+  run a tester worker. Registration exists only on the dedicated tester server.
 
 ### Separate Fly tester recipe (not deployed)
 
@@ -48,9 +52,9 @@ ingress with `force_https` and stays running for its embedded worker.
 Provision one tester Machine in `iad` with a **new** `cloud_tester_data` volume
 mounted at `/private/tester-data`; restrict that directory to mode 0700. Never
 reuse `cloud_data` or any operator, pilot or buyer volume. Keep a single Machine
-for this SQLite-backed invite so requests use the same account/session database.
+for this SQLite-backed join cap so requests use the same account/session database.
 
-The deployed tester server and its invite command must receive exactly these
+The deployed tester server and its join-link command must receive exactly these
 hosting values (the first four are supplied by the tester TOML):
 
 | Environment variable | Value |
@@ -72,23 +76,25 @@ Future deploy command, from the repository root, **not run in this change**:
 fly deploy --config cloud/fly.tester.toml --app jobappagent-cloud-tester --ha=false
 ```
 
-This config is not a deployment. No invite works until that app is deployed with
-the hosting values above and one invite is issued with `npm run invite`.
-Localhost is still not a tester workspace. Only after those prerequisites, run
-from `/repo/cloud` on that tester Machine:
+This config is not a deployment. The shared join link does not work until a
+separately authorized host exists with the hosting values above. Localhost is
+still not a tester workspace. Once provisioned, an operator can copy
+`CLOUD_TESTER_ORIGIN` followed by `/join`, or write that same stable URL to a file
+from `/repo/cloud` on the tester host:
 
 ```sh
-npm run invite -- new-tester@example.com /private/tester-data/invite.txt
+npm run join-link -- /private/tester-data/join.txt
 ```
 
-The command writes the invitation URL to a new mode-0600 file; it does not print
-the credential. Deliver that file's link privately to its intended recipient.
-It expires after 48 hours; possession permits account creation for the invited
-email (there is no independent email verification). Passwords are scrypt-hashed;
-sessions expire after 12 hours and use Secure, HttpOnly, SameSite cookies.
-Sign-in and redemption have persistent attempt limits, including a conservative
-IP limit; a shared reverse proxy can therefore require a 15-minute wait after ten
-attempts. Logout invalidates the session. Tokens are stored as digests.
+The command writes the URL to a new mode-0600 file without printing credentials
+or creating/reserving an account. Repeating it with a new file produces the same
+URL. Share that one link with anyone; sign-up closes after 25 accounts.
+Passwords remain scrypt-hashed; sessions expire after 12 hours and use Secure,
+HttpOnly, SameSite cookies. Sign-in and sign-up retain persistent attempt limits,
+including a conservative IP limit; a shared reverse proxy can therefore require
+a 15-minute wait after ten attempts. This throttle does not consume places or
+change the 25-account cap. Logout invalidates the session. Session tokens are
+stored as digests. No real sign-up or employer submission was made during testing.
 
 Greenhouse is the sole tester discovery/fill/submit channel. The existing
 Playwright adapter fills and submits on the same page for testers. It rechecks
@@ -101,11 +107,11 @@ API is available to testers. Routine submission is opt-in in their own profile.
 ### A new tester still cannot do
 
 - Open a hosted workspace now: this PR is not deployed, and localhost is not a
-  tester workspace. No usable invitation is being issued in this PR.
+  tester workspace. The shared join URL is not live in this PR.
 - Use Lever, Ashby, or a live browser. Their controls and routes are absent.
-- Register publicly, redeem an invitation twice, or access another person's data.
+- Create a 26th account through the join link or access another person's data.
 - Import the founder's laptop profile, résumé, Keychain, or ledger.
-- Submit before redeeming an invite, signing in, saving their own profile/PDF and
+- Submit before completing sign-up, signing in, saving their own profile/PDF and
   opting into routine submission; bypass scoring, required fields or hard stops.
 - Resolve CAPTCHA, MFA, legal/demographic questions or custom forms inside this
   workspace; retry an unclear submit or manually claim it was sent.

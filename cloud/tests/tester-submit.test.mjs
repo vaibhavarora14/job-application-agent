@@ -3,7 +3,7 @@ import test from 'node:test';
 import { join } from 'node:path';
 import { writeFile } from 'node:fs/promises';
 import { DatabaseSync } from 'node:sqlite';
-import { issueInvite, redeemInvite, workspaceEnv } from '../src/tester-access.mjs';
+import { registerTester, workspaceEnv } from '../src/tester-access.mjs';
 import { openDb } from '../src/db.mjs';
 import { saveProfile } from '../src/skill.mjs';
 import { fillGreenhouse } from '../src/apply/greenhouse.mjs';
@@ -15,7 +15,7 @@ import { isolatedEnv, sampleProfile, sampleExtras } from './helpers.mjs';
 async function setup(t, channel = 'greenhouse') {
   const base = await isolatedEnv(t);
   const env = { ...base, CLOUD_TESTER_HOSTED: '1', CLOUD_TESTER_ORIGIN: 'https://invites.example.test', CLOUD_TESTER_DATA_DIR: join(base.CLOUD_DATA_DIR, 'testers') };
-  const account = await redeemInvite(issueInvite('submit@example.test', env).token, 'test-only-password', env);
+  const account = await registerTester('submit@example.test', 'test-only-password', env);
   const scoped = workspaceEnv(account.id, env);
   const db = openDb(scoped);
   saveProfile(sampleProfile, sampleExtras, join(base.CLOUD_DATA_DIR, 'test.pdf'), scoped);
@@ -38,7 +38,7 @@ function pageHarness(after, { valid = true, beforeClick = () => {} } = {}) {
   return { withPageImpl: async (_env, fn) => fn(page), clicks: () => clicks, visits: () => visits };
 }
 
-test('invited tester submits on the filled page and records only visible employer confirmation', async (t) => {
+test('registered tester submits on the filled page and records only visible employer confirmation', async (t) => {
   const { scoped, db } = await setup(t);
   const browser = pageHarness('Thanks for applying to Test.');
   const result = await fillGreenhouse({ jobId: 'job', env: scoped, ...browser });
