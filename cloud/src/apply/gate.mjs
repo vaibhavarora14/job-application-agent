@@ -1,3 +1,4 @@
+import { isTester, testerAuthorized } from '../tester-access.mjs';
 const DEFAULT_ALLOWLIST = ['greenhouse'];
 
 export function routineChannels(env = process.env) {
@@ -23,6 +24,8 @@ export function evaluateSubmitGate({
   env = process.env,
 }) {
   const failures = [];
+  if ((isTester(env) || env.CLOUD_TESTER_DATA_DIR) && !testerAuthorized(env)) failures.push('invite-required');
+  if (isTester(env) && channel !== 'greenhouse') failures.push('tester-channel');
   if (submissionMode !== 'routine-auto') failures.push('review-each');
   if (!ledgerClean) failures.push('ledger');
   if (decision !== 'review') failures.push('decision');

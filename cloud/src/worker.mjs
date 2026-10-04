@@ -7,10 +7,12 @@ import { fillLever } from './apply/lever.mjs';
 import { openDb } from './db.mjs';
 import { discoverBoards } from './discover/index.mjs';
 import { claimNext, finish } from './queue.mjs';
+import { isTester, testerAuthorized } from './tester-access.mjs';
 
 const TYPES = ['discover', 'assess', 'fill', 'submit', 'handoff'];
 
 export async function drainOnce(env = process.env, { fetchImpl = fetch } = {}) {
+  if (isTester(env) && !testerAuthorized(env)) throw new Error('Redeemed invite required.');
   const job = claimNext(TYPES, env);
   if (!job) return null;
   try {
@@ -24,6 +26,10 @@ export async function drainOnce(env = process.env, { fetchImpl = fetch } = {}) {
 }
 
 async function handle(job, env, fetchImpl) {
+  if (isTester(env) && ['assess', 'fill', 'submit'].includes(job.type)) {
+    const row = openDb(env).prepare('SELECT application_channel FROM jobs WHERE id = ?').get(job.payload.jobId);
+    if (row?.application_channel !== 'greenhouse') throw new Error('Tester channel unavailable.');
+  }
   if (job.type === 'discover') {
     return discoverBoards({ fetchImpl, env, roundId: job.payload.roundId });
   }

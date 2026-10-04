@@ -7,6 +7,7 @@ import { scoreJob, validateLedgerEntry, validateProfile, profileStatus } from '.
 import { createSecretStore, resolveStateDir } from '../../job-application-agent/scripts/secret-store.mjs';
 import { nowIso, openDb } from './db.mjs';
 import { SKILL_CLI, ensureDataDirs, skillStateDir } from './paths.mjs';
+import { isTester } from './tester-access.mjs';
 
 export { scoreJob, validateLedgerEntry, validateProfile, profileStatus };
 
@@ -73,6 +74,7 @@ export async function storeResume(sourcePath, env = process.env) {
   await copyFile(sourcePath, dest);
   const db = openDb(env);
   db.prepare('UPDATE profile SET resume_path = ?, updated_at = ? WHERE id = 1').run(dest, nowIso());
+  if (isTester(env)) return dest;
   try {
     await runSkill(['resume', 'import', dest], null, env);
   } catch {
@@ -106,6 +108,7 @@ export async function importFromLocalSkill(env = process.env, {
   readProfile = null,
   resumePath = null,
 } = {}) {
+  if (isTester(env)) throw new Error('Laptop import is unavailable.');
   const host = hostSkillEnv(env);
   let profile;
   try {
@@ -126,6 +129,7 @@ export async function importFromLocalSkill(env = process.env, {
 }
 
 export async function runSkill(args, stdinObject = null, env = process.env) {
+  if (isTester(env)) throw new Error('Laptop skill subprocess is unavailable.');
   ensureDataDirs(env);
   return new Promise((resolve, reject) => {
     const child = spawn(process.execPath, [SKILL_CLI, ...args], {
@@ -151,6 +155,10 @@ export async function runSkill(args, stdinObject = null, env = process.env) {
 }
 
 export async function ledgerCheck(candidate, env = process.env) {
+  if (isTester(env)) {
+    const existing = openDb(env).prepare('SELECT id FROM tester_ledger WHERE id = ? OR url = ?').get(candidate.id, candidate.url);
+    return { duplicate: Boolean(existing), source: 'tester-ledger' };
+  }
   try {
     return await runSkill(['ledger', 'check', '--stdin'], candidate, env);
   } catch {
@@ -167,6 +175,10 @@ export async function ledgerCheck(candidate, env = process.env) {
 
 export async function ledgerAdd(entry, env = process.env) {
   const validated = validateLedgerEntry(entry);
+  if (isTester(env)) {
+    openDb(env).prepare('INSERT INTO tester_ledger VALUES (?, ?, ?)').run(validated.id, validated.url, JSON.stringify(validated));
+    return { stored: 'tester-ledger', id: validated.id };
+  }
   try {
     return await runSkill(['ledger', 'add', '--stdin'], validated, env);
   } catch (error) {

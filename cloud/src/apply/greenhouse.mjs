@@ -9,11 +9,16 @@ import { markSubmitted, setApplicationStatus, upsertApplication } from './applic
 import { mapQuestions } from './prefill.mjs';
 import { confirmationLooksSuccessful, detectHardStops } from './signals.mjs';
 import { ledgerCheck } from '../skill.mjs';
+import { isTester, testerAuthorized } from '../tester-access.mjs';
 
-export async function fillGreenhouse({ jobId, roundId = null, env = process.env, fetchImpl = fetch }) {
+export async function fillGreenhouse({ jobId, roundId = null, env = process.env, fetchImpl = fetch, withPageImpl = withPage }) {
   const db = openDb(env);
   const job = db.prepare('SELECT * FROM jobs WHERE id = ?').get(jobId);
   if (!job) return { skipped: true, reason: 'missing-job' };
+  if (isTester(env)) {
+    if (!testerAuthorized(env) || job.application_channel !== 'greenhouse') return { skipped: true, reason: 'invite-or-channel' };
+    if (db.prepare('SELECT job_id FROM tester_submit_attempts WHERE job_id = ?').get(jobId)) return { skipped: true, reason: 'already-attempted' };
+  }
   const stored = getProfile(env);
   if (!stored.configured || !stored.resumePath) {
     recordHandoff({
@@ -62,7 +67,7 @@ export async function fillGreenhouse({ jobId, roundId = null, env = process.env,
     return { handedOff: true, reason: 'unclear-fields' };
   }
 
-  return withPage(env, async (page) => {
+  return withPageImpl(env, async (page) => {
     await page.goto(job.url, { waitUntil: 'domcontentloaded', timeout: 45000 });
     await page.waitForTimeout(1000);
     const text = await pageText(page);
@@ -85,6 +90,36 @@ export async function fillGreenhouse({ jobId, roundId = null, env = process.env,
     await fillMappedFields(page, mapped.length ? mapped : inferBasicFields(stored));
     const resumeAttached = await uploadResume(page, stored.resumePath);
     await restoreVerifiedFields(page, mapped.length ? mapped : inferBasicFields(stored));
+
+    // Tester submission stays on the filled page; a fresh page would discard form state.
+    if (isTester(env)) {
+      const fieldsValid = await page.locator('form').evaluateAll(forms => forms.length > 0 && forms.every(form => form.checkValidity()));
+      const current = getProfile(env);
+      const currentAssessment = db.prepare('SELECT * FROM assessments WHERE job_id = ?').get(jobId);
+      const ledger = await ledgerCheck({ id: applicationId, url: job.url }, env);
+      const beforeSubmit = await pageText(page);
+      const gate = evaluateSubmitGate({
+        submissionMode: current.profile?.submissionMode, ledgerClean: !ledger.duplicate,
+        decision: currentAssessment?.decision, autoEligible: Boolean(currentAssessment?.auto_eligible),
+        channel: job.application_channel, requiredFilled: fieldsValid && leftoverRequired.length === 0 && mapped.every(field => field.source !== 'llm'),
+        resumeAttached, hardStop: detectHardStops(beforeSubmit)?.blocker,
+        confirmationAlreadyUnclear: confirmationLooksSuccessful(beforeSubmit).ok, env,
+      });
+      if (!gate.ok) {
+        setApplicationStatus(applicationId, 'ready', {}, env);
+        return { handedOff: true, reason: 'gate', failures: gate.failures };
+      }
+      // Commit the one-shot attempt before clicking. A crash/timeout cannot retry it.
+      const claimed = db.prepare('INSERT OR IGNORE INTO tester_submit_attempts VALUES (?, ?)').run(jobId, new Date().toISOString());
+      if (!claimed.changes) return { skipped: true, reason: 'already-attempted' };
+      setApplicationStatus(applicationId, 'confirmation-unclear', {}, env);
+      if (!await clickSubmit(page)) return { handedOff: true, reason: 'no-submit' };
+      await page.waitForTimeout(2500);
+      const confirmation = confirmationLooksSuccessful(await pageText(page));
+      if (!confirmation.ok) return { handedOff: true, reason: 'unclear-confirmation', clicked: true };
+      return markSubmitted({ applicationId, job, score: currentAssessment.score || 0,
+        approval: 'STANDING AUTHORIZATION', confirmationUrl: page.url(), confirmationExcerpt: confirmation.excerpt, env });
+    }
 
     const ledger = await ledgerCheck({ id: applicationId, url: job.url, company: job.company, role: job.role }, env);
     const gate = evaluateSubmitGate({
@@ -120,6 +155,7 @@ export async function fillGreenhouse({ jobId, roundId = null, env = process.env,
 }
 
 export async function submitGreenhouse({ jobId, applicationId, env = process.env }) {
+  if (isTester(env)) return fillGreenhouse({ jobId, env });
   const db = openDb(env);
   const job = db.prepare('SELECT * FROM jobs WHERE id = ?').get(jobId);
   const stored = getProfile(env);
