@@ -21,5 +21,7 @@ custom domains to the Cloudflare Worker:
 
 Host-aware routing in `site/proxy.ts` rewrites `stats.jobappagent.com/` to
 `/community-view`. Founding CTA copy is shared via `FOUNDING_CTA_LABEL`
-(`Activate founding access · $49`) in `site/lib/payment-core.mjs` and
-`FoundingCheckout`.
+(`Reserve for $49`) in `site/lib/payment-core.mjs` and `FoundingCheckout`.
+Post-deploy checks in `.github/workflows/deploy-site.yml` assert reservation
+copy (`Founding reservation` / `Reserve for $49`) and reject stale activate /
+open-hosted framing.
