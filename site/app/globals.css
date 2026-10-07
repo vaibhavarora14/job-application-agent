@@ -73,7 +73,8 @@ button, input { font: inherit; }
 .launch-sequence div { padding: .55rem 0; display: flex; justify-content: space-between; gap: 1rem; color: var(--text); font-size: .78rem; }
 .launch-sequence strong { color: var(--green); font: 600 .66rem var(--font-mono), monospace; letter-spacing: .04em; }
 .launch-sequence div:nth-child(2) strong { color: var(--accent-hover); }
-.launch-message { margin: 0; padding: .7rem 1.7rem 1.4rem; color: var(--muted); font-size: .75rem; }
+.launch-message { margin: 0; padding: .7rem 1.7rem 0; color: var(--muted); font-size: .75rem; }
+.launch-support { margin: 0; padding: .35rem 1.7rem 1.4rem; color: var(--muted); font-size: .72rem; font-style: italic; }
 .community-section { padding-bottom: 1.5rem; }
 .community-section .community-proof { box-shadow: none; }
 
