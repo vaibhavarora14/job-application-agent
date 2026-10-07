@@ -20,7 +20,7 @@ export function deriveCommunityStats(data) {
   const seniority = data?.breakdowns?.seniority ?? [];
   const outcomes = data?.breakdowns?.outcomes ?? [];
   const submitted = number(metrics.applicationsSubmitted);
-  const activeInstallations = number(metrics.activeInstallations30d);
+  const installations = number(metrics.installations);
   const interviews = number(metrics.interviews);
   const outcomesReported = total(outcomes);
   const seniorRoles = countFor(seniority, ['senior', 'staff', 'principal', 'founding', 'manager']);
@@ -39,7 +39,7 @@ export function deriveCommunityStats(data) {
     lastSevenSubmissions,
     peakSubmissions: Math.max(0, ...timeline.map((day) => number(day.submitted))),
     activeDays: timeline.filter((day) => number(day.assessed) || number(day.submitted)).length,
-    applicationsPerActiveInstallation: activeInstallations ? Math.round((lastSevenSubmissions / activeInstallations) * 10) / 10 : 0,
+    applicationsPerInstallation: installations ? Math.round((lastSevenSubmissions / installations) * 10) / 10 : 0,
     outcomesReported,
     outcomesUnknown: Math.max(0, submitted - outcomesReported),
     outcomeCoverage: percent(outcomesReported, submitted),
@@ -67,7 +67,7 @@ function renderMetrics(metrics, community) {
   });
   setText('[data-derived="weekly-submissions"]', compactFormat.format(community.lastSevenSubmissions), { title: community.lastSevenSubmissions });
   setText('[data-derived="peak-submissions"]', compactFormat.format(community.peakSubmissions), { title: community.peakSubmissions });
-  setText('[data-derived="per-installation"]', fullFormat.format(community.applicationsPerActiveInstallation));
+  setText('[data-derived="per-installation"]', fullFormat.format(community.applicationsPerInstallation));
   setText('[data-derived="interview-rate"]', `${community.interviewProgression}%`);
   setText('[data-derived="active-days"]', `${community.activeDays} ${community.activeDays === 1 ? 'day' : 'days'}`);
   setText('[data-derived="senior-targeting"]', `${community.seniorTargeting}%`);

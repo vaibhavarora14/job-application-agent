@@ -3,7 +3,7 @@
 import { compactNumber, useCommunityStats } from "./useCommunityStats";
 
 const metrics = [
-  ["activeInstallations30d", "Active installations · last 30 days"],
+  ["installations", "Total installations"],
   ["applicationsSubmitted", "Verified applications submitted"],
   ["jobsAssessed", "Jobs assessed"],
 ] as const;
