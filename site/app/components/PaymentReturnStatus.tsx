@@ -12,11 +12,11 @@ function SuccessBody({ fixture }: { fixture: boolean }) {
   return <>
     <span className="success-mark">✓</span>
     <p className="eyebrow">{fixture ? "Success preview" : "Payment verified"}</p>
-    <h1>Your founding hosted access is on its way.</h1>
+    <h1>Your founding reservation is confirmed.</h1>
     <p>Thank you. Here is what happens next:</p>
     <ul className="payment-return-next">
-      <li>We email hosted access details to the address collected at checkout, usually within 24 hours.</li>
-      <li>Your 90 days start when we activate your seat — not on payment alone.</li>
+      <li>We email a reservation confirmation to the address collected at checkout, usually within 24 hours.</li>
+      <li>Hosted access remains coming soon — no access window starts at payment.</li>
       <li>There is no instant self-serve dashboard yet.</li>
     </ul>
     {fixture

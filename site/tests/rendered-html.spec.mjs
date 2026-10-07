@@ -18,25 +18,28 @@ test("server-renders the focused cloud offer and honest community proof", async 
   const html = await response.text();
   assert.match(html, /Set the goal/);
   assert.match(html, /Hosted \+ cloud sequence/);
-  assert.match(html, /Founding hosted open/);
+  assert.match(html, /Founding reservation · \$49/);
+  assert.match(html, /Founding reservation open/);
   assert.doesNotMatch(html, /October\s*1(?:5)?,?\s*2026|2026-10-(?:01|15)|datetime="2026-10/i);
   assert.doesNotMatch(html, /Time remaining until cloud launch|Scheduled start|T− ACTIVE|DATE REACHED/i);
   assert.match(html, /Active installations · last 30 days/);
   assert.match(html, /Verified applications submitted/);
   assert.match(html, /Jobs assessed/);
-  assert.match(html, /Activate founding access · \$49/);
+  assert.match(html, /Reserve for \$49/);
   assert.match(html, /India\/regional founding price \+ GST may appear at checkout/);
   assert.match(html, /Verified facts only/);
   assert.match(html, /Secure checkout by Dodo Payments/);
-  assert.match(html, /Founding hosted access/);
-  assert.match(html, /unlock activatable hosted access/);
-  assert.match(html, /we email access details/);
+  assert.match(html, /Reserve founding access/);
+  assert.match(html, /lock founding reservation pricing/);
+  assert.match(html, /email a confirmation/);
+  assert.match(html, /What am I paying for\?/);
+  assert.match(html, /founding-price reservation for hosted/);
   assert.doesNotMatch(html, /41\.73/);
   assert.doesNotMatch(html, /60 days|automatically refund|money-back|money back/i);
-  assert.doesNotMatch(html, /Pre-launch reservation|Reserve founding|still verifying|when cloud opens|when cloud access is ready|hold the founding price/i);
-  assert.match(html, /Hosted continuity<\/span><strong>READY<\/strong>/);
+  assert.doesNotMatch(html, /HOSTED OPEN|Founding hosted open|unlock activatable|When do my 90 days|starts when we activate|still verifying|when cloud opens|when cloud access is ready|hold the founding price/i);
+  assert.doesNotMatch(html, /Hosted continuity<\/span><strong>READY<\/strong>/);
+  assert.match(html, /Hosted continuity<\/span><strong>COMING SOON<\/strong>/);
   assert.match(html, /Cloud access<\/span><strong>COMING SOON<\/strong>/);
-  assert.match(html, /HOSTED OPEN/);
   assert.doesNotMatch(html, /WINDOW OPEN|cloud launch window is now open/i);
   assert.doesNotMatch(html, /Cloud access<\/span><strong>OPEN<\/strong>/);
   assert.doesNotMatch(html, /Hosted continuity<\/span><strong>VERIFYING<\/strong>/);
@@ -54,8 +57,9 @@ test("server-renders human-readable privacy and terms pages", async () => {
   const termsHtml = await terms.text();
   assert.match(privacyHtml, /Privacy, in plain language/);
   assert.match(termsHtml, /one-time \$49 payment for founding hosted access/);
-  assert.doesNotMatch(termsHtml, /60 days|automatically request a full refund|Activation and refund promise|pre-launch reservation|money-back|money back/i);
-  assert.doesNotMatch(privacyHtml, /60-day activation promise|support refunds|founding reservation/i);
+  assert.match(termsHtml, /reserves founding pricing/);
+  assert.doesNotMatch(termsHtml, /90-day access period|Hosted continuity is open|60 days|automatically request a full refund|Activation and refund promise|pre-launch reservation|money-back|money back/i);
+  assert.doesNotMatch(privacyHtml, /60-day activation promise|support refunds/i);
 });
 
 test("platform guides render usable prompts and publish only known platform routes", async () => {
@@ -88,9 +92,9 @@ test("server-renders a design-only checkout success fixture without claiming pai
   const response = await render("/checkout/return?design=success");
   assert.equal(response.status, 200);
   const html = await response.text();
-  assert.match(html, /Success preview|founding hosted access is on its way/i);
-  assert.match(html, /email hosted access details/i);
-  assert.match(html, /90 days start when we activate your seat/i);
+  assert.match(html, /Success preview|founding reservation is confirmed/i);
+  assert.match(html, /email a reservation confirmation/i);
+  assert.match(html, /no access window starts at payment/i);
   assert.match(html, /no instant self-serve dashboard/i);
   assert.match(html, /Design fixture only/i);
   assert.match(html, /Back home/);
@@ -121,16 +125,14 @@ test("attention design harness and judgment have no operational preview actions"
   assert.match(answers, /designFixture \|\| aiAssistanceDiscouraged/);
 });
 
-test("community and homepage CTAs use Activate founding access · $49", async () => {
+test("community and homepage CTAs use Reserve for $49", async () => {
   const [home, community] = await Promise.all([render("/"), render("/community-view")]);
   assert.equal(home.status, 200);
   assert.equal(community.status, 200);
   for (const html of [await home.text(), await community.text()]) {
-    assert.match(html, /Activate founding access · \$49/);
+    assert.match(html, /Reserve for \$49/);
     assert.match(html, /India\/regional founding price \+ GST may appear at checkout/);
-    assert.doesNotMatch(html, /Reserve 90-day access/i);
-    assert.doesNotMatch(html, /Reserve founding access/i);
-    assert.doesNotMatch(html, />Reserve\b/i);
+    assert.doesNotMatch(html, /Activate founding access|Unlock activatable|Reserve 90-day access/i);
     assert.doesNotMatch(html, /41\.73/);
   }
 });

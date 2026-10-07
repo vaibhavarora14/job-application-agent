@@ -1,6 +1,6 @@
 declare module "*/payment-core.mjs" {
   export const FOUNDING_DODO_PRODUCT_DISPLAY: { readonly name: string; readonly description: string };
-  export const FOUNDING_CTA_LABEL: "Activate founding access · $49";
+  export const FOUNDING_CTA_LABEL: "Reserve for $49";
   export const FOUNDING_REGIONAL_PRICE_NOTE: "India/regional founding price + GST may appear at checkout.";
 
   export function validateCheckoutInput(input: unknown): { ok: true; registrationId: string } | { ok: false; error: string };

@@ -1,9 +1,9 @@
-/** Hosted continuity is READY for founding activators (soft-activate). */
-export const HOSTED_CONTINUITY_STATUS = "READY";
+/** Hosted continuity stays COMING SOON while founding reservation is open. */
+export const HOSTED_CONTINUITY_STATUS = "COMING SOON";
 
 /**
  * Cloud product stays soft "coming soon" until its own flip.
- * Independent of Hosted — Hosted READY must not imply Cloud OPEN.
+ * Independent of Hosted — Hosted reservation must not imply Cloud OPEN.
  */
 export const CLOUD_ACCESS_STATUS = "COMING SOON";
 
@@ -11,7 +11,8 @@ export const CLOUD_ACCESS_STATUS = "COMING SOON";
  * Map hosted + cloud readiness to public launch UI copy.
  * Soft timing only — never imply a calendar launch date.
  * Hosted VERIFYING must never imply activatable cloud access (OPEN).
- * Hosted READY with Cloud still coming soon is the soft-activate founding state.
+ * Default founding state: both Hosted and Cloud COMING SOON, with
+ * Hosted alone owning the founding-reservation path (no OPEN/READY).
  *
  * @param {{ hostedContinuityStatus?: string, cloudAccessStatus?: string }} [options]
  */
@@ -48,11 +49,11 @@ export function getLaunchDisplayState({
   }
 
   return {
-    launchStateLabel: "HOSTED OPEN",
+    launchStateLabel: "COMING SOON",
     hostedContinuityLabel: hostedContinuityStatus,
     cloudAccessLabel,
-    availabilityLabel: "Founding hosted open",
-    message: "Hosted continuity is open for founding members. Cloud access is still coming soon.",
+    availabilityLabel: "Founding reservation open",
+    message: "Hosted access is coming soon. Reserve the founding price now — we'll email you when seats go live. No access window starts at payment.",
     cloudOpen: false,
     hostedOpen: true,
   };
