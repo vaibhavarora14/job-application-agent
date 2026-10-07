@@ -13,13 +13,13 @@ const paymentEvents = new Set([
  */
 export const FOUNDING_DODO_PRODUCT_DISPLAY = Object.freeze({
   name: "Job Application Agent — Founding Hosted Access",
-  description: "90 days of founding hosted access. Your window starts when we activate your seat and email access details — not on payment alone. Cloud access remains coming soon. Listed at $49 USD; when billing to India, checkout shows the intentional India founding price plus GST.",
+  description: "Founding reservation for hosted access when it launches — not instant access. Hosted remains coming soon; no launch date promised. Listed at $49 USD; when billing to India, checkout shows the intentional India founding price plus GST.",
 });
 
 /** Sitewide founding CTA + Dodo pay-button label (homepage, stats/community, checkout). */
-export const FOUNDING_CTA_LABEL = "Activate founding access · $49";
+export const FOUNDING_CTA_LABEL = "Reserve for $49";
 
-/** Calm honesty near Activate CTAs — no second marketing price number. */
+/** Calm honesty near Reserve CTAs — no second marketing price number. */
 export const FOUNDING_REGIONAL_PRICE_NOTE =
   "India/regional founding price + GST may appear at checkout.";
 

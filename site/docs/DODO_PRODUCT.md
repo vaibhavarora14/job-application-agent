@@ -2,14 +2,14 @@
 
 Checkout Sessions created by `/api/checkout` only send `product_id`, quantity, return/cancel URLs, metadata, and theme customization. **Product Name and Description are not overrideable in the Checkout Session `product_cart`** (Dodo `ProductItemReq` has no name/description fields). Buyers see whatever is stored on the Dodo product record.
 
-## Required dashboard copy (Hosted founding — soft-activate)
+## Required dashboard copy (Hosted founding — reservation / coming soon)
 
-Update the live founding product in the Dodo Payments dashboard:
+Update the live founding product in the Dodo Payments dashboard (ops only — site code does not call Dodo product APIs):
 
 | Field | Required value |
 | --- | --- |
 | **Product name** | `Job Application Agent — Founding Hosted Access` |
-| **Product description** | `90 days of founding hosted access. Your window starts when we activate your seat and email access details — not on payment alone. Cloud access remains coming soon. Listed at $49 USD; when billing to India, checkout shows the intentional India founding price plus GST.` |
+| **Product description** | `Founding reservation for hosted access when it launches — not instant access. Hosted remains coming soon; no launch date promised. Listed at $49 USD; when billing to India, checkout shows the intentional India founding price plus GST.` |
 
 Do **not** use “Founding Cloud Access”, “founding cloud access”, or any wording that implies Cloud is what the buyer purchased while marketing still shows Cloud **COMING SOON**.
 
