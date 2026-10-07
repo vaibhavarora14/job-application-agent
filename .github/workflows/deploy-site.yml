@@ -59,7 +59,9 @@ jobs:
           printf '%s' "$home_html" | grep -Fq 'Reserve founding access'
           printf '%s' "$home_html" | grep -Fq 'Founding reservation open'
           printf '%s' "$home_html" | grep -Fq 'COMING SOON'
-          # Reject stale activate / 90-day / open-hosted framing — do not forbid Reserve *.
-          ! printf '%s' "$community_html$home_html" | grep -Eiq 'Activate founding access|Reserve 90-day access|WINDOW OPEN|HOSTED OPEN|VERIFYING'
+          printf '%s' "$home_html" | grep -Fq 'Cloud access'
+          printf '%s' "$home_html" | grep -Fq 'Smarter agent on cloud.'
+          # Reject stale dual Hosted/Cloud peer framing and activate / 90-day / open-hosted copy.
+          ! printf '%s' "$community_html$home_html" | grep -Eiq 'Activate founding access|Reserve 90-day access|WINDOW OPEN|HOSTED OPEN|VERIFYING|Hosted \+ cloud sequence|Hosted continuity'
         env:
           SITE_WORKER_URL: https://job-application-agent-site.varora1406.workers.dev

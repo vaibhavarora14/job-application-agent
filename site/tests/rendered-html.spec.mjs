@@ -17,9 +17,14 @@ test("server-renders the focused cloud offer and honest community proof", async 
   assert.equal(response.headers.get("x-frame-options"), "DENY");
   const html = await response.text();
   assert.match(html, /Set the goal/);
-  assert.match(html, /Hosted \+ cloud sequence/);
+  assert.match(html, /id="launch-countdown-title">Cloud access</);
   assert.match(html, /Founding reservation · \$49/);
   assert.match(html, /Founding reservation open/);
+  assert.match(html, /FOUNDING RESERVATION/);
+  assert.match(html, /Smarter agent on cloud\./);
+  assert.match(html, /Cloud access is coming soon — a hosted agent that runs for you/);
+  assert.match(html, /Cloud access remains coming soon; no launch date promised/);
+  assert.match(html, /Cloud access is coming soon\. \$49 reserves founding pricing/);
   assert.doesNotMatch(html, /October\s*1(?:5)?,?\s*2026|2026-10-(?:01|15)|datetime="2026-10/i);
   assert.doesNotMatch(html, /Time remaining until cloud launch|Scheduled start|T− ACTIVE|DATE REACHED/i);
   assert.match(html, /Total installations/);
@@ -34,16 +39,15 @@ test("server-renders the focused cloud offer and honest community proof", async 
   assert.match(html, /lock founding reservation pricing/);
   assert.match(html, /email a confirmation/);
   assert.match(html, /What am I paying for\?/);
-  assert.match(html, /founding-price reservation for hosted/);
+  assert.match(html, /founding-price reservation for cloud access/);
   assert.doesNotMatch(html, /41\.73/);
   assert.doesNotMatch(html, /60 days|automatically refund|money-back|money back/i);
   assert.doesNotMatch(html, /HOSTED OPEN|Founding hosted open|unlock activatable|When do my 90 days|starts when we activate|still verifying|when cloud opens|when cloud access is ready|hold the founding price/i);
-  assert.doesNotMatch(html, /Hosted continuity<\/span><strong>READY<\/strong>/);
-  assert.match(html, /Hosted continuity<\/span><strong>COMING SOON<\/strong>/);
+  assert.doesNotMatch(html, /Hosted \+ cloud sequence|Hosted continuity|Hosted and Cloud are both|Hosted access remains coming soon|founding-price reservation for hosted/i);
+  assert.match(html, /Agent foundation<\/span><strong>RELEASED<\/strong>/);
   assert.match(html, /Cloud access<\/span><strong>COMING SOON<\/strong>/);
   assert.doesNotMatch(html, /WINDOW OPEN|cloud launch window is now open/i);
   assert.doesNotMatch(html, /Cloud access<\/span><strong>OPEN<\/strong>/);
-  assert.doesNotMatch(html, /Hosted continuity<\/span><strong>VERIFYING<\/strong>/);
   assert.doesNotMatch(html, /filled\s*[≠!=]+\s*applied/i);
   assert.doesNotMatch(html, /no fixed public launch date|no hard (?:launch )?date|there is no fixed/i);
   assert.doesNotMatch(html, /class="topbar"/);
@@ -57,9 +61,9 @@ test("server-renders human-readable privacy and terms pages", async () => {
   const privacyHtml = await privacy.text();
   const termsHtml = await terms.text();
   assert.match(privacyHtml, /Privacy, in plain language/);
-  assert.match(termsHtml, /one-time \$49 payment for founding hosted access/);
+  assert.match(termsHtml, /one-time \$49 payment for founding cloud access/);
   assert.match(termsHtml, /reserves founding pricing/);
-  assert.doesNotMatch(termsHtml, /90-day access period|Hosted continuity is open|60 days|automatically request a full refund|Activation and refund promise|pre-launch reservation|money-back|money back/i);
+  assert.doesNotMatch(termsHtml, /90-day access period|Hosted continuity is open|separate product surfaces|60 days|automatically request a full refund|Activation and refund promise|pre-launch reservation|money-back|money back/i);
   assert.doesNotMatch(privacyHtml, /60-day activation promise|support refunds/i);
 });
 

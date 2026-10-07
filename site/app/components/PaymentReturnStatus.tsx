@@ -16,7 +16,7 @@ function SuccessBody({ fixture }: { fixture: boolean }) {
     <p>Thank you. Here is what happens next:</p>
     <ul className="payment-return-next">
       <li>We email a reservation confirmation to the address collected at checkout, usually within 24 hours.</li>
-      <li>Hosted access remains coming soon — no access window starts at payment.</li>
+      <li>Cloud access remains coming soon — no access window starts at payment.</li>
       <li>There is no instant self-serve dashboard yet.</li>
     </ul>
     {fixture
