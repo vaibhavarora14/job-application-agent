@@ -22,7 +22,8 @@ test("server-renders the focused cloud offer and honest community proof", async 
   assert.match(html, /Founding reservation open/);
   assert.doesNotMatch(html, /October\s*1(?:5)?,?\s*2026|2026-10-(?:01|15)|datetime="2026-10/i);
   assert.doesNotMatch(html, /Time remaining until cloud launch|Scheduled start|T− ACTIVE|DATE REACHED/i);
-  assert.match(html, /Active installations · last 30 days/);
+  assert.match(html, /Total installations/);
+  assert.doesNotMatch(html, /Active installations · last 30 days|last 30 days/i);
   assert.match(html, /Verified applications submitted/);
   assert.match(html, /Jobs assessed/);
   assert.match(html, /Reserve for \$49/);
@@ -144,6 +145,9 @@ test("server-renders the branded community dashboard", async () => {
   assert.match(html, /Aggregate product evidence/);
   assert.match(html, /See the work the agent is doing/);
   assert.match(html, /Current adoption and verified execution/);
+  assert.match(html, /Total installations/);
+  assert.match(html, /lifetime cumulative totals/i);
+  assert.doesNotMatch(html, /Active installations · last 30 days|Active installation.*last 30 days/i);
   assert.match(html, /Activity over time, with outcomes kept in context/);
   assert.match(html, /Verified submissions by day/);
   assert.match(html, /Where the work is concentrated/);

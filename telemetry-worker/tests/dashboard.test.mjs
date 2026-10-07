@@ -37,7 +37,7 @@ test('community statistics are derived from aggregate data without invented valu
   assert.equal(stats.lastSevenSubmissions, 13);
   assert.equal(stats.peakSubmissions, 20);
   assert.equal(stats.activeDays, 3);
-  assert.equal(stats.applicationsPerActiveInstallation, 6.5);
+  assert.equal(stats.applicationsPerInstallation, 0.3);
   assert.equal(stats.outcomesReported, 14);
   assert.equal(stats.outcomeCoverage, 14.6);
   assert.equal(stats.interviewProgression, 12.5);
@@ -54,6 +54,7 @@ test('community dashboard exposes its primary actions and honest data labels', a
   assert.match(html, /View methodology/i);
   assert.match(html, /backfill/i);
   assert.match(html, /outcomes reported/i);
-  assert.match(html, /Latest seven-day submissions ÷ installations active in 30 days/i);
+  assert.match(html, /Latest seven-day submissions ÷ total installations/i);
+  assert.doesNotMatch(html, /installations active in 30 days/i);
   assert.match(html, /Active days/i);
 });

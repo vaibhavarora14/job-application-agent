@@ -35,10 +35,10 @@ export function CommunityDashboard() {
     <section className="dashboard-evidence" aria-labelledby="evidence-heading">
       <div className="dashboard-section-heading">
         <div><p className="eyebrow">Evidence at a glance</p><h2 id="evidence-heading">Current adoption and verified execution.</h2></div>
-        <p>Installations show recent activity. Assessed jobs show research volume. Submitted applications require a confirmed employer or ATS success state.</p>
+        <p>Installations are lifetime cumulative totals. Assessed jobs show research volume. Submitted applications require a confirmed employer or ATS success state.</p>
       </div>
       <div className="dashboard-metrics" aria-label="Community totals" aria-busy={loading}>
-        <article><strong>{data ? compactNumber.format(data.metrics.activeInstallations30d) : loading ? <span className="metric-pending">Loading</span> : <span className="metric-empty">—</span>}</strong><span>Active installations · last 30 days</span></article>
+        <article><strong>{data ? compactNumber.format(data.metrics.installations) : loading ? <span className="metric-pending">Loading</span> : <span className="metric-empty">—</span>}</strong><span>Total installations</span></article>
         <article><strong>{data ? compactNumber.format(data.metrics.applicationsSubmitted) : loading ? <span className="metric-pending">Loading</span> : <span className="metric-empty">—</span>}</strong><span>Verified applications submitted</span></article>
         <article><strong>{data ? compactNumber.format(data.metrics.jobsAssessed) : loading ? <span className="metric-pending">Loading</span> : <span className="metric-empty">—</span>}</strong><span>Jobs assessed</span></article>
       </div>
@@ -82,7 +82,7 @@ export function CommunityDashboard() {
 
     <section id="methodology" className="methodology">
       <div><p className="eyebrow">Methodology</p><h2>How the evidence is counted.</h2></div>
-      <div><p><strong>Active installation</strong> means an anonymous installation assessed a job or submitted an application during the last 30 days. It is not a verified individual-person count.</p><p><strong>Verified application</strong> means the employer or ATS showed a confirmed submission success state.</p><p>Segments with fewer than {data?.privacy.minimumSegmentCount ?? 3} observations are grouped into “other.”</p></div>
+      <div><p><strong>Total installations</strong> means the lifetime count of anonymous installations that have contributed aggregate telemetry. It is not a verified individual-person count.</p><p><strong>Verified application</strong> means the employer or ATS showed a confirmed submission success state.</p><p>Segments with fewer than {data?.privacy.minimumSegmentCount ?? 3} observations are grouped into “other.”</p></div>
     </section>
     <p className="dashboard-updated">{data ? `Updated ${new Intl.DateTimeFormat("en", { dateStyle: "long", timeStyle: "short" }).format(new Date(data.generatedAt))}` : "Anonymous aggregate telemetry"}</p>
   </main>;
