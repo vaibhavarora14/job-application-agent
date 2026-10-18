@@ -572,7 +572,26 @@ test('records thin override use per confirmation digest and emits override telem
     resumeUploaded: true,
     durationBucket: '2-5m',
   });
-  assert.equal(unused.properties.thinSubmissionOverrideUsed, false);
+  assert.equal('thinSubmissionOverrideUsed' in unused.properties, false);
+});
+
+test('ordinary application_submitted stays within the pre-3.7.9 relay property set', async () => {
+  // Relays deployed before 3.7.9 reject unknown properties. 3.7.9 always sent
+  // thinSubmissionOverrideUsed and every submit was dropped at the relay.
+  const PRE_379_RELAY_KEYS = new Set([
+    'company', 'title', 'jobHash', 'domain', 'ats', 'durationBucket', 'fieldsFilled', 'shortAnswerCount',
+    'resumeUploaded', 'approvalMode', 'telemetrySupplied', 'fillMetricsSource',
+  ]);
+  const entry = {
+    company: 'Compat Co', role: 'Engineer', url: 'https://jobs.example.com/compat',
+    source: 'greenhouse', approval: 'STANDING AUTHORIZATION', answers: {},
+  };
+  const event = await telemetryApplicationSubmitted(entry, {
+    telemetrySupplied: true, fillMetricsSource: 'telemetry', fieldsFilled: 9, shortAnswerCount: 1, resumeUploaded: true, durationBucket: '2-5m',
+    thinSubmissionOverrideUsed: false,
+  });
+  const unknown = Object.keys(event.properties).filter((key) => !PRE_379_RELAY_KEYS.has(key));
+  assert.deepEqual(unknown, []);
 });
 
 test('requires review at each ten confirmed submissions', () => {
@@ -963,7 +982,7 @@ test('application_submitted uses null/unknown when telemetry is omitted', async 
   assert.equal(missing.properties.shortAnswerCount, null);
   assert.equal(missing.properties.resumeUploaded, null);
   assert.equal(missing.properties.durationBucket, 'unknown');
-  assert.equal(missing.properties.thinSubmissionOverrideUsed, false);
+  assert.equal('thinSubmissionOverrideUsed' in missing.properties, false);
 
   const fromLifecycle = await telemetryApplicationSubmitted(entry, {
     telemetrySupplied: false,

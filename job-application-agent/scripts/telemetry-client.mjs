@@ -32,6 +32,19 @@ export function lifecycleDedupeKey(event) {
   return `application_paused:${jobHash}:${event.properties.stage}:${event.properties.reason}`;
 }
 
+/**
+ * Keep events sendable to relays that reject unknown properties. 3.7.9 always attached
+ * thinSubmissionOverrideUsed (usually false) to application_submitted; relays deployed before
+ * that key existed reject the whole event, and the local queue retried it forever. A false value
+ * carries no information (absent means false), so drop it; true is kept.
+ */
+export function relayCompatibleEvent(event) {
+  if (event?.event !== 'application_submitted' || !event.properties) return event;
+  if (event.properties.thinSubmissionOverrideUsed !== false) return event;
+  const { thinSubmissionOverrideUsed: _unused, ...properties } = event.properties;
+  return { ...event, properties };
+}
+
 export async function prepareTelemetryInput(input) {
   if (!input || Array.isArray(input) || typeof input !== 'object') return validateEvent(input);
   for (const key of Object.keys(input)) if (!['event', 'properties'].includes(key)) throw new Error(`Unknown telemetry input property: ${key}.`);
@@ -499,7 +512,8 @@ export class TelemetryClient {
     }
   }
 
-  async sendValidated(event, session, config, { queueOnFailure = true } = {}) {
+  async sendValidated(rawEvent, session, config, { queueOnFailure = true } = {}) {
+    const event = relayCompatibleEvent(rawEvent);
     try {
       if (!session.enabled || !session.allowSend) {
         const reason = session.enabled ? 'grace' : 'disabled';

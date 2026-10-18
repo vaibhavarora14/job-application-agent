@@ -519,7 +519,9 @@ export async function telemetryApplicationSubmitted(entry, details = {}) {
       approvalMode: entry.approval === 'STANDING AUTHORIZATION' ? 'routine-auto' : 'review-each',
       telemetrySupplied,
       fillMetricsSource,
-      thinSubmissionOverrideUsed: details.thinSubmissionOverrideUsed === true,
+      // Absent means false. Only sent when true so relays that predate the key still accept
+      // ordinary submissions (a strict relay rejects unknown properties outright).
+      ...(details.thinSubmissionOverrideUsed === true ? { thinSubmissionOverrideUsed: true } : {}),
     },
   };
 }

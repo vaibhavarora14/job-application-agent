@@ -69,7 +69,7 @@ Company and title values are bounded and rejected when they resemble an email, p
 | `application_step` | Job hash, ATS, stage, field category, retry count, duration bucket |
 | `application_paused` | Job hash, ATS, stage, bounded reason |
 | `application_skipped` | Job hash, bounded reason, fit score, eligibility |
-| `application_submitted` | Company, title, job hash/domain, ATS, duration bucket (or `unknown`), fields filled / short-answer count / résumé Boolean (or `null` when telemetry was omitted), approval mode, `telemetrySupplied`, `thinSubmissionOverrideUsed` (Boolean; no note text), optional `fillMetricsSource` (`telemetry` / `answer_keys` / `empty`) |
+| `application_submitted` | Company, title, job hash/domain, ATS, duration bucket (or `unknown`), fields filled / short-answer count / résumé Boolean (or `null` when telemetry was omitted), approval mode, `telemetrySupplied`, optional `thinSubmissionOverrideUsed` (sent only as `true`; absent means `false`; no note text), optional `fillMetricsSource` (`telemetry` / `answer_keys` / `empty`) |
 | `round_completed` | Requested/submitted/assessed/skipped/paused/error counts, duration bucket; optional attempted/searched/blocked source counts, maximum source share percentage, bounded concentration reason. `submittedCount` and `assessedCount` are ledger application totals only and never include attached outreach. |
 | `outcome_recorded` | Company, title, job hash/domain, ATS, outcome, days since submission, optional bounded interview quality/failure point |
 | `review_generated` | Canonical unique-submission and outcome counts, review-due Boolean |

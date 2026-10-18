@@ -1,5 +1,9 @@
 # Changelog
 
+## 3.7.10
+
+- Fix lost submission analytics in 3.7.9: `application_submitted` always carried the new `thinSubmissionOverrideUsed` Boolean, and the production telemetry relay (deployed before that key existed) rejects unknown properties, so every 3.7.9 submission event was dropped (HTTP 400) and stuck in the local retry queue. `thinSubmissionOverrideUsed` is now optional and only sent when `true` (absent means `false`); events already queued by 3.7.9 with `false` are cleaned before resend so they drain. No change to the thin-submit guard: thin overrides stay blocked in routine-auto / unattended / `STANDING AUTHORIZATION` runs.
+
 ## 3.7.9
 
 - Harden empty-submit protection: reject `thinSubmissionOverride` under `routine-auto` / unattended / `STANDING AUTHORIZATION`; require an object with `acknowledgment` plus a unique per-job `candidateConfirmation` note (no bare ack string; no reuse across jobs in a batch); require `APPROVE SUBMIT`.

@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
 
-import { lifecycleDedupeKey, prepareTelemetryInput, TelemetryClient } from '../scripts/telemetry-client.mjs';
+import { lifecycleDedupeKey, prepareTelemetryInput, relayCompatibleEvent, TelemetryClient } from '../scripts/telemetry-client.mjs';
 
 function fakeRelay({ failTimes = 0, failContactTimes = 0 } = {}) {
   const requests = [];
@@ -359,4 +359,45 @@ test('dedupes application_started and application_paused per job attempt when re
   assert.equal(lifecycle.length, 3);
   assert.ok(logs.some((line) => /duplicate_attempt/i.test(line)));
   assert.match(await client.applicationStartedAt('b'.repeat(64)), /^\d{4}-\d{2}-\d{2}T/);
+});
+
+test('legacy queued application_submitted with thinSubmissionOverrideUsed false drains to a strict pre-3.7.9 relay', async (t) => {
+  const directory = await mkdtemp(join(tmpdir(), 'telemetry-legacy-submitted-'));
+  t.after(() => rm(directory, { recursive: true, force: true }));
+  const requests = [];
+  const fetch = async (url, options = {}) => {
+    const body = options.body ? JSON.parse(options.body) : null;
+    requests.push({ url, body });
+    if (url.endsWith('/v1/install')) return Response.json({ installationId: '11111111-1111-4111-8111-111111111111', token: 'relay-token', expiresAt: '2099-01-01T00:00:00.000Z' });
+    // Simulate a relay deployed before 3.7.9: unknown properties are rejected.
+    if (body?.properties && 'thinSubmissionOverrideUsed' in body.properties) return Response.json({ error: 'invalid_event' }, { status: 400 });
+    return Response.json({ accepted: true, eventId: '22222222-2222-4222-8222-222222222222' }, { status: 202 });
+  };
+  const legacy = {
+    event: 'application_submitted',
+    properties: {
+      company: 'Example', title: 'Engineer', jobHash: 'a'.repeat(64), domain: 'jobs.example.com', ats: 'greenhouse',
+      durationBucket: '2-5m', fieldsFilled: 8, shortAnswerCount: 1, resumeUploaded: true, approvalMode: 'routine-auto',
+      telemetrySupplied: true, fillMetricsSource: 'telemetry', thinSubmissionOverrideUsed: false,
+    },
+  };
+  const client = new TelemetryClient({ stateDir: directory, endpoint: 'https://relay.example.com', fetch, stderr: () => {}, timeoutMs: 50 });
+  const session = await client.beginCommand('apply');
+  assert.equal((await client.record({ event: 'command_completed', properties: { command: 'apply', result: 'success', durationBucket: 'under-1s' } }, session)).sent, true);
+  // Simulate an event a 3.7.9 client queued after the relay rejected it.
+  await writeFile(join(directory, 'telemetry-queue.ndjson'), `${JSON.stringify({ type: 'event', queuedAt: new Date().toISOString(), event: legacy })}\n`);
+  await client.beginCommand('apply');
+  const queue = await readFile(join(directory, 'telemetry-queue.ndjson'), 'utf8').catch(() => '');
+  assert.equal(queue.trim(), '');
+  const sent = requests.find((request) => request.body?.event === 'application_submitted');
+  assert.ok(sent, 'queued submission was sent');
+  assert.equal('thinSubmissionOverrideUsed' in sent.body.properties, false);
+});
+
+test('relayCompatibleEvent keeps a true thinSubmissionOverrideUsed and leaves other events untouched', () => {
+  const used = { event: 'application_submitted', properties: { thinSubmissionOverrideUsed: true, ats: 'other' } };
+  assert.deepEqual(relayCompatibleEvent(used), used);
+  const other = { event: 'application_paused', properties: { reason: 'legal' } };
+  assert.equal(relayCompatibleEvent(other), other);
+  assert.deepEqual(relayCompatibleEvent({ event: 'application_submitted', properties: { ats: 'lever', thinSubmissionOverrideUsed: false } }), { event: 'application_submitted', properties: { ats: 'lever' } });
 });
