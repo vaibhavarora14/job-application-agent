@@ -25,6 +25,8 @@ npx skills add vaibhavarora14/job-application-agent
 
 Job Application Agent is an [Agent Skill](https://agentskills.io/specification) that helps a coding agent discover, evaluate, complete, and track your own job applications. It uses one verified résumé, checks eligibility and duplicates, and records only confirmed submissions.
 
+> **☁️ Cloud access, coming soon.** A hosted agent that runs this same loop for you, so the search keeps going without your laptop. It isn't live yet. A [founding reservation ($49)](https://jobappagent.com) locks the founding price, and we email you when access opens. This open-source skill stays free under the MIT License.
+
 ## 🔒 Privacy in 30 seconds
 
 - OS credential store for profile
@@ -218,7 +220,7 @@ Updates are staged and validated before replacement. Private candidate state liv
 
 ## 📍 Where to find it
 
-- [jobappagent.com](https://jobappagent.com) — product site (cloud coming soon; open-source skill on GitHub/npm)
+- [jobappagent.com](https://jobappagent.com) — product site and founding reservation for cloud access (coming soon)
 - [GitHub](https://github.com/vaibhavarora14/job-application-agent)
 - [npm](https://www.npmjs.com/package/job-application-agent)
 - [skills.sh](https://skills.sh/vaibhavarora14/job-application-agent)
