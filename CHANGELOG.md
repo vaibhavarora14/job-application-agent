@@ -1,5 +1,11 @@
 # Changelog
 
+## 3.7.11
+
+- Fix the telemetry retry queue so one event the relay refuses can no longer hide every event behind it. Previously any non-2xx (including a permanent `400 invalid_event`) was treated as "relay unavailable": the queue stopped at that item on every command, which is how the 3.7.9 `thinSubmissionOverrideUsed` rejection hid submissions. Now a 4xx other than 401/408/425/429 (or a queued event that no longer passes the local schema) moves just that item to a bounded local `telemetry-quarantine.ndjson` with a one-line warning (event type and relay error code only, never properties or contact values) and draining continues. Network errors, 5xx, and 429 keep retry/backoff. Rejected events are no longer queued at all.
+- Fix silent loss of queued analytics: when a queue flush stopped at an unavailable relay, every item after the failing one was deleted instead of kept. With the 3.7.9 rejection this meant only the first stuck submission per installation survived; later queued submissions were discarded on the next command. All untried items are now preserved.
+- Stop test runs from writing to production telemetry: CLIs spawned under `node --test` (CI, `npm test`, `prepack`) fell back to the production relay and registered throwaway installations and `apply` command events (22 fake installations during the 3.7.10 PR, release, and relay-deploy runs on Oct 18, inflating PostHog and the public installation count). Under the test runner the telemetry and community endpoints now default to an unroutable local address unless a URL is set explicitly.
+
 ## 3.7.10
 
 - Fix lost submission analytics in 3.7.9: `application_submitted` always carried the new `thinSubmissionOverrideUsed` Boolean, and the production telemetry relay (deployed before that key existed) rejects unknown properties, so every 3.7.9 submission event was dropped (HTTP 400) and stuck in the local retry queue. `thinSubmissionOverrideUsed` is now optional and only sent when `true` (absent means `false`); events already queued by 3.7.9 with `false` are cleaned before resend so they drain. No change to the thin-submit guard: thin overrides stay blocked in routine-auto / unattended / `STANDING AUTHORIZATION` runs.

@@ -7,13 +7,30 @@ import { SKILL_VERSION } from './version.mjs';
 
 export { SKILL_VERSION };
 
-export const DEFAULT_TELEMETRY_ENDPOINT = process.env.JOB_APPLICATION_AGENT_TELEMETRY_URL ?? 'https://job-application-agent-telemetry.varora1406.workers.dev';
+export const PRODUCTION_TELEMETRY_ENDPOINT = 'https://job-application-agent-telemetry.varora1406.workers.dev';
+// Unroutable local port: connections are refused immediately and nothing leaves the machine.
+export const TEST_RUNNER_TELEMETRY_ENDPOINT = 'http://127.0.0.1:9';
+
+/**
+ * Relay endpoint for this process. An explicit JOB_APPLICATION_AGENT_TELEMETRY_URL always wins.
+ * Under `node --test` (NODE_TEST_CONTEXT is inherited by CLIs that tests spawn) never fall back
+ * to production: CI runs were registering throwaway installations and command events in the
+ * production relay, PostHog, and the public installation count.
+ */
+export function defaultTelemetryEndpoint(env = process.env) {
+  if (env.JOB_APPLICATION_AGENT_TELEMETRY_URL) return env.JOB_APPLICATION_AGENT_TELEMETRY_URL;
+  if (env.NODE_TEST_CONTEXT) return TEST_RUNNER_TELEMETRY_ENDPOINT;
+  return PRODUCTION_TELEMETRY_ENDPOINT;
+}
+
+export const DEFAULT_TELEMETRY_ENDPOINT = defaultTelemetryEndpoint();
 export const TELEMETRY_NOTICE = 'Usage analytics are enabled by default. They include structured job and workflow metrics without candidate name, email, phone, or résumé content in analytics events. We also store your saved name and email privately (separate from analytics events) so we can support you and send product updates. Run `telemetry contact disable` to stop contact sharing, or `telemetry disable` to stop all analytics and contact sharing. Run `telemetry preview` to inspect an analytics event.\n';
 export const IDENTITY_NOTICE = 'Contact sharing uses your saved profile name and email for support and product updates. It is not attached to analytics events. Run `telemetry contact disable` to stop contact sharing, or `telemetry disable` to stop all analytics.\n';
 
 const CONFIG_VERSION = 1;
 const CONFIG_FILE = 'telemetry.json';
 const QUEUE_FILE = 'telemetry-queue.ndjson';
+const QUARANTINE_FILE = 'telemetry-quarantine.ndjson';
 const DEDUPE_FILE = 'telemetry-attempt-dedupe.json';
 const OPT_OUT_FILE = 'telemetry.opt-out';
 const CONTACT_OPT_OUT_FILE = 'telemetry.contact.opt-out';
@@ -21,8 +38,30 @@ const EVENTS_WITH_DOMAIN = new Set(['job_discovered', 'job_assessed', 'applicati
 const DEDUPED_LIFECYCLE_EVENTS = new Set(['application_started', 'application_paused']);
 const QUEUE_MAX_ITEMS = 50;
 const QUEUE_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
+const QUARANTINE_MAX_ITEMS = 50;
+// 4xx statuses that are about the request context rather than the event itself, so retrying can
+// succeed: 401 (token; already refreshed once in-band), 408 (timeout), 425 (too early), 429 (rate).
+const RETRYABLE_CLIENT_STATUSES = new Set([401, 408, 425, 429]);
 const DEDUPE_MAX_KEYS = 500;
 const RETRY_DELAYS_MS = [50, 150];
+
+/**
+ * True when the relay refused this specific payload (malformed, unknown property, too large).
+ * Retrying the same bytes can never succeed, so the item must not hold up the queue.
+ * 5xx, network errors, and the retryable 4xx statuses above keep retry/backoff.
+ */
+export function isPermanentRejection(status) {
+  return Number.isInteger(status) && status >= 400 && status < 500 && !RETRYABLE_CLIENT_STATUSES.has(status);
+}
+
+async function relayErrorCode(response) {
+  try {
+    const body = await response.clone().json();
+    return typeof body?.error === 'string' && /^[a-z0-9_]{1,64}$/.test(body.error) ? body.error : null;
+  } catch {
+    return null;
+  }
+}
 
 export function lifecycleDedupeKey(event) {
   if (!event || !DEDUPED_LIFECYCLE_EVENTS.has(event.event)) return null;
@@ -139,6 +178,7 @@ export class TelemetryClient {
   get configPath() { return join(this.stateDir, CONFIG_FILE); }
   get queuePath() { return join(this.stateDir, QUEUE_FILE); }
   get dedupePath() { return join(this.stateDir, DEDUPE_FILE); }
+  get quarantinePath() { return join(this.stateDir, QUARANTINE_FILE); }
   get optOutPath() { return join(this.stateDir, OPT_OUT_FILE); }
   get contactOptOutPath() { return join(this.stateDir, CONTACT_OPT_OUT_FILE); }
 
@@ -317,12 +357,53 @@ export class TelemetryClient {
     await this.enqueue({ type: 'contact', contact }, reason);
   }
 
+  async readQuarantine() {
+    try {
+      return (await readFile(this.quarantinePath, 'utf8')).split('\n').filter(Boolean).map((line) => JSON.parse(line));
+    } catch (error) {
+      if (error.code !== 'ENOENT') this.debugLog(`quarantine unreadable (${error.message}); resetting`);
+      return [];
+    }
+  }
+
+  /**
+   * Set aside an item the relay permanently refused so it never blocks the queue again. Local only
+   * (0600, bounded). Event payloads are the same schema-validated analytics already queued locally;
+   * contact payloads are never copied here, only that one was refused.
+   */
+  async quarantine(item, { status = null, error = null } = {}) {
+    try {
+      await this.ensureDirectory();
+      const entry = {
+        quarantinedAt: this.now().toISOString(),
+        type: item.type,
+        status,
+        error,
+        ...(item.type === 'event' ? { event: item.event } : {}),
+      };
+      const items = [...await this.readQuarantine(), entry].slice(-QUARANTINE_MAX_ITEMS);
+      const temporary = `${this.quarantinePath}.${process.pid}.tmp`;
+      await writeFile(temporary, `${items.map((value) => JSON.stringify(value)).join('\n')}\n`, { mode: 0o600 });
+      await rename(temporary, this.quarantinePath);
+      await chmod(this.quarantinePath, 0o600);
+    } catch (quarantineError) {
+      this.debugLog(`quarantine write failed (${quarantineError.message})`);
+    }
+  }
+
+  warnRejected(type, name, { status = null, error = null } = {}) {
+    const detail = [status ? `HTTP ${status}` : null, error].filter(Boolean).join(' ');
+    // Event name and relay error code only: never properties, identity, or contact values.
+    this.stderr(`[telemetry] warning: the analytics relay rejected a ${name ?? type}${detail ? ` (${detail})` : ''}; it was set aside in ${QUARANTINE_FILE} and will not be retried. Other analytics continue.\n`);
+  }
+
   async flushQueue(session, config) {
     const items = this.pruneQueue(await this.readQueue());
     if (!items.length) return config;
     const remaining = [];
     let current = config;
-    for (const item of items) {
+    for (let index = 0; index < items.length; index += 1) {
+      const item = items[index];
       let result;
       if (item.type === 'contact') {
         result = await this.sendContact(item.contact, session, current, { queueOnFailure: false });
@@ -333,9 +414,18 @@ export class TelemetryClient {
         current = result.config ?? current;
         continue;
       }
+      if (result.reason === 'rejected') {
+        // Already quarantined and warned about; one bad item must not block the rest.
+        current = result.config ?? current;
+        continue;
+      }
       remaining.push(item);
       this.debugLog(`queue retry deferred type=${item.type} reason=${result.reason}`);
-      if (result.reason === 'unavailable') break;
+      if (result.reason === 'unavailable') {
+        // Relay unreachable: stop for now but keep every item not yet attempted.
+        remaining.push(...items.slice(index + 1));
+        break;
+      }
     }
     await this.writeQueue(remaining);
     return current;
@@ -498,6 +588,12 @@ export class TelemetryClient {
         });
       }
       if (!response.ok) {
+        if (isPermanentRejection(response.status)) {
+          const error = await relayErrorCode(response);
+          await this.quarantine({ type: 'contact' }, { status: response.status, error });
+          this.warnRejected('contact', 'contact update', { status: response.status, error });
+          return { sent: false, reason: 'rejected', status: response.status, config: next };
+        }
         if (queueOnFailure) await this.enqueueContact(contact, `http_${response.status}`);
         this.debugLog(`contact send failed status=${response.status}`);
         return { sent: false, reason: 'unavailable', config: next };
@@ -513,16 +609,26 @@ export class TelemetryClient {
   }
 
   async sendValidated(rawEvent, session, config, { queueOnFailure = true } = {}) {
-    const event = relayCompatibleEvent(rawEvent);
+    let event = relayCompatibleEvent(rawEvent);
     try {
       if (!session.enabled || !session.allowSend) {
         const reason = session.enabled ? 'grace' : 'disabled';
-        this.debugLog(`drop event=${event.event} reason=${reason}`);
+        this.debugLog(`drop event=${event?.event} reason=${reason}`);
         return { sent: false, reason };
       }
       if (!config?.enabled) {
-        this.debugLog(`drop event=${event.event} reason=disabled`);
+        this.debugLog(`drop event=${event?.event} reason=disabled`);
         return { sent: false, reason: 'disabled' };
+      }
+      try {
+        // A queued item written by an older client may no longer match the schema. It can never
+        // be sent, so set it aside instead of letting it block the queue as "unavailable".
+        event = validateEvent(event);
+      } catch {
+        const name = typeof event?.event === 'string' ? event.event.slice(0, 64) : 'event';
+        await this.quarantine({ type: 'event', event: rawEvent }, { error: 'local_schema_invalid' });
+        this.warnRejected('event', `${name} event`, { error: 'local_schema_invalid' });
+        return { sent: false, reason: 'rejected', config };
       }
 
       let next = await this.credentials(config);
@@ -542,6 +648,14 @@ export class TelemetryClient {
         });
       }
       if (!response.ok) {
+        if (isPermanentRejection(response.status)) {
+          // Never queue (or keep) a payload the relay refused: it would retry forever and, before
+          // 3.7.11, block every queued event behind it.
+          const error = await relayErrorCode(response);
+          await this.quarantine({ type: 'event', event }, { status: response.status, error });
+          this.warnRejected('event', `${event.event} event`, { status: response.status, error });
+          return { sent: false, reason: 'rejected', status: response.status, config: next };
+        }
         if (queueOnFailure) await this.enqueueEvent(event, `http_${response.status}`);
         this.debugLog(`send failed event=${event.event} status=${response.status}`);
         return { sent: false, reason: 'unavailable', config: next };

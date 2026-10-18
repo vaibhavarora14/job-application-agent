@@ -3,7 +3,7 @@ import { chmod, mkdir, open, readFile, rename, stat, unlink, writeFile } from 'n
 import { join } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 
-import { SKILL_VERSION } from './telemetry-client.mjs';
+import { SKILL_VERSION, TEST_RUNNER_TELEMETRY_ENDPOINT, defaultTelemetryEndpoint } from './telemetry-client.mjs';
 import {
   createCommunityJobContributionEnvelope,
   createSourceContributionEnvelope,
@@ -13,7 +13,15 @@ import {
   validateCommunitySourceList,
 } from './source-community-schema.mjs';
 
-export const DEFAULT_SOURCE_COMMUNITY_ENDPOINT = process.env.JOB_APPLICATION_AGENT_SOURCE_COMMUNITY_URL ?? process.env.JOB_APPLICATION_AGENT_TELEMETRY_URL ?? 'https://job-application-agent-telemetry.varora1406.workers.dev';
+/** Same rule as telemetry: explicit URL wins; `node --test` never falls back to production. */
+export function defaultSourceCommunityEndpoint(env = process.env) {
+  if (env.JOB_APPLICATION_AGENT_SOURCE_COMMUNITY_URL) return env.JOB_APPLICATION_AGENT_SOURCE_COMMUNITY_URL;
+  if (env.JOB_APPLICATION_AGENT_TELEMETRY_URL) return env.JOB_APPLICATION_AGENT_TELEMETRY_URL;
+  if (env.NODE_TEST_CONTEXT) return TEST_RUNNER_TELEMETRY_ENDPOINT;
+  return defaultTelemetryEndpoint(env);
+}
+
+export const DEFAULT_SOURCE_COMMUNITY_ENDPOINT = defaultSourceCommunityEndpoint();
 export const SOURCE_SHARING_NOTICE = 'Community sharing is enabled by default. Confirmed public job links are logged privately and enter maintainer review before publication, as do repeatable job boards and hiring feeds. Personal, answer, resume, score, referral, and candidate timing data are never sent. Run `sources sharing disable` to opt out.\n';
 
 const CONFIG_FILE = 'source-sharing.json';

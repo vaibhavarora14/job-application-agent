@@ -4,7 +4,17 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
 
-import { lifecycleDedupeKey, prepareTelemetryInput, relayCompatibleEvent, TelemetryClient } from '../scripts/telemetry-client.mjs';
+import {
+  defaultTelemetryEndpoint,
+  isPermanentRejection,
+  lifecycleDedupeKey,
+  prepareTelemetryInput,
+  PRODUCTION_TELEMETRY_ENDPOINT,
+  relayCompatibleEvent,
+  TelemetryClient,
+  TEST_RUNNER_TELEMETRY_ENDPOINT,
+} from '../scripts/telemetry-client.mjs';
+import { defaultSourceCommunityEndpoint } from '../scripts/source-community-client.mjs';
 
 function fakeRelay({ failTimes = 0, failContactTimes = 0 } = {}) {
   const requests = [];
@@ -400,4 +410,206 @@ test('relayCompatibleEvent keeps a true thinSubmissionOverrideUsed and leaves ot
   const other = { event: 'application_paused', properties: { reason: 'legal' } };
   assert.equal(relayCompatibleEvent(other), other);
   assert.deepEqual(relayCompatibleEvent({ event: 'application_submitted', properties: { ats: 'lever', thinSubmissionOverrideUsed: false } }), { event: 'application_submitted', properties: { ats: 'lever' } });
+});
+
+// --- 3.7.11: one rejected event must not block the queue -------------------------------------
+
+const POISON_HASH = 'f'.repeat(64);
+
+function pausedEvent(hashChar) {
+  return { event: 'application_paused', properties: { jobHash: hashChar.length === 64 ? hashChar : hashChar.repeat(64), ats: 'lever', stage: 'legal', reason: 'legal' } };
+}
+
+function submittedEvent(hashChar, extra = {}) {
+  return {
+    event: 'application_submitted',
+    properties: {
+      company: 'Example Corp', title: 'Engineer', jobHash: hashChar.repeat(64), domain: 'jobs.example.com', ats: 'greenhouse',
+      durationBucket: '2-5m', fieldsFilled: 8, shortAnswerCount: 1, resumeUploaded: true, approvalMode: 'routine-auto',
+      telemetrySupplied: true, fillMetricsSource: 'telemetry', ...extra,
+    },
+  };
+}
+
+function queueLine(event, queuedAt = new Date().toISOString()) {
+  return JSON.stringify({ type: 'event', queuedAt, event });
+}
+
+/** Relay that answers `status` for any event whose jobHash is POISON_HASH, 202 otherwise. */
+function selectiveRelay({ poisonStatus = 400, poisonError = 'invalid_event', eventStatus = null, contactStatus = null } = {}) {
+  const requests = [];
+  const fetch = async (url, options = {}) => {
+    const body = options.body ? JSON.parse(options.body) : null;
+    requests.push({ url, body });
+    if (url.endsWith('/v1/install')) return Response.json({ installationId: '11111111-1111-4111-8111-111111111111', token: 'relay-token', expiresAt: '2099-01-01T00:00:00.000Z' });
+    if (url.endsWith('/v1/contact')) {
+      if (contactStatus) return Response.json({ error: 'invalid_contact' }, { status: contactStatus });
+      return Response.json({ accepted: true, installId: '11111111-1111-4111-8111-111111111111' }, { status: 202 });
+    }
+    if (eventStatus) return Response.json({ error: 'upstream_unavailable' }, { status: eventStatus });
+    if (body?.properties?.jobHash === POISON_HASH) return Response.json({ error: poisonError }, { status: poisonStatus });
+    return Response.json({ accepted: true, eventId: '22222222-2222-4222-8222-222222222222' }, { status: 202 });
+  };
+  return { requests, fetch, events: () => requests.filter((request) => request.url.endsWith('/v1/events')).map((request) => request.body) };
+}
+
+async function readLines(file) {
+  return (await readFile(file, 'utf8').catch(() => '')).split('\n').filter(Boolean).map((line) => JSON.parse(line));
+}
+
+test('isPermanentRejection: 4xx except 401/408/425/429 is permanent; 5xx and retryable 4xx are not', () => {
+  for (const status of [400, 403, 404, 405, 409, 410, 413, 415, 422]) assert.equal(isPermanentRejection(status), true, String(status));
+  for (const status of [401, 408, 425, 429, 500, 502, 503, 504, 200, 202, null, undefined]) assert.equal(isPermanentRejection(status), false, String(status));
+});
+
+test('a queued event the relay rejects with 400 is quarantined with a local warning and the rest of the queue drains', async (t) => {
+  const directory = await mkdtemp(join(tmpdir(), 'telemetry-poison-queue-'));
+  t.after(() => rm(directory, { recursive: true, force: true }));
+  const relay = selectiveRelay();
+  let stderr = '';
+  const client = new TelemetryClient({ stateDir: directory, endpoint: 'https://relay.example.com', fetch: relay.fetch, stderr: (value) => { stderr += value; }, timeoutMs: 50 });
+  await client.beginCommand('apply');
+  await writeFile(join(directory, 'telemetry-queue.ndjson'), [
+    queueLine(submittedEvent('f')),
+    queueLine(submittedEvent('a')),
+    queueLine(pausedEvent('b')),
+    queueLine(submittedEvent('c')),
+  ].join('\n') + '\n');
+  stderr = '';
+  await client.beginCommand('apply');
+
+  const delivered = relay.events().map((body) => body.properties.jobHash[0]);
+  assert.deepEqual(delivered, ['f', 'a', 'b', 'c'], 'every queued item attempted once, in order');
+  assert.deepEqual(await readLines(join(directory, 'telemetry-queue.ndjson')), [], 'queue fully drained');
+  const quarantined = await readLines(join(directory, 'telemetry-quarantine.ndjson'));
+  assert.equal(quarantined.length, 1);
+  assert.equal(quarantined[0].type, 'event');
+  assert.equal(quarantined[0].status, 400);
+  assert.equal(quarantined[0].error, 'invalid_event');
+  assert.equal(quarantined[0].event.properties.jobHash, POISON_HASH);
+  if (process.platform !== 'win32') assert.equal((await stat(join(directory, 'telemetry-quarantine.ndjson'))).mode & 0o777, 0o600);
+  assert.match(stderr, /rejected a application_submitted event \(HTTP 400 invalid_event\)/);
+  assert.doesNotMatch(stderr, /Example Corp|jobs\.example\.com|ffffffff/, 'warning never echoes event properties');
+
+  // The poison event is not retried on later commands.
+  const before = relay.events().length;
+  await client.beginCommand('apply');
+  assert.equal(relay.events().length, before);
+});
+
+test('a fresh event rejected with 4xx is quarantined, not queued, and reported as rejected', async (t) => {
+  const directory = await mkdtemp(join(tmpdir(), 'telemetry-poison-fresh-'));
+  t.after(() => rm(directory, { recursive: true, force: true }));
+  const relay = selectiveRelay({ poisonStatus: 413, poisonError: 'payload_too_large' });
+  let stderr = '';
+  const client = new TelemetryClient({ stateDir: directory, endpoint: 'https://relay.example.com', fetch: relay.fetch, stderr: (value) => { stderr += value; }, timeoutMs: 50 });
+  const session = await client.beginCommand('apply');
+  const result = await client.record(pausedEvent(POISON_HASH), session);
+  assert.deepEqual(result, { sent: false, reason: 'rejected' });
+  assert.deepEqual(await readLines(join(directory, 'telemetry-queue.ndjson')), []);
+  assert.equal((await readLines(join(directory, 'telemetry-quarantine.ndjson')))[0].status, 413);
+  assert.match(stderr, /HTTP 413 payload_too_large/);
+  assert.equal((await client.record(pausedEvent('d'), session)).sent, true, 'later events still send');
+});
+
+for (const status of [500, 503, 429]) {
+  test(`HTTP ${status} keeps retry semantics and preserves every queued item`, async (t) => {
+    const directory = await mkdtemp(join(tmpdir(), `telemetry-retry-${status}-`));
+    t.after(() => rm(directory, { recursive: true, force: true }));
+    const relay = selectiveRelay({ eventStatus: status });
+    let stderr = '';
+    const client = new TelemetryClient({ stateDir: directory, endpoint: 'https://relay.example.com', fetch: relay.fetch, stderr: (value) => { stderr += value; }, timeoutMs: 50 });
+    await client.beginCommand('apply');
+    const lines = [queueLine(pausedEvent('a')), queueLine(pausedEvent('b')), queueLine(pausedEvent('c'))];
+    await writeFile(join(directory, 'telemetry-queue.ndjson'), `${lines.join('\n')}\n`);
+    stderr = '';
+    await client.beginCommand('apply');
+    assert.equal(relay.events().length, 1, 'stops at the first retryable failure');
+    const kept = await readLines(join(directory, 'telemetry-queue.ndjson'));
+    assert.deepEqual(kept.map((item) => item.event.properties.jobHash[0]), ['a', 'b', 'c'], 'items after the failure are not dropped');
+    assert.deepEqual(await readLines(join(directory, 'telemetry-quarantine.ndjson')), []);
+    assert.equal(stderr, '');
+  });
+}
+
+test('network errors keep every queued item for the next command', async (t) => {
+  const directory = await mkdtemp(join(tmpdir(), 'telemetry-retry-network-'));
+  t.after(() => rm(directory, { recursive: true, force: true }));
+  let offline = true;
+  const relay = selectiveRelay();
+  const fetch = async (url, options) => {
+    if (offline && url.endsWith('/v1/events')) throw new Error('offline');
+    return relay.fetch(url, options);
+  };
+  const client = new TelemetryClient({ stateDir: directory, endpoint: 'https://relay.example.com', fetch, stderr: () => {}, timeoutMs: 50 });
+  await client.beginCommand('apply');
+  await writeFile(join(directory, 'telemetry-queue.ndjson'), `${[queueLine(pausedEvent('a')), queueLine(pausedEvent('b'))].join('\n')}\n`);
+  await client.beginCommand('apply');
+  assert.equal((await readLines(join(directory, 'telemetry-queue.ndjson'))).length, 2);
+  offline = false;
+  await client.beginCommand('apply');
+  assert.deepEqual(relay.events().map((body) => body.properties.jobHash[0]), ['a', 'b']);
+  assert.deepEqual(await readLines(join(directory, 'telemetry-queue.ndjson')), []);
+});
+
+test('a queued event that no longer passes the local schema is quarantined instead of blocking', async (t) => {
+  const directory = await mkdtemp(join(tmpdir(), 'telemetry-stale-schema-'));
+  t.after(() => rm(directory, { recursive: true, force: true }));
+  const relay = selectiveRelay();
+  let stderr = '';
+  const client = new TelemetryClient({ stateDir: directory, endpoint: 'https://relay.example.com', fetch: relay.fetch, stderr: (value) => { stderr += value; }, timeoutMs: 50 });
+  await client.beginCommand('apply');
+  const stale = { event: 'application_paused', properties: { jobHash: 'e'.repeat(64), ats: 'lever', stage: 'legal', reason: 'retired-reason' } };
+  await writeFile(join(directory, 'telemetry-queue.ndjson'), `${[queueLine(stale), queueLine(pausedEvent('a'))].join('\n')}\n`);
+  stderr = '';
+  await client.beginCommand('apply');
+  assert.deepEqual(relay.events().map((body) => body.properties.jobHash[0]), ['a']);
+  assert.deepEqual(await readLines(join(directory, 'telemetry-queue.ndjson')), []);
+  const quarantined = await readLines(join(directory, 'telemetry-quarantine.ndjson'));
+  assert.equal(quarantined[0].error, 'local_schema_invalid');
+  assert.match(stderr, /application_paused event \(local_schema_invalid\)/);
+});
+
+test('a contact the relay rejects with 400 is dropped without queueing and its values never reach the quarantine or warning', async (t) => {
+  const directory = await mkdtemp(join(tmpdir(), 'telemetry-contact-rejected-'));
+  t.after(() => rm(directory, { recursive: true, force: true }));
+  const relay = selectiveRelay({ contactStatus: 400 });
+  let stderr = '';
+  const client = new TelemetryClient({
+    stateDir: directory,
+    endpoint: 'https://relay.example.com',
+    fetch: relay.fetch,
+    stderr: (value) => { stderr += value; },
+    timeoutMs: 50,
+    readIdentity: () => ({ name: 'Test Candidate', email: 'candidate@example.com' }),
+  });
+  const session = await client.beginCommand('profile');
+  assert.equal(session.allowContact, true);
+  assert.deepEqual(await readLines(join(directory, 'telemetry-queue.ndjson')), []);
+  const raw = await readFile(join(directory, 'telemetry-quarantine.ndjson'), 'utf8');
+  assert.doesNotMatch(raw, /Test Candidate|candidate@example\.com/);
+  assert.equal(JSON.parse(raw.trim()).type, 'contact');
+  assert.match(stderr, /rejected a contact update \(HTTP 400 invalid_contact\)/);
+  assert.doesNotMatch(stderr, /Test Candidate|candidate@example\.com/);
+});
+
+test('quarantine is bounded', async (t) => {
+  const directory = await mkdtemp(join(tmpdir(), 'telemetry-quarantine-bound-'));
+  t.after(() => rm(directory, { recursive: true, force: true }));
+  const client = new TelemetryClient({ stateDir: directory, endpoint: 'https://relay.example.com', fetch: async () => { throw new Error('unused'); }, stderr: () => {} });
+  for (let index = 0; index < 60; index += 1) await client.quarantine({ type: 'event', event: pausedEvent('a') }, { status: 400, error: `e${index}` });
+  const quarantined = await readLines(join(directory, 'telemetry-quarantine.ndjson'));
+  assert.equal(quarantined.length, 50);
+  assert.equal(quarantined.at(-1).error, 'e59');
+});
+
+test('relay endpoints never default to production under node --test', () => {
+  assert.equal(defaultTelemetryEndpoint({}), PRODUCTION_TELEMETRY_ENDPOINT);
+  assert.equal(defaultTelemetryEndpoint({ NODE_TEST_CONTEXT: 'child-v8' }), TEST_RUNNER_TELEMETRY_ENDPOINT);
+  assert.equal(defaultTelemetryEndpoint({ NODE_TEST_CONTEXT: 'child', JOB_APPLICATION_AGENT_TELEMETRY_URL: 'http://127.0.0.1:1234' }), 'http://127.0.0.1:1234');
+  assert.equal(defaultSourceCommunityEndpoint({}), PRODUCTION_TELEMETRY_ENDPOINT);
+  assert.equal(defaultSourceCommunityEndpoint({ NODE_TEST_CONTEXT: 'child' }), TEST_RUNNER_TELEMETRY_ENDPOINT);
+  assert.equal(defaultSourceCommunityEndpoint({ NODE_TEST_CONTEXT: 'child', JOB_APPLICATION_AGENT_SOURCE_COMMUNITY_URL: 'http://127.0.0.1:9' }), 'http://127.0.0.1:9');
+  // This very process runs under the test runner, so the module-level default is already safe.
+  assert.notEqual(new TelemetryClient({ stateDir: tmpdir() }).endpoint, PRODUCTION_TELEMETRY_ENDPOINT);
 });
