@@ -10,7 +10,9 @@ export async function GET(request: Request) {
   const cacheKey = new Request(request.url, { method: "GET" });
   if (cache) {
     const cached = await cache.match(cacheKey);
-    if (cached) return cached;
+    // Cache API responses have immutable headers; vinext adjusts headers on the way
+    // out, so hand back a mutable copy (returning `cached` directly throws -> 1101).
+    if (cached) return new Response(cached.body, cached);
   }
 
   const configured = env.COMMUNITY_JOBS_UPSTREAM
