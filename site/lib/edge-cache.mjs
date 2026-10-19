@@ -7,10 +7,11 @@
  * those pages went out as `no-store` and every crawler hit re-rendered.
  *
  * Scope is deliberately narrow:
- * - GET only, no query string, no Authorization, no RSC/router request headers
- *   (client navigations and prefetches always render fresh).
- * - Allowlisted public paths only. Attention, checkout, API, and internal routes
- *   never touch this cache.
+ * - GET only, no Authorization, no RSC/router request headers (client navigations
+ *   and prefetches always render fresh). Pages must have no query string; the three
+ *   public aggregate JSON proxies may, and their query is part of the key.
+ * - Allowlisted public paths only. Attention, checkout, webhook, internal and every
+ *   other API route never touch this cache.
  * - Only 200 responses (and 404 for /jobs/<slug>) without Set-Cookie are stored.
  * - The key includes the forwarded host (jobappagent.com vs stats.jobappagent.com)
  *   and the deployed release, so a deploy never serves the previous build's HTML.
@@ -49,11 +50,32 @@ const ROUTER_REQUEST_HEADERS = [
   "x-vinext-rsc-state-fingerprint",
 ];
 
+/**
+ * Public aggregate JSON proxied from the telemetry relay. Their in-route Cache API
+ * lookups never hit inside vinext (no cf-cache-status/age on repeat requests), so each
+ * call re-ran ~20-35 ms of fetch + validation. These may carry their validated query
+ * (limit/cursor), which becomes part of the key.
+ */
+const PUBLIC_API_PATHS = new Set([
+  "/api/community-stats",
+  "/api/community-jobs",
+  "/api/community-jobs-live",
+]);
+
+/** Rarely changing pages get a longer TTL; data-backed pages stay short. */
+const LONG_TTL_SECONDS = 3600;
+const LONG_TTL_EXACT = new Set(["/privacy", "/terms", "/platforms", "/robots.txt", "/manifest.webmanifest"]);
+
 const JOB_DETAIL = /^\/jobs\/[^/]+$/;
 const PLATFORM_DETAIL = /^\/platforms\/[^/]+$/;
 
 export function isEdgeCacheablePath(pathname) {
-  return EXACT_PATHS.has(pathname) || JOB_DETAIL.test(pathname) || PLATFORM_DETAIL.test(pathname);
+  return EXACT_PATHS.has(pathname) || JOB_DETAIL.test(pathname) || PLATFORM_DETAIL.test(pathname) || PUBLIC_API_PATHS.has(pathname);
+}
+
+export function edgeCacheTtlSeconds(pathname) {
+  if (LONG_TTL_EXACT.has(pathname) || PLATFORM_DETAIL.test(pathname)) return LONG_TTL_SECONDS;
+  return EDGE_CACHE_TTL_SECONDS;
 }
 
 /** @param {Request} request */
@@ -61,8 +83,9 @@ export function isEdgeCacheableRequest(request) {
   if (request.method !== "GET") return false;
   let url;
   try { url = new URL(request.url); } catch { return false; }
-  if (url.search) return false;
   if (!isEdgeCacheablePath(url.pathname)) return false;
+  if (url.search && !PUBLIC_API_PATHS.has(url.pathname)) return false;
+  if (url.search.length > 512) return false;
   if (request.headers.has("authorization")) return false;
   for (const name of ROUTER_REQUEST_HEADERS) if (request.headers.has(name)) return false;
   return true;
@@ -82,6 +105,7 @@ export function edgeCacheKey(request, release) {
   const key = new URL(`/__jaa-edge-cache${url.pathname === "/" ? "/index" : url.pathname}`, url.origin);
   key.searchParams.set("host", requestHost(request, url));
   key.searchParams.set("release", String(release || "dev").slice(0, 64));
+  if (url.search) key.searchParams.set("q", url.search.slice(1));
   return new Request(key.toString(), { method: "GET" });
 }
 
@@ -89,16 +113,19 @@ export function edgeCacheKey(request, release) {
 export function isEdgeStorableResponse(request, response) {
   if (response.headers.has("set-cookie")) return false;
   const pathname = new URL(request.url).pathname;
+  if (PUBLIC_API_PATHS.has(pathname)) {
+    return response.status === 200 && (response.headers.get("content-type") ?? "").includes("application/json");
+  }
   if (response.status === 200) return true;
   return response.status === 404 && JOB_DETAIL.test(pathname);
 }
 
-/** Copy that the Cache API stores (TTL on the stored copy only). @param {Response} response */
-export function toStoredResponse(response) {
+/** Copy that the Cache API stores (TTL on the stored copy only). @param {Response} response @param {number} [ttlSeconds] */
+export function toStoredResponse(response, ttlSeconds = EDGE_CACHE_TTL_SECONDS) {
   const headers = new Headers(response.headers);
   const original = headers.get("cache-control");
   if (original != null) headers.set(ORIGINAL_CACHE_CONTROL_HEADER, original);
-  headers.set("cache-control", `public, max-age=${EDGE_CACHE_TTL_SECONDS}`);
+  headers.set("cache-control", `public, max-age=${ttlSeconds}`);
   // The key already excludes RSC/router requests; keep Vary out of the stored copy so
   // the Cache API does not refuse or fragment it, and restore it on a hit.
   const vary = headers.get("vary");
@@ -148,7 +175,7 @@ export async function serveWithEdgeCache(request, { cache, release, waitUntil, r
   }
   const response = await render();
   if (!isEdgeStorableResponse(request, response)) return withEdgeCacheStatus(response, "BYPASS");
-  const stored = toStoredResponse(response.clone());
+  const stored = toStoredResponse(response.clone(), edgeCacheTtlSeconds(new URL(request.url).pathname));
   waitUntil(cache.put(key, stored).catch(() => {}));
   return withEdgeCacheStatus(response, "MISS");
 }

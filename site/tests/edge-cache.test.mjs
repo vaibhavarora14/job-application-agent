@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {
   EDGE_CACHE_STATUS_HEADER,
   edgeCacheKey,
+  edgeCacheTtlSeconds,
   isEdgeCacheablePath,
   isEdgeCacheableRequest,
   isEdgeStorableResponse,
@@ -30,7 +31,10 @@ test('only public document paths are cacheable', () => {
   for (const path of ['/', '/jobs', '/jobs/senior-engineer-acme-abc123', '/platforms', '/platforms/greenhouse', '/privacy', '/terms', '/community-view', '/sitemap.xml', '/robots.txt']) {
     assert.equal(isEdgeCacheablePath(path), true, path);
   }
-  for (const path of ['/attention/abc', '/checkout/return', '/api/checkout', '/api/community-stats', '/api/attention/x/answers', '/api/webhooks/dodo', '/jobs/a/b', '/_vinext/image']) {
+  for (const path of ['/api/community-stats', '/api/community-jobs', '/api/community-jobs-live']) {
+    assert.equal(isEdgeCacheablePath(path), true, path);
+  }
+  for (const path of ['/attention/abc', '/checkout/return', '/api/checkout', '/api/checkout/status', '/api/health', '/api/attention/x/answers', '/api/webhooks/dodo', '/jobs/a/b', '/_vinext/image']) {
     assert.equal(isEdgeCacheablePath(path), false, path);
   }
 });
@@ -94,4 +98,21 @@ test('second request is served from cache with original client headers', async (
 test('no cache available falls through to render', async () => {
   const response = await serveWithEdgeCache(page('/jobs'), { cache: undefined, waitUntil: () => {}, render: async () => new Response('ok') });
   assert.equal(await response.text(), 'ok');
+});
+
+test('public API JSON keeps its query in the key; pages with a query still bypass', () => {
+  assert.equal(isEdgeCacheableRequest(page('/api/community-jobs?limit=1')), true);
+  assert.equal(isEdgeCacheableRequest(page('/api/community-stats')), true);
+  assert.equal(isEdgeCacheableRequest(page('/jobs?limit=1')), false);
+  assert.notEqual(edgeCacheKey(page('/api/community-jobs?limit=1'), 'r').url, edgeCacheKey(page('/api/community-jobs?limit=2'), 'r').url);
+  assert.equal(isEdgeStorableResponse(page('/api/community-stats'), Response.json({ ok: true })), true);
+  assert.equal(isEdgeStorableResponse(page('/api/community-stats'), Response.json({ error: 'x' }, { status: 503 })), false);
+  assert.equal(isEdgeStorableResponse(page('/api/community-stats'), new Response('<html>', { headers: { 'content-type': 'text/html' } })), false);
+});
+
+test('static pages get a longer TTL than data-backed pages', () => {
+  assert.equal(edgeCacheTtlSeconds('/privacy'), 3600);
+  assert.equal(edgeCacheTtlSeconds('/platforms/greenhouse'), 3600);
+  assert.equal(edgeCacheTtlSeconds('/jobs'), 300);
+  assert.equal(edgeCacheTtlSeconds('/api/community-stats'), 300);
 });
