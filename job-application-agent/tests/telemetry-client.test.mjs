@@ -2,7 +2,6 @@ import assert from 'node:assert/strict';
 import { mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { execFileSync } from 'node:child_process';
-import { fileURLToPath } from 'node:url';
 import { join } from 'node:path';
 import test from 'node:test';
 
@@ -639,13 +638,14 @@ test('generic CI=true alone keeps production telemetry (agent runtimes often exp
 });
 
 test('a CLI process spawned without NODE_TEST_CONTEXT inside GitHub Actions resolves a dead local relay', () => {
-  const scripts = fileURLToPath(new URL('../scripts/', import.meta.url));
+  // Import by file:// URL so Windows drive-letter paths load under the ESM loader.
+  const moduleUrl = (name) => new URL(`../scripts/${name}`, import.meta.url).href;
   const env = { ...process.env, GITHUB_ACTIONS: 'true' };
   delete env.NODE_TEST_CONTEXT;
   delete env.JOB_APPLICATION_AGENT_TELEMETRY_URL;
   delete env.JOB_APPLICATION_AGENT_SOURCE_COMMUNITY_URL;
-  const source = `const t = await import(${JSON.stringify(join(scripts, 'telemetry-client.mjs'))});
-const s = await import(${JSON.stringify(join(scripts, 'source-community-client.mjs'))});
+  const source = `const t = await import(${JSON.stringify(moduleUrl('telemetry-client.mjs'))});
+const s = await import(${JSON.stringify(moduleUrl('source-community-client.mjs'))});
 process.stdout.write(JSON.stringify([t.DEFAULT_TELEMETRY_ENDPOINT, s.DEFAULT_SOURCE_COMMUNITY_ENDPOINT]));`;
   const run = (childEnv) => JSON.parse(execFileSync(process.execPath, ['--input-type=module', '-e', source], { env: childEnv, encoding: 'utf8' }));
   assert.deepEqual(run(env), [TEST_RUNNER_TELEMETRY_ENDPOINT, TEST_RUNNER_TELEMETRY_ENDPOINT]);
