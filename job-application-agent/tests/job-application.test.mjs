@@ -13,11 +13,15 @@ import {
   buildReview,
   commandCategory,
   durationBucket,
+  isThinSubmission,
+  JOB_APPROVAL_REVIEW_EACH,
   migrateProfile,
+  normalizeJobApprovalMode,
   normalizeThinSubmissionOverride,
   PROFILE_ONE_CLICK_CHANNEL,
   profileStatus,
   resolveSubmissionFillMetrics,
+  routineAutoProfileThinSubmitError,
   scoreJob,
   telemetryApplicationPaused,
   telemetryApplicationSkipped,
@@ -84,6 +88,8 @@ function isolatedCliEnv(directory) {
     JOB_APPLICATION_AGENT_STATE_DIR: directory,
     JOB_APPLICATION_AGENT_CLOUD_CONFIG: join(directory, 'cloud-config.json'),
     JOB_APPLICATION_AGENT_SOURCE_COMMUNITY_URL: 'http://127.0.0.1:9',
+    // Never read the host's real stored profile (the ledger guard consults submissionMode).
+    JOB_APPLICATION_AGENT_KEYCHAIN_SERVICE: `job-application-agent-test-${process.pid}-${Math.random().toString(36).slice(2)}`,
   };
 }
 
@@ -1250,4 +1256,160 @@ test('CLI never attaches candidate name/email/phone to analytics events', async 
   assert.ok(contacts.length >= 1);
   assert.ok(contacts.every(({ body }) => body.candidateName === target.name && body.candidateEmail === target.email));
   assert.equal(JSON.stringify(contacts).includes(target.phone), false);
+});
+
+test('routine-auto profile blocks thin submits even with APPROVE SUBMIT unless this one job is review-each', () => {
+  const live = { applyKind: 'live', answers: {}, approval: 'APPROVE SUBMIT', url: 'https://jobs.example.com/a' };
+  const empty = resolveSubmissionFillMetrics(live, { fieldsFilled: 0, resumeUploaded: false });
+  const expected = routineAutoProfileThinSubmitError().message;
+
+  assert.equal(isThinSubmission(live, empty), true);
+  assert.equal(isThinSubmission(live, resolveSubmissionFillMetrics(live, { fieldsFilled: 3, resumeUploaded: false })), false);
+  assert.equal(isThinSubmission(live, resolveSubmissionFillMetrics(live, { fieldsFilled: 0, resumeUploaded: true })), false);
+  assert.equal(isThinSubmission({ ...live, applyKind: 'fixture' }, empty), false);
+
+  // Blocked with the exact guidance, with or without a per-job note.
+  assert.throws(
+    () => assertSubmissionFillGuard(live, empty, thinOverride(), { profileSubmissionMode: 'routine-auto' }),
+    (error) => error.message === expected,
+  );
+  assert.throws(
+    () => assertSubmissionFillGuard(live, empty, null, { profileSubmissionMode: 'routine-auto' }),
+    (error) => error.message === expected,
+  );
+  assert.match(expected, /"jobApprovalMode": "review-each"/);
+  assert.match(expected, /does not change your global submissionMode/);
+
+  // Per-job review-each still needs the normal explicit acknowledgement and APPROVE SUBMIT.
+  const perJob = assertSubmissionFillGuard(live, empty, thinOverride(), { profileSubmissionMode: 'routine-auto', jobApprovalMode: JOB_APPROVAL_REVIEW_EACH });
+  assert.equal(perJob.path, 'thin_override');
+  assert.equal(perJob.thinSubmissionOverrideUsed, true);
+  assert.throws(
+    () => assertSubmissionFillGuard(live, empty, null, { profileSubmissionMode: 'routine-auto', jobApprovalMode: JOB_APPROVAL_REVIEW_EACH }),
+    /looks empty/i,
+  );
+  assert.throws(
+    () => assertSubmissionFillGuard({ ...live, approval: 'STANDING AUTHORIZATION' }, empty, thinOverride(), { profileSubmissionMode: 'routine-auto', jobApprovalMode: JOB_APPROVAL_REVIEW_EACH }),
+    /not allowed in routine-auto/i,
+  );
+
+  // Filled submits and the honest one-click path are unaffected by a routine-auto profile.
+  assert.equal(assertSubmissionFillGuard(
+    { ...live, approval: 'STANDING AUTHORIZATION' },
+    resolveSubmissionFillMetrics(live, { fieldsFilled: 9, resumeUploaded: true }),
+    null,
+    { profileSubmissionMode: 'routine-auto' },
+  ).path, 'filled');
+  assert.equal(assertSubmissionFillGuard(
+    { ...live, approval: 'STANDING AUTHORIZATION', applicationChannel: PROFILE_ONE_CLICK_CHANNEL },
+    resolveSubmissionFillMetrics(live, { fieldsFilled: 0, resumeUploaded: false, profileResumeOnFile: true }),
+    null,
+    { profileSubmissionMode: 'routine-auto' },
+  ).path, 'profile_one_click');
+
+  // review-each profile: unchanged behavior.
+  assert.equal(assertSubmissionFillGuard(live, empty, thinOverride(), { profileSubmissionMode: 'review-each' }).path, 'thin_override');
+  assert.throws(
+    () => assertSubmissionFillGuard(live, empty, null, { profileSubmissionMode: 'review-each' }),
+    (error) => /looks empty/i.test(error.message) && error.message !== expected,
+  );
+
+  assert.equal(normalizeJobApprovalMode(undefined), null);
+  assert.equal(normalizeJobApprovalMode('review-each'), 'review-each');
+  assert.throws(() => normalizeJobApprovalMode('routine-auto'), /jobApprovalMode must be "review-each"/);
+});
+
+async function profileBackedCli(t, profile) {
+  const directory = await mkdtemp(join(tmpdir(), 'public-job-agent-profile-guard-'));
+  const toolDirectory = await mkdtemp(join(tmpdir(), 'public-job-agent-profile-tool-'));
+  t.after(() => rm(directory, { recursive: true, force: true }));
+  t.after(() => rm(toolDirectory, { recursive: true, force: true }));
+  const profileFile = join(toolDirectory, 'profile.json');
+  await writeFile(profileFile, JSON.stringify(profile));
+  // Fake Linux Secret Service: lookups return the fixture profile; any write fails loudly.
+  const toolSource = `#!/bin/sh\nif [ "$1" = "lookup" ]; then exec /bin/cat '${profileFile}'; fi\necho "unexpected secret-tool $1" >&2\nexit 3\n`;
+  await writeFile(join(toolDirectory, 'secret-tool'), toolSource, { mode: 0o755 });
+  await writeFile(join(directory, 'telemetry.json'), JSON.stringify({ version: 1, enabled: false, disclosed: true, graceConsumed: true, installationEventPending: false }));
+  const platformOverride = `data:text/javascript,${encodeURIComponent("Object.defineProperty(process, 'platform', { value: 'linux' });")}`;
+  const env = { ...isolatedCliEnv(directory), PATH: `${toolDirectory}:${process.env.PATH ?? ''}` };
+  const script = fileURLToPath(new URL('../scripts/job-application.mjs', import.meta.url));
+  return {
+    directory,
+    profileFile,
+    add: (input) => runCli(script, ['ledger', 'add', '--stdin'], input, env, ['--import', platformOverride]),
+  };
+}
+
+const profileGuardBase = {
+  company: 'Example', role: 'Engineer', source: 'lever', score: 80, status: 'submitted',
+  submittedAt: '2026-10-19T05:00:00Z', answers: {},
+};
+const emptyTelemetry = { fieldsFilled: 0, resumeUploaded: false, durationBucket: 'under-1s' };
+
+test('ledger add under a routine-auto profile blocks empty applies and allows a per-job review-each override', {
+  skip: process.platform === 'win32',
+}, async (t) => {
+  const profile = { ...target, submissionMode: 'routine-auto' };
+  const cli = await profileBackedCli(t, profile);
+  const before = await readFile(cli.profileFile, 'utf8');
+
+  const blocked = await cli.add({
+    ...profileGuardBase, id: 'ra-empty-approve', company: 'Guard Co ra-empty-approve', url: 'https://jobs.example.com/ra-empty-approve', approval: 'APPROVE SUBMIT',
+    telemetry: emptyTelemetry,
+    thinSubmissionOverride: thinOverride('Candidate confirmed empty apply for routine-auto blocked job'),
+  });
+  assert.equal(blocked.code, 1);
+  assert.ok(blocked.stderr.includes(routineAutoProfileThinSubmitError().message), blocked.stderr);
+
+  const noAck = await cli.add({
+    ...profileGuardBase, id: 'ra-review-each-noack', company: 'Guard Co ra-review-each-noack', url: 'https://jobs.example.com/ra-review-each-noack', approval: 'APPROVE SUBMIT',
+    jobApprovalMode: 'review-each', telemetry: emptyTelemetry,
+  });
+  assert.equal(noAck.code, 1);
+  assert.match(noAck.stderr, /looks empty/i);
+
+  const invalidMode = await cli.add({
+    ...profileGuardBase, id: 'ra-invalid-mode', company: 'Guard Co ra-invalid-mode', url: 'https://jobs.example.com/ra-invalid-mode', approval: 'APPROVE SUBMIT',
+    jobApprovalMode: 'routine-auto', telemetry: emptyTelemetry,
+    thinSubmissionOverride: thinOverride('Candidate confirmed empty apply for invalid mode job'),
+  });
+  assert.equal(invalidMode.code, 1);
+  assert.match(invalidMode.stderr, /jobApprovalMode must be "review-each"/);
+
+  const perJob = await cli.add({
+    ...profileGuardBase, id: 'ra-review-each-ok', company: 'Guard Co ra-review-each-ok', url: 'https://jobs.example.com/ra-review-each-ok', approval: 'APPROVE SUBMIT',
+    jobApprovalMode: 'review-each', telemetry: emptyTelemetry,
+    thinSubmissionOverride: thinOverride('Candidate confirmed in chat this empty apply for Example Engineer is intended'),
+  });
+  assert.equal(perJob.code, 0, perJob.stderr);
+
+  const filled = await cli.add({
+    ...profileGuardBase, id: 'ra-filled', company: 'Guard Co ra-filled', url: 'https://jobs.example.com/ra-filled', approval: 'STANDING AUTHORIZATION',
+    telemetry: { fieldsFilled: 11, shortAnswerCount: 2, resumeUploaded: true, durationBucket: '5-15m' },
+  });
+  assert.equal(filled.code, 0, filled.stderr);
+
+  const rows = (await readFile(join(cli.directory, 'applications.ndjson'), 'utf8')).trim().split('\n').map((line) => JSON.parse(line));
+  assert.deepEqual(rows.map((row) => row.id), ['ra-review-each-ok', 'ra-filled']);
+  assert.equal(rows.some((row) => 'jobApprovalMode' in row), false);
+  // The global profile setting is never touched.
+  assert.equal(await readFile(cli.profileFile, 'utf8'), before);
+  assert.equal(JSON.parse(before).submissionMode, 'routine-auto');
+});
+
+test('ledger add under a review-each profile keeps the existing thin-submit behavior', {
+  skip: process.platform === 'win32',
+}, async (t) => {
+  const cli = await profileBackedCli(t, { ...target, submissionMode: 'review-each' });
+  const blocked = await cli.add({
+    ...profileGuardBase, id: 're-empty', company: 'Guard Co re-empty', url: 'https://jobs.example.com/re-empty', approval: 'APPROVE SUBMIT', telemetry: emptyTelemetry,
+  });
+  assert.equal(blocked.code, 1);
+  assert.match(blocked.stderr, /looks empty/i);
+  assert.equal(blocked.stderr.includes(routineAutoProfileThinSubmitError().message), false);
+  const allowed = await cli.add({
+    ...profileGuardBase, id: 're-empty-ack', company: 'Guard Co re-empty-ack', url: 'https://jobs.example.com/re-empty-ack', approval: 'APPROVE SUBMIT', telemetry: emptyTelemetry,
+    thinSubmissionOverride: thinOverride('Candidate confirmed in chat this review-each empty apply is intended'),
+  });
+  assert.equal(allowed.code, 0, allowed.stderr);
 });

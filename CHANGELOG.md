@@ -1,5 +1,9 @@
 # Changelog
 
+## 3.7.13
+
+- Close the remaining thin-submit gap: `ledger add` now also reads the stored profile's `submissionMode`. When it is `routine-auto`, an empty submit (0 fields filled and no résumé, same thresholds as before) is blocked even if the entry claims `APPROVE SUBMIT` or carries a per-job `thinSubmissionOverride` note. The error explains the honest paths (fill the form, or `profile_one_click` with `telemetry.profileResumeOnFile`) and how to review just that one job: add the transient `"jobApprovalMode": "review-each"` to that `ledger add` together with `approval: "APPROVE SUBMIT"` and the normal `thinSubmissionOverride` acknowledgement and per-job candidate confirmation. The flag is per entry, not stored, and never changes the profile's global `submissionMode`. Filled submits, the one-click path, and `review-each` profiles are unchanged. No new telemetry fields.
+
 ## 3.7.12
 
 - Second safeguard against CI writing to production telemetry: inside GitHub Actions (`GITHUB_ACTIONS` set) the telemetry and community relay endpoints now default to the same unroutable local address used under `node --test`, even for CLIs spawned outside the test runner or with a stripped child environment. An explicit `JOB_APPLICATION_AGENT_TELEMETRY_URL` / `JOB_APPLICATION_AGENT_SOURCE_COMMUNITY_URL` still wins. The generic `CI` variable is deliberately not used: agent runtimes and sandboxes that real candidates run in often export `CI=true`, and keying on it would silently drop real usage analytics.

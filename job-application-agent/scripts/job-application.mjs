@@ -402,12 +402,50 @@ export function resolveSubmissionFillMetrics(entry, details = {}) {
   };
 }
 
+export const JOB_APPROVAL_REVIEW_EACH = 'review-each';
+
+/**
+ * Transient per-job approval mode for one `ledger add`. Only "review-each" is accepted; it never
+ * changes the stored profile's global submissionMode.
+ */
+export function normalizeJobApprovalMode(raw) {
+  if (raw == null) return null;
+  if (raw !== JOB_APPROVAL_REVIEW_EACH) {
+    throw new Error(`jobApprovalMode must be "${JOB_APPROVAL_REVIEW_EACH}" when set. It applies to this one ledger add only and never changes the profile's submissionMode.`);
+  }
+  return JOB_APPROVAL_REVIEW_EACH;
+}
+
+/** Same thresholds as assertSubmissionFillGuard: 0 fields and no résumé, outside the honest one-click path. */
+export function isThinSubmission(entry, metrics) {
+  if (isFixtureOrSandboxApply(entry)) return false;
+  if (metrics.fillMetricsSource === 'empty') return false;
+  if (!(metrics.fieldsFilled === 0 && metrics.resumeUploaded !== true)) return false;
+  return !(applicationChannelOf(entry) === PROFILE_ONE_CLICK_CHANNEL && metrics.profileResumeOnFile === true);
+}
+
+export function routineAutoProfileThinSubmitError() {
+  return new Error(
+    'Submission looks empty (0 fields filled, no résumé) and your profile submissionMode is "routine-auto", '
+    + 'so this ledger add is blocked even with approval "APPROVE SUBMIT" or a per-job note. '
+    + 'Preferred: fill the form and upload the canonical résumé, or, when the site applied from a stored profile/résumé, '
+    + `use applicationChannel "${PROFILE_ONE_CLICK_CHANNEL}" with telemetry.profileResumeOnFile: true. `
+    + 'To review this ONE job instead, first get the candidate\'s explicit confirmation for this specific job in the conversation, '
+    + `then re-run ledger add with "jobApprovalMode": "${JOB_APPROVAL_REVIEW_EACH}", "approval": "APPROVE SUBMIT", and `
+    + `"thinSubmissionOverride": {"acknowledgment": "${THIN_SUBMISSION_OVERRIDE}", "candidateConfirmation": "<that candidate's confirmation for this job>"}. `
+    + 'jobApprovalMode applies to this entry only; it does not change your global submissionMode, which stays "routine-auto". '
+    + 'Do not run profile set to change it.',
+  );
+}
+
 /**
  * Block ledger add when fill metrics are missing or the submission looks empty.
  * Fixture / vendor-sandbox applies are exempt.
  * Honest one-click path: applicationChannel profile_one_click + telemetry.profileResumeOnFile.
  * Intentional empty ATS accepts need thinSubmissionOverride with a per-job candidate confirmation
  * and APPROVE SUBMIT — never routine-auto / unattended / STANDING AUTHORIZATION.
+ * options.profileSubmissionMode is the stored profile's submissionMode; when it is routine-auto a thin
+ * submit also needs options.jobApprovalMode "review-each" for that one entry.
  */
 export function assertSubmissionFillGuard(entry, metrics, thinOverride = null, options = {}) {
   if (isFixtureOrSandboxApply(entry)) {
@@ -426,6 +464,13 @@ export function assertSubmissionFillGuard(entry, metrics, thinOverride = null, o
   const channel = applicationChannelOf(entry);
   if (channel === PROFILE_ONE_CLICK_CHANNEL && metrics.profileResumeOnFile === true) {
     return { path: 'profile_one_click', thinSubmissionOverrideUsed: false };
+  }
+
+  // A routine-auto profile blocks thin submits even when the entry claims per-job approval,
+  // unless this one job explicitly switches to review-each (the normal acknowledgement below still applies).
+  const jobApprovalMode = normalizeJobApprovalMode(options.jobApprovalMode);
+  if (options.profileSubmissionMode === 'routine-auto' && jobApprovalMode !== JOB_APPROVAL_REVIEW_EACH) {
+    throw routineAutoProfileThinSubmitError();
   }
 
   let normalized;
@@ -1154,6 +1199,16 @@ function storedProfile() {
   try { return validateProfile(storedProfileRaw()); } catch (error) {
     if (/Secret Service could not read|not supported on this platform|secret-tool is not installed/i.test(error.message)) throw error;
     throw new Error('The stored profile needs migration. Run profile check, then profile migrate --stdin.');
+  }
+}
+
+/** Stored profile submissionMode, or null when no readable profile exists (read-only; never writes the profile). */
+function storedSubmissionModeOrNull() {
+  try {
+    const mode = storedProfileRaw()?.submissionMode;
+    return mode === 'routine-auto' || mode === 'review-each' ? mode : null;
+  } catch {
+    return null;
   }
 }
 
@@ -2387,7 +2442,10 @@ async function executeCommand([area, action, value], telemetry, session, communi
     const telemetryDetails = validateSubmissionTelemetry(input.telemetry);
     const baseEntry = validateLedgerEntry(input);
     const fillMetrics = resolveSubmissionFillMetrics(baseEntry, telemetryDetails);
-    const fillGuard = assertSubmissionFillGuard(baseEntry, fillMetrics, input.thinSubmissionOverride);
+    const jobApprovalMode = normalizeJobApprovalMode(input.jobApprovalMode);
+    // Read the stored profile only for thin submits so filled submits never depend on profile storage.
+    const profileSubmissionMode = isThinSubmission(baseEntry, fillMetrics) ? storedSubmissionModeOrNull() : null;
+    const fillGuard = assertSubmissionFillGuard(baseEntry, fillMetrics, input.thinSubmissionOverride, { profileSubmissionMode, jobApprovalMode });
     if (fillGuard.thinSubmissionOverrideUsed) {
       await assertAndRecordThinOverrideUse(fillGuard.candidateConfirmation, baseEntry.url);
     }
