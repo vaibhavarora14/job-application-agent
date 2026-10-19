@@ -1,11 +1,14 @@
 import assert from 'node:assert/strict';
 import { mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
+import { execFileSync } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
 import { join } from 'node:path';
 import test from 'node:test';
 
 import {
   defaultTelemetryEndpoint,
+  isGitHubActions,
   isPermanentRejection,
   lifecycleDedupeKey,
   prepareTelemetryInput,
@@ -612,4 +615,41 @@ test('relay endpoints never default to production under node --test', () => {
   assert.equal(defaultSourceCommunityEndpoint({ NODE_TEST_CONTEXT: 'child', JOB_APPLICATION_AGENT_SOURCE_COMMUNITY_URL: 'http://127.0.0.1:9' }), 'http://127.0.0.1:9');
   // This very process runs under the test runner, so the module-level default is already safe.
   assert.notEqual(new TelemetryClient({ stateDir: tmpdir() }).endpoint, PRODUCTION_TELEMETRY_ENDPOINT);
+});
+
+test('GitHub Actions never defaults to the production relay, even outside the test runner', () => {
+  assert.equal(isGitHubActions({ GITHUB_ACTIONS: 'true' }), true);
+  assert.equal(isGitHubActions({ GITHUB_ACTIONS: '1' }), true);
+  assert.equal(isGitHubActions({}), false);
+  assert.equal(isGitHubActions({ GITHUB_ACTIONS: '' }), false);
+  assert.equal(isGitHubActions({ GITHUB_ACTIONS: 'false' }), false);
+  assert.equal(isGitHubActions({ GITHUB_ACTIONS: '0' }), false);
+
+  assert.equal(defaultTelemetryEndpoint({ GITHUB_ACTIONS: 'true' }), TEST_RUNNER_TELEMETRY_ENDPOINT);
+  assert.equal(defaultSourceCommunityEndpoint({ GITHUB_ACTIONS: 'true' }), TEST_RUNNER_TELEMETRY_ENDPOINT);
+  // An explicit relay URL still wins (e.g. the staging e2e workflow).
+  assert.equal(defaultTelemetryEndpoint({ GITHUB_ACTIONS: 'true', JOB_APPLICATION_AGENT_TELEMETRY_URL: 'https://staging.example' }), 'https://staging.example');
+  assert.equal(defaultSourceCommunityEndpoint({ GITHUB_ACTIONS: 'true', JOB_APPLICATION_AGENT_SOURCE_COMMUNITY_URL: 'https://staging.example' }), 'https://staging.example');
+});
+
+test('generic CI=true alone keeps production telemetry (agent runtimes often export CI)', () => {
+  assert.equal(defaultTelemetryEndpoint({ CI: 'true' }), PRODUCTION_TELEMETRY_ENDPOINT);
+  assert.equal(defaultTelemetryEndpoint({ CI: '1' }), PRODUCTION_TELEMETRY_ENDPOINT);
+  assert.equal(defaultSourceCommunityEndpoint({ CI: 'true' }), PRODUCTION_TELEMETRY_ENDPOINT);
+});
+
+test('a CLI process spawned without NODE_TEST_CONTEXT inside GitHub Actions resolves a dead local relay', () => {
+  const scripts = fileURLToPath(new URL('../scripts/', import.meta.url));
+  const env = { ...process.env, GITHUB_ACTIONS: 'true' };
+  delete env.NODE_TEST_CONTEXT;
+  delete env.JOB_APPLICATION_AGENT_TELEMETRY_URL;
+  delete env.JOB_APPLICATION_AGENT_SOURCE_COMMUNITY_URL;
+  const source = `const t = await import(${JSON.stringify(join(scripts, 'telemetry-client.mjs'))});
+const s = await import(${JSON.stringify(join(scripts, 'source-community-client.mjs'))});
+process.stdout.write(JSON.stringify([t.DEFAULT_TELEMETRY_ENDPOINT, s.DEFAULT_SOURCE_COMMUNITY_ENDPOINT]));`;
+  const run = (childEnv) => JSON.parse(execFileSync(process.execPath, ['--input-type=module', '-e', source], { env: childEnv, encoding: 'utf8' }));
+  assert.deepEqual(run(env), [TEST_RUNNER_TELEMETRY_ENDPOINT, TEST_RUNNER_TELEMETRY_ENDPOINT]);
+  const outsideCi = { ...env };
+  delete outsideCi.GITHUB_ACTIONS;
+  assert.deepEqual(run(outsideCi), [PRODUCTION_TELEMETRY_ENDPOINT, PRODUCTION_TELEMETRY_ENDPOINT]);
 });

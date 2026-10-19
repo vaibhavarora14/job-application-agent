@@ -12,14 +12,29 @@ export const PRODUCTION_TELEMETRY_ENDPOINT = 'https://job-application-agent-tele
 export const TEST_RUNNER_TELEMETRY_ENDPOINT = 'http://127.0.0.1:9';
 
 /**
+ * True inside a GitHub Actions job. GitHub sets GITHUB_ACTIONS=true on every runner step.
+ * Deliberately NOT keyed on the generic CI variable: agent runtimes and sandboxes that real
+ * candidates use (non-interactive shells, hosted coding agents) commonly export CI=true, and
+ * treating those as CI would silently drop real usage analytics.
+ */
+export function isGitHubActions(env = process.env) {
+  const value = String(env.GITHUB_ACTIONS ?? '').trim().toLowerCase();
+  return value !== '' && value !== 'false' && value !== '0';
+}
+
+/**
  * Relay endpoint for this process. An explicit JOB_APPLICATION_AGENT_TELEMETRY_URL always wins.
- * Under `node --test` (NODE_TEST_CONTEXT is inherited by CLIs that tests spawn) never fall back
- * to production: CI runs were registering throwaway installations and command events in the
- * production relay, PostHog, and the public installation count.
+ * Otherwise never fall back to production:
+ * - under `node --test` (NODE_TEST_CONTEXT is inherited by CLIs that tests spawn), and
+ * - inside GitHub Actions (second safeguard for scripts that spawn the CLI outside the test
+ *   runner or strip NODE_TEST_CONTEXT from a child env).
+ * CI runs were registering throwaway installations and command events in the production
+ * relay, PostHog, and the public installation count.
  */
 export function defaultTelemetryEndpoint(env = process.env) {
   if (env.JOB_APPLICATION_AGENT_TELEMETRY_URL) return env.JOB_APPLICATION_AGENT_TELEMETRY_URL;
   if (env.NODE_TEST_CONTEXT) return TEST_RUNNER_TELEMETRY_ENDPOINT;
+  if (isGitHubActions(env)) return TEST_RUNNER_TELEMETRY_ENDPOINT;
   return PRODUCTION_TELEMETRY_ENDPOINT;
 }
 

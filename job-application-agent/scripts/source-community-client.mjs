@@ -13,7 +13,7 @@ import {
   validateCommunitySourceList,
 } from './source-community-schema.mjs';
 
-/** Same rule as telemetry: explicit URL wins; `node --test` never falls back to production. */
+/** Same rule as telemetry: explicit URL wins; `node --test` and GitHub Actions never fall back to production. */
 export function defaultSourceCommunityEndpoint(env = process.env) {
   if (env.JOB_APPLICATION_AGENT_SOURCE_COMMUNITY_URL) return env.JOB_APPLICATION_AGENT_SOURCE_COMMUNITY_URL;
   if (env.JOB_APPLICATION_AGENT_TELEMETRY_URL) return env.JOB_APPLICATION_AGENT_TELEMETRY_URL;

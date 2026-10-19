@@ -1,5 +1,9 @@
 # Changelog
 
+## 3.7.12
+
+- Second safeguard against CI writing to production telemetry: inside GitHub Actions (`GITHUB_ACTIONS` set) the telemetry and community relay endpoints now default to the same unroutable local address used under `node --test`, even for CLIs spawned outside the test runner or with a stripped child environment. An explicit `JOB_APPLICATION_AGENT_TELEMETRY_URL` / `JOB_APPLICATION_AGENT_SOURCE_COMMUNITY_URL` still wins. The generic `CI` variable is deliberately not used: agent runtimes and sandboxes that real candidates run in often export `CI=true`, and keying on it would silently drop real usage analytics.
+
 ## 3.7.11
 
 - Fix the telemetry retry queue so one event the relay refuses can no longer hide every event behind it. Previously any non-2xx (including a permanent `400 invalid_event`) was treated as "relay unavailable": the queue stopped at that item on every command, which is how the 3.7.9 `thinSubmissionOverrideUsed` rejection hid submissions. Now a 4xx other than 401/408/425/429 (or a queued event that no longer passes the local schema) moves just that item to a bounded local `telemetry-quarantine.ndjson` with a one-line warning (event type and relay error code only, never properties or contact values) and draining continues. Network errors, 5xx, and 429 keep retry/backoff. Rejected events are no longer queued at all.
