@@ -4,6 +4,11 @@ import { validateLiveJobs } from './live-jobs.mjs';
 const MAX_UPSTREAM_BYTES = 256 * 1024;
 const BOARD_CACHE_SECONDS = 5 * 60;
 const BOARD_CACHE_ORIGIN = 'https://jobappagent.com';
+/** Per-isolate memo so one SSR request (metadata + page) and back-to-back requests
+ * do not re-parse and re-validate the whole board (~6 ms CPU per pass). */
+const BOARD_MEMO_MS = 60 * 1000;
+/** @type {Map<string, { at: number, jobs: unknown[] }>} */
+const boardMemo = new Map();
 
 /** @returns {Cache | undefined} */
 function workersDefaultCache() {
@@ -58,11 +63,20 @@ export async function loadLiveJobs(options = {}) {
   const status = options.status === undefined ? 'open' : options.status;
   const cache = !options.fetcher && !options.skipCache ? workersDefaultCache() : undefined;
   const cacheKey = cache ? boardCacheKey(status) : null;
+  const memoKey = status == null ? 'all' : status;
+  const useMemo = !options.fetcher && !options.skipCache;
+  if (useMemo) {
+    const memo = boardMemo.get(memoKey);
+    if (memo && Date.now() - memo.at < BOARD_MEMO_MS) return memo.jobs;
+  }
   if (cache && cacheKey) {
     const cached = await cache.match(cacheKey);
     if (cached) {
       const validated = validateLiveJobs(JSON.parse(await cached.text()));
-      if (validated.ok) return validated.data.jobs;
+      if (validated.ok) {
+        boardMemo.set(memoKey, { at: Date.now(), jobs: validated.data.jobs });
+        return validated.data.jobs;
+      }
     }
   }
 
@@ -90,6 +104,7 @@ export async function loadLiveJobs(options = {}) {
     cursor = validated.data.nextCursor;
     if (!cursor) {
       const list = [...jobs.values()];
+      if (useMemo) boardMemo.set(memoKey, { at: Date.now(), jobs: list });
       if (cache && cacheKey) {
         const payload = {
           version: 1,

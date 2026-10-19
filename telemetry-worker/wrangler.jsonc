@@ -19,7 +19,7 @@
     "POSTHOG_HOST": "https://us.i.posthog.com"
   },
   "triggers": {
-    "crons": ["*/15 * * * *"]
+    "crons": ["*/5 * * * *"]
   },
   "d1_databases": [
     {
@@ -75,7 +75,7 @@
       "observability": { "enabled": false, "logs": { "enabled": false, "invocation_logs": false } },
       "vars": { "POSTHOG_HOST": "https://us.i.posthog.com" },
       "triggers": {
-        "crons": ["*/15 * * * *"]
+        "crons": ["*/5 * * * *"]
       },
       "d1_databases": [
         {

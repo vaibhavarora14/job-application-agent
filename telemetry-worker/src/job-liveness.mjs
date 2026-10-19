@@ -1,8 +1,17 @@
 const label = (value) => (typeof value === 'string' && value.trim().length <= 240 && !/[<>]/.test(value) && ![...value].some((char) => char.charCodeAt(0) < 32) ? value.trim() : '');
 const title = (value) => label(value).toLowerCase().replace(/[^\p{L}\p{N}]+/gu, ' ').trim();
 
-/** Bounded batch size per cron/admin invocation (Worker subrequest / CPU safe). */
+/** Bounded batch size per admin invocation (manual sweep workflow). */
 export const DEFAULT_LIVENESS_BATCH_SIZE = 50;
+/**
+ * Batch size per cron invocation. Workers Free gives cron triggers 10 ms CPU; a
+ * 50-job sweep measured ~67 ms CPU p50 (~1.3 ms per job), so a 5-job batch stays
+ * around 6-7 ms. The cron runs every 5 minutes (1,440 checks/day), and
+ * listDueForLivenessCheck always takes the oldest-checked jobs first, so it still
+ * rotates through the whole published set (~1,600 jobs) about once a day, well
+ * inside the board's 3-day freshness window and the 26 h staleness alert.
+ */
+export const CRON_LIVENESS_BATCH_SIZE = 5;
 export const DEFAULT_LIVENESS_CONCURRENCY = 4;
 const FETCH_TIMEOUT_MS = 12000;
 const LIVENESS_UA = 'JobAppAgentLiveness/1.0 (+https://jobappagent.com/jobs)';

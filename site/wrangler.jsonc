@@ -31,7 +31,13 @@
       "service": "job-application-agent-telemetry"
     }
   ],
+  // Workers Logs: needed to see which routes burn CPU. ~1k requests/day is far
+  // below the Free plan's 200k log events/day, so sample everything. Query strings
+  // are redacted so attention magic-link tokens never land in logs.
   "observability": {
-    "enabled": false
+    "enabled": true,
+    "head_sampling_rate": 1,
+    "redact_query_string": true,
+    "logs": { "enabled": true, "invocation_logs": true, "head_sampling_rate": 1 }
   }
 }

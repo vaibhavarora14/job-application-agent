@@ -14,6 +14,8 @@ import {
   liveSessionFrameSrcOrigins,
 } from "../lib/attention-live-session.mjs";
 import { captureApiServerError, siteSentryOptions } from "../lib/sentry.mjs";
+import { serveWithEdgeCache } from "../lib/edge-cache.mjs";
+import { workersDefaultCache } from "../lib/workers-cache";
 
 interface Env {
   ASSETS: Fetcher;
@@ -61,9 +63,18 @@ const worker = {
       return secured;
     }
 
-    const secured = withPublicSecurityHeaders(await handler.fetch(request, env, ctx), request, env);
-    captureApiServerError(request, secured);
-    return secured;
+    // Public documents (/, /jobs, /jobs/<slug>, ...) are served from the Cache API for
+    // a few minutes so crawler and first-load traffic does not re-run SSR each time.
+    return serveWithEdgeCache(request, {
+      cache: workersDefaultCache(),
+      release: env.SENTRY_RELEASE,
+      waitUntil: (promise) => ctx.waitUntil(promise),
+      render: async () => {
+        const secured = withPublicSecurityHeaders(await handler.fetch(request, env, ctx), request, env);
+        captureApiServerError(request, secured);
+        return secured;
+      },
+    });
   },
 };
 

@@ -1,7 +1,8 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import worker, { createToken, verifyToken } from '../src/worker.mjs';
+import worker, { createToken, shouldRefreshActiveInstallations, verifyToken } from '../src/worker.mjs';
+import { CRON_LIVENESS_BATCH_SIZE, DEFAULT_LIVENESS_BATCH_SIZE } from '../src/job-liveness.mjs';
 
 function env() {
   const captured = [];
@@ -487,6 +488,27 @@ test('scheduled handler runs a liveness sweep and updates the job store', async 
   assert.equal(bindings.communityJobs.get(jobId).livenessStatus, 'open');
   assert.match(bindings.communityJobs.get(jobId).lastCheckedAt, /^\d{4}-\d{2}-\d{2}T/);
   assert.equal(bindings.communityJobs.get(jobId).closedAt, null);
+});
+
+test('cron liveness batch stays small enough for the Workers Free 10 ms CPU limit', async () => {
+  assert.ok(CRON_LIVENESS_BATCH_SIZE >= 1 && CRON_LIVENESS_BATCH_SIZE <= 10);
+  assert.equal(DEFAULT_LIVENESS_BATCH_SIZE, 50);
+  const bindings = env();
+  let requestedLimit = null;
+  bindings.JOB_STORE = {
+    async listDueForLivenessCheck({ limit }) { requestedLimit = limit; return { jobs: [], hasMore: false }; },
+    async updateLivenessBatch() {},
+  };
+  await worker.scheduled({ scheduledTime: Date.parse('2026-10-19T08:05:00Z') }, bindings);
+  assert.equal(requestedLimit, CRON_LIVENESS_BATCH_SIZE);
+});
+
+test('active-installations refresh keeps its 15-minute cadence on a 5-minute cron', () => {
+  assert.equal(shouldRefreshActiveInstallations(Date.parse('2026-10-19T08:00:00Z')), true);
+  assert.equal(shouldRefreshActiveInstallations(Date.parse('2026-10-19T08:15:00Z')), true);
+  assert.equal(shouldRefreshActiveInstallations(Date.parse('2026-10-19T08:05:00Z')), false);
+  assert.equal(shouldRefreshActiveInstallations(Date.parse('2026-10-19T08:50:00Z')), false);
+  assert.equal(shouldRefreshActiveInstallations(undefined), true);
 });
 
 async function contribution(bindings, installationId, source, token = null) {

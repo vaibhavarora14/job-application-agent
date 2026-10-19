@@ -11,6 +11,7 @@ import {
   refreshActiveInstallations30d,
 } from './public-stats.mjs';
 import {
+  CRON_LIVENESS_BATCH_SIZE,
   DEFAULT_LIVENESS_BATCH_SIZE,
   runJobLivenessSweep,
 } from './job-liveness.mjs';
@@ -646,6 +647,12 @@ async function adminLivenessSweep(request, env) {
   return response({ ok: true, ...summary }, 200);
 }
 
+export function shouldRefreshActiveInstallations(scheduledTime) {
+  if (scheduledTime == null) return true;
+  const minutes = new Date(scheduledTime).getUTCMinutes();
+  return !Number.isFinite(minutes) || minutes % 15 === 0;
+}
+
 export async function handleRequest(request, env) {
   const { pathname } = new URL(request.url);
   if (request.method === 'GET' && pathname === '/') return Response.redirect('https://stats.jobappagent.com/', 308);
@@ -671,13 +678,15 @@ export default {
     try { return await handleRequest(request, env); }
     catch (error) { return response({ error: error?.status === 413 ? 'payload_too_large' : 'bad_request' }, error?.status ?? 400); }
   },
-  async scheduled(_controller, env) {
+  async scheduled(controller, env) {
     await runJobLivenessSweep(env, {
       store: env.JOB_STORE ?? jobStore(env),
       fetchImpl: env.LIVENESS_FETCH ?? fetch,
-      limit: DEFAULT_LIVENESS_BATCH_SIZE,
+      limit: CRON_LIVENESS_BATCH_SIZE,
     });
-    if (env.PUBLIC_STATS_DB?.prepare) {
+    // The cron fires every 5 minutes for small liveness batches; keep the
+    // 30-day active-installations refresh on its previous 15-minute cadence.
+    if (env.PUBLIC_STATS_DB?.prepare && shouldRefreshActiveInstallations(controller?.scheduledTime)) {
       await refreshActiveInstallations30d(env.PUBLIC_STATS_DB);
     }
   },
