@@ -40,6 +40,7 @@
         ],
         "websiteURL": "https://jobappagent.com",
         "privacyPolicyURL": "https://jobappagent.com/privacy",
+        "termsOfServiceURL": "https://jobappagent.com/terms",
         "supportURL": "https://github.com/vaibhavarora14/job-application-agent/blob/main/plugins/job-application-agent/SUPPORT.md",
         "defaultPrompt": [
           "Help me set up Job Application Agent and install the CLI runtime.",
