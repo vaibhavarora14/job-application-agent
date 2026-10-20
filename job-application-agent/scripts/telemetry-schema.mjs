@@ -4,6 +4,8 @@ const DOMAIN = /^(?=.{1,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2
 const CURRENCY = /^[A-Z]{3}$/;
 const VERSION = /^\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?$/;
 
+import { redactHomePaths } from './telemetry-redact.mjs';
+
 export const TELEMETRY_SCHEMA_VERSION = 1;
 export const TELEMETRY_MAX_BYTES = 4096;
 
@@ -46,9 +48,30 @@ const enumValue = (set) => ({ kind: 'enum', set });
 const enumArray = (set, max = 12) => ({ kind: 'enum-array', set, max });
 
 /** Strip emails, phones, query-bearing URLs, and candidate-entered values from error text. */
-export function sanitizeTelemetryErrorMessage(value, { max = 160 } = {}) {
+function escapeRegExp(value) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+// Remove the local home directory and OS username wherever they appear. Callers on Node pass
+// os.homedir() / os.userInfo().username; the relay (Workers) relies on redactHomePaths alone.
+export function redactLocalIdentity(value, { homeDir, userName } = {}) {
+  if (typeof value !== 'string' || !value) return value;
+  let out = value;
+  if (typeof homeDir === 'string' && homeDir.length > 1) {
+    const forms = new Set([homeDir, homeDir.replace(/\\/g, '/'), homeDir.replace(/\//g, '\\')]);
+    for (const form of [...forms].sort((a, b) => b.length - a.length)) out = out.replace(new RegExp(escapeRegExp(form), 'gi'), '~');
+  }
+  out = redactHomePaths(out);
+  // Very short names (for example "a") would redact ordinary words; real usernames are longer.
+  if (typeof userName === 'string' && userName.trim().length >= 3) {
+    out = out.replace(new RegExp(`(?<![A-Za-z0-9])${escapeRegExp(userName.trim())}(?![A-Za-z0-9])`, 'gi'), '<user>');
+  }
+  return out;
+}
+
+export function sanitizeTelemetryErrorMessage(value, { max = 160, homeDir, userName } = {}) {
   if (typeof value !== 'string' || !value.trim()) return undefined;
-  let textValue = value
+  let textValue = redactLocalIdentity(value, { homeDir, userName })
     .replace(/[^\s@]+@[^\s@]+\.[^\s@]+/gi, '[redacted-email]')
     .replace(/(?:\+?\d[\d\s().-]{6,}\d)/g, '[redacted-phone]')
     .replace(/https?:\/\/[^\s]+/gi, '[redacted-url]')

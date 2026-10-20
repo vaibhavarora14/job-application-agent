@@ -3,7 +3,7 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { appendFile, chmod, mkdir, open, readFile, rename, stat, unlink, writeFile } from 'node:fs/promises';
-import { platform } from 'node:os';
+import { homedir, platform, userInfo } from 'node:os';
 import { basename, join, resolve } from 'node:path';
 import { isEntrypoint } from './entrypoint.mjs';
 
@@ -201,6 +201,15 @@ export function telemetryErrorFieldLabel(error) {
   return sanitizeTelemetryFieldLabel(match?.[1]);
 }
 
+// Local home directory and OS username, removed from error text before it can reach analytics.
+export function localIdentityForRedaction() {
+  let userName;
+  try { userName = userInfo().username; } catch { userName = process.env.USER || process.env.USERNAME; }
+  let homeDir;
+  try { homeDir = homedir(); } catch { homeDir = process.env.HOME || process.env.USERPROFILE; }
+  return { homeDir, userName };
+}
+
 export function skillErrorProperties(error, command) {
   const properties = {
     errorCode: telemetryErrorCode(error),
@@ -208,7 +217,7 @@ export function skillErrorProperties(error, command) {
     recoverable: true,
     errorCategory: telemetryErrorCategory(error),
   };
-  const sanitizedMessage = sanitizeTelemetryErrorMessage(error?.message);
+  const sanitizedMessage = sanitizeTelemetryErrorMessage(error?.message, localIdentityForRedaction());
   if (sanitizedMessage) properties.sanitizedMessage = sanitizedMessage;
   const fieldLabel = telemetryErrorFieldLabel(error);
   if (fieldLabel) properties.fieldLabel = fieldLabel;

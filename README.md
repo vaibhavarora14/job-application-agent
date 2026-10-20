@@ -177,7 +177,7 @@ Rounds require recorded attempts across at least three distinct discovery source
 | Data | Where it stays |
 |---|---|
 | Profile | OS credential store, or private D1 with an owner-only local cache |
-| Analytics name and email (unless opted out) | Private PostHog events after disclosure; local sharing preference in owner-only state |
+| Saved profile name and email (contact store, unless opted out) | Private maintainer contact database tied to the anonymous install ID, separate from analytics events (never in PostHog events since 3.7.3); local sharing preference in owner-only state |
 | Résumé and ledgers | Owner-only local state, or private D1 plus private blob storage when configured |
 | Browser login | Existing browser session |
 | Community-sharing preference and delivery receipts | Owner-only local state directory |
@@ -187,13 +187,15 @@ Candidate data, résumés, application history, credentials, and browser session
 
 Private cloud state is opt-in and isolated from public analytics/community services. Client tokens remain in owner-only host configuration, only token hashes are stored server-side, and browser/Gmail credentials never enter the backend.
 
-Structured usage analytics and name/email sharing are enabled by default for support and product improvement. After a disclosure command with no identity transmission, subsequent commands include the name and email explicitly saved in the candidate profile in the maintainer's private PostHog analytics. No résumé content, other profile fields, prompts, answers, browser data, IP addresses, or raw errors are sent. `telemetry identity disable` stops identity sharing and rotates the analytics UUID so future usage is anonymous; `telemetry disable` stops all analytics. Previously collected events remain subject to the retention policy.
+Structured usage analytics are enabled by default for product improvement and are keyed to an anonymous install ID. Analytics events do not include your name, email, phone, résumé content, prompts, answers, browser data, or IP addresses. Error events carry only a short sanitized message with file paths, your home folder, OS username, and contact details redacted. `telemetry disable` stops all analytics; previously collected events remain subject to the 24-month retention policy.
+
+Separately from analytics, contact sharing is enabled by default: the name and email you explicitly saved in your candidate profile are stored privately in a maintainer contact database tied to your anonymous install ID, used only to support you and send product updates, and never written into PostHog events (since 3.7.3; the relay also strips such fields from older clients). It is not exposed on public community or job endpoints. `telemetry contact disable` stops future contact sharing (`telemetry identity disable` is an alias), and `telemetry disable` stops both analytics and contact sharing. Opting out does not automatically delete a stored contact; see the [privacy policy](https://jobappagent.com/privacy) for deletion requests.
 
 Anonymous community sharing is also enabled by default, separately from analytics. Confirmed applications share only a canonical public job URL, company, role, application channel, optional coarse discovery source, and derived provider URL—never candidate identity, answers, résumé, score, referral parameters, or submission timestamp. Repeatable discovery surfaces share their bounded catalog metadata through a maintainer-review queue. The registry stores no raw installation IDs; record-scoped contributor hashes are used only for deduplication and counts, never as identity or publication authority.
 
 ```bash
 node ~/.agents/skills/job-application-agent/scripts/job-application.mjs telemetry status
-node ~/.agents/skills/job-application-agent/scripts/job-application.mjs telemetry identity disable
+node ~/.agents/skills/job-application-agent/scripts/job-application.mjs telemetry contact disable
 node ~/.agents/skills/job-application-agent/scripts/job-application.mjs telemetry disable
 node ~/.agents/skills/job-application-agent/scripts/job-application.mjs sources sharing status
 node ~/.agents/skills/job-application-agent/scripts/job-application.mjs sources sharing disable

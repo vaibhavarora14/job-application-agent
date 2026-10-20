@@ -1,7 +1,7 @@
 {
   "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
   "name": "job-application-agent",
-  "version": "3.7.17",
+  "version": "3.7.18",
   "description": "Privacy-first Agent Skill and CLI for evidence-based job discovery, application completion, and outcome tracking. Verified résumé facts only, OS-backed secrets, confirmed submissions.",
   "author": {
     "name": "Vaibhav Arora",
@@ -28,7 +28,7 @@
     "com.openai": {
       "interface": {
         "displayName": "Job Application Agent",
-        "shortDescription": "Apply to jobs, approve each",
+        "shortDescription": "Job applications you approve",
         "longDescription": "Find roles that fit, send truthful applications, and approve every submit yourself. Job Application Agent helps Codex run your own job search end to end: it finds direct employer and ATS postings, filters out weak fits against the rules you set, completes applications using only facts from one verified résumé, and counts a job as applied only after a visible confirmation.\n\nBy default you review every submission, one job at a time. Automatic submission is possible only when you explicitly enable it for an authorized destination or batch and every eligibility check passes; the browser's and Codex's own confirmation prompts always still apply. The agent pauses for sign-in, CAPTCHA, sponsorship ambiguity, legal or demographic questions, and anything outside your rules.\n\nWho it is for: people applying to roles on their own behalf who want fewer, better-targeted applications rather than volume. Limitations: it does not guarantee interviews or offers, it relies on the browser and tools your agent host provides, and it stops for anything it cannot verify.\n\nHow it works: this plugin ships Agent Skill guidance only, with no MCP server, apps, or hooks. With your confirmation, the companion npm CLI (npx job-application-agent@latest install) installs the full runtime: scripts, references, and a managed updater. Profile facts stay in OS-backed secret storage (macOS Keychain, Windows Credential Manager, or Linux Secret Service), and ledgers stay owner-only on your machine. It never stores passwords, MFA codes, government IDs, CAPTCHA answers, or browser session secrets. Free and open source under the MIT License.\n\nCloud access, coming soon: a hosted agent that runs this same loop for you. Founding access can be reserved at jobappagent.com, and we email you when access opens.",
         "developerName": "Vaibhav Arora",
         "category": "Productivity",
@@ -53,7 +53,7 @@
       },
       "publication": {
         "countries": [],
-        "release_notes": "First Plugins Directory listing (3.7.17): skills-only Job Application Agent guidance; asks before running npm/GitHub installs; review mode by default; installer help exits 0."
+        "release_notes": "First Plugins Directory listing (3.7.18): skills-only Job Application Agent guidance; asks before running npm/GitHub installs; review mode by default; error analytics redact paths and usernames."
       }
     }
   }

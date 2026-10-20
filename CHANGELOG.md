@@ -1,9 +1,15 @@
 # Changelog
 
-## 3.7.17
+## 3.7.18
 
+Includes everything prepared for 3.7.17, which was tagged but never published to npm.
+
+- Privacy: `skill_error.sanitizedMessage` now redacts home-directory paths on every OS (`/home/<user>`, `/Users/<user>`, WSL `/mnt/c/Users/<user>`, `C:\Users\<user>`, UNC and `file://` forms become `~`), plus the current `os.homedir()` and `os.userInfo().username` wherever they appear. Earlier versions could include an absolute path containing the OS username.
+- Privacy (relay, deployed ahead of this release): the telemetry relay applies the same path redaction to every forwarded string property, and strips legacy `identity` envelopes and known contact keys (`candidateName`, `candidateEmail`, `name`, `email`, `phone`, …) sent by 3.7.2 and earlier clients instead of rejecting them, so those clients' anonymous analytics still arrive without the contact data.
+- Docs: README, plugin `PRIVACY.md` and the site privacy page now agree: saved name and email are stored privately in a separate contact store and are never written into PostHog events (since 3.7.3); error events carry only a sanitized message with paths and contact details redacted; opt-outs are `telemetry contact disable` and `telemetry disable`.
 - `job-application-agent help`, `--help` and `-h` now print usage and exit 0 (previously the installer printed usage as an error and exited 1). Missing or unknown commands still exit 1 with the same usage text.
 - Codex / ChatGPT plugin packaging: the packaged skill now asks the user to confirm before running `npx job-application-agent@latest install` or `npx skills add` (both download and run code), and continues with guidance only if declined. The listing manifest gains a fuller long description, a shorter subtitle, `publication.release_notes`, and no country restriction (`publication.countries: []`). `plugins/job-application-agent/PRIVACY.md` is reworded to match the current privacy policy.
+- Codex listing short description is now "Job applications you approve"; release notes updated for the first listing.
 - No telemetry schema changes.
 
 ## 3.7.16
