@@ -134,3 +134,28 @@ test('apply with launchPrompt returns structured result without printing', async
   assert.match(result.prompt, /Never auto-submit/);
   assert.match(result.confirmation, /review mode required/i);
 });
+
+test('help, --help and -h print usage and succeed; unknown commands still fail', async () => {
+  for (const arg of ['help', '--help', '-h']) {
+    const output = [];
+    const result = await runCli([arg], { packageRoot: '/nonexistent', packageVersion: '0.0.0', output: value => output.push(value) });
+    assert.match(output.join('\n'), /^Usage:\n {2}job-application-agent install/);
+    assert.match(result.usage, /job-application-agent apply <url>/);
+  }
+  await assert.rejects(() => runCli(['definitely-not-a-command'], { packageRoot: '/nonexistent', packageVersion: '0.0.0', output: () => {} }), /Usage:/);
+});
+
+test('the npm bin exits 0 for help flags and 1 for unknown commands', async () => {
+  const { spawnSync } = await import('node:child_process');
+  const { fileURLToPath } = await import('node:url');
+  const bin = fileURLToPath(new URL('../../bin/job-application-agent.mjs', import.meta.url));
+  for (const arg of ['help', '--help', '-h']) {
+    const run = spawnSync(process.execPath, [bin, arg], { encoding: 'utf8' });
+    assert.equal(run.status, 0, `${arg}: ${run.stderr}`);
+    assert.match(run.stdout, /^Usage:/);
+    assert.equal(run.stderr, '');
+  }
+  const bad = spawnSync(process.execPath, [bin, 'definitely-not-a-command'], { encoding: 'utf8' });
+  assert.equal(bad.status, 1);
+  assert.match(bad.stderr, /Usage:/);
+});

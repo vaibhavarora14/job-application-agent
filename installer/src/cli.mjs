@@ -7,6 +7,7 @@ import { assertApplyUrlAllowed, parseApplyUrl } from '../../job-application-agen
 import { installSkill, readInstallStatus, resolveAgentHome, setAutomaticUpdates, updateSkill } from './installer.mjs';
 import { createUpdateRunner } from './runner.mjs';
 
+const HELP_ARGS = new Set(['help', '--help', '-h']);
 const USAGE = `Usage:\n  job-application-agent install\n  job-application-agent update\n  job-application-agent status\n  job-application-agent updates enable|disable\n  job-application-agent platforms [hermes|grok|openclaw]\n  job-application-agent outreach <command>\n  job-application-agent apply <url>\n`;
 
 function defaultPackageRoot() {
@@ -64,6 +65,12 @@ function resolveHome(options = {}) {
 
 export async function runCli(args, options = {}) {
   const output = options.output || (value => process.stdout.write(`${value}\n`));
+  // An explicit help request is not an error: print usage and exit 0. A missing or unknown
+  // command still fails with the same usage text.
+  if (args.length === 1 && HELP_ARGS.has(args[0])) {
+    output(USAGE.trimEnd());
+    return { usage: USAGE };
+  }
   const packageRoot = options.packageRoot || defaultPackageRoot();
   const packageVersion = options.packageVersion || await defaultVersion(packageRoot);
   const scheduler = process.env.JOB_APPLICATION_AGENT_NO_SCHEDULER === '1' ? false : options.scheduler;

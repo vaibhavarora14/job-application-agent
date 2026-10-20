@@ -11,19 +11,21 @@ This Agent Skill package (Cursor / Claude / Codex) ships skill guidance for mark
 
 ## Install or update the CLI / skill runtime
 
-If `~/.agents/skills/job-application-agent` (or the vendor skill path the host already uses) is missing, or the user asks to install/update:
+If `~/.agents/skills/job-application-agent` (or the vendor skill path the host already uses) is missing, or the user asks to install/update, **ask the user to confirm before running any install command**. These commands download and run code from npm or GitHub. Show the exact command and what it does, then wait for an explicit yes. Never run them silently or as a side effect of another task. If the user declines, continue with guidance only and do not retry.
+
+Recommended (public npm package; installs the full skill under `~/.agents/skills/job-application-agent` and enables automatic updates by default, which the user can turn off with `npx job-application-agent@latest updates disable`):
 
 ```bash
 npx job-application-agent@latest install
 ```
 
-Alternatives:
+Alternative, only if the user prefers the skills CLI (copies the skill from GitHub):
 
 ```bash
 npx skills add vaibhavarora14/job-application-agent
 ```
 
-Confirm with:
+After an approved install, confirm with (read-only):
 
 ```bash
 npx job-application-agent@latest status
@@ -50,7 +52,7 @@ Do not invent a second profile store. Prefer the installed skill scripts under `
 
 ## Workflow sketch
 
-1. Ensure the CLI/skill is installed (see above). Run the managed updater when present; treat update failures as best effort.
+1. Ensure the CLI/skill is installed (see above; ask the user to confirm before any install). Run the managed updater when present; treat update failures as best effort.
 2. Initialize or migrate profile with `scripts/job-application.mjs` (`profile check` / `profile migrate` / `profile set`). Read installed `references/SCHEMAS.md` before first profile/score/ledger use.
 3. Discover via `sources jobs` / `sources list`; resolve to direct employer or ATS pages. Prefer at least three distinct discovery sources per round.
 4. Assess eligibility, then `score --stdin`. Honor gate decisions (`exclude` / `ask` / `skip` / `review`). Do not lower thresholds for volume.

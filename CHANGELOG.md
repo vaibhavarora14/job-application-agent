@@ -1,5 +1,11 @@
 # Changelog
 
+## 3.7.17
+
+- `job-application-agent help`, `--help` and `-h` now print usage and exit 0 (previously the installer printed usage as an error and exited 1). Missing or unknown commands still exit 1 with the same usage text.
+- Codex / ChatGPT plugin packaging: the packaged skill now asks the user to confirm before running `npx job-application-agent@latest install` or `npx skills add` (both download and run code), and continues with guidance only if declined. The listing manifest gains a fuller long description, a shorter subtitle, `publication.release_notes`, and no country restriction (`publication.countries: []`). `plugins/job-application-agent/PRIVACY.md` is reworded to match the current privacy policy.
+- No telemetry schema changes.
+
 ## 3.7.16
 
 - Fix the CLI exiting 0 with no output when run through a symlinked path (a symlinked `~/.agents`, `~/.agents/skills` or `~/.claude/skills` directory, a symlinked script, or macOS temp paths under `/var` → `/private/var`). Node resolves the main module to its real path, so `import.meta.url` named the real file while `process.argv[1]` kept the symlinked spelling, and the "run only when executed directly" check compared them without resolving symlinks. Entry-point detection now compares the `fs.realpathSync` of both sides (falling back to `path.resolve`, case-insensitive on Windows) in `job-application.mjs`, `prove-apply.mjs`, `attention-runner-poll.mjs`, `attention-resume-submit.mjs`, `session-binding.mjs`, `novnc-display-guard.mjs`, and the CI path classifier. The npm `bin` shim was not affected (it calls the installer unconditionally). New tests run the CLI through a symlinked skill directory, a symlinked script file, symlinked `~/.agents/skills` and `~/.claude/skills` roots, and a `node_modules/.bin`-style symlink to the npm bin, on Linux, macOS and Windows CI. No telemetry schema changes.
