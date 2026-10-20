@@ -123,6 +123,20 @@ test('validates a representative payload for every documented event', () => {
   for (const sample of samples) assert.equal(validateEvent(sample).event, sample.event);
 });
 
+test('application_submitted accepts optional Boolean resumeFieldPresent and stays valid without it', () => {
+  const baseJob = { company: 'Example AI', title: 'Staff Engineer', jobHash: 'a'.repeat(64), domain: 'jobs.example.com', ats: 'greenhouse' };
+  const submitted = { ...baseJob, durationBucket: '2-5m', fieldsFilled: 8, shortAnswerCount: 1, resumeUploaded: true, approvalMode: 'routine-auto', telemetrySupplied: true, fillMetricsSource: 'telemetry' };
+  // Pre-3.7.14 CLIs never send the key: still valid (unknown).
+  assert.equal('resumeFieldPresent' in validateEvent({ event: 'application_submitted', properties: submitted }).properties, false);
+  assert.equal(validateEvent({ event: 'application_submitted', properties: { ...submitted, resumeFieldPresent: true } }).properties.resumeFieldPresent, true);
+  assert.equal(validateEvent({ event: 'application_submitted', properties: { ...submitted, resumeUploaded: false, resumeFieldPresent: false } }).properties.resumeFieldPresent, false);
+  for (const bad of ['true', 1, null, { present: true }]) {
+    assert.throws(() => validateEvent({ event: 'application_submitted', properties: { ...submitted, resumeFieldPresent: bad } }), /resumeFieldPresent/);
+  }
+  // Only application_submitted gains the key.
+  assert.throws(() => validateEvent({ event: 'application_started', properties: { jobHash: 'a'.repeat(64), ats: 'ashby', approvalMode: 'review-each', requiredFieldCount: 3, resumeRequired: true, coverLetterRequired: false, referralPresent: false, resumeFieldPresent: true } }), /resumeFieldPresent|unknown/i);
+});
+
 test('keeps interview-learning telemetry bounded and rejects free-form notes', () => {
   const event = validateEvent({
     event: 'outcome_recorded',

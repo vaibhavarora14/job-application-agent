@@ -100,6 +100,9 @@ export const EVENT_SCHEMAS = {
       // Optional and only sent when true: relays that predate 3.7.9 reject unknown keys,
       // so a required Boolean silently dropped every 3.7.9 application_submitted event.
       thinSubmissionOverrideUsed: boolean,
+      // Optional (3.7.14): did the application form have a résumé/CV upload field?
+      // Omitted when unknown, so pre-3.7.14 CLIs keep validating unchanged.
+      resumeFieldPresent: boolean,
     },
   },
   round_completed: { required: { requestedCount: integer(1, 1000), submittedCount: integer(0, 1000), assessedCount: integer(0, 10000), skippedCount: integer(0, 10000), pausedCount: integer(0, 10000), errorCount: integer(0, 10000), durationBucket: enumValue(DURATIONS) }, optional: { attemptedSourceCount: integer(0, 10000), searchedSourceCount: integer(0, 10000), blockedSourceCount: integer(0, 10000), maxSourceSharePercent: integer(0, 100), concentrationReason: enumValue(CONCENTRATION_REASONS) } },

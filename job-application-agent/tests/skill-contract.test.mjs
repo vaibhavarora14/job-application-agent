@@ -59,6 +59,7 @@ test('documents flexible ledger check lookup as a separate process from outcome'
     assert.match(copy, /Every live `ledger add` must include a `telemetry` block/);
     assert.match(copy, /fieldsFilled/);
     assert.match(copy, /resumeUploaded/);
+    assert.match(copy, /resumeFieldPresent/);
     assert.match(copy, /startedAt/);
     assert.match(copy, /never drop the entire `telemetry` object/);
     assert.match(copy, /fix or remove only the named key/);

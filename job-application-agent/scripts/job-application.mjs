@@ -47,7 +47,7 @@ const MODES = new Set(['review-each', 'routine-auto']);
 const TELEMETRY_DURATIONS = new Set(['under-1s', '1-5s', '5-30s', '30-60s', '1-2m', '2-5m', '5-15m', '15m-plus', 'unknown']);
 const SUBMISSION_TELEMETRY_ALLOWED = new Set([
   'durationBucket', 'durationMs', 'startedAt', 'endedAt', 'fieldsFilled', 'shortAnswerCount', 'resumeUploaded', 'otpVerified',
-  'profileResumeOnFile',
+  'profileResumeOnFile', 'resumeFieldPresent',
 ]);
 const THIN_OVERRIDE_CONFIRMATION_MIN = 16;
 const THIN_OVERRIDE_CONFIRMATION_MAX = 400;
@@ -392,6 +392,8 @@ export function resolveSubmissionFillMetrics(entry, details = {}) {
   const fillMetricsSource = (hasExplicitFields || hasExplicitResume || details.profileResumeOnFile === true)
     ? 'telemetry'
     : (answers.length > 0 ? 'answer_keys' : 'empty');
+  // Boolean only: did the form have a résumé/CV upload field? null = unknown (left out of analytics).
+  const resumeFieldPresent = typeof details.resumeFieldPresent === 'boolean' ? details.resumeFieldPresent : null;
   return {
     ...(details.durationBucket ? { durationBucket: details.durationBucket } : {}),
     fieldsFilled,
@@ -399,6 +401,7 @@ export function resolveSubmissionFillMetrics(entry, details = {}) {
     resumeUploaded: Boolean(resumeUploaded),
     fillMetricsSource,
     ...(details.profileResumeOnFile === true ? { profileResumeOnFile: true } : {}),
+    ...(resumeFieldPresent != null ? { resumeFieldPresent } : {}),
   };
 }
 
@@ -567,6 +570,9 @@ export async function telemetryApplicationSubmitted(entry, details = {}) {
       // Absent means false. Only sent when true so relays that predate the key still accept
       // ordinary submissions (a strict relay rejects unknown properties outright).
       ...(details.thinSubmissionOverrideUsed === true ? { thinSubmissionOverrideUsed: true } : {}),
+      // Optional Boolean: true = the form had a résumé/CV upload field, false = it had none.
+      // Omitted when unknown (older CLIs / agents that do not report it).
+      ...(typeof metrics.resumeFieldPresent === 'boolean' ? { resumeFieldPresent: metrics.resumeFieldPresent } : {}),
     },
   };
 }
@@ -1021,6 +1027,14 @@ export function validateSubmissionTelemetry(input) {
   if (cleaned.profileResumeOnFile != null && typeof cleaned.profileResumeOnFile !== 'boolean') {
     throw new Error('entry.telemetry.profileResumeOnFile must be a Boolean.');
   }
+  if (cleaned.resumeFieldPresent != null && typeof cleaned.resumeFieldPresent !== 'boolean') {
+    throw new Error('entry.telemetry.resumeFieldPresent must be a Boolean (true if the form had a résumé/CV upload field, false if it had none); omit it when unknown.');
+  }
+  if (cleaned.resumeFieldPresent === false && cleaned.resumeUploaded === true) {
+    throw new Error('entry.telemetry.resumeFieldPresent cannot be false when resumeUploaded is true; a résumé upload means the form had a résumé/CV field.');
+  }
+  // An explicit résumé upload in this form implies the form had a résumé/CV field.
+  if (cleaned.resumeFieldPresent == null && cleaned.resumeUploaded === true) cleaned.resumeFieldPresent = true;
   const details = Object.fromEntries(Object.entries(cleaned).filter(([, item]) => item != null));
   if (details.durationBucket == null) {
     let milliseconds = details.durationMs;

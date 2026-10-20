@@ -1,5 +1,9 @@
 # Changelog
 
+## 3.7.14
+
+- Add an optional Boolean `resumeFieldPresent` to `application_submitted` telemetry: `true` when the application form had a résumé/CV upload field (required or optional, used or not), `false` when it had none, and absent when unknown. The agent reports it as `telemetry.resumeFieldPresent` on `ledger add`, decided from the live form's résumé/CV upload controls (not the candidate profile). An explicit `resumeUploaded: true` implies `true`; `resumeFieldPresent: false` with `resumeUploaded: true` is rejected; answer-key heuristics never fill it in. Boolean only, no PII, never stored on the ledger row. Backward-compatible: the relay (shared schema) accepts events with or without it, and older CLIs that do not send it count as unknown. The relay was deployed with the new optional key before this release so no submission is rejected.
+
 ## 3.7.13
 
 - Close the remaining thin-submit gap: `ledger add` now also reads the stored profile's `submissionMode`. When it is `routine-auto`, an empty submit (0 fields filled and no résumé, same thresholds as before) is blocked even if the entry claims `APPROVE SUBMIT` or carries a per-job `thinSubmissionOverride` note. The error explains the honest paths (fill the form, or `profile_one_click` with `telemetry.profileResumeOnFile`) and how to review just that one job: add the transient `"jobApprovalMode": "review-each"` to that `ledger add` together with `approval: "APPROVE SUBMIT"` and the normal `thinSubmissionOverride` acknowledgement and per-job candidate confirmation. The flag is per entry, not stored, and never changes the profile's global `submissionMode`. Filled submits, the one-click path, and `review-each` profiles are unchanged. No new telemetry fields.

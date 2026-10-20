@@ -36,6 +36,7 @@ import {
   validateProfile,
   validateSubmissionTelemetry,
 } from '../scripts/job-application.mjs';
+import { validateEvent } from '../scripts/telemetry-schema.mjs';
 
 const thinOverride = (note = 'Candidate confirmed in chat that this empty ATS accept is intentional') => ({
   acknowledgment: THIN_SUBMISSION_OVERRIDE,
@@ -324,7 +325,8 @@ test('accepts only confirmed submission ledger shapes', () => {
 
 test('validates structured submission metrics without adding them to the ledger shape', () => {
   const metrics = { durationBucket: '5-15m', fieldsFilled: 14, shortAnswerCount: 2, resumeUploaded: true };
-  assert.deepEqual(validateSubmissionTelemetry(metrics), metrics);
+  // An explicit résumé upload implies the form had a résumé/CV field.
+  assert.deepEqual(validateSubmissionTelemetry(metrics), { ...metrics, resumeFieldPresent: true });
   assert.deepEqual(validateSubmissionTelemetry({ durationMs: 70_000, fieldsFilled: 3, resumeUploaded: false }), {
     fieldsFilled: 3, resumeUploaded: false, durationBucket: '1-2m',
   });
@@ -352,6 +354,7 @@ test('strips unknown telemetry keys with a warning, keeps valid ones, and hard-r
       resumeUploaded: true,
       durationBucket: '2-5m',
       otpVerified: true,
+      resumeFieldPresent: true,
     });
     assert.match(writes.join(''), /dropped unknown entry\.telemetry properties: otpVerifiedAt, mysteryAgentFlag/);
   } finally {
@@ -579,6 +582,87 @@ test('records thin override use per confirmation digest and emits override telem
     durationBucket: '2-5m',
   });
   assert.equal('thinSubmissionOverrideUsed' in unused.properties, false);
+});
+
+test('validates optional resumeFieldPresent as a Boolean and infers it only from an explicit upload', () => {
+  // Agent-reported: true = form had a résumé/CV upload field, false = it had none.
+  assert.equal(validateSubmissionTelemetry({ fieldsFilled: 6, resumeUploaded: false, resumeFieldPresent: false }).resumeFieldPresent, false);
+  assert.equal(validateSubmissionTelemetry({ fieldsFilled: 6, resumeUploaded: false, resumeFieldPresent: true }).resumeFieldPresent, true);
+  assert.equal(validateSubmissionTelemetry({ fieldsFilled: 6, resumeUploaded: true, resumeFieldPresent: true }).resumeFieldPresent, true);
+  // Unknown stays unknown: no key at all.
+  assert.equal('resumeFieldPresent' in validateSubmissionTelemetry({ fieldsFilled: 6, resumeUploaded: false }), false);
+  assert.equal('resumeFieldPresent' in validateSubmissionTelemetry({ fieldsFilled: 6 }), false);
+  assert.equal('resumeFieldPresent' in validateSubmissionTelemetry({ fieldsFilled: 6, resumeUploaded: false, resumeFieldPresent: null }), false);
+  // Explicit upload implies a field.
+  assert.equal(validateSubmissionTelemetry({ fieldsFilled: 6, resumeUploaded: true }).resumeFieldPresent, true);
+  for (const bad of ['yes', 'true', 1, 0, {}, []]) {
+    assert.throws(() => validateSubmissionTelemetry({ fieldsFilled: 6, resumeUploaded: false, resumeFieldPresent: bad }), /resumeFieldPresent must be a Boolean/);
+  }
+  assert.throws(
+    () => validateSubmissionTelemetry({ fieldsFilled: 6, resumeUploaded: true, resumeFieldPresent: false }),
+    /resumeFieldPresent cannot be false when resumeUploaded is true/,
+  );
+  // Answer-key heuristics never fabricate the field.
+  const fromKeys = resolveSubmissionFillMetrics({ answers: { Resume: 'uploaded', Email: 'filled' } }, {});
+  assert.equal(fromKeys.resumeUploaded, true);
+  assert.equal('resumeFieldPresent' in fromKeys, false);
+  assert.equal(resolveSubmissionFillMetrics({ answers: {} }, { fieldsFilled: 3, resumeUploaded: false, resumeFieldPresent: false }).resumeFieldPresent, false);
+});
+
+test('application_submitted carries resumeFieldPresent only when known and still validates', async () => {
+  const entry = {
+    company: 'Field Co', role: 'Engineer', url: 'https://jobs.example.com/resume-field',
+    source: 'greenhouse', approval: 'STANDING AUTHORIZATION', answers: {},
+  };
+  const base = { telemetrySupplied: true, fillMetricsSource: 'telemetry', fieldsFilled: 5, shortAnswerCount: 1, durationBucket: '2-5m' };
+  const present = await telemetryApplicationSubmitted(entry, { ...base, resumeUploaded: true, resumeFieldPresent: true });
+  assert.equal(present.properties.resumeFieldPresent, true);
+  const none = await telemetryApplicationSubmitted(entry, { ...base, resumeUploaded: false, resumeFieldPresent: false });
+  assert.equal(none.properties.resumeFieldPresent, false);
+  const unknown = await telemetryApplicationSubmitted(entry, { ...base, resumeUploaded: false });
+  assert.equal('resumeFieldPresent' in unknown.properties, false);
+  const empty = await telemetryApplicationSubmitted(entry, { telemetrySupplied: false, fillMetricsSource: 'empty' });
+  assert.equal('resumeFieldPresent' in empty.properties, false);
+  for (const event of [present, none, unknown, empty]) assert.deepEqual(validateEvent(event), event);
+  assert.equal(JSON.stringify(present).includes('resume.pdf'), false);
+});
+
+test('ledger add emits resumeFieldPresent to the relay and keeps it out of the ledger row', async (t) => {
+  const directory = await mkdtemp(join(tmpdir(), 'job-agent-resume-field-'));
+  t.after(() => rm(directory, { recursive: true, force: true }));
+  const captured = [];
+  const server = createServer(async (request, response) => {
+    let raw = '';
+    for await (const chunk of request) raw += chunk;
+    captured.push(JSON.parse(raw));
+    response.setHeader('content-type', 'application/json');
+    response.end(JSON.stringify({ accepted: true }));
+  });
+  await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+  t.after(() => new Promise((resolve) => server.close(resolve)));
+  await writeFile(join(directory, 'telemetry.json'), JSON.stringify({ version: 1, enabled: true, disclosed: true, graceConsumed: true, installationEventPending: false, identityEnabled: false, installationId: crypto.randomUUID(), token: 'synthetic-token', tokenExpiresAt: '2099-01-01T00:00:00Z' }));
+  const env = { ...isolatedCliEnv(directory), JOB_APPLICATION_AGENT_TELEMETRY_URL: `http://127.0.0.1:${server.address().port}` };
+  const script = fileURLToPath(new URL('../scripts/job-application.mjs', import.meta.url));
+  const entry = (slug, telemetry) => ({
+    id: `resume-field-${slug}`, company: `Field ${slug}`, role: 'Engineer', url: `https://jobs.example.com/resume-field-${slug}`,
+    source: 'lever', score: 80, status: 'submitted', submittedAt: '2026-10-20T04:00:00Z', approval: 'STANDING AUTHORIZATION', answers: {}, telemetry,
+  });
+  for (const [slug, telemetry] of [
+    ['none', { durationBucket: '1-2m', fieldsFilled: 6, shortAnswerCount: 1, resumeUploaded: false, resumeFieldPresent: false }],
+    ['present', { durationBucket: '2-5m', fieldsFilled: 8, shortAnswerCount: 1, resumeUploaded: true, resumeFieldPresent: true }],
+    ['unknown', { durationBucket: '2-5m', fieldsFilled: 6, shortAnswerCount: 1, resumeUploaded: false }],
+  ]) {
+    const result = await runCli(script, ['ledger', 'add', '--stdin'], entry(slug, telemetry), env);
+    assert.equal(result.code, 0, result.stderr);
+  }
+  const submitted = Object.fromEntries(captured
+    .filter((body) => body.event === 'application_submitted')
+    .map((body) => [body.properties.company, body.properties]));
+  assert.equal(submitted['Field none'].resumeFieldPresent, false);
+  assert.equal(submitted['Field present'].resumeFieldPresent, true);
+  assert.equal('resumeFieldPresent' in submitted['Field unknown'], false);
+  const stored = (await readFile(join(directory, 'applications.ndjson'), 'utf8')).trim().split('\n').map((line) => JSON.parse(line));
+  for (const row of stored) assert.equal('resumeFieldPresent' in row, false);
 });
 
 test('ordinary application_submitted stays within the pre-3.7.9 relay property set', async () => {
