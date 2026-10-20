@@ -22,7 +22,7 @@ Start input: `{ "requestedCount": 30 }`. Complete input: `{ "roundId": "round-..
 
 ## Discovery coverage
 
-For new rounds, first record every reviewed lead with `round lead --stdin`; see [ACCOUNTING.md](ACCOUNTING.md) for fields, revisions, and delivery accounting. Source counts are derived from those lead records. The optional counts in the example below are assertions and require matching records. Existing rounds retain legacy, unverified aggregate reports.
+For new rounds (`discoveryPolicyVersion: 2`), order matters: first record every reviewed lead from a source with `round lead --stdin`, then report that source with `round source --stdin` **without** `reviewedCount`/`qualifiedCount`. The CLI derives the counts from the lead records; see [ACCOUNTING.md](ACCOUNTING.md) for lead fields, revisions, and delivery accounting. Passing counts is optional and they are treated as assertions: a count that does not match the recorded leads (for example, counts sent before the leads) is rejected, and the error reports the recorded totals. Only rounds started before per-lead accounting (legacy, unverified aggregate reports) require the counts.
 
 
 Before submitting, search at least three relevant independent sources from `sources list`, including alternatives to the last round's dominant source. Listing the catalog or browsing multiple jobs on one board is not source coverage. Record a report after each actual search or observed access blocker:
@@ -32,11 +32,11 @@ Before submitting, search at least three relevant independent sources from `sour
   "roundId": "round-...",
   "sourceId": "linkedin-jobs-feed",
   "status": "searched",
-  "reviewedCount": 12,
-  "qualifiedCount": 3,
   "evidence": "Reviewed current target-matching listings; three met the unchanged fit criteria."
 }
 ```
+
+Legacy rounds also pass `"reviewedCount": 12, "qualifiedCount": 3`.
 
 `status` is `searched` or `blocked`. Empty search results count as a search with zero counts, with evidence explaining the query/filter and absence of suitable postings. `reviewedCount` and `qualifiedCount` are bounded at 10,000; qualified cannot exceed reviewed. A blocked report must have zero counts and a `blocker` of `login`, `mfa`, `captcha`, `site-error`, or `access-unavailable`. Evidence is required, at most 2,000 characters, and stays private. Record concrete observations, never invented evidence or raw page content, credentials, recruiter identities, or answers. Reports describe agent-observed work; the CLI cannot independently verify browser activity.
 

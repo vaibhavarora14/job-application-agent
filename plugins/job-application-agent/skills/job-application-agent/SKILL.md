@@ -56,6 +56,7 @@ Do not invent a second profile store. Prefer the installed skill scripts under `
 4. Assess eligibility, then `score --stdin`. Honor gate decisions (`exclude` / `ask` / `skip` / `review`). Do not lower thresholds for volume.
 5. Apply only with authorization. Use `review-each` by default; `routine-auto` only when every automatic-eligibility condition passes and the request authorizes the destination/batch.
 6. Track outcomes and telemetry disclosures per installed skill docs. Every live `ledger add` needs a `telemetry` block (`fieldsFilled`, `resumeUploaded`, `startedAt`/`endedAt` or `durationMs`), plus `resumeFieldPresent` (`true` if the form had a résumé/CV upload field, `false` if none; omit when unknown). If `ledger add` errors on a telemetry key, fix only that key and retry — never drop the whole telemetry block. Honor opt-outs immediately (`telemetry disable`, `sources sharing disable`).
+7. Run CLI commands exactly as documented (`<area> <action>`; `--stdin` commands read one piped JSON object). Use `node scripts/job-application.mjs help` or `<area> help` instead of guessing a subcommand. In new rounds, record each reviewed lead with `round lead --stdin` before `round source --stdin`, and omit source counts so they are derived.
 
 ## Full skill source
 

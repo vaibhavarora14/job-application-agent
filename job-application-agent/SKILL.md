@@ -46,7 +46,7 @@ follow-up is created.
 
 ## Accounting
 
-Read [references/ACCOUNTING.md](references/ACCOUNTING.md) before recording delivery evidence, recovery attempts, or per-lead discovery. For new rounds, record each lead with `round lead --stdin` and derive source totals from those records. Email access is optional: visible browser success counts, verified email sends count with receipt unknown, and matched final delivery failures correct effective totals. A sent-verified outreach counts toward the same round `confirmedCount` unless that company already has a counted apply. Preserve historical events and use explicit corrections for conflicts.
+Read [references/ACCOUNTING.md](references/ACCOUNTING.md) before recording delivery evidence, recovery attempts, or per-lead discovery. For new rounds, record each reviewed lead with `round lead --stdin` (required: `roundId`, `sourceId`, `url`, `company`, `disposition`, `evidence`; `observedAt` is an ISO 8601 UTC time and defaults to now) before `round source --stdin`, and omit `reviewedCount`/`qualifiedCount` from `round source` so totals are derived from those records. Email access is optional: visible browser success counts, verified email sends count with receipt unknown, and matched final delivery failures correct effective totals. A sent-verified outreach counts toward the same round `confirmedCount` unless that company already has a counted apply. Preserve historical events and use explicit corrections for conflicts.
 
 ## Discover and assess
 
@@ -110,6 +110,8 @@ Check `round status` after the initial discovery pass and before submitting. Pre
 - Run `ledger review-ack --stdin` only after the candidate has actually reviewed the report. Generating a report does not acknowledge it.
 
 ## Commands
+
+Run commands exactly as listed: `<area> <action>`, no extra flags. `--stdin` commands read exactly one JSON object piped on standard input (`echo '{...}' | node scripts/job-application.mjs round lead --stdin`). If unsure, run `node scripts/job-application.mjs help` or `node scripts/job-application.mjs <area> help` instead of guessing; these print usage and are not recorded as errors.
 
 ```text
 node scripts/job-application.mjs cloud configure --stdin

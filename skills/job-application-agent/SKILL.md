@@ -85,6 +85,8 @@ Check `round status` after the initial discovery pass and before submitting. Pre
 
 ## Commands
 
+Run commands exactly as listed: `<area> <action>`, no extra flags. `--stdin` commands read exactly one JSON object piped on standard input (`echo '{...}' | node scripts/job-application.mjs round lead --stdin`). If unsure, run `node scripts/job-application.mjs help` or `node scripts/job-application.mjs <area> help` instead of guessing; these print usage and are not recorded as errors.
+
 ```text
 node scripts/job-application.mjs cloud configure --stdin
 node scripts/job-application.mjs cloud status

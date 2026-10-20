@@ -10,6 +10,20 @@ function required(value, name, max = 300) {
   return value;
 }
 function date(value, name) { required(value, name, 80); if (!Number.isFinite(Date.parse(value))) throw new Error(`${name} must be an ISO date.`); return new Date(value).toISOString(); }
+// Lead observation time. Agents often omit it or pass epoch numbers; the lead was observed no
+// later than when it is recorded, so a missing value defaults to now (observedAt never affects
+// lead identity or conflict detection). Epoch seconds/milliseconds are accepted as numbers.
+export function leadObservedAt(value, now = new Date()) {
+  if (value == null || (typeof value === 'string' && !value.trim())) return now.toISOString();
+  if (typeof value === 'number') {
+    if (!Number.isFinite(value) || value <= 0) throw new Error('observedAt must be an ISO 8601 date-time such as 2026-10-20T05:00:00Z, or omitted to use the current time.');
+    return new Date(value < 1e11 ? value * 1000 : value).toISOString();
+  }
+  if (typeof value !== 'string' || value.length > 80 || !Number.isFinite(Date.parse(value))) {
+    throw new Error('observedAt must be an ISO 8601 date-time such as 2026-10-20T05:00:00Z, or omitted to use the current time.');
+  }
+  return new Date(value).toISOString();
+}
 function object(input, allowed) {
   if (!input || typeof input !== 'object' || Array.isArray(input)) throw new Error('Accounting event must be an object.');
   for (const key of Object.keys(input)) if (!allowed.includes(key)) throw new Error(`Unknown accounting field: ${key}.`);
@@ -172,7 +186,7 @@ export function validateLead(input) {
   for (const key of ['roundId','sourceId','company']) required(v[key],key);
   for (const key of ['role','employerJobId','applicationId']) if(v[key] != null) required(v[key],key);
   if (!DISPOSITIONS.includes(v.disposition)) throw new Error('Invalid lead disposition.');
-  v.observedAt = date(v.observedAt,'observedAt');
+  v.observedAt = leadObservedAt(v.observedAt);
   required(v.evidence,'evidence',2000);
   if (v.supersedes != null) {
     const parents = Array.isArray(v.supersedes) ? v.supersedes : [v.supersedes];

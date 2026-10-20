@@ -11,7 +11,8 @@ import { ACCOUNTING_CAPABILITY, accountingApplicationKey, canonicalUrl, delivery
 import { createSecretStore, migrateLegacyStateDir, resolveStateDir } from './secret-store.mjs';
 import { SourceCommunityClient } from './source-community-client.mjs';
 import { normalizeCommunityJob, normalizeCommunitySource } from './source-community-schema.mjs';
-import { TelemetryClient } from './telemetry-client.mjs';
+import { SKILL_VERSION, TelemetryClient } from './telemetry-client.mjs';
+import { normalizeCliArgs, usageError, usageFor } from './cli-args.mjs';
 import { jobIdentity, sanitizeTelemetryErrorMessage, sanitizeTelemetryFieldLabel } from './telemetry-schema.mjs';
 import { CloudStateClient, defaultCloudConfigPath, enableCloudUpdateGuard, saveCloudConfig } from './cloud-state-client.mjs';
 import {
@@ -1240,8 +1241,18 @@ async function stdin() {
   return Buffer.concat(chunks).toString('utf8');
 }
 
+// Set when the agent passed the JSON payload inline instead of piping it (see cli-args.mjs).
+let inlineJsonInput;
+
 async function jsonStdin() {
-  try { return JSON.parse(await stdin()); } catch { throw new Error('Expected one JSON object on standard input.'); }
+  if (inlineJsonInput !== undefined) {
+    const value = inlineJsonInput;
+    inlineJsonInput = undefined;
+    return structuredClone(value);
+  }
+  try { return JSON.parse(await stdin()); } catch {
+    throw new Error("Expected one JSON object on standard input. Pipe exactly one JSON object, e.g. echo '{...}' | node scripts/job-application.mjs <area> <action> --stdin.");
+  }
 }
 
 async function jsonLines(file) {
@@ -1850,7 +1861,11 @@ async function roundSource(input) {
     const derivedQualified = status === 'blocked' ? 0 : leads.filter(lead => !lead.conflict && lead.disposition === 'qualified').length;
     const reviewedCount = round.discoveryPolicyVersion === 2 ? derivedReviewed : integer(value.reviewedCount, 'coverage.reviewedCount', 0, 10000);
     const qualifiedCount = round.discoveryPolicyVersion === 2 ? derivedQualified : integer(value.qualifiedCount, 'coverage.qualifiedCount', 0, reviewedCount);
-    if (round.discoveryPolicyVersion === 2 && ((value.reviewedCount != null && value.reviewedCount !== reviewedCount) || (value.qualifiedCount != null && value.qualifiedCount !== qualifiedCount))) throw new Error('Source count assertions do not match recorded leads.');
+    // Per-lead rounds derive counts from `round lead` records; passed counts are assertions that
+    // must match (a stale tally is rejected). Say what is recorded and how to fix the call.
+    if (round.discoveryPolicyVersion === 2 && ((value.reviewedCount != null && value.reviewedCount !== reviewedCount) || (value.qualifiedCount != null && value.qualifiedCount !== qualifiedCount))) {
+      throw new Error(`Source count assertions do not match recorded leads (recorded for this source: reviewed ${reviewedCount}, qualified ${qualifiedCount}). Record every reviewed lead with round lead --stdin before round source, or omit reviewedCount/qualifiedCount so they are derived.`);
+    }
     if (status === 'blocked' && (!SOURCE_BLOCKERS.has(blocker) || reviewedCount !== 0 || qualifiedCount !== 0)) throw new Error('Blocked sources require a documented blocker and zero counts.');
     const applications = await jsonLines(join(dir, 'applications.ndjson'));
     for (const id of applicationIds) {
@@ -2329,15 +2344,18 @@ async function cloudCommand(action, value) {
     await writePrivateJson(join(await ensureStateDir(), 'cloud-lease.json'), lease);
     return lease;
   }
-  if (action === 'lease-renew' && value == null) {
+  // Agents often pass the lease ID they were given; accept it when it names the recorded local lease.
+  if (action === 'lease-renew' && (value == null || typeof value === 'string')) {
     const lease = await readPrivateJson(join(await ensureStateDir(), 'cloud-lease.json'), null);
+    if (value != null && lease?.leaseId && value !== lease.leaseId) throw new Error('The given lease ID does not match the recorded local lease. Run cloud lease-renew without arguments.');
     if (!lease?.leaseId) throw new Error('No local cloud lease is recorded. Run cloud lease-acquire.');
     const renewed = await cloudState.renewLease(lease.leaseId);
     await writePrivateJson(join(await ensureStateDir(), 'cloud-lease.json'), renewed);
     return renewed;
   }
-  if (action === 'lease-release' && value == null) {
+  if (action === 'lease-release' && (value == null || typeof value === 'string')) {
     const lease = await readPrivateJson(join(await ensureStateDir(), 'cloud-lease.json'), null);
+    if (value != null && lease?.leaseId && value !== lease.leaseId) throw new Error('The given lease ID does not match the recorded local lease. Run cloud lease-release without arguments.');
     if (!lease?.leaseId) throw new Error('No local cloud lease is recorded.');
     return cloudState.releaseLease(lease.leaseId);
   }
@@ -2350,7 +2368,7 @@ async function cloudCommand(action, value) {
     const input = await jsonStdin();
     return cloudState.confirmIntent(string(input.intentId, 'intentId', 200), object(input.application, 'application'), string(input.leaseId, 'leaseId', 200), input.idempotencyKey);
   }
-  throw new Error('Usage: cloud status|configure --stdin|reconcile [--dry-run]|export [path]|lease-acquire|lease-renew|lease-release|intent-prepare --stdin|intent-sent --stdin|intent-confirm --stdin');
+  throw usageError(['cloud', action, value]);
 }
 
 function print(value) {
@@ -2545,7 +2563,7 @@ async function executeCommand([area, action, value], telemetry, session, communi
   else if (area === 'attention' && action === 'resolve' && value === '--stdin') result = await attentionResolve(await jsonStdin());
   else if (area === 'friction' && action === 'record' && value === '--stdin') result = await frictionRecord(await jsonStdin());
   else if (area === 'friction' && action === 'list' && value == null) result = await frictionList();
-  else throw new Error('Usage: cloud status|configure --stdin|reconcile [--dry-run]|export [path]|lease-acquire|lease-renew|lease-release|intent-prepare --stdin|intent-sent --stdin|intent-confirm --stdin; profile set|migrate --stdin; profile check|field <name>; resume import <url-or-pdf>|path; score --stdin; ledger check|add|outcome|review-ack --stdin; ledger review; autonomy grant --stdin|status|preview|revoke; round start|source|confirm|complete --stdin|status [round-id]; sources list [--stdin]|jobs [--stdin]|suggest --stdin|pending|sync|sharing status|enable|disable|reset; attention add|resolve --stdin|list; friction record --stdin|list; telemetry status|enable|disable|reset|preview --stdin|record --stdin');
+  else throw usageError([area, action, value]);
   return result;
 }
 
@@ -2563,7 +2581,12 @@ async function recordInstallationStart(telemetry, session) {
   }, session);
 }
 
-async function main(args) {
+async function main(rawArgs) {
+  const normalized = normalizeCliArgs(rawArgs);
+  if (normalized.help) return print(usageFor(normalized.help === true ? null : normalized.help));
+  if (normalized.version) return print({ version: SKILL_VERSION });
+  const args = rawArgs[0] === 'outreach' ? rawArgs : normalized.args;
+  inlineJsonInput = rawArgs[0] === 'outreach' ? undefined : normalized.inlineJson;
   const [area, action, value] = args;
   // Outreach is private-only, including errors: never initialize telemetry or
   // community clients, flush their queues, or run generic reconciliation here.
@@ -2591,7 +2614,7 @@ async function main(args) {
       await recordInstallationStart(telemetry, session);
       return print(await telemetry.record(await jsonStdin(), session, { strict: true }));
     }
-    throw new Error('Usage: telemetry status|enable|disable|reset|preview --stdin|record --stdin; telemetry contact status|enable|disable; telemetry identity status|enable|disable');
+    throw usageError(['telemetry', action, value]);
   }
 
   const command = commandCategory(args);

@@ -89,11 +89,13 @@ Record each reviewed job or careers page before reporting source totals:
 }
 ```
 
+Required: `roundId`, `sourceId`, `url`, `company`, `disposition`, `evidence`. `observedAt` is optional: use an ISO 8601 UTC date-time such as `2026-09-13T09:00:00Z` (epoch seconds or milliseconds are also accepted); when omitted or null it defaults to the recording time. Observation time never changes lead identity. Record leads one JSON object per `round lead --stdin` call, before the matching `round source` report.
+
 Dispositions: `qualified`, `duplicate`, `no-relevant-opening`, `location-authorization-conflict`, `compensation-below-floor`, `seniority-mismatch`, `insufficient-must-have-coverage`, `closed-stale`, `blocked`. Role, employer job ID and application ID are optional during initial discovery; link the actual application ID before round completion. Use `supersedes` and a new event ID when revising an assessment or adding the application link.
 
 A verified employer job ID merges requisition aliases. Without it, canonical URLs identify leads. Known tracking parameters are removed; unfamiliar parameters are preserved because they may identify distinct requisitions. Company punctuation and whitespace are normalized for verified requisition identity. A later verified ID can enrich the same URL. Repeated sightings do not increase counts; independent sources retain their sightings while unique totals deduplicate requisitions. Distinct requisitions remain separate. Conflicting revisions require an explicit superseding assessment and appear in attention. Existing-lead corrections remain possible after completion without reopening the round.
 
-New rounds store `discoveryPolicyVersion: 2`. `round source` still records real searches and blockers; its optional `reviewedCount` and `qualifiedCount` are assertions against recorded leads. Empty searches may have zero leads with search evidence. New rounds cannot complete without qualified lead/application linkage and resolved assessment conflicts. Always record real submissions even if that audit is incomplete.
+New rounds store `discoveryPolicyVersion: 2`. `round source` still records real searches and blockers; omit `reviewedCount` and `qualifiedCount` so they are derived from recorded leads; when passed they are assertions and a mismatch is rejected with the recorded totals. Empty searches may have zero leads with search evidence. New rounds cannot complete without qualified lead/application linkage and resolved assessment conflicts. Always record real submissions even if that audit is incomplete.
 
 Existing rounds retain their historical policy and unsupported aggregates are marked `legacy-unverified`. Unfamiliar historical discovery records remain untouched. The three-source minimum and 60% concentration-explanation rule are unchanged.
 
