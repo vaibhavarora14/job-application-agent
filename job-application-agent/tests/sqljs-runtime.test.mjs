@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { execFile } from 'node:child_process';
-import { cp, mkdir, mkdtemp, readFile, realpath, rm } from 'node:fs/promises';
+import { cp, mkdir, mkdtemp, readFile, rm } from 'node:fs/promises';
 import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -26,9 +26,9 @@ test('the vendored SQLite runtime is byte-identical to the pinned sql.js depende
 // skills root with no node_modules beside it. The outreach store must not depend on resolving sql.js.
 for (const root of [['.agents', 'skills'], ['.claude', 'skills']]) {
   test(`outreach store loads when the skill folder is copied into ~/${root.join('/')} without node_modules`, async () => {
-    // realpath: macOS tmpdir is a /var -> /private/var symlink, and the CLI only runs main()
-    // when argv[1] matches its resolved module URL.
-    const home = await realpath(await mkdtemp(join(tmpdir(), 'jaa-skills-root-')));
+    // Not realpath'd on purpose: on macOS this path sits under the /var -> /private/var symlink,
+    // which the symlink-safe entrypoint check must handle (see entrypoint-symlink.test.mjs).
+    const home = await mkdtemp(join(tmpdir(), 'jaa-skills-root-'));
     try {
       const dest = join(home, ...root, 'job-application-agent');
       await mkdir(join(home, ...root), { recursive: true });

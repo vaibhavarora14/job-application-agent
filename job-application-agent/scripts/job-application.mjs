@@ -5,7 +5,7 @@ import { readFileSync } from 'node:fs';
 import { appendFile, chmod, mkdir, open, readFile, rename, stat, unlink, writeFile } from 'node:fs/promises';
 import { platform } from 'node:os';
 import { basename, join, resolve } from 'node:path';
-import { pathToFileURL } from 'node:url';
+import { isEntrypoint } from './entrypoint.mjs';
 
 import { ACCOUNTING_CAPABILITY, accountingApplicationKey, canonicalUrl, deliveryProjection, discoveryProjection, validateDelivery, validateDeliveryReferences, validateLead, validateLeadReferences, stableJson } from './application-accounting.mjs';
 import { createSecretStore, migrateLegacyStateDir, resolveStateDir } from './secret-store.mjs';
@@ -2634,7 +2634,7 @@ async function main(rawArgs) {
   }
 }
 
-if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+if (isEntrypoint(import.meta.url)) {
   main(process.argv.slice(2)).catch((error) => {
     process.stderr.write(`Error: ${error.message}\n`);
     process.exitCode = 1;

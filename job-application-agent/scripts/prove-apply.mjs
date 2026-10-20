@@ -10,7 +10,7 @@
  *   LIVE_APPLY=1 node scripts/prove-apply.mjs --url https://jobs.example.com/real
  */
 
-import { pathToFileURL } from "node:url";
+import { isEntrypoint } from "./entrypoint.mjs";
 import {
   assertApplyUrlAllowed,
   loadApplyAllowlist,
@@ -61,7 +61,7 @@ function main() {
   process.stdout.write(`${JSON.stringify({ ok: true, count: results.length, results }, null, 2)}\n`);
 }
 
-if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+if (isEntrypoint(import.meta.url)) {
   try {
     main();
   } catch (error) {

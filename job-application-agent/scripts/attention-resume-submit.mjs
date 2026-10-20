@@ -25,7 +25,7 @@
  *   1  error
  */
 
-import { pathToFileURL } from "node:url";
+import { isEntrypoint } from "./entrypoint.mjs";
 import { join } from "node:path";
 import {
   assertSameTab,
@@ -467,7 +467,7 @@ async function main(argv = process.argv.slice(2)) {
   process.exitCode = decision.exitCode;
 }
 
-const isDirect = import.meta.url === pathToFileURL(process.argv[1] ?? "").href
+const isDirect = isEntrypoint(import.meta.url)
   || process.argv[1]?.endsWith("attention-resume-submit.mjs");
 
 if (isDirect) {

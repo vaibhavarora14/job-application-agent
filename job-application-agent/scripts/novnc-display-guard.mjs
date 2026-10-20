@@ -14,7 +14,8 @@
  */
 
 import { readFile } from "node:fs/promises";
-import { fileURLToPath, pathToFileURL } from "node:url";
+import { fileURLToPath } from "node:url";
+import { isEntrypoint } from "./entrypoint.mjs";
 import {
   FILL_DISPLAY,
   FILL_VNC_PORT,
@@ -289,7 +290,7 @@ async function main(argv = process.argv.slice(2)) {
   process.exitCode = NOVNC_GUARD_EXIT.OK;
 }
 
-const isDirect = import.meta.url === pathToFileURL(process.argv[1] ?? "").href
+const isDirect = isEntrypoint(import.meta.url)
   || process.argv[1]?.endsWith("novnc-display-guard.mjs");
 
 if (isDirect) {

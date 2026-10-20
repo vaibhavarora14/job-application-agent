@@ -21,7 +21,7 @@
  *   node scripts/attention-runner-poll.mjs --attention-id attention-… --interval 5 --timeout 3600
  */
 
-import { pathToFileURL } from "node:url";
+import { isEntrypoint } from "./entrypoint.mjs";
 
 export const EXIT = Object.freeze({
   RESUME: 0,
@@ -317,7 +317,7 @@ async function main(argv = process.argv.slice(2)) {
   process.exitCode = result.exitCode;
 }
 
-const isDirect = import.meta.url === pathToFileURL(process.argv[1] ?? "").href
+const isDirect = isEntrypoint(import.meta.url)
   || process.argv[1]?.endsWith("attention-runner-poll.mjs");
 
 if (isDirect) {

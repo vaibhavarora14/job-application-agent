@@ -18,7 +18,7 @@
 
 import { mkdir, readFile, writeFile, chmod, access } from "node:fs/promises";
 import { dirname, join } from "node:path";
-import { pathToFileURL } from "node:url";
+import { isEntrypoint } from "./entrypoint.mjs";
 
 export const SESSION_BINDING_VERSION = 1;
 
@@ -471,7 +471,7 @@ async function main(argv = process.argv.slice(2)) {
   process.exitCode = 1;
 }
 
-const isDirect = import.meta.url === pathToFileURL(process.argv[1] ?? "").href
+const isDirect = isEntrypoint(import.meta.url)
   || process.argv[1]?.endsWith("session-binding.mjs");
 
 if (isDirect) {

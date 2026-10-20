@@ -1,5 +1,9 @@
 # Changelog
 
+## 3.7.16
+
+- Fix the CLI exiting 0 with no output when run through a symlinked path (a symlinked `~/.agents`, `~/.agents/skills` or `~/.claude/skills` directory, a symlinked script, or macOS temp paths under `/var` → `/private/var`). Node resolves the main module to its real path, so `import.meta.url` named the real file while `process.argv[1]` kept the symlinked spelling, and the "run only when executed directly" check compared them without resolving symlinks. Entry-point detection now compares the `fs.realpathSync` of both sides (falling back to `path.resolve`, case-insensitive on Windows) in `job-application.mjs`, `prove-apply.mjs`, `attention-runner-poll.mjs`, `attention-resume-submit.mjs`, `session-binding.mjs`, `novnc-display-guard.mjs`, and the CI path classifier. The npm `bin` shim was not affected (it calls the installer unconditionally). New tests run the CLI through a symlinked skill directory, a symlinked script file, symlinked `~/.agents/skills` and `~/.claude/skills` roots, and a `node_modules/.bin`-style symlink to the npm bin, on Linux, macOS and Windows CI. No telemetry schema changes.
+
 ## 3.7.15
 
 - Fix `Cannot find module 'sql.js/dist/sql-asm.js'` when the skill folder is copied without the npm installer (for example `npx skills add` into `~/.agents/skills/job-application-agent`): the pure-JS sql.js 1.13.0 runtime (MIT, license included) is now vendored at `scripts/runtime/sql-asm.cjs` inside the skill folder, so every install location and the npm tarball carry it. A test copies the skill into `.agents/skills` and `.claude/skills` roots without `node_modules` and checks the npm pack contents; another keeps the vendored file byte-identical to the pinned dependency.

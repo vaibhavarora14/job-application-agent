@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
-import { appendFileSync, readFileSync } from 'node:fs';
-import { pathToFileURL } from 'node:url';
+import { appendFileSync, readFileSync, realpathSync } from 'node:fs';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const HIGH_RISK_PATHS = [
   /^\.github\//,
@@ -67,4 +67,10 @@ function main() {
   process.stdout.write(`${JSON.stringify({ paths, ...classification })}\n`);
 }
 
-if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) main();
+function isEntrypoint() {
+  if (!process.argv[1]) return false;
+  if (import.meta.url === pathToFileURL(process.argv[1]).href) return true;
+  try { return realpathSync(process.argv[1]) === realpathSync(fileURLToPath(import.meta.url)); } catch { return false; }
+}
+
+if (isEntrypoint()) main();
