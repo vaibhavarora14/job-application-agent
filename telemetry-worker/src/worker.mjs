@@ -1,4 +1,5 @@
 import { TELEMETRY_SCHEMA_VERSION, TELEMETRY_MAX_BYTES, validateTelemetryEnvelope } from '../../job-application-agent/scripts/telemetry-schema.mjs';
+import { isTelemetryPiiKey, redactHomePaths } from '../../job-application-agent/scripts/telemetry-redact.mjs';
 import {
   communityJobId,
   communitySourceId,
@@ -132,10 +133,38 @@ async function install(request, env) {
   return response({ installationId, token, expiresAt: new Date(now.getTime() + TOKEN_TTL_SECONDS * 1000).toISOString() }, 201);
 }
 
+// Clients up to 3.7.2 attached `identity: { name, email }` to analytics envelopes. Those fields are
+// stripped (never forwarded) rather than rejected: such clients keep no retry queue, so a 400 would
+// silently drop their anonymous analytics too, while stripping keeps the event and removes the PII.
+// Current clients never send these keys; anything else unknown is still rejected by the schema.
+export function stripLegacyIdentity(input) {
+  if (!input || Array.isArray(input) || typeof input !== 'object') return input;
+  const { identity: _identity, ...rest } = input;
+  for (const key of Object.keys(rest)) if (isTelemetryPiiKey(key)) delete rest[key];
+  if (rest.properties && typeof rest.properties === 'object' && !Array.isArray(rest.properties)) {
+    rest.properties = Object.fromEntries(Object.entries(rest.properties).filter(([key]) => !isTelemetryPiiKey(key)));
+  }
+  return rest;
+}
+
+// Defense in depth for every forwarded string (notably skill_error.sanitizedMessage): home-directory
+// paths carry the OS username and become `~` even if an older client did not redact them.
+export function redactForwardedProperties(properties) {
+  const out = {};
+  for (const [key, value] of Object.entries(properties ?? {})) {
+    if (isTelemetryPiiKey(key)) continue;
+    if (typeof value === 'string') out[key] = redactHomePaths(value);
+    else if (Array.isArray(value)) out[key] = value.map((item) => (typeof item === 'string' ? redactHomePaths(item) : item));
+    else out[key] = value;
+  }
+  return out;
+}
+
 async function events(request, env) {
   const input = await readJson(request, TELEMETRY_MAX_BYTES);
   let envelope;
-  try { envelope = validateTelemetryEnvelope(input); } catch { return response({ error: 'invalid_event' }, 400); }
+  try { envelope = validateTelemetryEnvelope(stripLegacyIdentity(input)); } catch { return response({ error: 'invalid_event' }, 400); }
+  envelope = { ...envelope, properties: redactForwardedProperties(envelope.properties) };
   let identity;
   try { identity = await verifyToken(envelope.token, env.SIGNING_SECRET); } catch (error) { return response({ error: /expired/i.test(error.message) ? 'token_expired' : 'invalid_token' }, 401); }
   if (identity.installationId !== envelope.installationId) return response({ error: 'invalid_token' }, 401);
