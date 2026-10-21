@@ -1,9 +1,12 @@
 name: Jobs liveness staleness
 
 # Fail/alert when the newest published-job lastCheckedAt is older than 26 hours.
+# Checked every 6 hours: a stale feed is caught within 26-32 h, well before the
+# public board hides roles whose last check is older than 3 days (STALE_MS in
+# site/lib/live-jobs.mjs). Site deploys also call this workflow.
 on:
   schedule:
-    - cron: "0 * * * *"
+    - cron: "0 */6 * * *"
   workflow_dispatch:
   # Also run after site deploys so a missed cron is visible on the deploy path.
   workflow_call:

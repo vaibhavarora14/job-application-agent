@@ -170,12 +170,18 @@ test('staging moderation always rejects an approved fixture after a failed verif
 });
 
 test('validation exposes a stable quality gate and a six-combination high-risk matrix', async () => {
-  const workflow = await readFile(new URL('../../.github/workflows/validate.yml', import.meta.url), 'utf8');
+  const workflow = (await readFile(new URL('../../.github/workflows/validate.yml', import.meta.url), 'utf8')).replace(/\r\n/g, '\n');
   assert.match(workflow, /^\s{2}quality-gate:/m);
   assert.match(workflow, /name:\s*quality-gate/);
   assert.match(workflow, /matrix:/);
-  assert.match(workflow, /os:\s*\[ubuntu-latest, macos-latest, windows-latest\]/);
-  assert.match(workflow, /node:\s*\[20, 24\]/);
+  // Ubuntu on every high-risk change; macOS/Windows on push to main or a `full-matrix` PR label.
+  assert.match(workflow, /^\s{2}high-risk:\n(?:\s{4}.*\n)*?\s{8}os:\s*\[ubuntu-latest\]/m);
+  assert.match(workflow, /^\s{2}high-risk-cross-os:\n(?:\s{4}.*\n)*?\s{8}os:\s*\[macos-latest, windows-latest\]/m);
+  assert.match(workflow, /github\.event_name == 'push' && github\.ref == 'refs\/heads\/main'/);
+  assert.match(workflow, /contains\(github\.event\.pull_request\.labels\.\*\.name, 'full-matrix'\)/);
+  assert.match(workflow, /types:\s*\[opened, synchronize, reopened, labeled\]/);
+  assert.match(workflow, /"\$HIGH_RISK_CROSS_OS_RESULT"/);
+  assert.equal((workflow.match(/node:\s*\[20, 24\]/g) ?? []).length, 2);
   assert.match(workflow, /classify-paths\.mjs/);
   assert.match(workflow, /check:native-artifacts/);
 });
@@ -185,7 +191,7 @@ test('validation runs site lint and typecheck when site paths change', async () 
   assert.match(workflow, /^\s{2}site:/m);
   assert.match(workflow, /site_changed/);
   assert.match(workflow, /npm --prefix site run lint && npm --prefix site run typecheck/);
-  assert.match(workflow, /needs:\s*\[classify, core, dependency-review, site, high-risk, codeql\]/);
+  assert.match(workflow, /needs:\s*\[classify, core, dependency-review, site, high-risk, high-risk-cross-os, codeql\]/);
 });
 
 test('validation commands are portable across Windows and pipefail shells', async () => {
