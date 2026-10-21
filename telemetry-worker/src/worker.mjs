@@ -16,6 +16,7 @@ import {
   DEFAULT_LIVENESS_BATCH_SIZE,
   runJobLivenessSweep,
 } from './job-liveness.mjs';
+import { clientVersionDecision, upgradeRequiredBody } from './client-version.mjs';
 
 const LIVE_JOBS_CACHE_SECONDS = 5 * 60;
 
@@ -102,6 +103,25 @@ function checkAdminAuth(request, env) {
   return timingSafeEqualString(match[1], expected);
 }
 
+/**
+ * Refuses outdated clients before schema validation (see client-version.mjs for why the status is
+ * 426, or 202-and-drop for the 3.7.3–3.7.10 queue band). Nothing is forwarded or counted.
+ */
+function outdatedClientResponse(input, env) {
+  if (!input || Array.isArray(input) || typeof input !== 'object') return null;
+  const decision = clientVersionDecision(input.skillVersion, env);
+  if (decision.action === 'allow') return null;
+  return Response.json(upgradeRequiredBody(decision), {
+    status: decision.status,
+    headers: {
+      'cache-control': 'no-store',
+      'x-content-type-options': 'nosniff',
+      'referrer-policy': 'no-referrer',
+      'x-min-client-version': decision.minimum,
+    },
+  });
+}
+
 async function readJson(request, maxBytes) {
   const length = Number(request.headers.get('content-length') ?? 0);
   if (length > maxBytes) throw Object.assign(new Error('Payload too large.'), { status: 413 });
@@ -162,6 +182,8 @@ export function redactForwardedProperties(properties) {
 
 async function events(request, env) {
   const input = await readJson(request, TELEMETRY_MAX_BYTES);
+  const outdated = outdatedClientResponse(input, env);
+  if (outdated) return outdated;
   let envelope;
   try { envelope = validateTelemetryEnvelope(stripLegacyIdentity(input)); } catch { return response({ error: 'invalid_event' }, 400); }
   envelope = { ...envelope, properties: redactForwardedProperties(envelope.properties) };
@@ -225,6 +247,8 @@ async function upsertInstallContact(database, row) {
 
 async function contact(request, env) {
   const input = await readJson(request, CONTACT_MAX_BYTES);
+  const outdated = outdatedClientResponse(input, env);
+  if (outdated) return outdated;
   const allowedKeys = new Set(['installId', 'installationId', 'token', 'candidateName', 'candidateEmail', 'skillVersion', 'updatedAt']);
   for (const key of Object.keys(input)) if (!allowedKeys.has(key)) return response({ error: 'invalid_contact' }, 400);
 
@@ -543,6 +567,8 @@ async function publicReadKey(request, secret, scope) {
 
 async function contributeSource(request, env) {
   const input = await readJson(request, SOURCE_MAX_BYTES);
+  const outdated = outdatedClientResponse(input, env);
+  if (outdated) return outdated;
   let envelope;
   try { envelope = validateSourceContributionEnvelope(input); } catch { return response({ error: 'invalid_source' }, 400); }
   let identity;
@@ -565,6 +591,8 @@ async function listSources(_request, env) {
 
 async function contributeJob(request, env) {
   const input = await readJson(request, SOURCE_MAX_BYTES);
+  const outdated = outdatedClientResponse(input, env);
+  if (outdated) return outdated;
   let envelope;
   try { envelope = validateCommunityJobContributionEnvelope(input); } catch { return response({ error: 'invalid_job' }, 400); }
   let identity;

@@ -768,7 +768,7 @@ test('event endpoint revalidates schema and forwards a personless PostHog event'
   const token = await createToken(installationId, bindings.SIGNING_SECRET);
   const payload = {
     schemaVersion: 1,
-    skillVersion: '1.1.0',
+    skillVersion: '3.7.18',
     installationId,
     token,
     event: 'application_submitted',
@@ -840,7 +840,7 @@ test('event endpoint strips identity fields, rejects malformed payloads, and rat
   const bindings = env();
   const installationId = '11111111-1111-4111-8111-111111111111';
   const token = await createToken(installationId, bindings.SIGNING_SECRET);
-  const base = { schemaVersion: 1, skillVersion: '1.1.0', installationId, token, event: 'command_completed', properties: { command: 'search', result: 'success', durationBucket: 'under-1s' } };
+  const base = { schemaVersion: 1, skillVersion: '3.7.18', installationId, token, event: 'command_completed', properties: { command: 'search', result: 'success', durationBucket: 'under-1s' } };
   const identity = await worker.fetch(new Request('https://relay.example.com/v1/events', { method: 'POST', body: JSON.stringify({ ...base, properties: { ...base.properties, email: 'candidate@example.com' } }) }), bindings);
   assert.equal(identity.status, 202);
   assert.equal(JSON.stringify(bindings.captured).includes('candidate@example.com'), false);
@@ -897,7 +897,7 @@ test('PostHog failures return a retryable relay error without leaking details', 
   bindings.POSTHOG_FETCH = async () => { throw new Error('upstream secret detail'); };
   const installationId = '11111111-1111-4111-8111-111111111111';
   const token = await createToken(installationId, bindings.SIGNING_SECRET);
-  const payload = { schemaVersion: 1, skillVersion: '1.1.0', installationId, token, event: 'command_completed', properties: { command: 'search', result: 'success', durationBucket: 'under-1s' } };
+  const payload = { schemaVersion: 1, skillVersion: '3.7.18', installationId, token, event: 'command_completed', properties: { command: 'search', result: 'success', durationBucket: 'under-1s' } };
   const response = await worker.fetch(new Request('https://relay.example.com/v1/events', { method: 'POST', body: JSON.stringify(payload) }), bindings);
   assert.equal(response.status, 503);
   assert.deepEqual(await response.json(), { error: 'upstream_unavailable' });
