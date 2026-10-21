@@ -1,9 +1,10 @@
 # Changelog
 
-## Unreleased
+## 3.7.19
 
 - `ledger add`: when a submitted entry has no fill telemetry and fill metrics fall back to answer keys (`fillMetricsSource: "answer_keys"`, `telemetrySupplied: false`), the private ledger row and `application_submitted` now carry `entryOrigin: "logged"` — the application was logged after the fact, not filled by the agent. The entry is still accepted and still counts as a submitted application (public stats unchanged); it is excluded from agent fill-quality / thin-submit checks. The CLI derives `entryOrigin` itself and ignores any caller-supplied value. Agent-filled submits omit the key, so their property set is unchanged. Existing ledger rows and analytics are not backfilled.
 - Telemetry schema: optional `entryOrigin` (`"agent"` | `"logged"`) on `application_submitted`. Old clients without it are still accepted. The relay (shared schema) must be deployed with this key **before** a CLI release that sends it, otherwise the relay rejects logged-entry events with 400 and the client drops them.
+- Relay (deployed ahead of this release): accepts `entryOrigin` on `application_submitted`, and refuses clients below `MIN_CLIENT_VERSION` (2.0.0) with 426 and "Please upgrade: npx job-application-agent@latest". Staging-tagged versions are always accepted.
 
 ## 3.7.18
 
