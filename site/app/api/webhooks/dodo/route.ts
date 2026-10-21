@@ -38,7 +38,7 @@ export async function POST(request: Request) {
       persist: (eventId) => applyPurchaseWebhook(eventId, normalized.payment),
       alertSupport: (input) => sendFoundingSupportAlert(input, {
         apiKey: env.RESEND_API_KEY ?? "",
-        from: env.RESEND_FROM_EMAIL ?? "JobAppAgent Ops <ops@jobappagent.com>",
+        from: env.RESEND_FROM_EMAIL ?? "JobAppAgent Ops <attention@updates.jobappagent.com>",
         to: env.FOUNDING_SUPPORT_ALERT_EMAIL ?? undefined,
       }),
     });

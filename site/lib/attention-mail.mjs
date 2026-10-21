@@ -55,7 +55,7 @@ export async function sendAttentionEmail(input, config = {}) {
   const apiKey = typeof config.apiKey === "string" ? config.apiKey.trim() : "";
   const from = typeof config.from === "string" && config.from.trim()
     ? config.from.trim()
-    : "JobAppAgent <attention@jobappagent.com>";
+    : "JobAppAgent <attention@updates.jobappagent.com>";
   const to = typeof input?.to === "string" ? input.to.trim().toLowerCase() : "";
   const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 

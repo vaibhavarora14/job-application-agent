@@ -20,7 +20,7 @@ export function attentionEnv() {
     magicLinkSecret: env.ATTENTION_MAGIC_LINK_SECRET ?? "",
     notifySecret: env.ATTENTION_NOTIFY_SECRET ?? "",
     resendApiKey: env.RESEND_API_KEY ?? "",
-    resendFrom: env.RESEND_FROM_EMAIL ?? "JobAppAgent <attention@jobappagent.com>",
+    resendFrom: env.RESEND_FROM_EMAIL ?? "JobAppAgent <attention@updates.jobappagent.com>",
     publicSiteUrl: env.PUBLIC_SITE_URL ?? "https://jobappagent.com",
     /** Public HTTPS front for agent-box noVNC (historically port 6080). */
     liveSessionBaseUrl: env.ATTENTION_LIVE_SESSION_BASE_URL ?? "",

@@ -127,7 +127,7 @@ export async function sendFoundingSupportAlert(input, config = {}) {
   const apiKey = typeof config.apiKey === "string" ? config.apiKey.trim() : "";
   const from = typeof config.from === "string" && config.from.trim()
     ? config.from.trim()
-    : "JobAppAgent Ops <ops@jobappagent.com>";
+    : "JobAppAgent Ops <attention@updates.jobappagent.com>";
   const to = typeof config.to === "string" && config.to.trim()
     ? config.to.trim().toLowerCase()
     : DEFAULT_FOUNDING_SUPPORT_ALERT_EMAIL;
