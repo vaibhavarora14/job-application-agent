@@ -8,8 +8,10 @@ import {
   jobIdFromSlug,
   jobPostingJsonLd,
   jobSlug,
+  liveJobWireRecord,
   similarOpenRoles,
   validateLiveJobs,
+  validateLiveJobsBoard,
   TRUST_LINE,
 } from '../lib/live-jobs.mjs';
 import { fixtureLiveJobs } from '../lib/jobs-board-data.mjs';
@@ -43,6 +45,45 @@ test('validateLiveJobs accepts liveness fields and rejects unknown keys', () => 
     nextCursor: null,
   });
   assert.equal(bad.ok, false);
+});
+
+test('validateLiveJobsBoard round-trips a cached multi-page board', () => {
+  const base = fixtureLiveJobs(now).map((job) => {
+    const rest = { ...job };
+    delete rest.location;
+    delete rest.slug;
+    return rest;
+  });
+  // 250 jobs: more than one upstream page, which validateLiveJobs alone rejects.
+  const jobs = Array.from({ length: 250 }, (_, i) => ({
+    ...base[i % base.length],
+    jobId: `community-job-${i.toString(16).padStart(16, '0')}`,
+  }));
+  const pageValidated = [];
+  for (let start = 0; start < jobs.length; start += 100) {
+    const page = validateLiveJobs({ version: 1, jobs: jobs.slice(start, start + 100), nextCursor: null });
+    assert.equal(page.ok, true);
+    pageValidated.push(...page.data.jobs);
+  }
+  // What fetch-live-jobs writes to the Cache API after paginating.
+  const cached = JSON.parse(JSON.stringify({
+    version: 1,
+    jobs: pageValidated.map(liveJobWireRecord),
+    nextCursor: null,
+    meta: { newestLastCheckedAt: null },
+  }));
+  assert.equal(validateLiveJobs(cached).ok, false);
+  const board = validateLiveJobsBoard(cached);
+  assert.equal(board.ok, true);
+  assert.deepEqual(board.data.jobs, pageValidated);
+  assert.deepEqual(board.data.meta, { newestLastCheckedAt: null });
+
+  assert.equal(validateLiveJobsBoard({ version: 1, jobs: [], nextCursor: null }).ok, true);
+  // Old cache entries stored derived slugs; they must fail so the loader refetches.
+  assert.equal(validateLiveJobsBoard({ ...cached, jobs: pageValidated }).ok, false);
+  assert.equal(validateLiveJobsBoard({ ...cached, jobs: [...cached.jobs.slice(0, 120), { ...cached.jobs[0], extra: 1 }] }).ok, false);
+  assert.equal(validateLiveJobsBoard({ ...cached, version: 2 }).ok, false);
+  assert.equal(validateLiveJobsBoard(null).ok, false);
 });
 
 test('board listing hides stale and non-open roles', () => {

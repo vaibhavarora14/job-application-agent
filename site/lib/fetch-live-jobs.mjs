@@ -1,5 +1,5 @@
 import { env } from 'cloudflare:workers';
-import { validateLiveJobs } from './live-jobs.mjs';
+import { liveJobWireRecord, validateLiveJobs, validateLiveJobsBoard } from './live-jobs.mjs';
 
 const MAX_UPSTREAM_BYTES = 256 * 1024;
 const BOARD_CACHE_SECONDS = 5 * 60;
@@ -72,7 +72,10 @@ export async function loadLiveJobs(options = {}) {
   if (cache && cacheKey) {
     const cached = await cache.match(cacheKey);
     if (cached) {
-      const validated = validateLiveJobs(JSON.parse(await cached.text()));
+      // The cached copy is the whole board (all pages merged), so validate it in
+      // page-sized slices. validateLiveJobs alone caps a payload at one page, which
+      // made every hit fall through to a full re-pagination of the upstream.
+      const validated = validateLiveJobsBoard(JSON.parse(await cached.text()));
       if (validated.ok) {
         boardMemo.set(memoKey, { at: Date.now(), jobs: validated.data.jobs });
         return validated.data.jobs;
@@ -108,7 +111,8 @@ export async function loadLiveJobs(options = {}) {
       if (cache && cacheKey) {
         const payload = {
           version: 1,
-          jobs: list,
+          // Store upstream wire records (without the derived slug) so a hit re-validates.
+          jobs: list.map(liveJobWireRecord),
           nextCursor: null,
           meta: { newestLastCheckedAt },
         };

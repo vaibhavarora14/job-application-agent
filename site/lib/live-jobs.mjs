@@ -129,6 +129,35 @@ export function validateLiveJobs(input) {
   };
 }
 
+/** Upstream pages carry at most this many jobs; validateLiveJobs enforces it. */
+export const LIVE_JOBS_PAGE_SIZE = 100;
+
+/**
+ * Validate an aggregated board payload (all pages merged, e.g. the Cache API copy
+ * written by fetch-live-jobs) with the same per-job rules as validateLiveJobs.
+ * validateLiveJobs alone rejects more than one page of jobs, so the merged copy is
+ * checked in page-sized slices. Each job must use the upstream wire keys (no `slug`).
+ */
+export function validateLiveJobsBoard(input) {
+  if (!isRecord(input) || !Array.isArray(input.jobs)) return { ok: false, error: 'invalid_jobs' };
+  const jobs = [];
+  let first = null;
+  for (let start = 0; start === 0 || start < input.jobs.length; start += LIVE_JOBS_PAGE_SIZE) {
+    const page = validateLiveJobs({ ...input, jobs: input.jobs.slice(start, start + LIVE_JOBS_PAGE_SIZE) });
+    if (!page.ok) return page;
+    first ??= page;
+    for (const job of page.data.jobs) jobs.push(job);
+  }
+  return { ok: true, data: { ...first.data, jobs } };
+}
+
+/** Wire shape of a validated job (drops the derived `slug`) for re-caching. */
+export function liveJobWireRecord(job) {
+  const wire = { ...job };
+  delete wire.slug;
+  return wire;
+}
+
 export function jobPostingDescription(job) {
   const place = locationLabel(job);
   const channel = CHANNEL_LABELS[job.applicationChannel] ?? job.applicationChannel;

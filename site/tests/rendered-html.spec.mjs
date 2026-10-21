@@ -247,7 +247,9 @@ test("publishes crawler guidance and a host-local apex sitemap", async () => {
   assert.equal(robots.status, 200);
   assert.equal(sitemap.status, 200);
   assert.equal(statsSitemap.status, 200);
-  assert.match(await robots.text(), /Disallow: \/api\//);
+  const robotsTxt = await robots.text();
+  assert.match(robotsTxt, /Disallow: \/api\//);
+  assert.match(robotsTxt, /Crawl-delay: 10/);
   const sitemapXml = await sitemap.text();
   assert.match(sitemapXml, /https:\/\/jobappagent\.com\/privacy/);
   assert.match(sitemapXml, /https:\/\/jobappagent\.com\/jobs</);
