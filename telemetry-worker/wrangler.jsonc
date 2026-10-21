@@ -13,9 +13,12 @@
   },
   // Workers Logs: only the relay's own structured line per request (status, skillVersion, path,
   // durationMs, gate). Invocation logs stay off because they carry request URL/headers/cf/IP.
+  // Cloudflare still attaches the request method/URL to each log line, so query strings are
+  // redacted from it (needs wrangler >= 4.151 in the deploy workflows).
   "observability": {
     "enabled": true,
     "head_sampling_rate": 1,
+    "redact_query_string": true,
     "logs": { "enabled": true, "invocation_logs": false, "head_sampling_rate": 1 },
     "traces": { "enabled": false }
   },

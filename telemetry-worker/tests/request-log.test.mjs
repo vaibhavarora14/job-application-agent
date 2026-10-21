@@ -105,5 +105,10 @@ test('relay source has no other console output and invocation logs stay disabled
   const config = await readFile(new URL('../wrangler.jsonc', import.meta.url), 'utf8');
   const production = config.slice(0, config.indexOf('"env"'));
   assert.match(production, /"invocation_logs": false/);
+  assert.match(production, /"redact_query_string": true/);
+  for (const workflow of ['deploy-telemetry.yml', 'staging-telemetry.yml']) {
+    const source = await readFile(new URL(`../../.github/workflows/${workflow}`, import.meta.url), 'utf8');
+    for (const [, minor] of source.matchAll(/wrangler@4\.(\d+)\./g)) assert.ok(Number(minor) >= 151, `${workflow} wrangler supports redact_query_string`);
+  }
   assert.match(production, /"enabled": true/);
 });

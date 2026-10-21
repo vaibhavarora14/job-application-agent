@@ -20,20 +20,20 @@ jobs:
       - run: npm ci
       - run: npm run check && npm test && npm run privacy-audit
       - name: Apply aggregate database migrations
-        run: npx --yes wrangler@4.122.0 d1 migrations apply job-application-agent-public-stats --remote --config telemetry-worker/wrangler.jsonc
+        run: npx --yes wrangler@4.151.3 d1 migrations apply job-application-agent-public-stats --remote --config telemetry-worker/wrangler.jsonc
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
       - name: Apply private contacts database migrations
-        run: npx --yes wrangler@4.122.0 d1 migrations apply job-application-agent-private-contacts --remote --config telemetry-worker/wrangler.jsonc
+        run: npx --yes wrangler@4.151.3 d1 migrations apply job-application-agent-private-contacts --remote --config telemetry-worker/wrangler.jsonc
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
       - name: Deploy Worker
         run: |
           node -e 'process.stdout.write(JSON.stringify({SIGNING_SECRET: process.env.SIGNING_SECRET, POSTHOG_PROJECT_TOKEN: process.env.POSTHOG_PROJECT_TOKEN}))' \
-            | npx --yes wrangler@4.122.0 secret bulk --config telemetry-worker/wrangler.jsonc --env=""
-          npx --yes wrangler@4.122.0 deploy --config telemetry-worker/wrangler.jsonc --env="" --keep-vars
+            | npx --yes wrangler@4.151.3 secret bulk --config telemetry-worker/wrangler.jsonc --env=""
+          npx --yes wrangler@4.151.3 deploy --config telemetry-worker/wrangler.jsonc --env="" --keep-vars
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
