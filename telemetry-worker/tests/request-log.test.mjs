@@ -66,8 +66,8 @@ test('requests without a body, unknown paths, bad JSON and auth failures still l
 
   lines = [];
   await worker.fetch(new Request('https://relay.example.com/v1/someone@example.com/profile'), bindings(lines));
-  assert.equal(onlyLine(lines).path, 'other');
-  assert.equal(lines[0].includes('example.com'), false);
+  assert.deepEqual({ ...onlyLine(lines), durationMs: 0 }, { status: 404, skillVersion: null, path: 'other', durationMs: 0, gate: null });
+  assert.equal(lines[0].includes('someone@'), false);
 
   lines = [];
   const bad = await worker.fetch(new Request('https://relay.example.com/v1/events', { method: 'POST', body: '{not json' }), bindings(lines));
