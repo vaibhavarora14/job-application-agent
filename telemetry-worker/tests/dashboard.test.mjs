@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import test from 'node:test';
 
-import { deriveCommunityStats } from '../public/dashboard.js';
+import { deriveCommunityStats, publicOutcomeEntries } from '../public/dashboard.js';
 
 test('community statistics are derived from aggregate data without invented values', () => {
   const stats = deriveCommunityStats({
@@ -40,7 +40,7 @@ test('community statistics are derived from aggregate data without invented valu
   assert.equal(stats.applicationsPerInstallation, 0.3);
   assert.equal(stats.outcomesReported, 14);
   assert.equal(stats.outcomeCoverage, 14.6);
-  assert.equal(stats.interviewProgression, 12.5);
+  assert.equal('interviewProgression' in stats, false);
   assert.equal(stats.seniorTargeting, 98.7);
 });
 
@@ -57,4 +57,19 @@ test('community dashboard exposes its primary actions and honest data labels', a
   assert.match(html, /Latest seven-day submissions ÷ total installations/i);
   assert.doesNotMatch(html, /installations active in 30 days/i);
   assert.match(html, /Active days/i);
+  // Decision 2026-10-21: the reported-interviews count is not shown publicly.
+  assert.doesNotMatch(html, /interview/i);
+  assert.equal((html.match(/class="signal-card/g) ?? []).length, 3);
+});
+
+test('legacy dashboard hides the interviews outcome and keeps the signal grid balanced', async () => {
+  assert.deepEqual(publicOutcomeEntries([
+    { label: 'rejected', count: 5 },
+    { label: 'interview', count: 2 },
+    { label: 'offer', count: 1 },
+  ]), [{ label: 'rejected', count: 5 }, { label: 'offer', count: 1 }]);
+  const css = await readFile(new URL('../public/styles.css', import.meta.url), 'utf8');
+  assert.match(css, /\.signal-grid \{[^}]*repeat\(3, 1fr\)/);
+  const js = await readFile(new URL('../public/dashboard.js', import.meta.url), 'utf8');
+  assert.doesNotMatch(js, /interview-rate|interviewProgression|metrics\.interviews/);
 });

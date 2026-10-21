@@ -224,6 +224,18 @@ test("server-renders the branded community dashboard", async () => {
   assert.doesNotMatch(html, /Community job leads|Open job|maintainer-reviewed/i);
   assert.match(html, /Anonymous aggregate telemetry/);
   assert.doesNotMatch(html, /Install agent|Open source on GitHub/i);
+  // Decision 2026-10-21: the reported-interviews count is not shown publicly.
+  assert.doesNotMatch(html, /interview/i);
+});
+
+test("homepage community proof does not show an interviews stat", async () => {
+  const response = await render("/");
+  assert.equal(response.status, 200);
+  const html = await response.text();
+  assert.match(html, /Total installations/);
+  assert.match(html, /Verified applications submitted/);
+  assert.match(html, /Jobs assessed/);
+  assert.doesNotMatch(html, /interview/i);
 });
 
 test("publishes crawler guidance and a host-local apex sitemap", async () => {

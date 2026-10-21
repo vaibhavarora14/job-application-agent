@@ -76,6 +76,23 @@ export function validateCommunityStats(input) {
   } };
 }
 
+/**
+ * Outcome labels that are still collected and returned by the stats API but are
+ * intentionally not displayed on any public surface (decision 2026-10-21: the
+ * reported-interviews count is too small to show).
+ */
+export const HIDDEN_PUBLIC_OUTCOME_LABELS = Object.freeze(["interview", "interviews"]);
+
+/**
+ * Outcome breakdown entries that are safe to render publicly.
+ * @template {{ label: string; count: number }} T
+ * @param {T[]} [outcomes]
+ * @returns {T[]}
+ */
+export function publicOutcomeEntries(outcomes = []) {
+  return outcomes.filter((entry) => !HIDDEN_PUBLIC_OUTCOME_LABELS.includes(String(entry.label).trim().toLowerCase()));
+}
+
 export function deriveCommunityStats(input) {
   const metrics = input.metrics;
   const outcomesReported = input.breakdowns.outcomes.reduce((sum, entry) => sum + entry.count, 0);

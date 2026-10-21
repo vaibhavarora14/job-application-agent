@@ -1,5 +1,6 @@
 "use client";
 
+import { publicOutcomeEntries } from "../../lib/community-stats.mjs";
 import { compactNumber, fullNumber, useCommunityStats } from "./useCommunityStats";
 
 function Leaderboard({ title, subtitle, entries }: { title: string; subtitle: string; entries: Array<{ label: string; count: number }> }) {
@@ -64,7 +65,7 @@ export function CommunityDashboard() {
           <div className="panel-heading"><div><h3>Outcome coverage</h3><p>Early signal, not a placement claim</p></div><span className="tag">{outcomeCoverage}% reported</span></div>
           <strong className="outcome-number">{fullNumber.format(outcomesReported)}</strong>
           <p>known outcomes from {data ? fullNumber.format(data.metrics.applicationsSubmitted) : "—"} verified applications.</p>
-          <div className="outcome-list">{data?.breakdowns.outcomes.map((entry) => <span key={entry.label}><i />{fullNumber.format(entry.count)} {entry.label}</span>)}</div>
+          <div className="outcome-list">{publicOutcomeEntries(data?.breakdowns.outcomes ?? []).map((entry) => <span key={entry.label}><i />{fullNumber.format(entry.count)} {entry.label}</span>)}</div>
         </article>
       </div>
     </section>

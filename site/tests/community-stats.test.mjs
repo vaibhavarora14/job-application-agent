@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { deriveCommunityStats, validateCommunityStats } from "../lib/community-stats.mjs";
+import { deriveCommunityStats, publicOutcomeEntries, validateCommunityStats } from "../lib/community-stats.mjs";
 
 const validStats = {
   generatedAt: "2026-08-18T21:09:13.709Z",
@@ -50,4 +50,31 @@ test("derives honest community proof without treating installations as people", 
     outcomesReported: 4,
     outcomeCoverage: 0.8,
   });
+});
+
+test("public outcome entries never surface the interviews count", () => {
+  const outcomes = [
+    { label: "rejected", count: 332 },
+    { label: "withdrawn", count: 26 },
+    { label: "interview", count: 20 },
+    { label: " Interviews ", count: 1 },
+  ];
+  assert.deepEqual(publicOutcomeEntries(outcomes), [
+    { label: "rejected", count: 332 },
+    { label: "withdrawn", count: 26 },
+  ]);
+  assert.deepEqual(publicOutcomeEntries(), []);
+  // The API keeps collecting and returning the field for older clients.
+  const result = validateCommunityStats(validStats);
+  assert.equal(result.ok, true);
+  assert.equal(result.data.metrics.interviews, 4);
+});
+
+test("stats dashboard and homepage proof render outcomes through the public filter only", async () => {
+  const { readFile } = await import("node:fs/promises");
+  const dashboard = await readFile(new URL("../app/components/CommunityDashboard.tsx", import.meta.url), "utf8");
+  const proof = await readFile(new URL("../app/components/CommunityProof.tsx", import.meta.url), "utf8");
+  assert.match(dashboard, /publicOutcomeEntries\(data\?\.breakdowns\.outcomes/);
+  assert.doesNotMatch(dashboard, /breakdowns\.outcomes\.map/);
+  for (const source of [dashboard, proof]) assert.doesNotMatch(source, /metrics\.interviews|"interviews"|Interview/);
 });
