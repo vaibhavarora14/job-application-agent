@@ -113,10 +113,10 @@ h2 { margin-bottom: .28rem; font-size: 1.05rem; letter-spacing: -.025em; }
 .velocity-column:nth-last-child(4n) .velocity-bar { background: var(--violet); }
 .velocity-column small { padding-top: .45rem; color: var(--muted); font-size: .58rem; text-transform: uppercase; }
 .outcome-bar { height: 14px; display: flex; overflow: hidden; margin: 2rem 0 1rem; border-radius: 999px; background: #e4e7ef; }
-.outcome-segment { display: block; height: 100%; min-width: 2px; }
+.outcome-segment { display: block; flex-shrink: 0; height: 100%; min-width: 2px; }
 .outcome-offer { background: var(--green); }
 .outcome-rejected { background: var(--coral); }
-.outcome-withdrawal { background: var(--violet); }
+.outcome-withdrawn, .outcome-withdrawal { background: var(--violet); }
 .outcome-awaiting-update, .outcome-other { background: #d9dce5; }
 .outcome-legend { display: flex; flex-wrap: wrap; gap: .7rem 1rem; color: var(--muted); font-size: .67rem; }
 .outcome-legend span { display: flex; align-items: center; gap: .35rem; }

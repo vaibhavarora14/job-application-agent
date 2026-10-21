@@ -73,3 +73,26 @@ test('legacy dashboard hides the interviews outcome and keeps the signal grid ba
   const js = await readFile(new URL('../public/dashboard.js', import.meta.url), 'utf8');
   assert.doesNotMatch(js, /interview-rate|interviewProgression|metrics\.interviews/);
 });
+
+test('legacy outcome pills show the rate and the subtitle shows only the awaiting count', async () => {
+  const js = await readFile(new URL('../public/dashboard.js', import.meta.url), 'utf8');
+  assert.match(js, /setText\('\[data-derived="outcome-coverage"\]', `\$\{community\.outcomeCoverage\}% outcomes reported`\)/);
+  assert.match(js, /setText\('\[data-derived="outcome-detail"\]', `\$\{fullFormat\.format\(community\.outcomesUnknown\)\} awaiting an update`\)/);
+  assert.doesNotMatch(js, /known ·|outcomesReported\}\//);
+  const html = await readFile(new URL('../public/index.html', import.meta.url), 'utf8');
+  assert.equal((html.match(/data-derived="outcome-coverage">— outcomes reported</g) ?? []).length, 2);
+  const stats = deriveCommunityStats({
+    generatedAt: '2026-10-21T05:53:27.483Z',
+    metrics: { installations: 1248, applicationsSubmitted: 4377, interviews: 20 },
+    timeline: [],
+    breakdowns: { outcomes: [{ label: 'rejected', count: 332 }, { label: 'withdrawn', count: 26 }, { label: 'interview', count: 20 }] },
+  });
+  assert.equal(stats.outcomeCoverage, 8.6);
+  assert.equal(stats.outcomesUnknown, 3999);
+});
+
+test('legacy withdrawn outcome has a coloured dot and a visible minimum-width segment', async () => {
+  const css = await readFile(new URL('../public/styles.css', import.meta.url), 'utf8');
+  assert.match(css, /\.outcome-withdrawn[^{]*\{ background: var\(--violet\); \}/);
+  assert.match(css, /\.outcome-segment \{[^}]*flex-shrink: 0;[^}]*min-width: 2px;/);
+});

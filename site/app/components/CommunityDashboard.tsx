@@ -62,9 +62,9 @@ export function CommunityDashboard() {
           <p className="backfill-note"><strong>Read the trend carefully.</strong> Totals include clearly labelled historical backfill, so individual spikes are not presented as organic daily growth.</p>
         </article>
         <article className="dashboard-panel outcome-panel">
-          <div className="panel-heading"><div><h3>Outcome coverage</h3><p>Early signal, not a placement claim</p></div><span className="tag">{outcomeCoverage}% reported</span></div>
-          <strong className="outcome-number">{fullNumber.format(outcomesReported)}</strong>
-          <p>known outcomes from {data ? fullNumber.format(data.metrics.applicationsSubmitted) : "—"} verified applications.</p>
+          <div className="panel-heading"><div><h3>Outcome coverage</h3><p>Early signal, not a placement claim</p></div></div>
+          <strong className="outcome-number">{data ? `${outcomeCoverage}%` : loading ? <span className="metric-pending">Loading</span> : <span className="metric-empty">—</span>}</strong>
+          <p>of {data ? fullNumber.format(data.metrics.applicationsSubmitted) : "—"} verified applications have a reported outcome</p>
           <div className="outcome-list">{publicOutcomeEntries(data?.breakdowns.outcomes ?? []).map((entry) => <span key={entry.label}><i />{fullNumber.format(entry.count)} {entry.label}</span>)}</div>
         </article>
       </div>

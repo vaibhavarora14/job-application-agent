@@ -75,8 +75,8 @@ function renderMetrics(metrics, community) {
   setText('[data-derived="per-installation"]', fullFormat.format(community.applicationsPerInstallation));
   setText('[data-derived="active-days"]', `${community.activeDays} ${community.activeDays === 1 ? 'day' : 'days'}`);
   setText('[data-derived="senior-targeting"]', `${community.seniorTargeting}%`);
-  setText('[data-derived="outcome-coverage"]', `${community.outcomesReported}/${number(metrics.applicationsSubmitted)} outcomes reported`);
-  setText('[data-derived="outcome-detail"]', `${community.outcomesReported} known · ${community.outcomesUnknown} awaiting an update`);
+  setText('[data-derived="outcome-coverage"]', `${community.outcomeCoverage}% outcomes reported`);
+  setText('[data-derived="outcome-detail"]', `${fullFormat.format(community.outcomesUnknown)} awaiting an update`);
 }
 
 function renderVelocity(entries) {

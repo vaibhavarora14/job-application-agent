@@ -78,3 +78,17 @@ test("stats dashboard and homepage proof render outcomes through the public filt
   assert.doesNotMatch(dashboard, /breakdowns\.outcomes\.map/);
   for (const source of [dashboard, proof]) assert.doesNotMatch(source, /metrics\.interviews|"interviews"|Interview/);
 });
+
+test("stats outcome coverage card leads with the live rate, never an outcome count", async () => {
+  const { readFile } = await import("node:fs/promises");
+  const dashboard = await readFile(new URL("../app/components/CommunityDashboard.tsx", import.meta.url), "utf8");
+  const card = dashboard.slice(dashboard.indexOf('className="dashboard-panel outcome-panel"'), dashboard.indexOf("</article>", dashboard.indexOf('className="dashboard-panel outcome-panel"')));
+  assert.match(card, /<strong className="outcome-number">\{data \? `\$\{outcomeCoverage\}%`/);
+  assert.match(card, /of \{data \? fullNumber\.format\(data\.metrics\.applicationsSubmitted\) : "—"\} verified applications have a reported outcome/);
+  // No visible known-outcome count (it would include interviews) and no duplicate rate pill.
+  assert.doesNotMatch(card, /format\(outcomesReported\)|known outcomes|% reported|className="tag"/);
+  assert.match(card, /publicOutcomeEntries/);
+  assert.equal(deriveCommunityStats({ ...validStats, metrics: { ...validStats.metrics, applicationsSubmitted: 4377 }, breakdowns: { ...validStats.breakdowns, outcomes: [
+    { label: "rejected", count: 332 }, { label: "withdrawn", count: 26 }, { label: "interview", count: 20 },
+  ] } }).outcomeCoverage, 8.6);
+});
