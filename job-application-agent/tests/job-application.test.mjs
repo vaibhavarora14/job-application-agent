@@ -13,7 +13,10 @@ import {
   buildReview,
   commandCategory,
   durationBucket,
+  entryOriginForFillMetrics,
+  isLoggedNotAgentFilled,
   isThinSubmission,
+  LOGGED_ENTRY_ORIGIN,
   JOB_APPROVAL_REVIEW_EACH,
   migrateProfile,
   normalizeJobApprovalMode,
@@ -1137,6 +1140,114 @@ test('marks answer-key fill metrics fallback on ledger and application_submitted
   assert.equal(event.properties.fieldsFilled, 7);
   assert.equal(event.properties.resumeUploaded, true);
   assert.equal(event.properties.durationBucket, 'unknown');
+});
+
+test('answer-key fallback marks the entry as logged after the fact, not agent-filled', () => {
+  assert.equal(LOGGED_ENTRY_ORIGIN, 'logged');
+  assert.equal(entryOriginForFillMetrics('answer_keys'), 'logged');
+  assert.equal(entryOriginForFillMetrics('telemetry'), null);
+  assert.equal(entryOriginForFillMetrics('empty'), null);
+  assert.equal(entryOriginForFillMetrics(undefined), null);
+  const logged = resolveSubmissionFillMetrics({ answers: { 'Full name': 'filled', Email: 'filled' } }, {});
+  assert.equal(logged.fillMetricsSource, 'answer_keys');
+  assert.equal(logged.entryOrigin, 'logged');
+  assert.equal(isLoggedNotAgentFilled(logged), true);
+  const filled = resolveSubmissionFillMetrics({ answers: { 'Full name': 'filled' } }, { fieldsFilled: 1, resumeUploaded: false });
+  assert.equal('entryOrigin' in filled, false);
+  assert.equal(isLoggedNotAgentFilled(filled), false);
+  assert.equal('entryOrigin' in resolveSubmissionFillMetrics({ answers: {} }, {}), false);
+  assert.equal(isLoggedNotAgentFilled(null), false);
+  assert.equal(isLoggedNotAgentFilled({ entryOrigin: 'agent' }), false);
+});
+
+test('logged-after-the-fact submissions are never thin agent submits', () => {
+  const live = { applyKind: 'live', answers: {}, approval: 'STANDING AUTHORIZATION' };
+  const thinMetrics = { fieldsFilled: 0, resumeUploaded: false, fillMetricsSource: 'telemetry' };
+  assert.equal(isThinSubmission(live, thinMetrics), true);
+  assert.equal(isThinSubmission(live, { ...thinMetrics, entryOrigin: 'logged' }), false);
+  const sparse = { applyKind: 'live', answers: { Email: 'filled' }, approval: 'STANDING AUTHORIZATION' };
+  const metrics = resolveSubmissionFillMetrics(sparse, {});
+  assert.equal(isThinSubmission(sparse, metrics), false);
+  assert.equal(assertSubmissionFillGuard(sparse, metrics).path, 'filled');
+});
+
+test('validateLedgerEntry accepts known entryOrigin values and rejects others', () => {
+  const base = {
+    id: 'origin-role', company: 'Origin Co', role: 'Engineer', url: 'https://jobs.example.com/origin', source: 'lever',
+    score: 80, status: 'submitted', submittedAt: '2026-10-21T04:00:00Z', approval: 'STANDING AUTHORIZATION', answers: {},
+  };
+  assert.equal('entryOrigin' in validateLedgerEntry(base), false);
+  assert.equal(validateLedgerEntry({ ...base, entryOrigin: 'logged' }).entryOrigin, 'logged');
+  assert.equal(validateLedgerEntry({ ...base, entryOrigin: 'agent' }).entryOrigin, 'agent');
+  assert.throws(() => validateLedgerEntry({ ...base, entryOrigin: 'manual' }), /entry\.entryOrigin is invalid/);
+});
+
+test('application_submitted carries entryOrigin only for logged entries and still validates', async () => {
+  const entry = {
+    company: 'Origin Co', role: 'Engineer', url: 'https://jobs.example.com/origin-event',
+    source: 'greenhouse', approval: 'STANDING AUTHORIZATION', answers: { Email: 'filled', Phone: 'filled' },
+  };
+  const logged = await telemetryApplicationSubmitted(entry, { ...resolveSubmissionFillMetrics(entry, {}), telemetrySupplied: false });
+  assert.equal(logged.properties.entryOrigin, 'logged');
+  assert.equal(logged.properties.fillMetricsSource, 'answer_keys');
+  assert.deepEqual(validateEvent(logged), logged);
+  const fromRow = await telemetryApplicationSubmitted({ ...entry, entryOrigin: 'logged' }, {
+    telemetrySupplied: false, fillMetricsSource: 'answer_keys', fieldsFilled: 2, resumeUploaded: false,
+  });
+  assert.equal(fromRow.properties.entryOrigin, 'logged');
+  const agent = await telemetryApplicationSubmitted(entry, {
+    telemetrySupplied: true, fillMetricsSource: 'telemetry', fieldsFilled: 9, shortAnswerCount: 1, resumeUploaded: true, durationBucket: '2-5m',
+  });
+  assert.equal('entryOrigin' in agent.properties, false);
+  const empty = await telemetryApplicationSubmitted({ ...entry, answers: {} }, { telemetrySupplied: false, fillMetricsSource: 'empty' });
+  assert.equal('entryOrigin' in empty.properties, false);
+  assert.throws(() => validateEvent({ ...logged, properties: { ...logged.properties, entryOrigin: 'manual' } }));
+});
+
+test('ledger add stores and emits entryOrigin logged for answer-key fallback and ignores caller-supplied values', async (t) => {
+  const directory = await mkdtemp(join(tmpdir(), 'job-agent-entry-origin-'));
+  t.after(() => rm(directory, { recursive: true, force: true }));
+  const captured = [];
+  const server = createServer(async (request, response) => {
+    let raw = '';
+    for await (const chunk of request) raw += chunk;
+    captured.push(JSON.parse(raw));
+    response.setHeader('content-type', 'application/json');
+    response.end(JSON.stringify({ accepted: true }));
+  });
+  await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+  t.after(() => new Promise((resolve) => server.close(resolve)));
+  await writeFile(join(directory, 'telemetry.json'), JSON.stringify({ version: 1, enabled: true, disclosed: true, graceConsumed: true, installationEventPending: false, identityEnabled: false, installationId: crypto.randomUUID(), token: 'synthetic-token', tokenExpiresAt: '2099-01-01T00:00:00Z' }));
+  const env = { ...isolatedCliEnv(directory), JOB_APPLICATION_AGENT_TELEMETRY_URL: `http://127.0.0.1:${server.address().port}` };
+  const script = fileURLToPath(new URL('../scripts/job-application.mjs', import.meta.url));
+  const entry = (slug, extra) => ({
+    id: `entry-origin-${slug}`, company: `Origin ${slug}`, role: 'Engineer', url: `https://jobs.example.com/entry-origin-${slug}`,
+    source: 'greenhouse', score: 80, status: 'submitted', submittedAt: '2026-10-21T04:00:00Z', approval: 'STANDING AUTHORIZATION', ...extra,
+  });
+  const cases = [
+    // Logged after the fact: answers only, no fill telemetry. Accepted, not rejected.
+    ['logged', { answers: { Email: 'filled', Phone: 'filled' } }],
+    // Agent-filled with telemetry: a caller-supplied entryOrigin is ignored.
+    ['agent', { answers: { Email: 'filled' }, entryOrigin: 'logged', telemetry: { durationBucket: '2-5m', fieldsFilled: 9, shortAnswerCount: 1, resumeUploaded: true } }],
+  ];
+  for (const [slug, extra] of cases) {
+    const result = await runCli(script, ['ledger', 'add', '--stdin'], entry(slug, extra), env);
+    assert.equal(result.code, 0, result.stderr);
+    if (slug === 'logged') assert.match(result.stderr, /entryOrigin=logged/);
+  }
+  const stored = Object.fromEntries((await readFile(join(directory, 'applications.ndjson'), 'utf8')).trim().split('\n')
+    .map((line) => JSON.parse(line)).map((row) => [row.id, row]));
+  assert.equal(stored['entry-origin-logged'].entryOrigin, 'logged');
+  assert.equal(stored['entry-origin-logged'].status, 'submitted');
+  assert.equal(stored['entry-origin-logged'].fillMetricsSource, 'answer_keys');
+  assert.equal('entryOrigin' in stored['entry-origin-agent'], false);
+  assert.equal(stored['entry-origin-agent'].fillMetricsSource, 'telemetry');
+  const submitted = Object.fromEntries(captured
+    .filter((body) => body.event === 'application_submitted')
+    .map((body) => [body.properties.company, body.properties]));
+  assert.equal(submitted['Origin logged'].entryOrigin, 'logged');
+  assert.equal(submitted['Origin logged'].telemetrySupplied, false);
+  assert.equal('entryOrigin' in submitted['Origin agent'], false);
 });
 
 test('builds a structured assessment event without description or candidate profile data', async () => {

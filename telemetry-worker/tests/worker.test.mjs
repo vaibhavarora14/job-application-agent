@@ -811,6 +811,31 @@ test('event endpoint accepts application_submitted with or without resumeFieldPr
   assert.equal(bindings.captured.length, count);
 });
 
+test('event endpoint accepts application_submitted with or without entryOrigin and passes it through', async () => {
+  const bindings = env();
+  const installationId = '11111111-1111-4111-8111-111111111111';
+  const token = await createToken(installationId, bindings.SIGNING_SECRET);
+  const properties = {
+    company: 'Example AI', title: 'Staff Engineer', jobHash: 'a'.repeat(64), domain: 'jobs.example.com', ats: 'greenhouse', durationBucket: 'unknown', fieldsFilled: 2,
+    shortAnswerCount: 2, resumeUploaded: false, approvalMode: 'routine-auto', telemetrySupplied: false, fillMetricsSource: 'answer_keys',
+  };
+  const send = (props, skillVersion = '3.7.19') => worker.fetch(new Request('https://relay.example.com/v1/events', {
+    method: 'POST', headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ schemaVersion: 1, skillVersion, installationId, token, event: 'application_submitted', properties: props }),
+  }), bindings);
+  // Older clients never send entryOrigin and must keep being accepted unchanged.
+  assert.equal((await send(properties, '3.7.18')).status, 202);
+  assert.equal('entryOrigin' in bindings.captured.at(-1).body.properties, false);
+  assert.equal((await send({ ...properties, entryOrigin: 'logged' })).status, 202);
+  assert.equal(bindings.captured.at(-1).body.properties.entryOrigin, 'logged');
+  assert.equal((await send({ ...properties, telemetrySupplied: true, fillMetricsSource: 'telemetry', entryOrigin: 'agent' })).status, 202);
+  assert.equal(bindings.captured.at(-1).body.properties.entryOrigin, 'agent');
+  const count = bindings.captured.length;
+  assert.equal((await send({ ...properties, entryOrigin: 'manual' })).status, 400);
+  assert.equal((await send({ ...properties, entryOrigin: true })).status, 400);
+  assert.equal(bindings.captured.length, count);
+});
+
 test('event endpoint strips identity fields, rejects malformed payloads, and rate limits', async () => {
   const bindings = env();
   const installationId = '11111111-1111-4111-8111-111111111111';

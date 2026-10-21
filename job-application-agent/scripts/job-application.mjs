@@ -58,6 +58,11 @@ const SUBMISSION_TELEMETRY_PII_KEYS = new Set([
   'resumePath', 'resume', 'answers', 'answerText', 'fullName', 'firstName', 'lastName',
 ]);
 const FILL_METRICS_SOURCES = new Set(['telemetry', 'answer_keys', 'empty']);
+// entryOrigin marks how a submitted ledger entry was produced. 'logged' = recorded after the fact
+// without fill telemetry (answer-key fallback), so it is not an agent-filled submission.
+// 'agent' is reserved; current clients only ever write/emit 'logged' and omit the key otherwise.
+const ENTRY_ORIGINS = new Set(['agent', 'logged']);
+export const LOGGED_ENTRY_ORIGIN = 'logged';
 const AUTONOMY_SCOPES = Object.freeze(['discover', 'assess', 'fill', 'upload-resume', 'submit', 'send-recruiting-email', 'record-ledger', 'record-outcomes', 'cleanup-tabs', 'open-improvement-pr']);
 const AUTONOMY_HARD_STOPS = Object.freeze(['authentication', 'mfa', 'captcha', 'legal-attestation', 'demographic', 'government-id', 'unverifiable-claim', 'ambiguous-authorization', 'ambiguous-compensation']);
 const ATTENTION_STAGES = new Set(['discovery', 'assessment', 'application', 'contact', 'resume', 'questions', 'legal', 'demographic', 'review', 'submission', 'confirmation', 'outcome', 'answers', 'upload']);
@@ -383,6 +388,19 @@ export async function assertAndRecordThinOverrideUse(candidateConfirmation, jobU
 }
 
 /**
+ * A submitted entry whose fill metrics fell back to answer keys (no fill telemetry) was logged after
+ * the fact, not filled by the agent. Returns 'logged' for that case and null otherwise.
+ */
+export function entryOriginForFillMetrics(fillMetricsSource) {
+  return fillMetricsSource === 'answer_keys' ? LOGGED_ENTRY_ORIGIN : null;
+}
+
+/** True when a submission (ledger row, fill metrics, or application_submitted properties) was logged, not agent-filled. */
+export function isLoggedNotAgentFilled(record) {
+  return record?.entryOrigin === LOGGED_ENTRY_ORIGIN;
+}
+
+/**
  * Resolve fill metrics for application_submitted without putting answer values in telemetry.
  * Prefer explicit entry.telemetry counts; fall back to answer *keys* only (labels, not content).
  */
@@ -404,6 +422,7 @@ export function resolveSubmissionFillMetrics(entry, details = {}) {
     : (answers.length > 0 ? 'answer_keys' : 'empty');
   // Boolean only: did the form have a résumé/CV upload field? null = unknown (left out of analytics).
   const resumeFieldPresent = typeof details.resumeFieldPresent === 'boolean' ? details.resumeFieldPresent : null;
+  const entryOrigin = entryOriginForFillMetrics(fillMetricsSource);
   return {
     ...(details.durationBucket ? { durationBucket: details.durationBucket } : {}),
     fieldsFilled,
@@ -412,6 +431,7 @@ export function resolveSubmissionFillMetrics(entry, details = {}) {
     fillMetricsSource,
     ...(details.profileResumeOnFile === true ? { profileResumeOnFile: true } : {}),
     ...(resumeFieldPresent != null ? { resumeFieldPresent } : {}),
+    ...(entryOrigin ? { entryOrigin } : {}),
   };
 }
 
@@ -432,6 +452,8 @@ export function normalizeJobApprovalMode(raw) {
 /** Same thresholds as assertSubmissionFillGuard: 0 fields and no résumé, outside the honest one-click path. */
 export function isThinSubmission(entry, metrics) {
   if (isFixtureOrSandboxApply(entry)) return false;
+  // Logged after the fact (no fill telemetry): not an agent fill, so never an agent thin submit.
+  if (isLoggedNotAgentFilled(metrics)) return false;
   if (metrics.fillMetricsSource === 'empty') return false;
   if (!(metrics.fieldsFilled === 0 && metrics.resumeUploaded !== true)) return false;
   return !(applicationChannelOf(entry) === PROFILE_ONE_CLICK_CHANNEL && metrics.profileResumeOnFile === true);
@@ -537,7 +559,8 @@ export function warnAnswerKeyFillMetricsFallback(fillMetricsSource) {
     'WARNING: ledger add used answer-key fallback fill metrics '
     + '(fillMetricsSource=answer_keys, telemetrySupplied=false). '
     + 'Resend entry.telemetry with fieldsFilled, resumeUploaded, and startedAt/endedAt or durationMs '
-    + 'so analytics duration and counts are accurate — do not omit the telemetry block.\n',
+    + 'so analytics duration and counts are accurate — do not omit the telemetry block. '
+    + 'Without it this entry is recorded as logged after the fact (entryOrigin=logged), not as an agent-filled submission.\n',
   );
 }
 
@@ -551,6 +574,7 @@ export async function telemetryApplicationSubmitted(entry, details = {}) {
   const fillMetricsSource = details.fillMetricsSource ?? metrics.fillMetricsSource;
   const telemetrySupplied = details.telemetrySupplied === true;
   const omitCounts = fillMetricsSource === 'empty';
+  const entryOrigin = details.entryOrigin ?? entry.entryOrigin ?? entryOriginForFillMetrics(fillMetricsSource);
 
   let resolvedDuration = metrics.durationBucket ?? details.durationBucket ?? null;
   if (resolvedDuration == null) {
@@ -583,6 +607,10 @@ export async function telemetryApplicationSubmitted(entry, details = {}) {
       // Optional Boolean: true = the form had a résumé/CV upload field, false = it had none.
       // Omitted when unknown (older CLIs / agents that do not report it).
       ...(typeof metrics.resumeFieldPresent === 'boolean' ? { resumeFieldPresent: metrics.resumeFieldPresent } : {}),
+      // Optional: 'logged' when the entry was recorded after the fact without fill telemetry
+      // (answer-key fallback), i.e. not agent-filled. Omitted otherwise, so ordinary agent submits
+      // keep the pre-existing property set.
+      ...(ENTRY_ORIGINS.has(entryOrigin) ? { entryOrigin } : {}),
     },
   };
 }
@@ -968,6 +996,10 @@ export function validateLedgerEntry(input) {
   if (entry.telemetrySupplied != null) {
     if (typeof entry.telemetrySupplied !== 'boolean') throw new Error('entry.telemetrySupplied must be a Boolean.');
     normalized.telemetrySupplied = entry.telemetrySupplied;
+  }
+  if (entry.entryOrigin != null) {
+    if (!ENTRY_ORIGINS.has(entry.entryOrigin)) throw new Error('entry.entryOrigin is invalid.');
+    normalized.entryOrigin = entry.entryOrigin;
   }
   if (!SOURCES.has(normalized.source)) throw new Error('entry.source is invalid.');
   if (normalized.discoverySource != null && !DISCOVERY_SOURCES.has(normalized.discoverySource)) throw new Error('entry.discoverySource is invalid.');
@@ -2492,10 +2524,14 @@ async function executeCommand([area, action, value], telemetry, session, communi
     }
     const telemetrySupplied = fillMetrics.fillMetricsSource === 'telemetry';
     warnAnswerKeyFillMetricsFallback(fillMetrics.fillMetricsSource);
+    // entryOrigin is derived here, never taken from the caller: only an answer-key fallback
+    // (no fill telemetry) marks the entry as logged after the fact / not agent-filled.
+    const { entryOrigin: _callerEntryOrigin, ...ledgerInput } = input;
     const entry = validateLedgerEntry({
-      ...input,
+      ...ledgerInput,
       fillMetricsSource: fillMetrics.fillMetricsSource,
       telemetrySupplied,
+      ...(fillMetrics.entryOrigin ? { entryOrigin: fillMetrics.entryOrigin } : {}),
     });
     result = await ledgerAdd(entry, input.duplicateOverride, input.companyReapplyOverride, input.cloudIntentId && input.cloudLeaseId ? { intentId: input.cloudIntentId, leaseId: input.cloudLeaseId } : null);
     result.communityJob = await communityJobsSync(community, { limit: 1, applicationIds: [entry.id] });

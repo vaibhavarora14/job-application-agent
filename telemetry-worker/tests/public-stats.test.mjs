@@ -96,6 +96,18 @@ test('event aggregation stores only an HMAC installation hash and bounded dimens
   assert.ok(db.writes.some((write) => /public_stats_lifetime/i.test(write.query)));
 });
 
+test('logged-after-the-fact submissions still count as submitted applications', async () => {
+  const db = writeDb();
+  await recordPublicAggregate(db, {
+    installationId: '11111111-1111-4111-8111-111111111111',
+    event: 'application_submitted',
+    properties: { ats: 'greenhouse', entryOrigin: 'logged', fillMetricsSource: 'answer_keys', telemetrySupplied: false },
+  }, 'test-signing-secret-with-sufficient-length', new Date('2026-08-14T00:00:00Z'));
+  const serialized = JSON.stringify(db.writes);
+  assert.equal(serialized.includes('applications_submitted'), true);
+  assert.equal(serialized.includes('greenhouse'), true);
+});
+
 test('public endpoint exposes only aggregate output and cache policy', async () => {
   const response = await worker.fetch(new Request('https://relay.example.com/api/public-stats'), { PUBLIC_STATS_DB: readDb() });
   assert.equal(response.status, 200);
