@@ -111,7 +111,7 @@ function outdatedClientResponse(input, env) {
   if (!input || Array.isArray(input) || typeof input !== 'object') return null;
   const decision = clientVersionDecision(input.skillVersion, env);
   if (decision.action === 'allow') return null;
-  return Response.json(upgradeRequiredBody(decision), {
+  return markGated(Response.json(upgradeRequiredBody(decision), {
     status: decision.status,
     headers: {
       'cache-control': 'no-store',
@@ -119,7 +119,7 @@ function outdatedClientResponse(input, env) {
       'referrer-policy': 'no-referrer',
       'x-min-client-version': decision.minimum,
     },
-  });
+  }));
 }
 
 async function readJson(request, maxBytes) {
@@ -127,7 +127,10 @@ async function readJson(request, maxBytes) {
   if (length > maxBytes) throw Object.assign(new Error('Payload too large.'), { status: 413 });
   const text = await request.text();
   if (encoder.encode(text).length > maxBytes) throw Object.assign(new Error('Payload too large.'), { status: 413 });
-  try { return text ? JSON.parse(text) : {}; } catch { throw Object.assign(new Error('Invalid JSON.'), { status: 400 }); }
+  let parsed;
+  try { parsed = text ? JSON.parse(text) : {}; } catch { throw Object.assign(new Error('Invalid JSON.'), { status: 400 }); }
+  noteRequestSkillVersion(request, parsed);
+  return parsed;
 }
 
 async function allowed(rateLimiter, key) {
@@ -700,6 +703,7 @@ async function adminLivenessSweep(request, env) {
     store: env.JOB_STORE ?? jobStore(env),
     fetchImpl: env.LIVENESS_FETCH ?? fetch,
     limit,
+    log: silentLog,
   });
   return response({ ok: true, ...summary }, 200);
 }
@@ -708,6 +712,76 @@ export function shouldRefreshActiveInstallations(scheduledTime) {
   if (scheduledTime == null) return true;
   const minutes = new Date(scheduledTime).getUTCMinutes();
   return !Number.isFinite(minutes) || minutes % 15 === 0;
+}
+
+// ---------------------------------------------------------------------------------------------
+// Request logging (Workers Logs). Exactly one structured line per fetch, with ONLY:
+//   status, skillVersion (sanitized), path (known route or "other", never a query string),
+//   durationMs, gate ("min_version" when the minimum-client-version gate answered, else null).
+// Never logged: request/response bodies, tokens, headers, emails, names, install IDs, IPs, cf data.
+// Invocation logs are disabled in wrangler.jsonc because they carry request metadata (URL, headers,
+// cf/IP); this line is the only per-request log. Liveness sweep summaries are not logged either.
+// ---------------------------------------------------------------------------------------------
+const LOGGED_PATHS = new Set([
+  '/', '/healthz', '/api/public-stats', '/v1/install', '/v1/events', '/v1/contact', '/v1/sources',
+  '/v1/jobs', '/v1/jobs/live', '/v1/admin/jobs/liveness-sweep',
+]);
+const LOG_VERSION = /^(\d{1,6})\.(\d{1,6})\.(\d{1,6})(?:-([0-9A-Za-z.-]{1,64}))?(?:\+[0-9A-Za-z.-]{1,64})?$/;
+const requestSkillVersions = new WeakMap();
+const gatedResponses = new WeakSet();
+
+export function silentLog() {}
+
+function noteRequestSkillVersion(request, input) {
+  if (!request || typeof request !== 'object') return;
+  if (!input || typeof input !== 'object' || Array.isArray(input) || !('skillVersion' in input)) return;
+  requestSkillVersions.set(request, input.skillVersion);
+}
+
+function markGated(res) {
+  gatedResponses.add(res);
+  return res;
+}
+
+/**
+ * Reduces a client-reported skillVersion to a safe, bounded label: "major.minor.patch" plus a
+ * prerelease class from a fixed vocabulary (so free text in a prerelease tag can never be logged).
+ * Missing -> null; present but not a version -> "invalid".
+ */
+export function logSkillVersion(value) {
+  if (value === undefined || value === null) return null;
+  if (typeof value !== 'string' || value.length > 64) return 'invalid';
+  const match = LOG_VERSION.exec(value);
+  if (!match) return 'invalid';
+  const core = `${Number(match[1])}.${Number(match[2])}.${Number(match[3])}`;
+  const pre = match[4];
+  if (!pre) return core;
+  const lower = pre.toLowerCase();
+  let label = 'prerelease';
+  if (/(?:^|[.-])staging(?:[.-]|$)/.test(lower)) label = 'staging';
+  else if (/(?:^|[.-])probe(?:[.-]|$)/.test(lower)) label = 'probe';
+  else if (/^(?:rc|beta|alpha)(?:[.-]?\d{1,4})?$/.test(lower)) label = lower;
+  return `${core}-${label}`;
+}
+
+export function logPath(url) {
+  let pathname;
+  try { pathname = new URL(url).pathname; } catch { return 'other'; }
+  return LOGGED_PATHS.has(pathname) ? pathname : 'other';
+}
+
+export function requestLogRecord(request, result, startedAt, now = Date.now()) {
+  return {
+    status: Number(result?.status) || 0,
+    skillVersion: logSkillVersion(requestSkillVersions.get(request)),
+    path: logPath(request?.url),
+    durationMs: Math.max(0, Math.round(now - startedAt)),
+    gate: result && gatedResponses.has(result) ? 'min_version' : null,
+  };
+}
+
+function logRequest(request, result, startedAt, env) {
+  try { (env?.REQUEST_LOG ?? console.log)(JSON.stringify(requestLogRecord(request, result, startedAt))); } catch { /* never fail a request on logging */ }
 }
 
 export async function handleRequest(request, env) {
@@ -732,14 +806,19 @@ export async function handleRequest(request, env) {
 
 export default {
   async fetch(request, env) {
-    try { return await handleRequest(request, env); }
-    catch (error) { return response({ error: error?.status === 413 ? 'payload_too_large' : 'bad_request' }, error?.status ?? 400); }
+    const startedAt = Date.now();
+    let result;
+    try { result = await handleRequest(request, env); }
+    catch (error) { result = response({ error: error?.status === 413 ? 'payload_too_large' : 'bad_request' }, error?.status ?? 400); }
+    logRequest(request, result, startedAt, env);
+    return result;
   },
   async scheduled(controller, env) {
     await runJobLivenessSweep(env, {
       store: env.JOB_STORE ?? jobStore(env),
       fetchImpl: env.LIVENESS_FETCH ?? fetch,
       limit: CRON_LIVENESS_BATCH_SIZE,
+      log: silentLog,
     });
     // The cron fires every 5 minutes for small liveness batches; keep the
     // 30-day active-installations refresh on its previous 15-minute cadence.
