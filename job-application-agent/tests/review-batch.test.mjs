@@ -18,7 +18,8 @@ const script = fileURLToPath(new URL('../scripts/job-application.mjs', import.me
 
 async function stateDir(t) {
   const directory = await mkdtemp(join(tmpdir(), 'review-batch-'));
-  t.after(() => rm(directory, { recursive: true, force: true }));
+  // The detached review page may still be removing its info file as a test ends (Windows holds it briefly).
+  t.after(() => rm(directory, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 }));
   await writeFile(join(directory, 'telemetry.json'), JSON.stringify({ version: 1, enabled: false, disclosed: true, graceConsumed: true, installationEventPending: false }));
   return directory;
 }
@@ -308,6 +309,10 @@ test('review open starts a detached local page', async (t) => {
   const status = cli(env, ['review', 'status', staged.json.batchId]);
   assert.equal(status.json.status, 'approved');
   assert.match(status.json.reviewToken, /^rbt1\./);
+  // Let the detached page finish and remove its info file before the state dir is deleted.
+  const info = join(directory, 'review-batches', `${staged.json.batchId}.page.json`);
+  const { existsSync } = await import('node:fs');
+  for (let i = 0; i < 100 && existsSync(info); i++) await new Promise((r) => setTimeout(r, 100));
 });
 
 test('the review page shows email headers, opens answers by default and serves the exact résumé', async (t) => {
