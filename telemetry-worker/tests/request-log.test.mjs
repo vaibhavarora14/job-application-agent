@@ -97,10 +97,12 @@ test('skillVersion is reduced to a bounded label; free-text prerelease tags are 
 });
 
 test('relay source has no other console output and invocation logs stay disabled', async () => {
-  for (const file of ['worker.mjs', 'client-version.mjs', 'public-stats.mjs']) {
+  // worker.mjs: the per-request line, plus the one-off install-correction summary (counts only).
+  const expected = { 'worker.mjs': 2, 'client-version.mjs': 0, 'public-stats.mjs': 0, 'install-corrections.mjs': 0 };
+  for (const [file, count] of Object.entries(expected)) {
     const source = await readFile(new URL(`../src/${file}`, import.meta.url), 'utf8');
     const calls = source.match(/console\.(log|error|warn|info|debug)\b/g) ?? [];
-    assert.equal(calls.length, file === 'worker.mjs' ? 1 : 0, file);
+    assert.equal(calls.length, count, file);
   }
   const config = await readFile(new URL('../wrangler.jsonc', import.meta.url), 'utf8');
   const production = config.slice(0, config.indexOf('"env"'));

@@ -89,24 +89,50 @@ export async function refreshActiveInstallations30d(db, now = new Date()) {
   `).bind(nowIso).run();
 }
 
+/**
+ * True when an event is real use of an installation. installation_started alone does not count,
+ * and neither does a bare `ledger add` command completion: a real submission also sends
+ * application_submitted, while a fixture/sandbox apply (applyKind=fixture, e.g. the test suite)
+ * sends only command_completed{command: 'apply'}.
+ */
+export function isCountableInstallActivity(event) {
+  if (!event || typeof event.event !== 'string') return false;
+  if (event.event === 'installation_started') return false;
+  if (event.event === 'command_completed' && event.properties?.command === 'apply') return false;
+  return true;
+}
+
 export async function recordPublicAggregate(db, event, signingSecret, now = new Date()) {
   if (!db?.prepare) return;
   const day = now.toISOString().slice(0, 10);
   const nowIso = now.toISOString();
   const active = event.event === 'job_assessed' || event.event === 'application_submitted';
-  if (event.event === 'installation_started' || active) {
+  const countable = isCountableInstallActivity(event);
+  if (event.event === 'installation_started' || countable) {
     const installationHash = await anonymousInstallationHash(event.installationId, signingSecret);
-    const inserted = await db.prepare(`
-      INSERT OR IGNORE INTO public_installations (installation_hash, installed_at, last_active_at)
-      VALUES (?, ?, ?)
-    `).bind(installationHash, nowIso, active ? nowIso : null).run();
-    if (number(inserted?.meta?.changes) > 0) await bumpLifetime(db, 'installations', nowIso);
-    if (active) {
+    if (event.event === 'installation_started') {
+      // Registered, not counted: the public total only grows at the first real activity.
       await db.prepare(`
-        UPDATE public_installations
-        SET last_active_at = ?
-        WHERE installation_hash = ?
-      `).bind(nowIso, installationHash).run();
+        INSERT OR IGNORE INTO public_installations (installation_hash, installed_at, last_active_at, uncounted)
+        VALUES (?, ?, NULL, 1)
+      `).bind(installationHash, nowIso).run();
+    } else {
+      // One statement per event: inserts a counted row, or flips a registered row to counted.
+      // Already-counted installations match no row to change (no write).
+      const counted = await db.prepare(`
+        INSERT INTO public_installations (installation_hash, installed_at, last_active_at, uncounted)
+        VALUES (?, ?, ?, 0)
+        ON CONFLICT(installation_hash) DO UPDATE SET uncounted = 0
+        WHERE public_installations.uncounted = 1
+      `).bind(installationHash, nowIso, active ? nowIso : null).run();
+      if (number(counted?.meta?.changes) > 0) await bumpLifetime(db, 'installations', nowIso);
+      if (active) {
+        await db.prepare(`
+          UPDATE public_installations
+          SET last_active_at = ?
+          WHERE installation_hash = ?
+        `).bind(nowIso, installationHash).run();
+      }
     }
   }
   if (event.event === 'job_assessed') {
@@ -132,6 +158,12 @@ export async function recordPublicAggregate(db, event, signingSecret, now = new 
   }
 }
 
+const HIDDEN_OUTCOME_LABELS = new Set(['interview', 'interviews']);
+
+function publicOutcomes(entries) {
+  return entries.filter((entry) => !HIDDEN_OUTCOME_LABELS.has(String(entry?.label ?? '').trim().toLowerCase()));
+}
+
 function rows(result) {
   return Array.isArray(result?.results) ? result.results : [];
 }
@@ -139,7 +171,7 @@ function rows(result) {
 async function readLifetimeTotals(db, now = new Date()) {
   const selectLifetime = () => db.prepare(`
     SELECT installations, active_installations_30d, jobs_assessed, applications_submitted,
-           interviews, offers, refreshed_at
+           offers, refreshed_at
     FROM public_stats_lifetime
     WHERE id = 1
   `).first();
@@ -157,7 +189,6 @@ async function readLifetimeTotals(db, now = new Date()) {
     active_installations_30d: 0,
     jobs_assessed: 0,
     applications_submitted: 0,
-    interviews: 0,
     offers: 0,
   };
 }
@@ -177,10 +208,10 @@ export async function buildPublicStats(db, now = new Date()) {
     `).all(),
     db.prepare(`SELECT segment AS label, SUM(count) AS count FROM public_daily_metrics WHERE day >= date('now', '-90 days') AND metric = 'ats' GROUP BY segment ORDER BY count DESC, label LIMIT 12`).all(),
     db.prepare(`SELECT segment AS label, SUM(count) AS count FROM public_daily_metrics WHERE day >= date('now', '-90 days') AND metric = 'seniority' GROUP BY segment ORDER BY count DESC, label LIMIT 12`).all(),
-    db.prepare(`SELECT segment AS label, SUM(count) AS count FROM public_daily_metrics WHERE day >= date('now', '-365 days') AND metric = 'outcome' GROUP BY segment ORDER BY count DESC, label`).all(),
+    db.prepare(`SELECT segment AS label, SUM(count) AS count FROM public_daily_metrics WHERE day >= date('now', '-365 days') AND metric = 'outcome' AND segment NOT IN ('interview', 'interviews') GROUP BY segment ORDER BY count DESC, label`).all(),
   ]);
   const totals = lifetime ?? {};
-  const segment = (result) => suppressSmallSegments(rows(result));
+  const segment = (result) => suppressSmallSegments(Array.isArray(result) ? result : rows(result));
   return {
     generatedAt: now.toISOString(),
     window: { retentionMonths: 24, activityDays: 30 },
@@ -189,11 +220,11 @@ export async function buildPublicStats(db, now = new Date()) {
       activeInstallations30d: number(totals.active_installations_30d),
       jobsAssessed: number(totals.jobs_assessed),
       applicationsSubmitted: number(totals.applications_submitted),
-      interviews: number(totals.interviews),
+      // The interviews count is collected (public_stats_lifetime.interviews) but never public.
       offers: number(totals.offers),
     },
     timeline: rows(timeline).map((entry) => ({ day: String(entry.day), assessed: number(entry.assessed), submitted: number(entry.submitted) })),
-    breakdowns: { ats: segment(ats), seniority: segment(seniority), outcomes: segment(outcomes) },
+    breakdowns: { ats: segment(ats), seniority: segment(seniority), outcomes: segment(publicOutcomes(rows(outcomes))) },
     privacy: { aggregateOnly: true, minimumSegmentCount: MIN_SEGMENT_COUNT, identityCollected: false },
   };
 }

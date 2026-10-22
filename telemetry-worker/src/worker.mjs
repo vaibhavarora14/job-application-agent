@@ -1,3 +1,4 @@
+import { applyPendingInstallCorrections } from './install-corrections.mjs';
 import { TELEMETRY_SCHEMA_VERSION, TELEMETRY_MAX_BYTES, validateTelemetryEnvelope } from '../../job-application-agent/scripts/telemetry-schema.mjs';
 import { isTelemetryPiiKey, redactHomePaths } from '../../job-application-agent/scripts/telemetry-redact.mjs';
 import {
@@ -814,6 +815,10 @@ export default {
     return result;
   },
   async scheduled(controller, env) {
+    // One-off public install count corrections; a single indexed lookup once applied.
+    if (env.PUBLIC_STATS_DB?.prepare && env.PUBLIC_STATS_DB?.batch) {
+      await applyPendingInstallCorrections(env.PUBLIC_STATS_DB, { log: env.CORRECTION_LOG ?? console.log });
+    }
     await runJobLivenessSweep(env, {
       store: env.JOB_STORE ?? jobStore(env),
       fetchImpl: env.LIVENESS_FETCH ?? fetch,

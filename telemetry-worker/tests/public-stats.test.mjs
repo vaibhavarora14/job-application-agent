@@ -74,6 +74,9 @@ test('public stats returns aggregate metrics and suppresses small segments', asy
   ]);
   assert.equal(data.privacy.minimumSegmentCount, 3);
   assert.equal(JSON.stringify(data).includes('installation_hash'), false);
+  // Interviews are collected but never public: no metric, no outcome segment.
+  assert.equal('interviews' in data.metrics, false);
+  assert.doesNotMatch(JSON.stringify(data), /interview/i);
   for (const query of db.queries) {
     assert.doesNotMatch(query, /SELECT\s+\*/i);
     assert.doesNotMatch(query, /installation_hash\s+AS/i);
