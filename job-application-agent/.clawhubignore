@@ -1,0 +1,20 @@
+# ClawHub publish/sync ignore list for this skill folder (gitignore syntax).
+# The published skill is the runtime only: SKILL.md, capabilities.json,
+# platforms.json, references/, scripts/ and the owned-fixture allowlist that
+# scripts/ats/apply-url-gate.mjs reads at runtime. Keep this in sync with the
+# "files" list in the repo's package.json (npm ships the same set).
+
+# Tests and their support code: dev-only, never part of the skill.
+tests/
+
+# Owned ATS fixture pages and their docs: dev/CI only. Keep the allowlist.
+fixtures/*
+!fixtures/test-jobs.json
+
+# Dev-only static server for those fixture pages.
+scripts/serve-apply-fixtures.mjs
+
+# Local tooling noise.
+node_modules/
+*.log
+.DS_Store

@@ -13,7 +13,11 @@ import {
   validateCommunitySourceList,
 } from './source-community-schema.mjs';
 
-/** Same rule as telemetry: an explicit URL wins; test runs never fall back to production. */
+/**
+ * Same rule as telemetry: an explicit URL wins; test runs never fall back to production.
+ * The only environment values read are this endpoint override and the test-run markers;
+ * no credential or other environment data is ever sent.
+ */
 export function defaultSourceCommunityEndpoint(env = process.env, argv = process.argv) {
   if (env.JOB_APPLICATION_AGENT_SOURCE_COMMUNITY_URL) return env.JOB_APPLICATION_AGENT_SOURCE_COMMUNITY_URL;
   return defaultTelemetryEndpoint(env, argv);

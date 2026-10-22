@@ -1,3 +1,7 @@
+// child_process runs only the OS credential-store tools, each with a fixed binary and an
+// argument array (never a shell): macOS `security`, Linux `secret-tool`, and on Windows
+// `powershell.exe -File` on this package's own windows-profile-store.ps1. The profile
+// goes over stdin, never on the command line, and nothing is sent over the network.
 import { execFileSync } from 'node:child_process';
 import { cp, lstat, mkdir } from 'node:fs/promises';
 import { homedir } from 'node:os';

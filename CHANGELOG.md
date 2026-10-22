@@ -1,5 +1,14 @@
 # Changelog
 
+## 3.8.1
+
+Packaging and registry-scan fixes only; no behavior change.
+
+- **Smaller published package.** npm's `files` list now ships just the runtime skill: `SKILL.md`, `capabilities.json`, `platforms.json`, `references/`, `scripts/` (without the dev-only `serve-apply-fixtures.mjs`) and the owned-fixture allowlist `fixtures/test-jobs.json` that the apply URL gate reads. `job-application-agent/tests/`, the fixture HTML pages and `fixtures/README.md` no longer ship (63 files instead of 109). New `job-application-agent/.clawhubignore` keeps the same set when the skill folder is published to ClawHub.
+- SKILL.md (all copies): the Untrusted content section keeps the same rule but no longer quotes injection-style example phrases, which registry scanners flagged as prompt injection.
+- Test fixture: the fake CAPTCHA vendor key values are now obvious placeholders.
+- Comments explaining the remaining `child_process` use (`secret-store.mjs`, `review open`) and the environment reads next to network code (cloud config path, community endpoint, `GITHUB_ACTIONS`). The cloud config path is read in one place.
+
 ## 3.8.0
 
 - **Batch review is the only path to a send.** The agent stages filled applications (and outreach emails) with `review stage --stdin`: company, role, URL, fit score, the exact drafted answers, and a hash of the canonical résumé the CLI computes itself. The candidate approves on a one-shot local review page (`review open <batch-id>`: `127.0.0.1` only, a random path secret, no external requests and only one fixed, nonce-bound inline script for the live approve count; it shows each email's recipient, subject and attachments and links the exact résumé PDF; untick items, type the batch code to approve, or reject the batch), or, on hosts without a local browser, by typing the batch's approval phrase in chat (`review approve --stdin`, optionally leaving items out). Batches hold at most 25 items; a pending batch expires after 24 hours and an approval lasts 24 hours. New commands: `review stage|approve --stdin`, `review show|open|status|revoke <batch-id>`, `review list`.

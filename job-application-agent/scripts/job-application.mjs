@@ -1,5 +1,11 @@
 #!/usr/bin/env node
 
+// child_process is used for exactly two local, shell-free spawns (argument arrays, no `shell: true`):
+//   1. `review open` starts this package's own review-page.mjs with the current Node binary
+//      (process.execPath) to serve the local approval page on 127.0.0.1.
+//   2. openBrowser() hands that local review URL to the OS opener (open / xdg-open /
+//      `cmd /c start`), only when a desktop is present; JOB_APPLICATION_AGENT_NO_BROWSER=1 turns it off.
+// Nothing user- or page-supplied is ever executed.
 import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { createHash, randomUUID } from 'node:crypto';
@@ -149,11 +155,18 @@ function assessmentGuard() {
 }
 
 const secretStore = createSecretStore({ stateDir });
-const cloudState = new CloudStateClient({ stateDir: stateDir(), configPath: process.env.JOB_APPLICATION_AGENT_CLOUD_CONFIG ?? defaultCloudConfigPath() });
+// Path of the optional cloud-sync config (written only by `cloud configure`). The env override
+// exists so tests and smoke runs point at a throwaway file; it never carries a credential itself.
+// The config is read locally and sent only to the cloud endpoint the candidate configured.
+function cloudConfigPath() {
+  return process.env.JOB_APPLICATION_AGENT_CLOUD_CONFIG ?? defaultCloudConfigPath();
+}
+
+const cloudState = new CloudStateClient({ stateDir: stateDir(), configPath: cloudConfigPath() });
 
 function cachedCloudProfileRaw() {
   try {
-    const config = JSON.parse(readFileSync(process.env.JOB_APPLICATION_AGENT_CLOUD_CONFIG ?? defaultCloudConfigPath(), 'utf8'));
+    const config = JSON.parse(readFileSync(cloudConfigPath(), 'utf8'));
     if (config.version !== 2) return null;
     return object(JSON.parse(readFileSync(join(stateDir(), 'cloud-profile-cache.json'), 'utf8')), 'profile');
   } catch {
@@ -2557,7 +2570,7 @@ async function prepareCloudState(area, action) {
 
 async function cloudCommand(action, value) {
   if (action === 'configure' && value === '--stdin') {
-    const configured = await saveCloudConfig(await jsonStdin(), { configPath: process.env.JOB_APPLICATION_AGENT_CLOUD_CONFIG ?? defaultCloudConfigPath() });
+    const configured = await saveCloudConfig(await jsonStdin(), { configPath: cloudConfigPath() });
     const updateGuard = await enableCloudUpdateGuard();
     return { configured: true, url: configured.url, clientId: configured.clientId ?? null, clientName: configured.clientName ?? null, token: configured.token, updateGuard };
   }

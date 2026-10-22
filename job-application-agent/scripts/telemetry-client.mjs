@@ -16,6 +16,7 @@ export const TEST_RUNNER_TELEMETRY_ENDPOINT = 'http://127.0.0.1:9';
  * Deliberately NOT keyed on the generic CI variable: agent runtimes and sandboxes that real
  * candidates use (non-interactive shells, hosted coding agents) commonly export CI=true, and
  * treating those as CI would silently drop real usage analytics.
+ * Reads only GITHUB_ACTIONS (to stay quiet on CI runners); no environment value is sent.
  */
 export function isGitHubActions(env = process.env) {
   const value = String(env.GITHUB_ACTIONS ?? '').trim().toLowerCase();
