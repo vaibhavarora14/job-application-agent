@@ -284,7 +284,12 @@ test("open-source and compare pages pair JobAppAgent with open-source job applic
   // Mobile cards: same eight projects as the table, with an approval tag each.
   assert.equal((compareHtml.match(/<span class="[^"]+">Approval before submit: /g) ?? []).length, 5);
   // Tools that never make the submit get a neutral "Never submits" tag, never the green yes.
-  assert.equal((compareHtml.match(/<span class="[^"]+">Never submits: you apply yourself</g) ?? []).length, 3);
+  // Mobile tags and desktop approval cells agree for tools that never make the submit.
+  assert.equal((compareHtml.match(/<span class="[^"]+">Never submits: you click Submit</g) ?? []).length, 2);
+  assert.equal((compareHtml.match(/<span class="[^"]+">Never submits: you apply yourself</g) ?? []).length, 1);
+  assert.equal((compareHtml.match(/<td>Never submits: you click Submit\. /g) ?? []).length, 2);
+  assert.equal((compareHtml.match(/<td>Never submits: you apply yourself\. /g) ?? []).length, 1);
+  assert.match(compareHtml, /Approval before submit: (?:<!-- -->)?yes</);
   assert.doesNotMatch(openHtml, /The code is on GitHub as/);
   assert.match(compareHtml, /Approval before submit: (?:<!-- -->)?no, by default/);
   assert.match(compareHtml, /Approval before submit: (?:<!-- -->)?not stated/);
