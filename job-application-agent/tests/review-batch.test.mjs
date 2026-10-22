@@ -236,9 +236,8 @@ test('the local review page escapes job content and approves only with the typed
   const nonce = csp.match(/script-src 'nonce-([A-Za-z0-9+/=]+)'/)?.[1];
   assert.ok(nonce, csp);
   // The only script is the fixed live-count snippet, bound to this response's nonce.
-  const scripts = [...get.text.matchAll(/<script\b[^>]*>([\s\S]*?)<\/script>/gi)];
-  assert.equal(scripts.length, 1);
-  assert.equal(scripts[0][0], `<script nonce="${nonce}">${COUNT_SCRIPT}</script>`);
+  assert.equal(get.text.toLowerCase().split('<script').length - 1, 1);
+  assert.ok(get.text.includes(`<script nonce="${nonce}">${COUNT_SCRIPT}</script>`));
   assert.doesNotMatch(COUNT_SCRIPT, /https?:|fetch|XMLHttpRequest|innerHTML|eval/);
   assert.notEqual((await http(page.url)).headers['content-security-policy'], csp);
   assert.match(get.text, /id="go">Approve 2 items</);
