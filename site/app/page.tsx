@@ -5,8 +5,8 @@ import { LaunchCountdown } from "./components/LaunchCountdown";
 import { SiteFooter, SiteHeader } from "./components/SiteChrome";
 
 export const metadata: Metadata = {
-  title: "Set the goal. Keep the search moving.",
-  description: "A disciplined job-search agent that discovers, qualifies, applies, pauses for judgment, and keeps a verified record while you are away.",
+  title: { absolute: "JobAppAgent — open-source job application agent" },
+  description: "JobAppAgent is an open-source job application agent that discovers, qualifies, applies, pauses for judgment, and keeps a verified record while you are away.",
   alternates: { canonical: "https://jobappagent.com" },
 };
 

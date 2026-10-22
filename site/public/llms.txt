@@ -1,0 +1,28 @@
+# JobAppAgent
+
+> JobAppAgent: open-source job application agent. An MIT-licensed Agent Skill and CLI that helps your coding agent discover, evaluate, complete, and track your own job applications using one verified résumé.
+
+JobAppAgent (npm package `job-application-agent`, also called Job Application Agent) is free and open source under the MIT License.
+
+- Source code: https://github.com/vaibhavarora14/job-application-agent
+- npm package: https://www.npmjs.com/package/job-application-agent
+- Install: `npx job-application-agent@latest install` (the CLI runs as `npx job-application-agent <command>`; alternatively `npx skills add vaibhavarora14/job-application-agent`)
+- Requires Node.js 20 or newer and a browser-capable coding agent (installer supports Codex, Claude Code, Cursor, Copilot, and Gemini skill directories; setup templates exist for Hermes Agent, Grok Bot, and OpenClaw).
+
+## How it works
+
+- Runs locally: the skill runs inside your own coding agent and browser. Your profile is kept in the OS credential store (macOS Keychain, Windows Credential Manager, or Linux Secret Service), and your résumé and application ledgers stay in an owner-only local state directory. An optional private Cloudflare D1 backend can share state across one person's trusted hosts.
+- Asks before submitting by default: it does not apply until you authorize a destination or batch. `review-each` mode asks you to approve every completed application before submission; `routine-auto` is opt-in through an explicit, revocable autonomy grant (`autonomy revoke`).
+- Always pauses for you on passwords, SSO, MFA, CAPTCHA, legal attestations, government identifiers, demographic questions, and unverifiable claims.
+- Works across applicant-tracking systems: discovery searches a shared, versioned catalog of direct careers pages, ATS platforms, networks, feeds, and job boards, and verifies every lead at the employer or ATS page before applying.
+- Truthful applications: fills forms and uploads one canonical résumé using verified facts only, and refuses unverifiable claims.
+- Verified record: deduplicates applications and records a submission only after a visible confirmation (filled is not applied). Outcomes are tracked so targeting can improve.
+- Privacy controls: analytics and anonymous community sharing of confirmed public job links can each be disabled from the CLI (`telemetry disable`, `sources sharing disable`).
+
+## Key pages
+
+- [Home](https://jobappagent.com/): overview of JobAppAgent
+- [Jobs](https://jobappagent.com/jobs): maintainer-reviewed open roles from the JobAppAgent community registry, checked daily for liveness
+- [Community stats](https://stats.jobappagent.com): public community momentum dashboard
+- [Privacy](https://jobappagent.com/privacy): what data is stored, where, and how to opt out
+- [README](https://github.com/vaibhavarora14/job-application-agent#readme): full documentation, safety, and privacy details

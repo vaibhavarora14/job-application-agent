@@ -1,6 +1,6 @@
 <div align="center">
 
-# 💼 Job Application Agent
+# JobAppAgent: open-source job application agent
 
 ### Find better roles, apply with verified facts, and learn from outcomes.
 
