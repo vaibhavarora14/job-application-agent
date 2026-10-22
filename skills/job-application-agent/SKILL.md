@@ -1,6 +1,6 @@
 ---
 name: job-application-agent
-description: JobAppAgent, the open-source AI job application agent. Finds, evaluates, fills, submits (only with the candidate's approval), and tracks a candidate's own job applications using a verified resume, evidence-based targeting, secure local profile storage, and browser automation. Use only when the user names JobAppAgent or job-application-agent, or explicitly asks for a job-search or job-application task: onboarding or migrating their job-search profile, searching for jobs, assessing a job posting, applying to a specific job URL or batch, recording an application outcome, or reviewing their applications. Do not use for vague or general requests, general career advice, or other browser or form automation.
+description: JobAppAgent, the open-source AI job application agent. Finds, evaluates, fills, submits (only with the candidate's approval), and tracks a candidate's own job applications using a verified resume, evidence-based targeting, secure local profile storage, and browser automation. Use only when the user names JobAppAgent or job-application-agent, or explicitly asks for a job-search or job-application task, such as onboarding or migrating their job-search profile, searching for jobs, assessing a job posting, applying to a specific job URL or batch, recording an application outcome, or reviewing their applications. Do not use for vague or general requests, general career advice, or other browser or form automation.
 ---
 
 # Job Application Agent

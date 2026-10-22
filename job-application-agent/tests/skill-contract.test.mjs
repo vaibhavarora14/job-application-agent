@@ -123,6 +123,7 @@ test('skill triggers only on explicit job-search/application requests or the ski
     assert.ok(description.length <= 1024, 'description must fit the Agent Skills 1024-character limit');
     assert.match(description, /Use only when the user names JobAppAgent or job-application-agent, or explicitly asks for a job-search or job-application task/);
     assert.match(description, /Do not use for vague or general requests/);
+    assert.doesNotMatch(description, /: /, 'plain YAML scalar: no colon-space in the description');
     assert.match(copy, /Activate this skill only when the candidate invokes it by name/);
     assert.match(copy, /Do not activate on vague or general requests/);
     assert.doesNotMatch(copy, /or natural language\)/);
