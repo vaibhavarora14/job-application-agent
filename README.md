@@ -201,7 +201,6 @@ Updates are staged and validated before replacement. Private candidate state liv
 - [awesome-agent-skills (Community Skills)](https://github.com/VoltAgent/awesome-agent-skills)
 - [SkillHub](https://www.skillhub.club/app/skills/b99cbef5-2445-47d0-94d0-e6d1fac81263) (may still be in review)
 - [ClawHub](https://clawhub.ai/vaibhavarora14/skills/job-application-agent)
-- [cursor.directory](https://cursor.directory/plugins/job-application-agent) (pending review)
 
 > **☁️ Cloud access, coming soon.** A hosted agent that runs this same loop for you, so the search keeps going without your laptop. It isn't live yet. A [founding reservation ($49)](https://jobappagent.com) locks the founding price, and we email you when access opens. This open-source skill stays free under the MIT License.
 
