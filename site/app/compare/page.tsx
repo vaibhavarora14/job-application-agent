@@ -43,7 +43,7 @@ type Row = { name: string; repo?: string; refs: number[]; cells: [string, string
 const ROWS: Row[] = [
   { name: "JobAppAgent", repo: "vaibhavarora14/job-application-agent", refs: [1], cells: [
     "Searches, matches, fills and submits. `review-each` is the default. Optional `routine-auto` submits routine applications in batches you've authorised, and pauses for sensitive steps.",
-    "Uses the browser your coding agent provides. Documented application channels: Greenhouse, Ashby, Lever, Workday, company career sites and email. Test fixtures cover Greenhouse, Lever and Ashby. LinkedIn is a documented discovery source. LinkedIn Easy Apply: not stated.",
+    "Uses the browser your coding agent provides. Submits to Greenhouse, Ashby and Lever, which test fixtures cover. Other documented channels: LinkedIn, Workable, Comeet, Rippling, SmartRecruiters, Google Forms, company career sites and email. Workday is listed but not yet submitted to or tested. It won't automate LinkedIn or X sign-in or messaging.",
     "Yes by default (`review-each`). Optional `routine-auto`.",
     "MIT",
     "`npx job-application-agent@latest install` or `npx skills add`",
