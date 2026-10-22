@@ -111,10 +111,14 @@ and keeps outreach counts separate from applications. Cloud use requires the
 `outreach-tracking-v1` private-state migration; local use works with the managed
 npm installation on Node 20 or later.
 
-- **`review-each`** — review every completed application before submission.
-- **`routine-auto`** — allow routine submissions while keeping sensitive and judgment-heavy steps with you.
+You approve every send. The agent fills applications but never submits them. It stages them as a review batch and shows you the company, role, URL, fit score, every drafted answer and the résumé. You approve the batch by typing a short approval phrase in chat. You can untick anything you don't want sent. Approval covers exactly what you saw, once, for 24 hours.
 
-For durable autonomy across resumable or scheduled runs:
+- **`review-each`** (default): one application per review.
+- **`routine-auto`**: the agent batches up to 25 routine applications into one review. Sensitive and judgment-heavy steps still stop for you.
+
+**What this does and doesn't enforce.** The CLI refuses to prepare a transmission intent (`cloud intent-prepare`), record a submission (`ledger add`), record a resend (`ledger retry`) or hand over an outreach email (`outreach handoff`) without an approval token for that exact item. It cannot stop a click made directly in the browser. The skill forbids that, and a send made that way is never recorded, counted or shared. Details: [`REVIEW.md`](job-application-agent/references/REVIEW.md).
+
+For durable autonomy across resumable or scheduled runs (discovery, assessment, filling and staging batches; never sending):
 
 ```bash
 echo '{"mode":"routine-auto"}' | node ~/.agents/skills/job-application-agent/scripts/job-application.mjs autonomy grant --stdin

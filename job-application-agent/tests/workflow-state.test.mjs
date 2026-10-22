@@ -4,6 +4,7 @@ import { mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
+import { withTestReview } from './support/review-approval.mjs';
 import { fileURLToPath } from 'node:url';
 
 import { communityJobsPending, communityJobsSync, sourcesList, sourcesSync, validateLedgerEntry } from '../scripts/job-application.mjs';
@@ -24,6 +25,7 @@ async function fixture(t, label) {
 }
 
 function cli(env, args, input) {
+  input = withTestReview(env, args, input);
   return JSON.parse(execFileSync(process.execPath, [script, ...args], {
     env,
     encoding: 'utf8',
@@ -32,6 +34,7 @@ function cli(env, args, input) {
 }
 
 function cliFailure(env, args, input) {
+  input = withTestReview(env, args, input);
   return spawnSync(process.execPath, [script, ...args], {
     env,
     encoding: 'utf8',
@@ -40,6 +43,7 @@ function cliFailure(env, args, input) {
 }
 
 function cliConcurrent(env, args, input) {
+  input = withTestReview(env, args, input);
   return new Promise((resolve) => {
     const child = spawn(process.execPath, [script, ...args], { env });
     let stdout = '';
@@ -83,8 +87,11 @@ test('persists a scoped autonomy grant and revokes future routine transmissions'
   const granted = cli(env, ['autonomy', 'grant', '--stdin'], { mode: 'routine-auto' });
   assert.equal(granted.enabled, true);
   assert.equal(granted.mode, 'routine-auto');
-  assert.ok(granted.scopes.includes('submit'));
-  assert.ok(granted.scopes.includes('send-recruiting-email'));
+  // Since batch review, a grant never covers a send on its own.
+  assert.ok(!granted.scopes.includes('submit'));
+  assert.ok(!granted.scopes.includes('send-recruiting-email'));
+  assert.ok(granted.scopes.includes('stage-review-batch'));
+  assert.equal(granted.submissionsRequireBatchReview, true);
   assert.ok(granted.hardStops.includes('captcha'));
 
   const status = cli(env, ['autonomy', 'status']);
@@ -93,7 +100,8 @@ test('persists a scoped autonomy grant and revokes future routine transmissions'
   if (process.platform !== 'win32') assert.equal((await stat(join(directory, 'autonomy.json'))).mode & 0o777, 0o600);
 
   const preview = cli(env, ['autonomy', 'preview']);
-  assert.equal(preview.maySubmitRoutineApplications, true);
+  assert.equal(preview.maySubmitRoutineApplications, false);
+  assert.equal(preview.maySendVerifiedRecruitingEmail, false);
   assert.equal(preview.mayBypassHostPermissionPrompts, false);
   assert.ok(preview.hardStops.includes('legal-attestation'));
 

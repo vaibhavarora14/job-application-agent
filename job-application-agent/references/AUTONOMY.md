@@ -15,7 +15,13 @@ Grant input:
 { "mode": "routine-auto" }
 ```
 
-An active grant covers discovery, assessment, verified form filling, canonical résumé upload, routine submission, verified recruiting email, ledger/outcome recording, completed-tab cleanup, and opening a sanitized improvement PR. Do not ask for another skill-level upload or submission approval while both the profile and grant use `routine-auto`. The profile counts as `routine-auto` only after the candidate explicitly sets it (`profile set` records `submissionModeChosenAt`); the default is `review-each`.
+An active grant covers discovery, assessment, verified form filling, canonical résumé upload, staging review batches, ledger and outcome recording, completed-tab cleanup, and opening a sanitized improvement PR.
+
+**A grant never covers a send.** Every submission, replacement transmission and outreach handoff needs a batch approval from the candidate; see [REVIEW.md](REVIEW.md). With both the profile and the grant on `routine-auto`, batch routine applications (up to 25) into one review instead of asking about each one. The CLI refuses to prepare or record a send without a valid `reviewToken`. It cannot stop a browser click, so never click Submit or Send without an approved item.
+
+Grants written before batch review listed `submit` and `send-recruiting-email` scopes. Those scopes no longer exist; the CLI ignores them and prints a one-line notice the first time it reads such a grant.
+
+The profile counts as `routine-auto` only after the candidate explicitly sets it (`profile set` records `submissionModeChosenAt`). The default is `review-each`, where each batch holds one application.
 
 The grant never authorizes `thinSubmissionOverride`. That override is only for an explicit, per-job candidate confirmation in the conversation under `APPROVE SUBMIT` — never in unattended or `routine-auto` batches. For one-click applies that use a stored site profile/résumé, use `applicationChannel: "profile_one_click"` with `telemetry.profileResumeOnFile: true` instead.
 
@@ -23,7 +29,7 @@ Always stop for authentication, MFA, CAPTCHA, legal attestations, demographic re
 
 CAPTCHA vendor assist (`scripts/captcha-vendor.mjs`) remains **Off by default** (`CAPTCHA_VENDOR=off`). It may run only when the vendor flag, API key, and buyer `captchaAssist` opt-in are all set; otherwise pause with `complete-captcha` / live panel. MFA, SSO, and government ID stay human forever. Optional judgment drafts on the attention page still require candidate Approve before inject — never silent AI paste, and Draft is disabled when a posting discourages AI assistance.
 
-`autonomy revoke` blocks new routine transmissions without deleting applications, outcomes, rounds, or queued attention items.
+`autonomy revoke` ends the grant without deleting applications, outcomes, rounds, queued attention items or review batches. `review revoke <batch-id>` withdraws a batch approval.
 
 ## Improvement boundary
 

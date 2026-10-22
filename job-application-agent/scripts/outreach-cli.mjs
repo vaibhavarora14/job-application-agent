@@ -7,6 +7,7 @@ import { migrateLegacyStateDir, resolveStateDir } from './secret-store.mjs';
 import { mutateOutreach, readOutreach, OUTREACH_CAPABILITY } from './outreach-domain.mjs';
 import { confirmOutreachTowardRound } from './outreach-round.mjs';
 import { privateOutreachWrite, withLocalOutreach, withOutreachLock } from './outreach-store.mjs';
+import { consumeReview, emailMatcher, verifyReview } from './review-batch.mjs';
 
 const READS = new Set(['policy-status', 'list', 'show', 'review']);
 const MUTATIONS = new Set(['policy-enable', 'policy-disable', 'assess', 'draft', 'handoff', 'record', 'suppress', 'clear']);
@@ -56,8 +57,18 @@ export async function runOutreach(args, { input: suppliedInput, stateDirectory =
   if ((!read && !MUTATIONS.has(action)) || rest !== undefined || (read ? (action !== 'show' && value !== undefined) || (action === 'show' && !value) : value !== '--stdin')) {
     throw new Error('Usage: outreach policy status|enable --stdin|disable --stdin; outreach assess|draft|handoff|record|suppress|clear --stdin; outreach list|show <id>|review');
   }
-  const input = read ? (action === 'show' ? { id: value } : {}) : suppliedInput ?? await readInput();
+  let input = read ? (action === 'show' ? { id: value } : {}) : suppliedInput ?? await readInput();
   await migrate(stateDirectory);
+  // A handoff gives the candidate text to send, so it needs a batch approval like any other send.
+  let reviewed = null;
+  if (action === 'handoff') {
+    const { reviewBatchId, reviewToken, ...rest } = input ?? {};
+    reviewed = await verifyReview(stateDirectory, { reviewBatchId, reviewToken }, {
+      action: 'outreach handoff',
+      match: emailMatcher({ opportunityId: rest.id, draftRevision: rest.draftRevision }),
+    });
+    input = rest;
+  }
   const cloud = cloudClient ?? new CloudStateClient({ stateDir: stateDirectory, configPath: process.env.JOB_APPLICATION_AGENT_CLOUD_CONFIG ?? defaultCloudConfigPath() });
   const config = await cloud.config(true);
   let result;
@@ -91,6 +102,7 @@ export async function runOutreach(args, { input: suppliedInput, stateDirectory =
     }
     result = await withLocalOutreach(stateDirectory, state => read ? { result: readOutreach(state, action, input) } : mutateOutreach(state, action, input, { ...context, actor: 'local' }));
   }
+  if (reviewed) await consumeReview(stateDirectory, reviewed.batch.batchId, reviewed.item.itemId, 'outreach-handoff');
   if (action === 'policy-enable') await guard();
   if (action === 'record' && input?.type === 'sent-verified' && result?.delivery === 'sent-verified' && input?.id) {
     try {

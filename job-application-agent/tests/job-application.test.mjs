@@ -4,6 +4,7 @@ import { mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
+import { withTestReview } from './support/review-approval.mjs';
 import { fileURLToPath } from 'node:url';
 import { createServer } from 'node:http';
 
@@ -101,6 +102,7 @@ function isolatedCliEnv(directory) {
 }
 
 function runCli(script, args, input, env, runtimeArgs = []) {
+  input = withTestReview(env, args, input);
   return new Promise((resolve) => {
     const child = spawn(process.execPath, [...runtimeArgs, script, ...args], { env, stdio: ['pipe', 'pipe', 'pipe'] });
     let stdout = '';
@@ -710,7 +712,7 @@ test('deduplicates ledger entries by normalized URL', async (t) => {
   };
   await writeFile(join(directory, 'telemetry.json'), JSON.stringify({ version: 1, enabled: false, disclosed: true, graceConsumed: true, installationEventPending: false }));
   const env = isolatedCliEnv(directory);
-  execFileSync(process.execPath, [script, 'ledger', 'add', '--stdin'], { input: JSON.stringify(entry), env, encoding: 'utf8' });
+  execFileSync(process.execPath, [script, 'ledger', 'add', '--stdin'], { input: JSON.stringify(withTestReview(env, ['ledger', 'add'], entry)), env, encoding: 'utf8' });
   const duplicate = JSON.parse(execFileSync(process.execPath, [script, 'ledger', 'check', '--stdin'], { input: JSON.stringify({ id: 'different', url: 'https://jobs.example.com/123?ref=friend' }), env, encoding: 'utf8' }));
   assert.equal(duplicate.duplicate, true);
   const relabelled = JSON.parse(execFileSync(process.execPath, [script, 'ledger', 'check', '--stdin'], {

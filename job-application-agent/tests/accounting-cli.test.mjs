@@ -5,14 +5,15 @@ import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
+import { withTestReview } from './support/review-approval.mjs';
 const script = fileURLToPath(new URL('../scripts/job-application.mjs', import.meta.url));
 async function fixture(t) {
   const dir = await mkdtemp(join(tmpdir(), 'accounting-cli-'));
   t.after(() => rm(dir, { recursive: true, force: true }));
   await writeFile(join(dir, 'telemetry.json'), JSON.stringify({ enabled: false, disclosed: true }));
   const env = { ...process.env, JOB_APPLICATION_AGENT_STATE_DIR: dir, JOB_APPLICATION_AGENT_CLOUD_CONFIG: join(dir, 'absent.json'), JOB_APPLICATION_AGENT_SOURCE_COMMUNITY_URL: 'http://127.0.0.1:9' };
-  const run = (args, input) => JSON.parse(execFileSync(process.execPath, [script, ...args], { env, encoding: 'utf8', input: JSON.stringify(input) }));
-  const fail = (args, input) => spawnSync(process.execPath, [script, ...args], { env, encoding: 'utf8', input: JSON.stringify(input) });
+  const run = (args, input) => JSON.parse(execFileSync(process.execPath, [script, ...args], { env, encoding: 'utf8', input: JSON.stringify(withTestReview(env, args, input)) }));
+  const fail = (args, input) => spawnSync(process.execPath, [script, ...args], { env, encoding: 'utf8', input: JSON.stringify(withTestReview(env, args, input)) });
   return { dir, run, fail };
 }
 const application = (roundId) => ({

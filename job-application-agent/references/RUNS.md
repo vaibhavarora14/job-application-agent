@@ -4,7 +4,7 @@
 
 If `cloud status` reports a Cloudflare D1 backend (`cloudflare-d1-r2` or the private `cloudflare-d1-kv` blob fallback), acquire one 15-minute application-run lease before any transmission and renew it every five minutes. Other clients may still read shared state and record independent outcomes. A cloud outage pauses new submissions, while cached research and drafting may continue.
 
-Immediately before sending an application, create an intent containing its application ID, canonical URL, round ID, and active lease ID. After visible confirmation, pass the intent and lease IDs to `ledger add`; the Worker records the submission and round progress together. If a send may have happened but confirmation is unavailable, mark the intent `sent-unverified`. Lease expiry never makes an unverified intent safe to retry.
+Before sending anything, stage the filled applications as a review batch and get the candidate's approval ([REVIEW.md](REVIEW.md)). Unattended and scheduled runs may discover, assess, fill and stage, then stop and wait for approval; they never send on their own. Immediately before sending an application, create an intent containing its application ID, canonical URL, round ID, active lease ID, `reviewBatchId` and `reviewToken`. After visible confirmation, pass the intent and lease IDs to `ledger add`; the Worker records the submission and round progress together. If a send may have happened but confirmation is unavailable, mark the intent `sent-unverified`. Lease expiry never makes an unverified intent safe to retry.
 
 ## Round lifecycle
 
@@ -108,14 +108,14 @@ Exit codes: `0` resume_requested · `10` skipped · `11` aborted · `20` timeout
 
 #### Resume → submit (after exit 0)
 
-**Submit if possible** once blockers are cleared — no extra in-app confirm. filled ≠ applied until visible ATS confirmation.
+**Submit if possible** once blockers are cleared and the application is an approved item in a review batch. The hosted Choose step does not issue batch tokens yet, so stage a batch of one and get approval if it is not already covered. filled ≠ applied until visible ATS confirmation.
 
 ```text
 node scripts/attention-resume-submit.mjs --checklist
 node scripts/attention-resume-submit.mjs --attention-id attention-… --stdin
 ```
 
-After `resume_requested` (exit 0): renew the lease; load session binding; inject approved `answers[]` from the poll payload into matching textareas when present; re-inspect the **same** filled ATS tab; if clear, **submit**; wait for visible confirmation; confirm the ledger intent. CAPTCHA vendor assist is Off by default (`CAPTCHA_VENDOR=off`). If unsure or still blocked, re-open attention. On skip: resolve attention, no submit, continue the round. On abort: release the lease and end the round. Full contract: `site/docs/ATTENTION.md`.
+After `resume_requested` (exit 0): renew the lease; load session binding; inject approved `answers[]` from the poll payload into matching textareas when present; re-inspect the **same** filled ATS tab; if clear and approved in a review batch, **submit**; wait for visible confirmation; confirm the ledger intent. CAPTCHA vendor assist is Off by default (`CAPTCHA_VENDOR=off`). If unsure or still blocked, re-open attention. On skip: resolve attention, no submit, continue the round. On abort: release the lease and end the round. Full contract: `site/docs/ATTENTION.md`.
 
 Prove / smoke / E2E apply runners enforce the owned-fixture allowlist (`fixtures/test-jobs.json`) whenever `CI=true`, `PROVE_APPLY=1`, or `APPLY_URL_GATE=1`. Non-allowlisted employer URLs require `LIVE_APPLY=1` (explicit, logged). Prefer `https://jobappagent.com/fixtures/{greenhouse,lever,ashby}/` (or the local fixture server). Ledger entries for those URLs store `applyKind: "fixture"` so metrics do not treat them as real employer applies. Details: [`fixtures/README.md`](../fixtures/README.md).
 

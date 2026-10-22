@@ -76,7 +76,15 @@ try {
   };
   run(['round','lead','--stdin'], { id: 'smoke-lead', roundId: round.roundId, sourceId: 'indeed', url: app.url, company: app.company, role: app.role, applicationId: app.id, disposition: 'qualified', observedAt: app.submittedAt, evidence: 'Synthetic package lead meets the target.' });
   assert.equal(run(['round','leads',round.roundId]).qualifiedCount, 1);
-  run(['ledger','add','--stdin'], app);
+  // Batch review: a live submission needs the candidate's approval token.
+  const approve = (items) => {
+    const staged = run(['review', 'stage', '--stdin'], { items });
+    assert.equal(staged.status, 'pending');
+    const approved = run(['review', 'approve', '--stdin'], { batchId: staged.batchId, phrase: staged.approvalPhrase });
+    assert.equal(approved.status, 'approved');
+    return { reviewBatchId: staged.batchId, reviewToken: approved.reviewToken };
+  };
+  run(['ledger','add','--stdin'], { ...app, ...approve([{ type: 'application', applicationId: app.id, company: app.company, role: app.role, url: app.url, fitScore: app.score, answers: {} }]) });
   assert.equal(run(['round','complete','--stdin'], {roundId: round.roundId, concentrationReason:'stronger-fit', concentrationEvidence:'Only this source had a qualifying synthetic lead.'}).completed, true);
   const bounce = {id:'smoke-bounce',applicationId:app.id,attemptId:`initial:${app.id}`,type:'delivery-failed',occurredAt:'2026-01-02T00:00:00Z',evidenceType:'final-delivery-failure',evidence:'Matched synthetic final delivery failure.'};
   run(['ledger','delivery','--stdin'], bounce);
@@ -86,7 +94,7 @@ try {
   assert.equal(failed.needsRecovery,true);
   assert.equal(failed.completed,true);
   assert.equal(run(['ledger','review']).failedDeliveryCount,1);
-  run(['ledger','retry','--stdin'],{id:'smoke-retry',applicationId:app.id,attemptId:'replacement-1',channel:'browser',url:app.url,channelVerifiedAt:'2026-01-03T00:00:00Z',occurredAt:'2026-01-03T00:10:00Z',approval:'STANDING AUTHORIZATION',evidenceType:'browser-confirmation',evidence:'Synthetic visible confirmation from the replacement channel.'});
+  run(['ledger','retry','--stdin'],{id:'smoke-retry',applicationId:app.id,attemptId:'replacement-1',channel:'browser',url:app.url,channelVerifiedAt:'2026-01-03T00:00:00Z',occurredAt:'2026-01-03T00:10:00Z',approval:'STANDING AUTHORIZATION',evidenceType:'browser-confirmation',evidence:'Synthetic visible confirmation from the replacement channel.',...approve([{ type: 'application', purpose: 'retry', applicationId: app.id, company: app.company, role: app.role, url: app.url, fitScore: app.score, answers: {} }])});
   assert.equal(run(['ledger','deliveries',app.id]).applications[0].attempts.length,2);
   assert.equal(run(['round','status',round.roundId]).confirmedCount,1);
   assert.equal(run(['ledger','review']).recordedSubmissionCount,1);

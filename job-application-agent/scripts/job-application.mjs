@@ -30,6 +30,7 @@ import {
 import { confirmOutreachTowardRound, loadOutreachRoundView, loadSentVerifiedOutreach, outreachConfirmationEvents, projectOutreachRoundCounts, resolveOutreachRoundId } from './outreach-round.mjs';
 import { isFixtureOrSandboxApply, resolveApplyKind } from './ats/apply-url-gate.mjs';
 import { createAssessmentGuard, isAssessmentGuardStop } from './assessment-guard.mjs';
+import { LEGACY_GRANT_NOTICE, applicationMatcher, approveBatch, batchToken, batchView, closeBatch, consumeReview, listBatches, loadBatch, resumeDigest, stageBatch, verifyReview } from './review-batch.mjs';
 
 const SOURCES = new Set(['linkedin', 'greenhouse', 'lever', 'ashby', 'workable', 'comeet', 'workday', 'rippling', 'smartrecruiters', 'google-form', 'company', 'email', 'other']);
 /** Ledger applicationChannel values: ATS sources plus honest one-click profile applies (not a community job-board channel). */
@@ -64,7 +65,11 @@ const FILL_METRICS_SOURCES = new Set(['telemetry', 'answer_keys', 'empty']);
 // 'agent' is reserved; current clients only ever write/emit 'logged' and omit the key otherwise.
 const ENTRY_ORIGINS = new Set(['agent', 'logged']);
 export const LOGGED_ENTRY_ORIGIN = 'logged';
-const AUTONOMY_SCOPES = Object.freeze(['discover', 'assess', 'fill', 'upload-resume', 'submit', 'send-recruiting-email', 'record-ledger', 'record-outcomes', 'cleanup-tabs', 'open-improvement-pr']);
+// Since 3.8.0 a grant never covers a send on its own: every submission, resend and outreach
+// handoff needs a batch approval token (see review-batch.mjs).
+const AUTONOMY_SCOPES = Object.freeze(['discover', 'assess', 'fill', 'upload-resume', 'stage-review-batch', 'record-ledger', 'record-outcomes', 'cleanup-tabs', 'open-improvement-pr']);
+const LEGACY_SEND_SCOPES = new Set(['submit', 'send-recruiting-email']);
+const AUTONOMY_NOTICE_FILE = 'autonomy-batch-review-notice.json';
 const AUTONOMY_HARD_STOPS = Object.freeze(['authentication', 'mfa', 'captcha', 'legal-attestation', 'demographic', 'government-id', 'unverifiable-claim', 'ambiguous-authorization', 'ambiguous-compensation']);
 const ATTENTION_STAGES = new Set(['discovery', 'assessment', 'application', 'contact', 'resume', 'questions', 'legal', 'demographic', 'review', 'submission', 'confirmation', 'outcome', 'answers', 'upload']);
 const ATTENTION_BLOCKERS = new Set(['authentication', 'mfa', 'captcha', 'legal-attestation', 'demographic', 'government-id', 'ambiguous-authorization', 'ambiguous-compensation', 'unverifiable-claim', 'judgment', 'video', 'upload', 'site-error', 'other']);
@@ -184,6 +189,7 @@ export function commandCategory([area, action]) {
   if (area === 'attention') return 'attention';
   if (area === 'friction') return 'friction';
   if (area === 'cloud') return 'other';
+  if (area === 'review') return 'batch';
   return 'other';
 }
 
@@ -1552,8 +1558,9 @@ function autonomyView(value) {
     mode: enabled ? 'routine-auto' : null,
     scopes: enabled ? [...AUTONOMY_SCOPES] : [],
     hardStops: [...AUTONOMY_HARD_STOPS],
-    maySubmitRoutineApplications: enabled,
-    maySendVerifiedRecruitingEmail: enabled,
+    maySubmitRoutineApplications: false,
+    maySendVerifiedRecruitingEmail: false,
+    submissionsRequireBatchReview: true,
     mayCreateImprovementPr: enabled,
     mayMergeReleaseOrPublish: false,
     mayBypassHostPermissionPrompts: false,
@@ -1563,8 +1570,16 @@ function autonomyView(value) {
 }
 
 async function autonomyStatus() {
-  const file = join(await ensureStateDir(), 'autonomy.json');
-  return autonomyView(await readPrivateJson(file, { version: 1, enabled: false }));
+  const dir = await ensureStateDir();
+  const stored = await readPrivateJson(join(dir, 'autonomy.json'), { version: 1, enabled: false });
+  if (stored?.enabled === true && Array.isArray(stored.scopes) && stored.scopes.some((scope) => LEGACY_SEND_SCOPES.has(scope))) {
+    const marker = join(dir, AUTONOMY_NOTICE_FILE);
+    if (!existsSync(marker)) {
+      process.stderr.write(LEGACY_GRANT_NOTICE);
+      await writePrivateJson(marker, { version: 1, shownAt: new Date().toISOString() });
+    }
+  }
+  return autonomyView(stored);
 }
 
 async function autonomyGrant(input) {
@@ -1655,6 +1670,47 @@ async function importResume(source) {
     await cloudState.putFileCurrent('resume.json', Buffer.from(JSON.stringify(metadata)));
   }
   return { path: target, sha256: metadata.sha256, bytes: metadata.bytes };
+}
+
+/**
+ * Owned fixtures and vendor sandboxes (by URL allowlist, never by a caller-supplied applyKind)
+ * are not employer submissions, so they do not need a batch approval.
+ */
+function requiresBatchReview(url) {
+  try { return resolveApplyKind(url) === 'live'; } catch { return true; }
+}
+
+/** Staging refreshes the cloud résumé cache; verification hashes the local copy the browser uploads. */
+async function currentResumeDigest({ refresh = false } = {}) {
+  const dir = await ensureStateDir();
+  if (refresh) {
+    try { await canonicalResumePath(); } catch { /* not imported, or the cloud is unreachable: hash what is cached */ }
+  }
+  return resumeDigest(join(dir, 'resume.pdf'));
+}
+
+const REVIEW_NEXT_STEP = 'Show the candidate `table` exactly as printed, and every drafted answer and email text from `review show <batchId>`. Ask the candidate to type the approval phrase in chat (and name any item numbers to leave out), then pass their exact words to `review approve --stdin`. Never type the phrase for the candidate.';
+
+async function reviewCommand(action, value) {
+  const dir = await ensureStateDir();
+  if (action === 'stage' && value === '--stdin') {
+    const batch = await stageBatch(dir, await jsonStdin(), { resume: await currentResumeDigest({ refresh: true }) });
+    return { ...batchView(batch), next: REVIEW_NEXT_STEP };
+  }
+  if (action === 'show' && typeof value === 'string') return batchView(await loadBatch(dir, value), new Date(), { includeContent: true });
+  if (action === 'approve' && value === '--stdin') {
+    const input = object(await jsonStdin(), 'review approve');
+    for (const key of Object.keys(input)) if (!['batchId', 'phrase', 'exclude'].includes(key)) throw new Error(`Unknown review approve property: ${key}.`);
+    const { batch, token } = await approveBatch(dir, input.batchId, { channel: 'chat-phrase', phrase: input.phrase, excludeNumbers: input.exclude });
+    return batchView(batch, new Date(), { token });
+  }
+  if (action === 'status' && typeof value === 'string') {
+    const batch = await loadBatch(dir, value);
+    return batchView(batch, new Date(), { token: await batchToken(dir, batch) });
+  }
+  if (action === 'list' && value == null) return listBatches(dir);
+  if (action === 'revoke' && typeof value === 'string') return batchView(await closeBatch(dir, value, 'revoked'));
+  throw usageError(['review', action, value]);
 }
 
 async function canonicalResumePath() {
@@ -1751,7 +1807,7 @@ async function ledgerCheck(candidate) {
   return duplicateResult(entries, normalized, outcomes);
 }
 
-async function ledgerAdd(entryInput, duplicateOverride, companyReapplyOverride, cloudIntent = null) {
+async function ledgerAdd(entryInput, duplicateOverride, companyReapplyOverride, cloudIntent = null, review = null) {
   const entry = validateLedgerEntry(entryInput);
   return withStateLock('applications', async (dir) => {
     const file = join(dir, 'applications.ndjson');
@@ -1771,9 +1827,21 @@ async function ledgerAdd(entryInput, duplicateOverride, companyReapplyOverride, 
     if (!duplicate.possibleDuplicate && duplicate.companyReapply.decision === 'follow-up-present' && companyReapplyOverride !== COMPANY_REAPPLY_OVERRIDE) {
       throw new Error(`Company reapplication blocked because the latest application has a recorded follow-up; use ${COMPANY_REAPPLY_OVERRIDE} only with explicit candidate approval.`);
     }
-    const storedEntry = ['cooldown-active', 'follow-up-present'].includes(duplicate.companyReapply.decision)
+    let reviewed = null;
+    if (review) {
+      reviewed = await verifyReview(dir, review.credentials, {
+        action: 'ledger add',
+        match: applicationMatcher({ applicationId: entry.id, url: entry.url, answers: entry.answers }),
+        checkResume: true,
+        resumeSha256: review.resumeSha256,
+      });
+    }
+    const reapproved = ['cooldown-active', 'follow-up-present'].includes(duplicate.companyReapply.decision)
       ? { ...entry, reapplicationApproval: 'candidate-explicit' }
       : entry;
+    const storedEntry = reviewed
+      ? { ...reapproved, reviewBatchId: reviewed.batch.batchId, reviewApprovedAt: reviewed.batch.approvedAt, reviewApprovalChannel: reviewed.batch.approvalChannel }
+      : reapproved;
     await appendFile(file, `${JSON.stringify(storedEntry)}\n`, { mode: 0o600 });
     await chmod(file, 0o600);
     if (entry.roundId) {
@@ -1789,6 +1857,7 @@ async function ledgerAdd(entryInput, duplicateOverride, companyReapplyOverride, 
         if (entry.roundId) await cloudState.appendRecord('rounds', { type: 'submission-confirmed', roundId: entry.roundId, applicationId: entry.id, occurredAt: entry.submittedAt }, { recordKey: entry.roundId, idempotencyKey: `round-confirmation:${entry.roundId}:${entry.id}`, occurredAt: entry.submittedAt, queueOnFailure: true });
       }
     }
+    if (reviewed) await consumeReview(dir, reviewed.batch.batchId, reviewed.item.itemId, 'ledger-add');
     return { recorded: storedEntry.id, review: buildReview([...entries, storedEntry], outcomes, [], new Date(), await jsonLines(join(dir, 'delivery.ndjson'))), ...(cloudIntent ? { cloudIntent: cloudIntent.intentId } : {}) };
   });
 }
@@ -1828,7 +1897,7 @@ async function appendAccounting(stream, event, { cloudConfirmed = false } = {}) 
 }
 
 async function recordDelivery(input, retry = false) {
-  const { cloudIntentId, cloudLeaseId, ...raw } = object(input, 'delivery');
+  const { cloudIntentId, cloudLeaseId, reviewBatchId, reviewToken, ...raw } = object(input, 'delivery');
   const event = validateDelivery({ ...raw, ...(retry ? { type: 'retry-confirmed' } : {}) });
   if (!retry && event.type === 'retry-confirmed') throw new Error('Use ledger retry for replacement transmissions.');
   return withStateLock('applications', () => withStateLock('delivery', async dir => {
@@ -1839,12 +1908,23 @@ async function recordDelivery(input, retry = false) {
     // Cloud transmission eligibility was checked at intent preparation. The
     // Worker verifies that intent before we persist the observed transmission.
     validateDeliveryReferences(event, applications, events, { preparedRetry: cloudRetry });
+    // A replacement transmission is a new send: it needs its own approved batch item.
+    let reviewed = null;
+    if (retry && !events.some(e => e.id === event.id) && requiresBatchReview(event.url)) {
+      reviewed = await verifyReview(dir, { reviewBatchId, reviewToken }, {
+        action: 'ledger retry',
+        match: applicationMatcher({ applicationId: event.applicationId, url: event.url, purpose: 'retry' }),
+        checkResume: true,
+        resumeSha256: (await currentResumeDigest())?.sha256,
+      });
+    }
     let cloudConfirmed = false;
     if (cloudRetry && !events.some(e => e.id === event.id)) {
       await cloudState.confirmRetry(cloudIntentId, event, cloudLeaseId);
       cloudConfirmed = true;
     }
     const result = await appendAccounting('delivery', event, { cloudConfirmed });
+    if (reviewed && result.recorded) await consumeReview(dir, reviewed.batch.batchId, reviewed.item.itemId, 'ledger-retry');
     return { ...result, delivery: deliveryProjection(applications, [...events, event]) };
   }));
 }
@@ -2454,7 +2534,18 @@ async function cloudCommand(action, value) {
     if (!lease?.leaseId) throw new Error('No local cloud lease is recorded.');
     return cloudState.releaseLease(lease.leaseId);
   }
-  if (action === 'intent-prepare' && value === '--stdin') return cloudState.createIntent(await jsonStdin());
+  if (action === 'intent-prepare' && value === '--stdin') {
+    const { reviewBatchId, reviewToken, ...body } = object(await jsonStdin(), 'intent');
+    if (requiresBatchReview(body.canonicalUrl)) {
+      await verifyReview(await ensureStateDir(), { reviewBatchId, reviewToken }, {
+        action: 'cloud intent-prepare',
+        match: applicationMatcher({ applicationId: body.applicationId, url: body.canonicalUrl, purpose: body.retry === true ? 'retry' : 'submit' }),
+        checkResume: true,
+        resumeSha256: (await currentResumeDigest())?.sha256,
+      });
+    }
+    return cloudState.createIntent(body);
+  }
   if (action === 'intent-sent' && value === '--stdin') {
     const input = await jsonStdin();
     return cloudState.markIntentSentUnverified(string(input.intentId, 'intentId', 200), string(input.leaseId, 'leaseId', 200));
@@ -2614,7 +2705,10 @@ async function executeCommand([area, action, value], telemetry, session, communi
       telemetrySupplied,
       ...(fillMetrics.entryOrigin ? { entryOrigin: fillMetrics.entryOrigin } : {}),
     });
-    result = await ledgerAdd(entry, input.duplicateOverride, input.companyReapplyOverride, input.cloudIntentId && input.cloudLeaseId ? { intentId: input.cloudIntentId, leaseId: input.cloudLeaseId } : null);
+    const review = requiresBatchReview(entry.url)
+      ? { credentials: { reviewBatchId: input.reviewBatchId, reviewToken: input.reviewToken }, resumeSha256: (await currentResumeDigest())?.sha256 }
+      : null;
+    result = await ledgerAdd(entry, input.duplicateOverride, input.companyReapplyOverride, input.cloudIntentId && input.cloudLeaseId ? { intentId: input.cloudIntentId, leaseId: input.cloudLeaseId } : null, review);
     result.communityJob = await communityJobsSync(community, { limit: 1, applicationIds: [entry.id] });
     if (!isFixtureOrSandboxApply(entry)) {
       const identity = await jobIdentity(entry.url);
@@ -2689,6 +2783,7 @@ async function executeCommand([area, action, value], telemetry, session, communi
   else if (area === 'attention' && action === 'resolve' && value === '--stdin') result = await attentionResolve(await jsonStdin());
   else if (area === 'friction' && action === 'record' && value === '--stdin') result = await frictionRecord(await jsonStdin());
   else if (area === 'friction' && action === 'list' && value == null) result = await frictionList();
+  else if (area === 'review') result = await reviewCommand(action, value);
   else throw usageError([area, action, value]);
   return result;
 }

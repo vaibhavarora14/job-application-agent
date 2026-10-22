@@ -135,6 +135,8 @@ Add only after visible success confirmation.
     "acknowledgment": "THIN SUBMISSION ACKNOWLEDGED",
     "candidateConfirmation": "Candidate confirmed in chat that this empty ATS accept for Acme Staff Eng is intentional"
   },
+  "reviewBatchId": "rb-20260115-1a2b3c4d",
+  "reviewToken": "token returned by review approve or review status",
   "cloudIntentId": "intent UUID returned before transmission",
   "cloudLeaseId": "active application-run lease UUID"
 }
@@ -147,7 +149,7 @@ The `telemetry` block is required on live `ledger add` when `answers` are empty:
 
 Fixture / vendor-sandbox applies are exempt. When telemetry is omitted despite answers, fill metrics fall back to answer-key counts with `fillMetricsSource: "answer_keys"` and `telemetrySupplied: false` on both the private ledger row and `application_submitted` (duration stays `unknown`), and the entry is marked `entryOrigin: "logged"` (logged after the fact, not agent-filled; still a submitted application, excluded from agent fill-quality / thin-submit metrics); with neither source, fill fields are `null`, `fillMetricsSource` is `empty`, and `durationBucket` is `unknown`.
 
-Use `duplicateOverride` only for a verified distinct requisition after a possible-duplicate warning. Use `companyReapplyOverride` only when the candidate explicitly approves a different-role reapplication during the cooldown or after a recorded outcome. Both override phrases, `thinSubmissionOverride`, and the raw `telemetry` counts/timing are transient. Provenance markers `fillMetricsSource`, `telemetrySupplied`, and (only for the answer-key fallback) `entryOrigin: "logged"` are stored on the private ledger row; the CLI derives `entryOrigin` and ignores any value passed in the input. An accepted company reapplication override stores only `reapplicationApproval: "candidate-explicit"` in the private ledger. Use approval `APPROVE SUBMIT` for per-application approval or `STANDING AUTHORIZATION` when the current request authorizes routine batch submission.
+Use `duplicateOverride` only for a verified distinct requisition after a possible-duplicate warning. Use `companyReapplyOverride` only when the candidate explicitly approves a different-role reapplication during the cooldown or after a recorded outcome. Both override phrases, `thinSubmissionOverride`, and the raw `telemetry` counts/timing are transient. Provenance markers `fillMetricsSource`, `telemetrySupplied`, and (only for the answer-key fallback) `entryOrigin: "logged"` are stored on the private ledger row; the CLI derives `entryOrigin` and ignores any value passed in the input. An accepted company reapplication override stores only `reapplicationApproval: "candidate-explicit"` in the private ledger. Use approval `APPROVE SUBMIT` for a `review-each` batch of one or `STANDING AUTHORIZATION` for a routine batch. Either way, a live `ledger add` also needs `reviewBatchId` and `reviewToken` for an approved batch item whose `applicationId`, URL, `answers` and canonical résumé match this entry ([REVIEW.md](REVIEW.md)). The token is transient; the row stores `reviewBatchId`, `reviewApprovedAt` and `reviewApprovalChannel`. Owned fixtures on the packaged allowlist need no batch.
 
 `cloudIntentId` and `cloudLeaseId` are transient coordination fields. They are required for the strongest atomic cloud path and are never written into the application payload itself.
 
