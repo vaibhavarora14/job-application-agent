@@ -22,6 +22,8 @@ JobAppAgent (npm package `job-application-agent`, also called Job Application Ag
 ## Key pages
 
 - [Home](https://jobappagent.com/): overview of JobAppAgent
+- [Open source](https://jobappagent.com/open-source): what JobAppAgent does, install, licence, privacy, and FAQ
+- [Compare](https://jobappagent.com/compare): JobAppAgent and other open-source job application agents, compared
 - [Jobs](https://jobappagent.com/jobs): maintainer-reviewed open roles from the JobAppAgent community registry, checked daily for liveness
 - [Community stats](https://stats.jobappagent.com): public community momentum dashboard
 - [Privacy](https://jobappagent.com/privacy): what data is stored, where, and how to opt out

@@ -253,10 +253,32 @@ test("publishes crawler guidance and a host-local apex sitemap", async () => {
   const sitemapXml = await sitemap.text();
   assert.match(sitemapXml, /https:\/\/jobappagent\.com\/privacy/);
   assert.match(sitemapXml, /https:\/\/jobappagent\.com\/jobs</);
+  assert.match(sitemapXml, /https:\/\/jobappagent\.com\/open-source</);
+  assert.match(sitemapXml, /https:\/\/jobappagent\.com\/compare</);
   assert.doesNotMatch(sitemapXml, /stats\.jobappagent\.com/);
   const statsXml = await statsSitemap.text();
   assert.match(statsXml, /https:\/\/stats\.jobappagent\.com\//);
   assert.doesNotMatch(statsXml, /jobappagent\.com\/platforms/);
+});
+
+test("open-source and compare pages pair JobAppAgent with open-source job application agent, without pricing", async () => {
+  const [openSource, compare] = await Promise.all([render("/open-source"), render("/compare")]);
+  assert.equal(openSource.status, 200);
+  assert.equal(compare.status, 200);
+  const openHtml = await openSource.text();
+  const compareHtml = await compare.text();
+  assert.match(openHtml, /<title>JobAppAgent: the open-source job application agent<\/title>/);
+  assert.match(openHtml, /<h1>JobAppAgent, the open-source job application agent<\/h1>/);
+  assert.match(openHtml, /rel="canonical" href="https:\/\/jobappagent\.com\/open-source"/);
+  assert.match(openHtml, /"@type":"SoftwareApplication","name":"JobAppAgent","alternateName":"job-application-agent"/);
+  assert.match(openHtml, /"codeRepository":"https:\/\/github\.com\/vaibhavarora14\/job-application-agent"/);
+  assert.match(compareHtml, /<title>Open-source job application agents compared \| JobAppAgent<\/title>/);
+  assert.match(compareHtml, /<h1>JobAppAgent and other open-source job application agents, compared<\/h1>/);
+  assert.match(compareHtml, /rel="canonical" href="https:\/\/jobappagent\.com\/compare"/);
+  for (const html of [openHtml, compareHtml]) {
+    assert.doesNotMatch(html, /\$49|Reserve for|Founding reservation|COMING SOON|\bbeta\b|"offers"|"price"/i);
+    assert.doesNotMatch(html, /interview/i);
+  }
 });
 
 test("homepage head includes apex canonical and schema.org JSON-LD without offers", async () => {

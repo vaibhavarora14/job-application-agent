@@ -1,0 +1,27 @@
+/* Shared styles for long-form content pages (/open-source, /compare). Reuses site tokens only. */
+.page { overflow-wrap: anywhere; }
+.page h1 { line-height: 1.08; }
+.page h3 { margin: 1.5rem 0 .4rem; font-size: 1.05rem; }
+.page a { color: var(--green); text-underline-offset: .2em; }
+.page code { font: .875em var(--font-mono), monospace; }
+.smallPrint { color: var(--muted); font-size: .85rem; }
+.code { margin: .75rem 0 1rem; padding: 1rem; border: 1px solid var(--line); border-radius: .5rem; background: var(--surface); white-space: pre-wrap; overflow-wrap: anywhere; font: .875rem/1.6 var(--font-mono), monospace; color: var(--ink); }
+.stats { margin-block: 2.5rem; }
+.stats :global(.metric-card) { min-height: 7.5rem; }
+.faq { margin-top: 1rem; }
+.tableWrap { margin-block: 1.25rem 2rem; overflow-x: auto; border: 1px solid var(--line); border-radius: .8rem; background: var(--surface); }
+.table { width: 100%; min-width: 68rem; border-collapse: collapse; font-size: .85rem; line-height: 1.55; overflow-wrap: normal; }
+.table th, .table td { padding: .85rem .9rem; border-bottom: 1px solid var(--line); text-align: left; vertical-align: top; color: var(--text); }
+.table thead th { color: var(--ink); font: 600 .7rem/1.4 var(--font-mono), monospace; letter-spacing: .08em; text-transform: uppercase; background: var(--accent-soft); }
+.table tbody th { color: var(--ink); font-weight: 400; min-width: 11rem; }
+.table tbody tr:last-child th, .table tbody tr:last-child td { border-bottom: 0; }
+.table sup { font: .7rem var(--font-mono), monospace; }
+.choose li { margin-bottom: .6rem; }
+.page.wide { max-width: 76rem; }
+.page p { margin: 0 0 1rem; }
+.page h2 { margin-bottom: .75rem; }
+.page ul, .page ol { margin: 0 0 1.25rem; padding-left: 1.25rem; }
+.page ul { list-style: disc; }
+.page ol { list-style: decimal; }
+.page li { margin-bottom: .35rem; }
+.page .faq details p { margin: .75rem 0 0; }

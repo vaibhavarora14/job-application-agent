@@ -54,6 +54,27 @@ export function softwareApplicationJsonLd() {
   };
 }
 
+/**
+ * /open-source page: SoftwareApplication for the open-source package. No offers/price.
+ * @returns {Record<string, unknown>}
+ */
+export function openSourceSoftwareJsonLd() {
+  return {
+    "@context": "https://schema.org",
+    "@type": "SoftwareApplication",
+    name: "JobAppAgent",
+    alternateName: "job-application-agent",
+    description:
+      "JobAppAgent is an open-source job application agent (MIT). It applies from one verified résumé within your rules. By default you approve each submit.",
+    url: `${SITE_ORIGIN}/open-source`,
+    license: "https://opensource.org/licenses/MIT",
+    codeRepository: GITHUB_URL,
+    applicationCategory: "DeveloperApplication",
+    operatingSystem: "macOS, Windows, Linux",
+    publisher: { "@id": ORGANIZATION_ID },
+  };
+}
+
 /** Root-layout graph: Organization + WebSite + SoftwareApplication (no price). */
 export function siteJsonLdGraph() {
   return {

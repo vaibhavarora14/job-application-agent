@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   breadcrumbListJsonLd,
+  openSourceSoftwareJsonLd,
   siteJsonLdGraph,
   softwareApplicationJsonLd,
   statsRobotsTxt,
@@ -50,4 +51,16 @@ test("stats sitemap and robots stay on the stats host", () => {
   const robots = statsRobotsTxt();
   assert.match(robots, /Sitemap: https:\/\/stats\.jobappagent\.com\/sitemap\.xml/);
   assert.match(robots, /Host: https:\/\/stats\.jobappagent\.com/);
+});
+
+test("/open-source SoftwareApplication JSON-LD names JobAppAgent, MIT, repo, and has no price", () => {
+  const node = openSourceSoftwareJsonLd();
+  assert.equal(node["@type"], "SoftwareApplication");
+  assert.equal(node.name, "JobAppAgent");
+  assert.equal(node.alternateName, "job-application-agent");
+  assert.equal(node.codeRepository, "https://github.com/vaibhavarora14/job-application-agent");
+  assert.equal(node.applicationCategory, "DeveloperApplication");
+  assert.match(node.license, /MIT/);
+  const serialized = JSON.stringify(node);
+  assert.doesNotMatch(serialized, /"offers"|"price"|\$49|beta/i);
 });
