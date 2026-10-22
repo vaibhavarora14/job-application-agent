@@ -1,7 +1,9 @@
 #!/usr/bin/env node
 
+import { spawn } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
 import { createHash, randomUUID } from 'node:crypto';
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, openSync, closeSync, readFileSync, writeFileSync } from 'node:fs';
 import { appendFile, chmod, mkdir, open, readFile, rename, stat, unlink, writeFile } from 'node:fs/promises';
 import { homedir, platform, userInfo } from 'node:os';
 import { basename, join, resolve } from 'node:path';
@@ -31,6 +33,7 @@ import { confirmOutreachTowardRound, loadOutreachRoundView, loadSentVerifiedOutr
 import { isFixtureOrSandboxApply, resolveApplyKind } from './ats/apply-url-gate.mjs';
 import { createAssessmentGuard, isAssessmentGuardStop } from './assessment-guard.mjs';
 import { LEGACY_GRANT_NOTICE, applicationMatcher, approveBatch, batchToken, batchView, closeBatch, consumeReview, listBatches, loadBatch, resumeDigest, stageBatch, verifyReview } from './review-batch.mjs';
+import { reviewPageInfoFile } from './review-page.mjs';
 
 const SOURCES = new Set(['linkedin', 'greenhouse', 'lever', 'ashby', 'workable', 'comeet', 'workday', 'rippling', 'smartrecruiters', 'google-form', 'company', 'email', 'other']);
 /** Ledger applicationChannel values: ATS sources plus honest one-click profile applies (not a community job-board channel). */
@@ -1689,7 +1692,54 @@ async function currentResumeDigest({ refresh = false } = {}) {
   return resumeDigest(join(dir, 'resume.pdf'));
 }
 
-const REVIEW_NEXT_STEP = 'Show the candidate `table` exactly as printed, and every drafted answer and email text from `review show <batchId>`. Ask the candidate to type the approval phrase in chat (and name any item numbers to leave out), then pass their exact words to `review approve --stdin`. Never type the phrase for the candidate.';
+const REVIEW_NEXT_STEP = 'Show the candidate `table` exactly as printed. Then run `review open <batchId>` and give the candidate the URL so they can read every item and approve on the page; poll `review status <batchId>` for the reviewToken. Where the candidate has no browser on this machine, show them the items with `review show <batchId>` and ask them to type the approval phrase in chat, then pass their exact words to `review approve --stdin`. Never open, read the code from, or operate the review page yourself, and never type the phrase for the candidate.';
+
+function openBrowser(url) {
+  if (process.env.JOB_APPLICATION_AGENT_NO_BROWSER === '1') return false;
+  const os = platform();
+  let command; let args;
+  if (os === 'darwin') { command = 'open'; args = [url]; }
+  else if (os === 'win32') { command = 'cmd'; args = ['/c', 'start', '""', url]; }
+  else if (process.env.DISPLAY || process.env.WAYLAND_DISPLAY) { command = 'xdg-open'; args = [url]; }
+  else return false;
+  try {
+    const child = spawn(command, args, { detached: true, stdio: 'ignore' });
+    child.on('error', () => {});
+    child.unref();
+    return true;
+  } catch { return false; }
+}
+
+async function openReviewPage(dir, batchId) {
+  const batch = await loadBatch(dir, batchId);
+  const view = batchView(batch);
+  if (view.status !== 'pending') return { batchId, status: view.status, opened: false, message: `Review batch is ${view.status}; there is nothing to approve.` };
+  const infoFile = reviewPageInfoFile(dir, batchId);
+  const existing = await readPrivateJson(infoFile, null);
+  let alive = false;
+  if (existing?.pid) { try { process.kill(existing.pid, 0); alive = true; } catch { alive = false; } }
+  let info = alive ? existing : null;
+  if (!info) {
+    await unlink(infoFile).catch(() => {});
+    const logFd = openSync(join(dir, 'review-batches', `${batchId}.page.log`), 'a', 0o600);
+    const child = spawn(process.execPath, [fileURLToPath(new URL('./review-page.mjs', import.meta.url)), dir, batchId, infoFile], { detached: true, stdio: ['ignore', 'ignore', logFd], env: process.env });
+    child.unref();
+    closeSync(logFd);
+    for (let attempt = 0; attempt < 100 && !info; attempt += 1) {
+      await new Promise((resolveDelay) => setTimeout(resolveDelay, 50));
+      info = await readPrivateJson(infoFile, null);
+    }
+    if (!info) throw new Error('The review page did not start. Use the chat approval phrase instead (`review show`, then `review approve --stdin`).');
+  }
+  return {
+    batchId,
+    status: 'pending',
+    url: info.url,
+    browserOpened: alive ? false : openBrowser(info.url),
+    pageClosesAfter: '30 minutes, or once the candidate decides',
+    next: 'Give the candidate this URL (it only works on this machine). Do not open it in your own browser automation. Poll `review status <batchId>` until the status is approved, rejected or expired.',
+  };
+}
 
 async function reviewCommand(action, value) {
   const dir = await ensureStateDir();
@@ -1698,6 +1748,7 @@ async function reviewCommand(action, value) {
     return { ...batchView(batch), next: REVIEW_NEXT_STEP };
   }
   if (action === 'show' && typeof value === 'string') return batchView(await loadBatch(dir, value), new Date(), { includeContent: true });
+  if (action === 'open' && typeof value === 'string') return openReviewPage(dir, value);
   if (action === 'approve' && value === '--stdin') {
     const input = object(await jsonStdin(), 'review approve');
     for (const key of Object.keys(input)) if (!['batchId', 'phrase', 'exclude'].includes(key)) throw new Error(`Unknown review approve property: ${key}.`);

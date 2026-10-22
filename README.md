@@ -111,7 +111,7 @@ and keeps outreach counts separate from applications. Cloud use requires the
 `outreach-tracking-v1` private-state migration; local use works with the managed
 npm installation on Node 20 or later.
 
-You approve every send. The agent fills applications but never submits them. It stages them as a review batch and shows you the company, role, URL, fit score, every drafted answer and the résumé. You approve the batch by typing a short approval phrase in chat. You can untick anything you don't want sent. Approval covers exactly what you saw, once, for 24 hours.
+You approve every send. The agent fills applications but never submits them. It stages them as a review batch, and you approve that batch on a local review page, which shows the company, role, URL, fit score, every drafted answer and the résumé. On hosts without a local browser, you approve by typing a short approval phrase in chat. You can untick anything you don't want sent. Approval covers exactly what you saw, once, for 24 hours.
 
 - **`review-each`** (default): one application per review.
 - **`routine-auto`**: the agent batches up to 25 routine applications into one review. Sensitive and judgment-heavy steps still stop for you.

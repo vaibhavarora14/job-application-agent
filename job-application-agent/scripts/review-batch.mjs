@@ -1,6 +1,6 @@
 // Batch review: the only path to a live submission, a replacement transmission, or an
-// outreach handoff. The agent stages what it intends to send, a human approves it by typing
-// the batch's confirmation phrase, and the CLI then
+// outreach handoff. The agent stages what it intends to send, a human approves it on the
+// local review page (or by typing the confirmation phrase in chat), and the CLI then
 // refuses to prepare or record any send that is not covered by an unexpired, unused,
 // unchanged approval.
 //
@@ -15,7 +15,7 @@ import { canonicalUrl, stableJson } from './application-accounting.mjs';
 export const REVIEW_BATCH_MAX_ITEMS = 25;
 export const REVIEW_APPROVAL_TTL_MS = 24 * 60 * 60 * 1000;
 export const REVIEW_PENDING_TTL_MS = 24 * 60 * 60 * 1000;
-export const REVIEW_CHANNELS = Object.freeze(['chat-phrase']);
+export const REVIEW_CHANNELS = Object.freeze(['local-page', 'chat-phrase']);
 const TOKEN_PREFIX = 'rbt1';
 const BATCH_ID = /^rb-\d{8}-[0-9a-f]{8}$/;
 const CODE_LETTERS = 'ACDEFHJKMNPRTVWXY';
@@ -334,7 +334,7 @@ function sameToken(a, b) {
 export class ReviewGateError extends Error {}
 function gate(message) { throw new ReviewGateError(message); }
 
-const STAGE_HINT = 'Stage it with `review stage --stdin`, have the candidate approve the batch by typing its approval phrase in chat (`review approve --stdin`), then pass `reviewBatchId` and `reviewToken`.';
+const STAGE_HINT = 'Stage it with `review stage --stdin`, have the candidate approve the batch on the review page (`review open <batchId>`) or by typing its approval phrase in chat (`review approve --stdin`), then pass `reviewBatchId` and `reviewToken`.';
 
 /**
  * Find the approved, unused item that covers this send. `match(item)` returns true for the
@@ -409,4 +409,4 @@ export async function resumeDigest(file) {
 }
 
 /** One-line notice for grants written before batch review (they carried `submit`). */
-export const LEGACY_GRANT_NOTICE = 'Notice: your autonomy grant no longer covers submitting or sending on its own. Every send now needs a batch approval from you (an approval phrase you type). Discovery, assessment and form filling still run under the grant.\n';
+export const LEGACY_GRANT_NOTICE = 'Notice: your autonomy grant no longer covers submitting or sending on its own. Every send now needs a batch approval from you (review page or approval phrase). Discovery, assessment and form filling still run under the grant.\n';
