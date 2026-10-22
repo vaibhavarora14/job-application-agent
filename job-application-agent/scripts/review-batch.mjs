@@ -7,7 +7,7 @@
 // Honest limit: the CLI cannot stop a click made directly in the browser. It gates the
 // sanctioned steps around that click: `cloud intent-prepare`, `ledger add`, `ledger retry`,
 // and `outreach handoff`.
-import { createHash, createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
+import { createHash, createHmac, randomBytes, randomInt, timingSafeEqual } from 'node:crypto';
 import { chmod, mkdir, open, readFile, readdir, rename, unlink, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { canonicalUrl, stableJson } from './application-accounting.mjs';
@@ -159,10 +159,8 @@ function newBatchId(now) {
   return `rb-${day}-${randomBytes(4).toString('hex')}`;
 }
 function newCode() {
-  const bytes = randomBytes(5);
-  const letters = [0, 1, 2].map((i) => CODE_LETTERS[bytes[i] % CODE_LETTERS.length]).join('');
-  const digits = String(((bytes[3] << 8) | bytes[4]) % 100).padStart(2, '0');
-  return `${letters}-${digits}`;
+  const letters = [0, 1, 2].map(() => CODE_LETTERS[randomInt(CODE_LETTERS.length)]).join('');
+  return `${letters}-${String(randomInt(100)).padStart(2, '0')}`;
 }
 export const approvalPhrase = (batch) => `APPROVE ${batch.code}`;
 const normalizePhrase = (value) => String(value ?? '').trim().replace(/\s+/g, ' ').toUpperCase();
