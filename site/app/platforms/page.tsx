@@ -33,5 +33,6 @@ export default function Platforms() {
     <p>The managed installer also supports existing Codex, Claude Code, Cursor, Copilot, and Gemini skill directories. Each host still needs compatible browser tools. <a href="https://github.com/vaibhavarora14/job-application-agent#-get-started">Read the setup guide</a>.</p>
     <h2>Keep your application history together</h2>
     <p>Optional private cloud state connects one person’s trusted hosts. It coordinates submissions so two agents do not apply to the same role. Each candidate needs their own private state and credentials.</p>
+    <p>More about the project: <Link href="/open-source">About the project</Link> · <Link href="/compare">See how it compares</Link></p>
   </main>;
 }

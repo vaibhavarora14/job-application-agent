@@ -17,5 +17,6 @@ export default function Privacy() {
     <h2>Why we store it</h2><p>To fulfill founding hosted access, support payment disputes, support product users, send product updates, and prevent automated abuse. Rate limiting stores only a pseudonymous identifier derived from a visitor&apos;s network address; the application database does not retain the raw address. We do not sell this information.</p>
     <h2>Your choices</h2><p>You can unsubscribe from any email. Use <code>telemetry contact disable</code> or <code>telemetry disable</code> in the CLI for agent contact/analytics controls. For access or deletion requests, open a private contact request through the project&apos;s GitHub profile until a dedicated support address is published.</p>
     <h2>Cloud access</h2><p>The cloud agent will have separate, explicit controls for candidate profiles and application data before it accepts either.</p>
+    <p>About the open-source agent: <Link href="/open-source">About the project</Link> · <Link href="/compare">See how it compares</Link></p>
   </main>;
 }

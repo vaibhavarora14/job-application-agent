@@ -55,6 +55,6 @@ export function SiteHeader({
 export function SiteFooter({ community = false }: { community?: boolean }) {
   return <footer><div className="page-width">
     <span>{community ? "JobAppAgent community activity · identity-free by design" : "JobAppAgent · disciplined work, clear boundaries."}</span>
-    <div>{community && <a href="https://jobappagent.com">Product</a>}<Link href="/privacy">Privacy</Link><Link href="/terms">Terms</Link></div>
+    <div>{community && <a href="https://jobappagent.com">Product</a>}{!community && <><Link href="/open-source">Open source</Link><Link href="/compare">Compare</Link></>}<Link href="/privacy">Privacy</Link><Link href="/terms">Terms</Link></div>
   </div></footer>;
 }

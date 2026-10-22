@@ -6,7 +6,7 @@ import { compactNumber, useCommunityStats } from "./useCommunityStats";
 const metrics = [
   ["installations", "Installations"],
   ["jobsAssessed", "Jobs assessed"],
-  ["applicationsSubmitted", "Applications submitted"],
+  ["applicationsSubmitted", "Confirmed applications"],
 ] as const;
 
 export function OpenSourceStats({ className }: { className?: string }) {

@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { JsonLd } from "../components/JsonLd";
+import { CopyCode } from "../components/CopyCode";
 import { OpenSourceStats } from "../components/OpenSourceStats";
 import { breadcrumbListJsonLd, openSourceSoftwareJsonLd } from "../../lib/structured-data.mjs";
 import styles from "../components/ContentPage.module.css";
@@ -27,9 +28,9 @@ export default function OpenSource() {
     <JsonLd data={openSourceSoftwareJsonLd()} />
     <JsonLd data={breadcrumbs} />
     <Link className="legal-back" href="/">← Back to the product</Link>
-    <h1>JobAppAgent, the open-source job application agent</h1>
+    <h1>JobAppAgent, the <span className={styles.nb}>open‑source</span> job application agent</h1>
     <p>JobAppAgent is an open-source job application agent for people applying to jobs for themselves. It runs inside a browser-capable coding agent on your computer. It searches for roles, checks each one against your verified résumé and preferences, fills in the applications that pass, and keeps a record of everything. A job counts as applied only after the site shows a confirmation.</p>
-    <p>The code is on GitHub as <code>vaibhavarora14/job-application-agent</code> and on npm as <code>job-application-agent</code>. All three names point to the same project. It is MIT licensed.</p>
+    <p>The code is on GitHub as <code>vaibhavarora14/job-application-agent</code> and on npm as <code>job-application-agent</code>. JobAppAgent, the GitHub repo <code>vaibhavarora14/job-application-agent</code> and the npm package <code>job-application-agent</code> are the same project. It is MIT licensed.</p>
     <p className={styles.smallPrint}>JobAppAgent isn&apos;t affiliated with other GitHub repositories that use the name &quot;job-application-agent&quot;.</p>
 
     <OpenSourceStats className={styles.stats} />
@@ -50,12 +51,12 @@ export default function OpenSource() {
 
     <h2>Install</h2>
     <p>You need Node.js 20 or newer and a coding agent that can drive a browser.</p>
-    <pre className={styles.code}><code>npx job-application-agent@latest install</code></pre>
+    <CopyCode code="npx job-application-agent@latest install" />
     <p>That installs the full skill and turns on automatic updates. To turn updates off, run <code>npx job-application-agent@latest updates disable</code>.</p>
     <p>If you&apos;d rather use the skills CLI:</p>
-    <pre className={styles.code}><code>npx skills add vaibhavarora14/job-application-agent</code></pre>
+    <CopyCode code="npx skills add vaibhavarora14/job-application-agent" />
     <p>Check the install:</p>
-    <pre className={styles.code}><code>npx job-application-agent@latest status</code></pre>
+    <CopyCode code="npx job-application-agent@latest status" />
     <p>Then ask your agent: &quot;Use job-application-agent to onboard my résumé and job preferences.&quot;</p>
 
     <h2>Source code and licence</h2>
@@ -91,5 +92,11 @@ export default function OpenSource() {
       <details><summary>Where does JobAppAgent keep my data?</summary><p>Profile facts stay in your OS credential store, and your résumé and application ledgers stay in an owner-only folder on your computer. Anonymous usage analytics, a private contact record (your saved name and email) and community sharing of public job links are on by default. You can turn each one off with a CLI command.</p></details>
       <details><summary>Is JobAppAgent the same as other &quot;job-application-agent&quot; repositories on GitHub?</summary><p>No. JobAppAgent is <code>vaibhavarora14/job-application-agent</code>, the project behind jobappagent.com and the <code>job-application-agent</code> npm package. Other repositories with the same name are separate projects.</p></details>
     </div>
+
+    <section className={styles.crossLinks} aria-label="Install and links">
+      <h2>Install in one line</h2>
+      <CopyCode code="npx job-application-agent@latest install" />
+      <p><a href={REPO}>View on GitHub</a> · <Link href="/compare">See how it compares</Link></p>
+    </section>
   </main>;
 }

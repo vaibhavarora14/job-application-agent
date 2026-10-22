@@ -25,3 +25,44 @@
 .page ol { list-style: decimal; }
 .page li { margin-bottom: .35rem; }
 .page .faq details p { margin: .75rem 0 0; }
+
+/* Design review (#154) */
+main.page h1 { margin: .6rem 0 22px; font-size: clamp(34px, 9vw, 64px); line-height: 1.05; letter-spacing: -.03em; text-wrap: balance; }
+main.page p, main.page li { line-height: 1.7; }
+.nb { white-space: nowrap; }
+/* Stats strip: dark emphasis moves to the third card (Confirmed applications). */
+.stats :global(.metric-card):nth-child(2) { background: #eadfcb; color: var(--ink); }
+.stats :global(.metric-card):nth-child(2) span { color: var(--text); }
+.stats :global(.metric-card):nth-child(3) { background: var(--ink); color: #fff; }
+.stats :global(.metric-card):nth-child(3) span { color: #dce9e2; }
+/* Code blocks with copy button */
+.codeBlock { position: relative; }
+.codeBlock .code { padding-right: 5.5rem; }
+.copy { position: absolute; top: .55rem; right: .55rem; min-height: 2.25rem; padding: .3rem .75rem; border: 1px solid var(--line); border-radius: .45rem; background: var(--background); color: var(--ink); font: 600 .75rem var(--font-body), sans-serif; cursor: pointer; }
+.copy:hover { background: var(--accent-soft); }
+.copy:focus-visible { outline: 2px solid var(--green); outline-offset: 2px; }
+.crossLinks { margin-top: 2.5rem; padding-top: 1.5rem; border-top: 1px solid var(--line); }
+.crossLinks p { margin-bottom: .5rem; }
+/* /compare: cards replace the table under 720px */
+.cards { display: none; margin: 1rem 0 2rem; padding: 0; list-style: none; }
+.page ul.cards { padding-left: 0; list-style: none; }
+.card { margin-bottom: 12px; padding: 16px; border: 1px solid var(--line); border-radius: 14px; background: var(--surface); }
+.card h3 { margin: 0; color: var(--ink); font: 700 17px/1.35 var(--font-body), sans-serif; }
+.repo { color: var(--muted); font: 12px var(--font-mono), monospace; overflow-wrap: anywhere; }
+.tag { display: inline-block; margin: 10px 0 4px; padding: 3px 10px; border-radius: 999px; font-size: 12px; font-weight: 600; line-height: 1.5; }
+.tagYes { background: var(--accent-soft); color: var(--green); }
+.tagNo { background: var(--coral-soft); color: var(--coral); }
+.tagNeutral { background: #ece4d6; color: #6b5e48; }
+.card dl { display: grid; grid-template-columns: 88px 1fr; gap: 8px 12px; margin: 8px 0 0; font-size: 14px; line-height: 1.55; }
+.card dt { padding-top: 2px; color: var(--muted); font-size: 12px; letter-spacing: .06em; text-transform: uppercase; }
+.card dd { margin: 0; color: var(--text); overflow-wrap: anywhere; }
+.card code { font-size: 12.5px; }
+@media (max-width: 719.98px) {
+  .tableWrap { display: none; }
+  .cards { display: block; }
+  .stats :global(.metric-grid) { grid-template-columns: repeat(3, 1fr); gap: .5rem; }
+  .stats :global(.metric-card) { min-height: 5.75rem; padding: .8rem .7rem; }
+  .stats :global(.metric-card) strong { font-size: 28px; }
+  .stats :global(.metric-card) span { font-size: .72rem; }
+}
+.card dl > div { display: contents; }
