@@ -15,6 +15,7 @@ export const COMMAND_USAGE = Object.freeze({
   attention: 'attention add|resolve --stdin | list',
   friction: 'friction record --stdin | list',
   telemetry: 'telemetry status|enable|disable|reset | preview|record --stdin | contact status|enable|disable | identity status|enable|disable',
+  updates: 'updates check',
   outreach: 'outreach policy status|enable --stdin|disable --stdin | assess|draft|handoff|record|suppress|clear --stdin | list | show <id> | review',
 });
 

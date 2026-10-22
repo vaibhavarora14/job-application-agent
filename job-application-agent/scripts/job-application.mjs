@@ -2829,6 +2829,15 @@ async function main(rawArgs) {
     const { runOutreach } = await import('./outreach-cli.mjs');
     return print(await runOutreach(args.slice(1)));
   }
+  // Notify-only update check: reads the public npm registry, never installs, and
+  // stays outside telemetry and community sync.
+  if (area === 'updates') {
+    if (action === 'check' && args.length === 2) {
+      const { checkForUpdate } = await import('./update-check.mjs');
+      return print(await checkForUpdate());
+    }
+    throw usageError(['updates', action]);
+  }
   // Name/email go only to the private /v1/contact store — never to PostHog event payloads.
   const telemetry = new TelemetryClient({ stateDir: stateDir(), readIdentity: () => {
     try {

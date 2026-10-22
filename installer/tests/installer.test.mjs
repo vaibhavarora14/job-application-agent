@@ -66,11 +66,15 @@ test('updates atomically and keeps the immediately previous version for rollback
   assert.equal(await readFile(path.join(f.agentHome, 'job-application-agent', 'previous', 'SKILL.md'), 'utf8'), '# Version one\n');
 });
 
-test('automatic updates default on and can be explicitly disabled and re-enabled', async () => {
+test('automatic updates default off (notify-only) and are an explicit opt-in', async () => {
   const f = await fixture();
   await installSkill({ packageRoot: f.packageRoot, packageVersion: '3.0.0', homeDir: f.homeDir, agentHome: f.agentHome, platform: 'test', scheduler: false });
 
+  assert.equal((await readInstallStatus({ agentHome: f.agentHome })).automaticUpdates, false);
+  await setAutomaticUpdates(true, { agentHome: f.agentHome, homeDir: f.homeDir, platform: 'test', scheduler: false });
   assert.equal((await readInstallStatus({ agentHome: f.agentHome })).automaticUpdates, true);
+  await updateSkill({ packageRoot: f.packageRoot, packageVersion: '3.1.0', homeDir: f.homeDir, agentHome: f.agentHome, platform: 'test', scheduler: false });
+  assert.equal((await readInstallStatus({ agentHome: f.agentHome })).automaticUpdates, true, 'an update keeps an existing opt-in');
   await setAutomaticUpdates(false, { agentHome: f.agentHome, homeDir: f.homeDir, platform: 'test', scheduler: false });
   assert.equal((await readInstallStatus({ agentHome: f.agentHome })).automaticUpdates, false);
   await setAutomaticUpdates(true, { agentHome: f.agentHome, homeDir: f.homeDir, platform: 'test', scheduler: false });

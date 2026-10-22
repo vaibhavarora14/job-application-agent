@@ -52,7 +52,7 @@ export default function OpenSource() {
     <h2>Install</h2>
     <p>You need Node.js 20 or newer and a coding agent that can drive a browser.</p>
     <CopyCode code="npx job-application-agent@latest install" />
-    <p>That installs the full skill and turns on automatic updates. To turn updates off, run <code>npx job-application-agent@latest updates disable</code>.</p>
+    <p>That installs the full skill. It tells you when a new version is out and installs nothing until you ask. To opt in to automatic updates, run <code>npx job-application-agent@latest updates enable</code>.</p>
     <p>If you&apos;d rather use the skills CLI:</p>
     <CopyCode code="npx skills add vaibhavarora14/job-application-agent" />
     <p>Check the install:</p>

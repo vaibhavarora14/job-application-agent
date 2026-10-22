@@ -179,14 +179,19 @@ Rounds require recorded attempts across at least three distinct discovery source
 <details>
 <summary><strong>Installation and update details</strong></summary>
 
-The installer places the skill at `~/.agents/skills/job-application-agent` and enables automatic updates by default. Compatible vendor skill directories are also supported when they already exist.
+The installer places the skill at `~/.agents/skills/job-application-agent`. Compatible vendor skill directories are also supported when they already exist.
+
+New installs are notify-only: at the start of a workflow the agent runs `updates check`, which only reads the latest version from npm, and tells you when a newer version exists. Nothing is installed until you ask. Automatic background updates (at login and hourly) are an explicit opt-in with `updates enable`. Installs that already had automatic updates on keep them and show a one-time notice explaining how to keep or turn them off.
 
 ```bash
 npx job-application-agent@latest status
-npx job-application-agent@latest update
-npx job-application-agent@latest updates disable
-npx job-application-agent@latest updates enable
+npx job-application-agent@latest update            # install the latest version now
+npx job-application-agent@latest updates enable    # opt in to automatic background updates
+npx job-application-agent@latest updates disable   # back to notify-only
+node ~/.agents/skills/job-application-agent/scripts/job-application.mjs updates check   # read-only version check
 ```
+
+Set `JOB_APPLICATION_AGENT_NO_UPDATE_CHECK=1` to skip the version check entirely.
 
 Updates are staged and validated before replacement. Private candidate state lives outside the replaceable skill directory.
 

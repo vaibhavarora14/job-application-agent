@@ -4,10 +4,16 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { assertApplyUrlAllowed, parseApplyUrl } from '../../job-application-agent/scripts/ats/apply-url-gate.mjs';
-import { installSkill, readInstallStatus, resolveAgentHome, setAutomaticUpdates, updateSkill } from './installer.mjs';
+import { consumeAutoUpdateNotice, installSkill, readInstallStatus, resolveAgentHome, setAutomaticUpdates, updateSkill } from './installer.mjs';
 import { createUpdateRunner } from './runner.mjs';
 
 const HELP_ARGS = new Set(['help', '--help', '-h']);
+
+function updatesLine(status) {
+  return status.automaticUpdates
+    ? 'Automatic updates: enabled (installs new versions in the background; turn off with `updates disable`)'
+    : 'Automatic updates: disabled (notify-only; the skill tells you when a new version exists; opt in with `updates enable`)';
+}
 const USAGE = `Usage:\n  job-application-agent install\n  job-application-agent update\n  job-application-agent status\n  job-application-agent updates enable|disable\n  job-application-agent platforms [hermes|grok|openclaw]\n  job-application-agent outreach <command>\n  job-application-agent apply <url>\n`;
 
 function defaultPackageRoot() {
@@ -139,14 +145,20 @@ export async function runCli(args, options = {}) {
   if (command === 'status') {
     const status = await readInstallStatus({ homeDir, agentHome });
     output(status.installed
-      ? `Installed version: ${status.installedVersion}\nAutomatic updates: ${status.automaticUpdates ? 'enabled' : 'disabled'}`
+      ? `Installed version: ${status.installedVersion}\n${updatesLine(status)}`
       : 'Not installed.');
+    const notice = status.installed ? await consumeAutoUpdateNotice({ homeDir, agentHome }) : null;
+    if (notice) output(notice);
     return status;
   }
 
   if (command === 'updates' && ['enable', 'disable'].includes(args[1])) {
-    const status = await setAutomaticUpdates(args[1] === 'enable', { homeDir, agentHome, platform: options.platform, scheduler });
-    output(`Automatic updates: ${status.automaticUpdates ? 'enabled' : 'disabled'}`);
+    let updateCommand;
+    if (args[1] === 'enable' && scheduler !== false) {
+      updateCommand = (await createUpdateRunner({ platform: options.platform, agentHome, npmCliPath: await locateNpmCli() })).path;
+    }
+    const status = await setAutomaticUpdates(args[1] === 'enable', { homeDir, agentHome, platform: options.platform, scheduler, command: updateCommand });
+    output(updatesLine(status));
     return status;
   }
 
@@ -165,7 +177,9 @@ export async function runCli(args, options = {}) {
       shared.command = runner.path;
     }
     const status = command === 'install' ? await installSkill(shared) : await updateSkill(shared);
-    output(`${command === 'install' ? 'Installed' : 'Updated'} job-application-agent ${status.installedVersion}.\nAutomatic updates: ${status.automaticUpdates ? 'enabled' : 'disabled'}`);
+    output(`${command === 'install' ? 'Installed' : 'Updated'} job-application-agent ${status.installedVersion}.\n${updatesLine(status)}`);
+    const notice = await consumeAutoUpdateNotice({ homeDir, agentHome });
+    if (notice) output(notice);
     return status;
   }
 

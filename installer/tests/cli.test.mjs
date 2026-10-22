@@ -16,13 +16,54 @@ async function setup() {
   return { root, packageRoot, agentHome };
 }
 
-test('install is automatic-update enabled by default and status reports the installed version', async () => {
+async function enableLegacyAutoUpdates(agentHome) {
+  // Simulate an install made before notify-only became the default: automatic
+  // updates on, and the one-time notice not yet shown.
+  const configPath = path.join(agentHome, 'job-application-agent', 'install.json');
+  const config = JSON.parse(await readFile(configPath, 'utf8'));
+  delete config.autoUpdateNoticeShown;
+  await writeFile(configPath, `${JSON.stringify({ ...config, automaticUpdates: true }, null, 2)}\n`);
+}
+
+test('a new install is notify-only by default and status reports the installed version', async () => {
   const f = await setup();
   const output = [];
   await runCli(['install'], { packageRoot: f.packageRoot, packageVersion: '3.0.0', agentHome: f.agentHome, homeDir: f.root, platform: 'test', scheduler: false, output: value => output.push(value) });
   await runCli(['status'], { agentHome: f.agentHome, homeDir: f.root, output: value => output.push(value) });
   assert.match(output.join('\n'), /3\.0\.0/);
+  assert.match(output.join('\n'), /automatic updates: disabled \(notify-only/i);
+  assert.match(output.join('\n'), /updates enable/);
+  assert.doesNotMatch(output.join('\n'), /automatic updates are on/i);
+});
+
+test('updates enable is the explicit opt-in and shows no legacy notice', async () => {
+  const f = await setup();
+  await runCli(['install'], { packageRoot: f.packageRoot, packageVersion: '3.0.0', agentHome: f.agentHome, homeDir: f.root, platform: 'test', scheduler: false, output: () => {} });
+  const output = [];
+  await runCli(['updates', 'enable'], { agentHome: f.agentHome, homeDir: f.root, platform: 'test', scheduler: false, output: value => output.push(value) });
+  await runCli(['status'], { agentHome: f.agentHome, homeDir: f.root, output: value => output.push(value) });
   assert.match(output.join('\n'), /automatic updates: enabled/i);
+  assert.doesNotMatch(output.join('\n'), /automatic updates are on/i);
+});
+
+test('an existing auto-update install keeps auto-update and prints the notice exactly once', async () => {
+  const f = await setup();
+  await runCli(['install'], { packageRoot: f.packageRoot, packageVersion: '3.0.0', agentHome: f.agentHome, homeDir: f.root, platform: 'test', scheduler: false, output: () => {} });
+  await enableLegacyAutoUpdates(f.agentHome);
+  const first = [];
+  await runCli(['status'], { agentHome: f.agentHome, homeDir: f.root, output: value => first.push(value) });
+  assert.match(first.join('\n'), /automatic updates: enabled/i);
+  assert.match(first.join('\n'), /Automatic updates are ON/);
+  assert.match(first.join('\n'), /To keep automatic updates, do nothing/);
+  assert.match(first.join('\n'), /updates disable/);
+  const second = [];
+  await runCli(['status'], { agentHome: f.agentHome, homeDir: f.root, output: value => second.push(value) });
+  assert.doesNotMatch(second.join('\n'), /Automatic updates are ON/);
+  // Updating an existing install never silently turns its automatic updates off.
+  await runCli(['update'], { packageRoot: f.packageRoot, packageVersion: '3.1.0', agentHome: f.agentHome, homeDir: f.root, platform: 'test', scheduler: false, output: () => {} });
+  const config = JSON.parse(await readFile(path.join(f.agentHome, 'job-application-agent', 'install.json'), 'utf8'));
+  assert.equal(config.automaticUpdates, true);
+  assert.equal(config.autoUpdateNoticeShown, true);
 });
 
 test('auto-update is a no-op when updates are disabled', async () => {
@@ -39,6 +80,7 @@ test('auto-update is a no-op when updates are disabled', async () => {
 test('auto-update does not replace an already-current installation or reload its scheduler', async () => {
   const f = await setup();
   await runCli(['install'], { packageRoot: f.packageRoot, packageVersion: '3.0.0', agentHome: f.agentHome, homeDir: f.root, platform: 'test', scheduler: false, output: () => {} });
+  await enableLegacyAutoUpdates(f.agentHome);
   const marker = path.join(f.agentHome, 'skills', 'job-application-agent', 'local-marker');
   await writeFile(marker, 'preserve');
   const output = [];
@@ -50,6 +92,7 @@ test('auto-update does not replace an already-current installation or reload its
 test('auto-update replaces an older skill without reloading the running scheduler', async () => {
   const f = await setup();
   await runCli(['install'], { packageRoot: f.packageRoot, packageVersion: '3.0.0', agentHome: f.agentHome, homeDir: f.root, platform: 'test', scheduler: false, output: () => {} });
+  await enableLegacyAutoUpdates(f.agentHome);
   await writeFile(path.join(f.packageRoot, 'job-application-agent', 'SKILL.md'), '# New skill\n');
   await runCli(['auto-update'], { packageRoot: f.packageRoot, packageVersion: '3.1.0', agentHome: f.agentHome, homeDir: f.root, platform: 'darwin', output: () => {} });
   assert.equal(await readFile(path.join(f.agentHome, 'skills', 'job-application-agent', 'SKILL.md'), 'utf8'), '# New skill\n');

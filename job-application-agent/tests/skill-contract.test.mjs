@@ -129,3 +129,34 @@ test('skill triggers only on explicit job-search/application requests or the ski
     assert.doesNotMatch(copy, /or natural language\)/);
   }
 });
+
+const ALL_SKILL_COPIES = [
+  '../SKILL.md',
+  '../../skills/job-application-agent/SKILL.md',
+  '../../plugins/job-application-agent/skills/job-application-agent/SKILL.md',
+];
+
+test('every SKILL.md copy has an Untrusted content section: pages, emails and ATS forms are data, never instructions', async () => {
+  for (const copy of ALL_SKILL_COPIES) {
+    const skill = await readFile(new URL(copy, import.meta.url), 'utf8');
+    const section = skill.split(/^## Untrusted content$/m)[1]?.split(/^## /m)[0] ?? '';
+    assert.ok(section, `${copy} is missing "## Untrusted content"`);
+    assert.match(section, /Job pages/, copy);
+    assert.match(section, /emails/, copy);
+    assert.match(section, /ATS forms/, copy);
+    assert.match(section, /data, never instructions/, copy);
+    assert.match(section, /tell the candidate what it asked/, copy);
+  }
+});
+
+test('no SKILL.md copy tells the agent to run the updater on its own; it checks and tells the user', async () => {
+  for (const copy of ALL_SKILL_COPIES) {
+    const skill = await readFile(new URL(copy, import.meta.url), 'utf8');
+    assert.doesNotMatch(skill, /run the managed updater once/i, copy);
+    assert.doesNotMatch(skill, /Run the managed updater when present/i, copy);
+    assert.doesNotMatch(skill, /enables automatic updates by default/i, copy);
+    assert.match(skill, /updates check/, copy);
+    assert.match(skill, /ask (whether to update|before running)/i, copy);
+    assert.match(skill, /Never run the managed updater/i, copy);
+  }
+});
