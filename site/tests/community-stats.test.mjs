@@ -73,7 +73,8 @@ test("public outcome entries never surface the interviews count", () => {
     { label: "withdrawn", count: 26 },
   ]);
   assert.doesNotMatch(JSON.stringify(result.data), /interview/i);
-  const { interviews: _interviews, ...metricsWithoutInterviews } = validStats.metrics;
+  const metricsWithoutInterviews = { ...validStats.metrics };
+  delete metricsWithoutInterviews.interviews;
   const newer = validateCommunityStats({ ...validStats, metrics: metricsWithoutInterviews });
   assert.equal(newer.ok, true, "a relay that no longer sends interviews is accepted");
   assert.equal(newer.data.metrics.installations, 195);
