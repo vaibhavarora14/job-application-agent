@@ -115,6 +115,10 @@ test("ledger add stores applyKind=fixture and excludes from review totals", asyn
     ...process.env,
     JOB_APPLICATION_AGENT_HOME: dir,
     JOB_APPLICATION_AGENT_STATE_DIR: dir,
+    // Never reconcile against a real cloud config or community relay on the developer's machine.
+    JOB_APPLICATION_AGENT_CLOUD_CONFIG: join(dir, "cloud-config.json"),
+    JOB_APPLICATION_AGENT_SOURCE_COMMUNITY_URL: "http://127.0.0.1:9",
+    JOB_APPLICATION_AGENT_TELEMETRY_URL: "http://127.0.0.1:9",
   };
   const input = {
     id: "fixture-ledger-1",

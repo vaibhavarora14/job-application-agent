@@ -243,7 +243,7 @@ test('CLI persists the invalid-input streak across invocations and refuses with 
   if (process.platform !== 'win32') assert.equal((await stat(join(directory, 'assessment-guard.json'))).mode & 0o777, 0o600);
   const state = await readFile(join(directory, 'assessment-guard.json'), 'utf8');
   assert.equal(state.includes('Test Candidate'), false, 'guard state holds no profile data');
-  assert.equal(state.includes('jobs.example.com'), false, 'guard state holds hashed job keys, not URLs');
+  assert.equal(/https?:\/\//.test(state), false, 'guard state holds hashed job keys, not URLs');
   const reset = JSON.parse((await runCli(['score', 'guard-reset'], undefined, env)).stdout);
   assert.equal(reset.reset, true);
   const ok = await runCli(['score', '--stdin'], job(10), env);
