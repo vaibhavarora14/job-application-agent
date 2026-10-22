@@ -14,8 +14,8 @@ export const metadata: Metadata = {
   manifest: "/manifest.webmanifest",
   title: { default: "JobAppAgent — open-source AI job application agent", template: "%s · JobAppAgent" },
   description: "JobAppAgent is an open-source AI job application agent. It keeps disciplined, truthful applications moving inside boundaries you control.",
-  openGraph: { title: "JobAppAgent — open-source AI job application agent", description: "An open-source AI job application agent that keeps the routine moving and real decisions with you.", type: "website", images: [{ url: "/og.png", width: 1200, height: 630, alt: "JobAppAgent, a calmer way to keep your job search moving" }] },
-  twitter: { card: "summary_large_image", title: "JobAppAgent — open-source AI job application agent", description: "An open-source AI job application agent that keeps the routine moving and real decisions with you.", images: ["/og.png"] },
+  openGraph: { title: "JobAppAgent — open-source AI job application agent", description: "JobAppAgent is an open-source AI job application agent that keeps the routine moving and real decisions with you.", type: "website", images: [{ url: "/og.png", width: 1200, height: 630, alt: "JobAppAgent, a calmer way to keep your job search moving" }] },
+  twitter: { card: "summary_large_image", title: "JobAppAgent — open-source AI job application agent", description: "JobAppAgent is an open-source AI job application agent that keeps the routine moving and real decisions with you.", images: ["/og.png"] },
   icons: {
     icon: [{ url: "/favicon.png", sizes: "64x64", type: "image/png" }],
     shortcut: "/favicon.png",

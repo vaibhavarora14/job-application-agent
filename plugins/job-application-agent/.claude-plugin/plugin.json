@@ -1,7 +1,7 @@
 {
   "name": "job-application-agent",
   "displayName": "Job Application Agent",
-  "version": "3.7.22",
+  "version": "3.7.23",
   "description": "Privacy-first Agent Skill and CLI for evidence-based job discovery, application completion, and outcome tracking. Verified résumé facts only, OS-backed secrets, confirmed submissions.",
   "author": {
     "name": "Vaibhav Arora",

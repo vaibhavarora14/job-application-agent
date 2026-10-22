@@ -1,5 +1,9 @@
 # Changelog
 
+## 3.7.23
+
+- Metadata only (no CLI behavior change): the SKILL.md frontmatter description now starts with "JobAppAgent, the open-source AI job application agent." and states that submissions happen only with the candidate's approval; npm keywords add `jobappagent`; the site og:description and twitter:description start with "JobAppAgent is an open-source AI job application agent".
+
 ## 3.7.22
 
 - `review-each` is now the default submission mode. `profile migrate` and the built-in targeting defaults write `review-each` (previously `routine-auto`), matching the docs.

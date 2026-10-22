@@ -1,6 +1,6 @@
 {
   "name": "job-application-agent",
-  "version": "3.7.22",
+  "version": "3.7.23",
   "description": "JobAppAgent: open-source AI job application agent. Search roles, match them to one verified résumé, apply within your rules on Greenhouse, Ashby and Lever, and track confirmed submissions.",
   "license": "MIT",
   "type": "module",
@@ -33,7 +33,8 @@
     "greenhouse",
     "ashby",
     "lever",
-    "open-source"
+    "open-source",
+    "jobappagent"
   ],
   "homepage": "https://jobappagent.com",
   "repository": {
