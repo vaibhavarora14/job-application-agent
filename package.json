@@ -1,7 +1,7 @@
 {
   "name": "job-application-agent",
-  "version": "3.7.21",
-  "description": "A privacy-first Agent Skill and CLI for evidence-based job discovery, application completion, and outcome tracking.",
+  "version": "3.7.22",
+  "description": "JobAppAgent: open-source AI job application agent. Search roles, match them to one verified résumé, apply within your rules on Greenhouse, Ashby and Lever, and track confirmed submissions.",
   "license": "MIT",
   "type": "module",
   "bin": {
@@ -25,7 +25,15 @@
     "cursor",
     "codex",
     "resume",
-    "browser-automation"
+    "browser-automation",
+    "job-application-agent",
+    "ai-agent",
+    "agent-skill",
+    "auto-apply",
+    "greenhouse",
+    "ashby",
+    "lever",
+    "open-source"
   ],
   "homepage": "https://jobappagent.com",
   "repository": {

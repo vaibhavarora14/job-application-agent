@@ -1,5 +1,11 @@
 # Changelog
 
+## 3.7.22
+
+- `review-each` is now the default submission mode. `profile migrate` and the built-in targeting defaults write `review-each` (previously `routine-auto`), matching the docs.
+- An explicit `routine-auto` is recorded: `profile set` / `profile migrate` with `"submissionMode": "routine-auto"` stamps `submissionModeChosenAt`. Earlier versions wrote `routine-auto` from defaults without a marker, so explicit choices can't be told apart from defaults; every stored `routine-auto` without the stamp is treated as `review-each` from this version on, and the CLI prints a one-line notice once per install explaining how to turn `routine-auto` back on. The stored profile itself is not rewritten.
+- Package metadata: new npm description and keywords (job-application-agent, ai-agent, agent-skill, auto-apply, greenhouse, ashby, lever, open-source).
+
 ## 3.7.21
 
 - Tests never reach the production telemetry relay by default. Previously only `node --test` (`NODE_TEST_CONTEXT`) and GitHub Actions were detected. Now any test run uses the local dead endpoint: `npm test` and `npm run privacy-audit` load `tests/support/no-live-telemetry.mjs`, which sets `JAA_TEST=1` for every spawned CLI and makes an in-process fetch to the production relay fail; `npm_lifecycle_event` test/prepack scripts and test files run directly with `node file.test.mjs` are detected too. Opt in explicitly with `JAA_TEST_LIVE_TELEMETRY=1`. An explicit `JOB_APPLICATION_AGENT_TELEMETRY_URL` still wins. Real CLI use is unchanged (production by default; generic `CI=true` does not opt out).

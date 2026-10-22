@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 import { createHash, randomUUID } from 'node:crypto';
-import { readFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { appendFile, chmod, mkdir, open, readFile, rename, stat, unlink, writeFile } from 'node:fs/promises';
 import { homedir, platform, userInfo } from 'node:os';
 import { basename, join, resolve } from 'node:path';
@@ -81,7 +81,7 @@ const SOURCE_BLOCKERS = new Set(['login', 'mfa', 'captcha', 'site-error', 'acces
 const CONCENTRATION_REASONS = new Set(['stronger-fit', 'alternatives-exhausted', 'access-blocked', 'candidate-directed']);
 const COMMUNITY_SOURCE_ID = /^community-[0-9a-f]{16}$/;
 const REQUIRED_PROFILE = ['name', 'email', 'phone', 'location', 'workAuthorization', 'roleFamilies', 'seniority', 'targetLocations', 'workModes', 'submissionMode', 'yearsExperience', 'autoSubmitMinScore', 'manualReviewMinScore', 'minMustHaveCoverage'];
-const STRING_PROFILE_FIELDS = new Set(['name', 'email', 'phone', 'location', 'workAuthorization', 'linkedin', 'github', 'portfolio', 'availability', 'currentCompensation', 'targetCompensation', 'submissionMode']);
+const STRING_PROFILE_FIELDS = new Set(['name', 'email', 'phone', 'location', 'workAuthorization', 'linkedin', 'github', 'portfolio', 'availability', 'currentCompensation', 'targetCompensation', 'submissionMode', 'submissionModeChosenAt']);
 const ARRAY_PROFILE_FIELDS = new Set(['roleFamilies', 'seniority', 'skills', 'targetLocations', 'excludedLocations', 'workModes', 'industries', 'excludedCompanies']);
 const NUMBER_PROFILE_FIELDS = new Set(['yearsExperience', 'autoSubmitMinScore', 'manualReviewMinScore', 'minMustHaveCoverage']);
 const OBJECT_PROFILE_FIELDS = new Set(['compensationFloor']);
@@ -93,7 +93,7 @@ const DEFAULT_TARGETING = {
   targetLocations: ['India', 'Remote', 'Worldwide'],
   workModes: ['remote'],
   industries: ['AI', 'developer tools'],
-  submissionMode: 'routine-auto',
+  submissionMode: 'review-each',
   yearsExperience: 10,
   autoSubmitMinScore: 80,
   manualReviewMinScore: 70,
@@ -102,6 +102,38 @@ const DEFAULT_TARGETING = {
 
 function stateDir() {
   return resolveStateDir();
+}
+
+export const SUBMISSION_MODE_RESET_NOTICE = 'Notice: submissions now default to review-each (you approve every application). Your saved profile had routine-auto without a recorded choice, so it now uses review-each. To turn routine-auto back on, run `profile set --stdin` with "submissionMode": "routine-auto".\n';
+const SUBMISSION_MODE_NOTICE_FILE = 'submission-mode-notice.json';
+
+/**
+ * routine-auto counts only when the candidate chose it explicitly through `profile set`
+ * or `profile migrate`, which stamp `submissionModeChosenAt`. Before 3.7.22, migrations
+ * and defaults wrote routine-auto without a marker, so an unstamped routine-auto is
+ * indistinguishable from a default and is treated as review-each.
+ */
+export function normalizeSubmissionMode(profile) {
+  if (!profile || typeof profile !== 'object' || Array.isArray(profile)) return { profile, reset: false };
+  if (profile.submissionMode !== 'routine-auto' || chosenAtValid(profile.submissionModeChosenAt)) return { profile, reset: false };
+  const { submissionModeChosenAt: _ignored, ...rest } = profile;
+  return { profile: { ...rest, submissionMode: 'review-each' }, reset: true };
+}
+
+function chosenAtValid(value) {
+  return typeof value === 'string' && value.length <= 40 && Number.isFinite(Date.parse(value));
+}
+
+/** Prints the reset notice once per state directory (stderr only; never changes stdout JSON). */
+function noticeSubmissionModeReset() {
+  try {
+    const dir = stateDir();
+    const marker = join(dir, SUBMISSION_MODE_NOTICE_FILE);
+    if (existsSync(marker)) return;
+    process.stderr.write(SUBMISSION_MODE_RESET_NOTICE);
+    mkdirSync(dir, { recursive: true, mode: 0o700 });
+    writeFileSync(marker, JSON.stringify({ version: 1, noticedAt: new Date().toISOString() }), { mode: 0o600 });
+  } catch { /* A notice failure never blocks a command. */ }
 }
 
 function assessmentGuard() {
@@ -791,12 +823,14 @@ export function validateProfile(input) {
     else string(profile[field], `profile.${field}`, 1000);
   }
   if (!MODES.has(profile.submissionMode)) throw new Error('profile.submissionMode must be review-each or routine-auto.');
+  if (profile.submissionModeChosenAt != null && !chosenAtValid(profile.submissionModeChosenAt)) throw new Error('profile.submissionModeChosenAt must be an ISO timestamp.');
   if (profile.manualReviewMinScore > profile.autoSubmitMinScore) throw new Error('profile.manualReviewMinScore must not exceed profile.autoSubmitMinScore.');
   for (const field of STRING_PROFILE_FIELDS) if (profile[field] != null) string(profile[field], `profile.${field}`, 2000);
   for (const field of ARRAY_PROFILE_FIELDS) if (profile[field] != null) stringArray(profile[field], `profile.${field}`);
   for (const field of NUMBER_PROFILE_FIELDS) if (profile[field] != null) integer(profile[field], `profile.${field}`, 0, field === 'yearsExperience' ? 80 : 100);
   const normalized = Object.fromEntries(Object.entries(profile).filter(([key]) => STRING_PROFILE_FIELDS.has(key) || ARRAY_PROFILE_FIELDS.has(key) || NUMBER_PROFILE_FIELDS.has(key) || OBJECT_PROFILE_FIELDS.has(key)));
   if (profile.compensationFloor != null) normalized.compensationFloor = compensationFloor(profile.compensationFloor);
+  if (normalized.submissionMode !== 'routine-auto') delete normalized.submissionModeChosenAt;
   return normalized;
 }
 
@@ -1251,6 +1285,12 @@ export function buildReview(entries, outcomeEntries = [], acknowledgements = [],
 }
 
 function storedProfileRaw() {
+  const { profile, reset } = normalizeSubmissionMode(storedProfileRawUnnormalized());
+  if (reset) noticeSubmissionModeReset();
+  return profile;
+}
+
+function storedProfileRawUnnormalized() {
   const cloudProfile = cachedCloudProfileRaw();
   if (cloudProfile) return cloudProfile;
   try { return object(JSON.parse(secretStore.readProfile()), 'profile'); } catch (error) {
@@ -1548,8 +1588,14 @@ async function autonomyRevoke() {
   return autonomyView(revoked);
 }
 
+/** An explicit routine-auto written through `profile set` / `profile migrate` is recorded as a choice. */
+export function stampSubmissionModeChoice(profile, now = new Date()) {
+  if (profile.submissionMode !== 'routine-auto' || chosenAtValid(profile.submissionModeChosenAt)) return profile;
+  return { ...profile, submissionModeChosenAt: now.toISOString() };
+}
+
 async function storeProfile(profileInput) {
-  const profile = validateProfile(profileInput);
+  const profile = stampSubmissionModeChoice(validateProfile(profileInput));
   if (await cloudState.configured()) {
     const dir = await ensureStateDir();
     await cloudState.putDocumentCurrent('profile', profile);
