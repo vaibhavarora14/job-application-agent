@@ -3,6 +3,8 @@
  * Paid ≠ activated — this notifies humans to email access details, then activate.
  */
 
+import { redactLogDetail } from "./log-redaction.mjs";
+
 export const DEFAULT_FOUNDING_SUPPORT_ALERT_EMAIL = "founders@jobappagent.com";
 
 /**
@@ -93,12 +95,13 @@ function escapeHtml(value) {
  */
 export function logFoundingSupportAlert(alert, config = {}) {
   const logger = config.logger ?? console;
+  // Never log the buyer email or the email subject (which contains it): Worker logs
+  // are retained by Cloudflare. The purchase id is enough to find the D1 row.
   const payload = {
     type: "founding_payment_support_alert",
     purchaseId: alert.purchaseId,
-    buyerEmail: alert.customerEmail,
     paymentId: alert.paymentId,
-    subject: alert.subject,
+    buyerEmailPresent: Boolean(alert.customerEmail),
   };
   logger.info?.(`[founding-support-alert] ${JSON.stringify(payload)}`);
   return payload;
@@ -161,7 +164,7 @@ export async function sendFoundingSupportAlert(input, config = {}) {
 
     if (!response.ok) {
       const detail = await response.text().catch(() => "");
-      logger.error?.(`[founding-support-alert] Resend rejected (${response.status}): ${detail.slice(0, 200)}`);
+      logger.error?.(`[founding-support-alert] Resend rejected (${response.status}): ${redactLogDetail(detail)}`);
       return { ok: false, error: "mailer_failed", status: response.status, logged };
     }
 

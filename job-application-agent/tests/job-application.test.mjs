@@ -19,6 +19,9 @@ import {
   LOGGED_ENTRY_ORIGIN,
   JOB_APPROVAL_REVIEW_EACH,
   migrateProfile,
+  normalizeSubmissionMode,
+  stampSubmissionModeChoice,
+  SUBMISSION_MODE_RESET_NOTICE,
   normalizeJobApprovalMode,
   normalizeThinSubmissionOverride,
   PROFILE_ONE_CLICK_CHANNEL,
@@ -195,7 +198,7 @@ test('migrates a legacy profile without discarding identity or salary preference
   assert.equal(migrated.targetCompensation, legacy.salaryPreference);
   assert.deepEqual(migrated.roleFamilies, ['product-engineering', 'full-stack', 'ai-ml']);
   assert.deepEqual(migrated.seniority, ['senior', 'staff']);
-  assert.equal(migrated.submissionMode, 'routine-auto');
+  assert.equal(migrated.submissionMode, 'review-each');
   assert.equal(migrated.autoSubmitMinScore, 80);
   assert.equal(migrated.manualReviewMinScore, 70);
   assert.equal(migrated.minMustHaveCoverage, 70);
@@ -1544,7 +1547,7 @@ const emptyTelemetry = { fieldsFilled: 0, resumeUploaded: false, durationBucket:
 test('ledger add under a routine-auto profile blocks empty applies and allows a per-job review-each override', {
   skip: process.platform === 'win32',
 }, async (t) => {
-  const profile = { ...target, submissionMode: 'routine-auto' };
+  const profile = { ...target, submissionMode: 'routine-auto', submissionModeChosenAt: '2026-10-01T00:00:00.000Z' };
   const cli = await profileBackedCli(t, profile);
   const before = await readFile(cli.profileFile, 'utf8');
 
@@ -1590,6 +1593,61 @@ test('ledger add under a routine-auto profile blocks empty applies and allows a 
   // The global profile setting is never touched.
   assert.equal(await readFile(cli.profileFile, 'utf8'), before);
   assert.equal(JSON.parse(before).submissionMode, 'routine-auto');
+});
+
+test('migration defaults submissionMode to review-each but keeps an explicit choice', () => {
+  const legacy = { name: 'Test Candidate', email: 'candidate@example.com', phone: '+1 555 0100', location: 'Bengaluru, India', workAuthorization: 'India' };
+  assert.equal(migrateProfile(legacy, {}).submissionMode, 'review-each');
+  assert.equal(migrateProfile({ ...legacy, submissionMode: 'review-each' }, {}).submissionMode, 'review-each');
+  const chosen = migrateProfile({ ...legacy, submissionMode: 'routine-auto', submissionModeChosenAt: '2026-10-01T00:00:00.000Z' }, {});
+  assert.equal(chosen.submissionMode, 'routine-auto');
+  assert.equal(chosen.submissionModeChosenAt, '2026-10-01T00:00:00.000Z');
+  const override = migrateProfile(legacy, { submissionMode: 'routine-auto' });
+  assert.equal(override.submissionMode, 'routine-auto');
+});
+
+test('unstamped routine-auto is normalized to review-each; stamped routine-auto is kept', () => {
+  const unstamped = normalizeSubmissionMode({ ...target, submissionMode: 'routine-auto' });
+  assert.equal(unstamped.reset, true);
+  assert.equal(unstamped.profile.submissionMode, 'review-each');
+  assert.equal('submissionModeChosenAt' in unstamped.profile, false);
+  const bogus = normalizeSubmissionMode({ ...target, submissionMode: 'routine-auto', submissionModeChosenAt: 'yes' });
+  assert.equal(bogus.profile.submissionMode, 'review-each');
+  const stamped = normalizeSubmissionMode({ ...target, submissionMode: 'routine-auto', submissionModeChosenAt: '2026-10-22T08:00:00Z' });
+  assert.equal(stamped.reset, false);
+  assert.equal(stamped.profile.submissionMode, 'routine-auto');
+  assert.equal(normalizeSubmissionMode({ ...target }).reset, false);
+});
+
+test('explicit routine-auto writes are stamped; review-each drops the stamp', () => {
+  const now = new Date('2026-10-22T08:00:00Z');
+  assert.equal(stampSubmissionModeChoice(validateProfile({ ...target, submissionMode: 'routine-auto' }), now).submissionModeChosenAt, now.toISOString());
+  const kept = stampSubmissionModeChoice(validateProfile({ ...target, submissionMode: 'routine-auto', submissionModeChosenAt: '2026-10-01T00:00:00.000Z' }), now);
+  assert.equal(kept.submissionModeChosenAt, '2026-10-01T00:00:00.000Z');
+  assert.equal('submissionModeChosenAt' in validateProfile({ ...target, submissionModeChosenAt: '2026-10-01T00:00:00.000Z' }), false);
+  assert.equal(stampSubmissionModeChoice(validateProfile(target), now).submissionModeChosenAt, undefined);
+  assert.throws(() => validateProfile({ ...target, submissionMode: 'routine-auto', submissionModeChosenAt: 'soon' }), /ISO timestamp/);
+});
+
+test('a stored unstamped routine-auto profile runs as review-each and prints the notice once', {
+  skip: process.platform === 'win32',
+}, async (t) => {
+  const cli = await profileBackedCli(t, { ...target, submissionMode: 'routine-auto' });
+  const before = await readFile(cli.profileFile, 'utf8');
+  const first = await cli.add({
+    ...profileGuardBase, id: 'reset-empty', company: 'Guard Co reset-empty', url: 'https://jobs.example.com/reset-empty', approval: 'APPROVE SUBMIT', telemetry: emptyTelemetry,
+    thinSubmissionOverride: thinOverride('Candidate confirmed in chat this empty apply for reset job is intended'),
+  });
+  // Under routine-auto this thin submit would be blocked; as review-each the attended override is allowed.
+  assert.equal(first.code, 0, first.stderr);
+  assert.equal(first.stderr.split(SUBMISSION_MODE_RESET_NOTICE.trim()).length - 1, 1, first.stderr);
+  const second = await cli.add({
+    ...profileGuardBase, id: 'reset-filled', company: 'Guard Co reset-filled', url: 'https://jobs.example.com/reset-filled', approval: 'APPROVE SUBMIT',
+    telemetry: { fieldsFilled: 9, shortAnswerCount: 1, resumeUploaded: true, durationBucket: '5-15m' },
+  });
+  assert.equal(second.code, 0, second.stderr);
+  assert.equal(second.stderr.includes(SUBMISSION_MODE_RESET_NOTICE.trim()), false);
+  assert.equal(await readFile(cli.profileFile, 'utf8'), before);
 });
 
 test('ledger add under a review-each profile keeps the existing thin-submit behavior', {

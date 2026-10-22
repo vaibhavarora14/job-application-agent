@@ -26,7 +26,7 @@ Send one JSON object to `profile set --stdin`. Send an object containing only in
   "workModes": ["remote"],
   "industries": ["AI", "developer tools"],
   "excludedCompanies": [],
-  "submissionMode": "routine-auto",
+  "submissionMode": "review-each",
   "yearsExperience": 10,
   "autoSubmitMinScore": 80,
   "manualReviewMinScore": 70,
@@ -35,6 +35,8 @@ Send one JSON object to `profile set --stdin`. Send an object containing only in
 ```
 
 Required fields are `name`, `email`, `phone`, `location`, `workAuthorization`, `roleFamilies`, `seniority`, `targetLocations`, `workModes`, `submissionMode`, `yearsExperience`, `autoSubmitMinScore`, `manualReviewMinScore`, and `minMustHaveCoverage`.
+
+`submissionMode` defaults to `review-each` (you approve every application). `routine-auto` takes effect only when it is set explicitly through `profile set` or `profile migrate`, which records `submissionModeChosenAt`; a stored `routine-auto` without that timestamp (written by a default or migration before 3.7.22) is treated as `review-each`, and the CLI prints a one-time notice.
 
 `compensationFloor` is optional and must use a three-letter currency code and `period: "year"`. Compare a job salary only when its basis and currency are directly comparable.
 

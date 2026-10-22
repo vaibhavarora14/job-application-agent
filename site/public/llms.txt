@@ -1,6 +1,6 @@
 # JobAppAgent
 
-> JobAppAgent: open-source job application agent. An MIT-licensed Agent Skill and CLI that helps your coding agent discover, evaluate, complete, and track your own job applications using one verified résumé.
+> JobAppAgent: open-source AI job application agent. An MIT-licensed Agent Skill and CLI that helps your coding agent discover, evaluate, complete, and track your own job applications using one verified résumé.
 
 JobAppAgent (npm package `job-application-agent`, also called Job Application Agent) is free and open source under the MIT License.
 

@@ -15,7 +15,7 @@ Grant input:
 { "mode": "routine-auto" }
 ```
 
-An active grant covers discovery, assessment, verified form filling, canonical résumé upload, routine submission, verified recruiting email, ledger/outcome recording, completed-tab cleanup, and opening a sanitized improvement PR. Do not ask for another skill-level upload or submission approval while both the profile and grant use `routine-auto`.
+An active grant covers discovery, assessment, verified form filling, canonical résumé upload, routine submission, verified recruiting email, ledger/outcome recording, completed-tab cleanup, and opening a sanitized improvement PR. Do not ask for another skill-level upload or submission approval while both the profile and grant use `routine-auto`. The profile counts as `routine-auto` only after the candidate explicitly sets it (`profile set` records `submissionModeChosenAt`); the default is `review-each`.
 
 The grant never authorizes `thinSubmissionOverride`. That override is only for an explicit, per-job candidate confirmation in the conversation under `APPROVE SUBMIT` — never in unattended or `routine-auto` batches. For one-click applies that use a stored site profile/résumé, use `applicationChannel: "profile_one_click"` with `telemetry.profileResumeOnFile: true` instead.
 
