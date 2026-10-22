@@ -29,6 +29,7 @@ import {
 } from './attention-questions.mjs';
 import { confirmOutreachTowardRound, loadOutreachRoundView, loadSentVerifiedOutreach, outreachConfirmationEvents, projectOutreachRoundCounts, resolveOutreachRoundId } from './outreach-round.mjs';
 import { isFixtureOrSandboxApply, resolveApplyKind } from './ats/apply-url-gate.mjs';
+import { createAssessmentGuard, isAssessmentGuardStop } from './assessment-guard.mjs';
 
 const SOURCES = new Set(['linkedin', 'greenhouse', 'lever', 'ashby', 'workable', 'comeet', 'workday', 'rippling', 'smartrecruiters', 'google-form', 'company', 'email', 'other']);
 /** Ledger applicationChannel values: ATS sources plus honest one-click profile applies (not a community job-board channel). */
@@ -103,6 +104,10 @@ function stateDir() {
   return resolveStateDir();
 }
 
+function assessmentGuard() {
+  return createAssessmentGuard({ dir: stateDir, withLock: withStateLock });
+}
+
 const secretStore = createSecretStore({ stateDir });
 const cloudState = new CloudStateClient({ stateDir: stateDir(), configPath: process.env.JOB_APPLICATION_AGENT_CLOUD_CONFIG ?? defaultCloudConfigPath() });
 
@@ -151,6 +156,7 @@ export function commandCategory([area, action]) {
 }
 
 function telemetryStage(command, error) {
+  if (isAssessmentGuardStop(error)) return 'assessment';
   const message = String(error?.message ?? '');
   if (/^Usage:/i.test(message)) return 'application';
   if (/cloud|lease|intent/i.test(message)) return 'application';
@@ -173,6 +179,7 @@ function telemetryStage(command, error) {
 }
 
 export function telemetryErrorCategory(error) {
+  if (typeof error?.telemetryErrorCategory === 'string') return error.telemetryErrorCategory;
   const message = String(error?.message ?? '');
   if (/^Usage:/i.test(message)) return 'usage';
   if (/keychain|keyring|secret service|secret-tool|credential manager|dpapi|authentication|login|lease/i.test(message)) return 'auth';
@@ -187,6 +194,7 @@ export function telemetryErrorCategory(error) {
 }
 
 export function telemetryErrorCode(error) {
+  if (typeof error?.telemetryErrorCode === 'string') return error.telemetryErrorCode;
   const message = String(error?.message ?? '');
   if (/^Usage:/i.test(message)) return 'invalid_input';
   if (/keychain|keyring|secret service|secret-tool|credential manager|dpapi|authentication|login/i.test(message)) return 'authentication_required';
@@ -2489,10 +2497,37 @@ async function executeCommand([area, action, value], telemetry, session, communi
     result = { [value]: storedProfile()[value] ?? null };
   } else if (area === 'resume' && action === 'import' && value) result = await importResume(value);
   else if (area === 'resume' && action === 'path' && value == null) result = await canonicalResumePath();
+  else if (area === 'score' && action === 'guard' && value == null) result = await assessmentGuard().status(writePrivateJson);
+  else if (area === 'score' && action === 'guard-reset' && value == null) result = await assessmentGuard().reset(writePrivateJson);
   else if (area === 'score' && action === '--stdin') {
-    const job = await jsonStdin();
-    const profile = job.target ?? storedProfile();
-    result = scoreJob(job, profile);
+    const guard = assessmentGuard();
+    let ticket = null;
+    let job;
+    let profile;
+    try {
+      job = await jsonStdin();
+      profile = job.target ?? storedProfile();
+      ticket = await guard.before(job, profile, writePrivateJson);
+      if (ticket.cached) {
+        // Identical input for a job already scored in this run: return the earlier result and
+        // emit no assessment telemetry, so a re-scoring loop cannot inflate analytics.
+        return {
+          ...ticket.cached,
+          repeatAssessment: true,
+          firstAssessedAt: ticket.firstAssessedAt,
+          notice: 'This job was already scored with the same input in this run; this is the earlier result. Do not score it again.',
+        };
+      }
+      result = scoreJob(job, profile);
+    } catch (error) {
+      if (isAssessmentGuardStop(error)) throw error;
+      const status = await guard.failure(ticket, error, { invalidInput: telemetryErrorCode(error) === 'invalid_input' }, writePrivateJson).catch(() => null);
+      if (status?.stopped && status.stopReason === 'invalid_input') {
+        error.message = `${error.message} Assessment guard: ${status.consecutiveInvalidInput} score calls in a row failed with invalid input; further score calls are refused until ${status.stoppedUntil}. STOP the run, fix the job JSON, and tell the user.`;
+      }
+      throw error;
+    }
+    result.assessmentGuard = await guard.success(ticket, result, writePrivateJson);
     await emitDomainEvent(telemetry, session, await telemetryJobAssessed(job, result));
     if (result.decision === 'skip' || result.decision === 'exclude') {
       await emitDomainEvent(telemetry, session, await telemetryApplicationSkipped(job, result));
@@ -2673,6 +2708,8 @@ async function main(rawArgs) {
     await telemetry.record({ event: 'command_completed', properties: { command, result: 'success', durationBucket: durationBucket(Date.now() - started) } }, session);
     return print(result);
   } catch (error) {
+    // Repeated guard refusals are not new information; report only the first one of each stop.
+    if (error?.suppressTelemetry === true) throw error;
     await telemetry.record({ event: 'skill_error', properties: skillErrorProperties(error, command) }, session);
     await telemetry.record({ event: 'command_completed', properties: { command, result: 'error', durationBucket: durationBucket(Date.now() - started) } }, session);
     throw error;

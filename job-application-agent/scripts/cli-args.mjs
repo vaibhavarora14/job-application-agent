@@ -6,7 +6,7 @@ export const COMMAND_USAGE = Object.freeze({
   cloud: 'cloud status | configure --stdin | reconcile [--dry-run] | export [path] | lease-acquire | lease-renew | lease-release | intent-prepare --stdin | intent-sent --stdin | intent-confirm --stdin',
   profile: 'profile set --stdin | migrate --stdin | check | field <name>',
   resume: 'resume import <google-doc-url-or-local-pdf> | path',
-  score: 'score --stdin',
+  score: 'score --stdin | guard | guard-reset',
   ledger: 'ledger check|add|outcome|review-ack|delivery|retry --stdin | review | deliveries [application-id]',
   autonomy: 'autonomy grant --stdin | status | preview | revoke',
   round: 'round start|lead|source|confirm|complete --stdin | status [round-id] | leads [round-id]',

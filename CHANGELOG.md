@@ -1,5 +1,15 @@
 # Changelog
 
+## 3.7.20
+
+- `score`: local guard against runaway assessment loops. Each `score --stdin` call is its own CLI process, so an agent (or a script it writes) piping a whole feed through `score` could re-assess the same jobs without bound; one install logged 2,768 assessments and 246 invalid-input errors in two hours with no submissions. The guard keeps counters in `assessment-guard.json` in the private state directory, so it holds across invocations:
+  - a cap on new assessments per run, as a rolling window: default 200 per 6 hours (`JOB_APPLICATION_AGENT_MAX_ASSESSMENTS`, `JOB_APPLICATION_AGENT_ASSESSMENT_WINDOW_MINUTES`);
+  - no re-assessing the same job: identical input for a job already scored in the window returns the earlier result with `repeatAssessment: true` and emits no telemetry; a job is refused after 3 attempts (`JOB_APPLICATION_AGENT_MAX_ASSESSMENTS_PER_JOB`); 20 repeat/refused calls in a row stop assessment;
+  - exponential backoff after invalid input (1s, 2s, 4s, 8s, capped at 30s), then a hard stop after 5 consecutive invalid-input failures (`JOB_APPLICATION_AGENT_MAX_CONSECUTIVE_INVALID`).
+  A stop refuses further `score` calls for 30 minutes (or until the cap window rolls) with an `Assessment guard stop` message that tells the agent to stop the run, names the last error and what to fix, and tells the user how to resume. `score guard` shows the counters; `score guard-reset` clears them. The state holds hashed job keys, input digests, timestamps and the last gate result only.
+- Telemetry: guard refusals are reported as `skill_error` with `errorCode: "rate_limited"` (an existing value), once per stop rather than on every refused call. No schema changes; works with the deployed relay as is.
+- `score` output gains an `assessmentGuard` object (`used`, `limit`, `remaining`, …). Existing keys are unchanged.
+
 ## 3.7.19
 
 - `ledger add`: when a submitted entry has no fill telemetry and fill metrics fall back to answer keys (`fillMetricsSource: "answer_keys"`, `telemetrySupplied: false`), the private ledger row and `application_submitted` now carry `entryOrigin: "logged"` — the application was logged after the fact, not filled by the agent. The entry is still accepted and still counts as a submitted application (public stats unchanged); it is excluded from agent fill-quality / thin-submit checks. The CLI derives `entryOrigin` itself and ignores any caller-supplied value. Agent-filled submits omit the key, so their property set is unchanged. Existing ledger rows and analytics are not backfilled.
