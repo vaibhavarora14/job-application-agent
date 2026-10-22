@@ -8,6 +8,7 @@
 - Autonomy grants no longer include `submit` or `send-recruiting-email`; `autonomy status` reports `maySubmitRoutineApplications: false` and `submissionsRequireBatchReview: true`, and prints a one-line notice once for older grants.
 - Telemetry: no schema change. `review` commands report as the existing `batch` command category, so the deployed relay accepts them as is.
 - Package metadata: drop the `auto-apply` keyword.
+- Skill triggers: all three SKILL.md copies now activate only when the user names JobAppAgent / job-application-agent or explicitly asks for a job-search or application task, never on vague requests (addresses the SkillSpector "vague triggers" finding on SKILL.md line 10). The description still opens "JobAppAgent, the open-source AI job application agent."
 
 ## 3.7.23
 

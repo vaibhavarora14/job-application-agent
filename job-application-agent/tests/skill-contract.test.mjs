@@ -110,3 +110,21 @@ test('documents Free.ai as optional LLM assist only', async () => {
   assert.match(freeAi, /not the hosted/i);
   assert.match(freeAi, /does not read `FREE_AI_API_KEY`/i);
 });
+
+test('skill triggers only on explicit job-search/application requests or the skill name (all copies)', async () => {
+  const copies = await Promise.all([
+    '../SKILL.md',
+    '../../skills/job-application-agent/SKILL.md',
+    '../../plugins/job-application-agent/skills/job-application-agent/SKILL.md',
+  ].map((path) => readFile(new URL(path, import.meta.url), 'utf8')));
+  for (const copy of copies) {
+    const description = copy.match(/^description: (.*)$/m)?.[1] ?? '';
+    assert.match(description, /^JobAppAgent, the open-source AI job application agent\./);
+    assert.ok(description.length <= 1024, 'description must fit the Agent Skills 1024-character limit');
+    assert.match(description, /Use only when the user names JobAppAgent or job-application-agent, or explicitly asks for a job-search or job-application task/);
+    assert.match(description, /Do not use for vague or general requests/);
+    assert.match(copy, /Activate this skill only when the candidate invokes it by name/);
+    assert.match(copy, /Do not activate on vague or general requests/);
+    assert.doesNotMatch(copy, /or natural language\)/);
+  }
+});
