@@ -37,7 +37,7 @@ try {
   const skill = await readFile(path.join(agentHome, 'skills', 'job-application-agent', 'SKILL.md'), 'utf8');
   const config = JSON.parse(await readFile(path.join(agentHome, 'job-application-agent', 'install.json'), 'utf8'));
   if (!skill.includes('# Job Application Agent')) throw new Error('Packed skill did not install correctly.');
-  if (config.installedVersion !== packageManifest.version || config.automaticUpdates !== true) throw new Error('Packed installer state is incorrect.');
+  if (config.installedVersion !== packageManifest.version || config.automaticUpdates !== false) throw new Error('Packed installer state is incorrect (new installs must be notify-only).');
   if (process.platform !== 'win32' && ((await stat(path.join(agentHome, 'job-application-agent', 'install.json'))).mode & 0o777) !== 0o600) throw new Error('Install configuration permissions are not private.');
 
   // Exercise the installed npm artifact with synthetic state, never the user's profile.
@@ -58,6 +58,13 @@ try {
       JOB_APPLICATION_AGENT_SOURCE_COMMUNITY_URL: 'http://127.0.0.1:9',
     },
   }));
+  // The packed skill ships the notify-only update check; the env opt-out keeps the smoke offline.
+  process.env.JOB_APPLICATION_AGENT_NO_UPDATE_CHECK = '1';
+  const updateCheck = run(['updates', 'check']);
+  assert.equal(updateCheck.checked, false);
+  assert.equal(updateCheck.reason, 'disabled');
+  assert.equal(updateCheck.automaticUpdates, false);
+  delete process.env.JOB_APPLICATION_AGENT_NO_UPDATE_CHECK;
   const round = run(['round', 'start', '--stdin'], { requestedCount: 1 });
   assert.equal(round.discoveryPolicy.minSources, 3);
   assert.equal(round.discoveryPolicy.concentrationThresholdPercent, 60);
