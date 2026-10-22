@@ -30,7 +30,7 @@ export default function OpenSource() {
     <Link className="legal-back" href="/">← Back to the product</Link>
     <h1>JobAppAgent, the <span className={styles.nb}>open‑source</span> job application agent</h1>
     <p>JobAppAgent is an open-source job application agent for people applying to jobs for themselves. It runs inside a browser-capable coding agent on your computer. It searches for roles, checks each one against your verified résumé and preferences, fills in the applications that pass, and keeps a record of everything. A job counts as applied only after the site shows a confirmation.</p>
-    <p>The code is on GitHub as <code>vaibhavarora14/job-application-agent</code> and on npm as <code>job-application-agent</code>. JobAppAgent, the GitHub repo <code>vaibhavarora14/job-application-agent</code> and the npm package <code>job-application-agent</code> are the same project. It is MIT licensed.</p>
+    <p>JobAppAgent, the GitHub repo <code>vaibhavarora14/job-application-agent</code> and the npm package <code>job-application-agent</code> are the same project. It is MIT licensed.</p>
     <p className={styles.smallPrint}>JobAppAgent isn&apos;t affiliated with other GitHub repositories that use the name &quot;job-application-agent&quot;.</p>
 
     <OpenSourceStats className={styles.stats} />

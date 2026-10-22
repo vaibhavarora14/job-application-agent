@@ -282,7 +282,10 @@ test("open-source and compare pages pair JobAppAgent with open-source job applic
   assert.match(compareHtml, /<h1>How JobAppAgent compares to other <span class="[^"]+">open\u2011source<\/span> job agents<\/h1>/);
   assert.match(compareHtml, /href="\/open-source"[^>]*>About the project</);
   // Mobile cards: same eight projects as the table, with an approval tag each.
-  assert.equal((compareHtml.match(/<span class="[^"]+">Approval before submit: /g) ?? []).length, 8);
+  assert.equal((compareHtml.match(/<span class="[^"]+">Approval before submit: /g) ?? []).length, 5);
+  // Tools that never make the submit get a neutral "Never submits" tag, never the green yes.
+  assert.equal((compareHtml.match(/<span class="[^"]+">Never submits: you apply yourself</g) ?? []).length, 3);
+  assert.doesNotMatch(openHtml, /The code is on GitHub as/);
   assert.match(compareHtml, /Approval before submit: (?:<!-- -->)?no, by default/);
   assert.match(compareHtml, /Approval before submit: (?:<!-- -->)?not stated/);
   assert.match(compareHtml, /rel="canonical" href="https:\/\/jobappagent\.com\/compare"/);

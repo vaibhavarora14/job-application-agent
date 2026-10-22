@@ -53,7 +53,7 @@ main.page p, main.page li { line-height: 1.7; }
 .tagYes { background: var(--accent-soft); color: var(--green); }
 .tagNo { background: var(--coral-soft); color: var(--coral); }
 .tagNeutral { background: #ece4d6; color: #6b5e48; }
-.card dl { display: grid; grid-template-columns: 88px 1fr; gap: 8px 12px; margin: 8px 0 0; font-size: 14px; line-height: 1.55; }
+.card dl { display: grid; grid-template-columns: 96px 1fr; gap: 8px 12px; margin: 8px 0 0; font-size: 14px; line-height: 1.55; }
 .card dt { padding-top: 2px; color: var(--muted); font-size: 12px; letter-spacing: .06em; text-transform: uppercase; }
 .card dd { margin: 0; color: var(--text); overflow-wrap: anywhere; }
 .card code { font-size: 12.5px; }

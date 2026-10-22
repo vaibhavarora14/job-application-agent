@@ -38,7 +38,8 @@ function md(text: string): ReactNode {
     part.startsWith("`") && part.endsWith("`") ? <code key={index}>{part.slice(1, -1)}</code> : part);
 }
 
-type Approval = { tone: "yes" | "no" | "neutral"; label: string };
+/** standalone: the label replaces the "Approval before submit:" prefix. */
+type Approval = { tone: "yes" | "no" | "neutral"; label: string; standalone?: boolean };
 type Row = { name: string; repo?: string; refs: number[]; approval: Approval; cells: [string, string, string, string, string, string] };
 
 const ROWS: Row[] = [
@@ -50,7 +51,7 @@ const ROWS: Row[] = [
     "`npx job-application-agent@latest install` or `npx skills add`",
     "Profile in the OS credential store. Résumé and ledgers in a local owner-only folder (an optional private remote store can be configured). Analytics, contact record and community sharing are on by default, with opt-outs.",
   ] },
-  { name: "torontodeveloper/job-application-agent", approval: { tone: "yes", label: "yes, every submit" }, refs: [2], cells: [
+  { name: "torontodeveloper/job-application-agent", approval: { tone: "neutral", label: "Never submits: you apply yourself", standalone: true }, refs: [2], cells: [
     "Discovers roles, tailors the résumé, fills the form, then stops for you to submit.",
     "Greenhouse, Ashby, Lever (\"...\"). Workday after you log in once. README says not to use it on LinkedIn Easy Apply.",
     "Yes, every submit (\"It never submits on its own\").",
@@ -74,7 +75,7 @@ const ROWS: Row[] = [
     "`pip install applypilot`; auto-apply also needs the Claude Code CLI and Chrome",
     "Local config files (`profile.json`, `searches.yaml`, `.env`). Otherwise not stated.",
   ] },
-  { name: "career-ops", approval: { tone: "yes", label: "yes, never submits" }, repo: "career-ops-hq/career-ops", refs: [5, 6], cells: [
+  { name: "career-ops", approval: { tone: "neutral", label: "Never submits: you apply yourself", standalone: true }, repo: "career-ops-hq/career-ops", refs: [5, 6], cells: [
     "Evaluates and scores roles, tailors the CV, drafts answers and fills forms. Never submits.",
     "Autofill field-tested on Ashby, Greenhouse, Lever and Workable. Portal scanner covers Ashby, Greenhouse, Lever and Wellfound. Workday and LinkedIn Easy Apply: not stated.",
     "Yes. \"The system never submits an application.\"",
@@ -90,7 +91,7 @@ const ROWS: Row[] = [
     "Desktop installers (macOS, Windows, Linux)",
     "\"100% local\", in the OS app data folder",
   ] },
-  { name: "JobPilot by Zeyad Elganainy", approval: { tone: "neutral", label: "not applicable, you apply yourself" }, repo: "zeyadelganainy/job-agent-autopilot", refs: [8, 9], cells: [
+  { name: "JobPilot by Zeyad Elganainy", approval: { tone: "neutral", label: "Never submits: you apply yourself", standalone: true }, repo: "zeyadelganainy/job-agent-autopilot", refs: [8, 9], cells: [
     "Self-hosted daily run that scans feeds, scores roles and writes a tailored résumé and cover letter. It never fills or submits applications.",
     "Reads Greenhouse, Lever and Ashby public feeds. Workday, Taleo and iCIMS postings go to a manual triage queue.",
     "Not applicable. You apply yourself (\"A human always submits\").",
@@ -149,7 +150,7 @@ export default function Compare() {
           {row.repo ?? null}{" "}
           {row.refs.map(ref => <a key={ref} href={SOURCES[ref]} rel="noopener">[{ref}]</a>)}
         </div>
-        <span className={`${styles.tag} ${TAG_CLASS[row.approval.tone]}`}>Approval before submit: {row.approval.label}</span>
+        <span className={`${styles.tag} ${TAG_CLASS[row.approval.tone]}`}>{row.approval.standalone ? row.approval.label : `Approval before submit: ${row.approval.label}`}</span>
         <dl>
           {CARD_FIELDS.map(([label, index]) => <div key={label}><dt>{label}</dt><dd>{md(row.cells[index])}</dd></div>)}
         </dl>
