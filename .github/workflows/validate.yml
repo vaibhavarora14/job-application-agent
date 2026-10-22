@@ -6,6 +6,9 @@ on:
   pull_request:
     # `labeled` lets adding the `full-matrix` label start the macOS/Windows legs.
     types: [opened, synchronize, reopened, labeled]
+  # Manual run of the whole matrix (all OS legs) on any ref, e.g. to prove a
+  # test-only fix on Windows/macOS: gh workflow run validate.yml --ref main
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -18,7 +21,7 @@ jobs:
     outputs:
       code_changed: ${{ steps.changes.outputs.code_changed }}
       dependency_changed: ${{ steps.changes.outputs.dependency_changed }}
-      high_risk: ${{ steps.changes.outputs.high_risk }}
+      high_risk: ${{ github.event_name == 'workflow_dispatch' && 'true' || steps.changes.outputs.high_risk }}
       site_changed: ${{ steps.changes.outputs.site_changed }}
     steps:
       - name: Check out repository
@@ -190,13 +193,14 @@ jobs:
       - run: npm run check:native-artifacts
 
   # macOS/Windows legs (10x/2x billed minutes on private runners) run only on push
-  # to main, or on a pull request labelled `full-matrix`. When skipped they report
+  # to main, on a manual workflow_dispatch, or on a pull request labelled `full-matrix`. When skipped they report
   # as skipped, which quality-gate (the only required check) accepts.
   high-risk-cross-os:
     name: high-risk (${{ matrix.os }}, Node ${{ matrix.node }})
     if: >-
       needs.classify.outputs.high_risk == 'true' && (
         (github.event_name == 'push' && github.ref == 'refs/heads/main') ||
+        github.event_name == 'workflow_dispatch' ||
         (github.event_name == 'pull_request' && contains(github.event.pull_request.labels.*.name, 'full-matrix'))
       )
     needs: classify

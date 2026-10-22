@@ -68,9 +68,9 @@ Read [references/SOURCES.md](references/SOURCES.md) before the first discovery p
    - `exclude`: closed or stale channel, explicit ineligibility, excluded company/location, or incompatible work mode.
    - `ask`: unclear posting status, eligibility, authorization, location/work mode, seniority, or requirement evidence.
    - `skip`: explicit non-target seniority, comparable compensation below the configured floor, insufficient must-have coverage, or score below the manual-review floor.
-   - `review`: a candidate for manual review or routine auto-submission.
-8. Treat `autoEligible: true` as necessary but not sufficient to submit. It requires all gates to pass, exact Senior/Staff alignment, score at least 80, at least 70% evidenced must-have coverage, and no material experience-range mismatch.
-9. Keep scores from 70 through 79 in manual review. Do not auto-submit when must-have analysis is absent or uncertain.
+   - `review`: a candidate to prepare and stage for the candidate's batch review (one application per batch in `review-each`, or a routine batch in `routine-auto`).
+8. Treat `autoEligible: true` as necessary but not sufficient for a `routine-auto` batch; every send still needs the candidate's batch approval. It requires all gates to pass, exact Senior/Staff alignment, score at least 80, at least 70% evidenced must-have coverage, and no material experience-range mismatch.
+9. Keep scores from 70 through 79 in manual review. Do not put a job in a routine batch when must-have analysis is absent or uncertain.
 10. Score each job once per run. Never loop or script `score` over a whole feed, and never re-score a job to get a different answer; an `ask` result needs a fact from the candidate, not another score call. `score` has a local guard: identical repeat input returns the earlier result (`repeatAssessment: true`), a job is refused after 3 attempts, new assessments are capped per run (default 200 per 6 hours, `JOB_APPLICATION_AGENT_MAX_ASSESSMENTS`), and after 5 invalid-input failures in a row it backs off and then refuses. When `score` prints `Assessment guard stop`, stop the run immediately, fix what the message names, and tell the user; do not retry, work around it, or run `score guard-reset` yourself. `score guard` shows the counters.
 
 Do not lower seniority, compensation, location, work mode, or evidence thresholds to increase volume. Unknown compensation does not exclude a role; pause if the application asks the candidate to state or accept compensation.
