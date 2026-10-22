@@ -37,14 +37,19 @@ The approval phrase and the review page show that a person reviewed the batch, a
       "ats": "greenhouse",
       "fitScore": 86,
       "answers": { "Why Acme?": "exact text that will be sent" },
-      "flaggedAnswers": ["Why Acme?"]
+      "flaggedAnswers": [
+        { "answer": "Why Acme?", "reason": "The posting asks for a specific project and this answer stays general." }
+      ]
     },
     {
       "type": "email",
       "opportunityId": "opportunity-1",
       "draftRevision": 2,
       "company": "Acme",
-      "recipient": "Hiring manager",
+      "recipient": "Jo",
+      "to": "jo@acme.example",
+      "subject": "Staff Engineer application",
+      "attachResume": true,
       "text": "exact draft text"
     }
   ]
@@ -53,12 +58,13 @@ The approval phrase and the review page show that a person reviewed the batch, a
 
    - `applicationId` must be the `id` you will pass to `ledger add`.
    - `answers` must be exactly the `answers` object you will record. Profile fields such as name and email do not need to be listed.
-   - Use `flaggedAnswers` for anything the candidate should look at closely.
+   - Use `flaggedAnswers` for anything the candidate should look at closely. Each flag names the answer and the real reason you flagged it, written to follow "Flagged because": the page shows it under the answer.
+   - For an email, `to` is the exact address or profile the draft goes to, `subject` the exact subject line, and `attachResume` whether the canonical résumé is attached. They are approved together with `text`, so changing any of them needs a new batch.
    - For a replacement transmission, add `"purpose": "retry"`.
    - The CLI hashes the canonical résumé itself. A batch holds at most 25 items and must be approved within 24 hours.
 3. **Present.** Show the candidate the returned `table` exactly as printed.
 4. **Approve.** Use one of the two channels:
-   - **Review page (default):** run `review open <batchId>` and give the candidate the URL. The page runs on `127.0.0.1` on this machine and shows every item, including its answers, the email text, and the résumé. The candidate unticks anything they don't want sent, types the batch code, and approves or rejects. Poll `review status <batchId>` until the status is `approved`, then read `reviewToken`.
+   - **Review page (default):** run `review open <batchId>` and give the candidate the URL. The page runs on `127.0.0.1` on this machine and shows every item, including its answers, each email's recipient, subject, attachments and exact text, and a link to the exact résumé PDF. The candidate unticks anything they don't want sent, types the batch code, and approves or rejects. Poll `review status <batchId>` until the status is `approved`, then read `reviewToken`.
    - **Chat phrase (fallback):** use this on hosts where the candidate has no browser on this machine, such as a VPS or a remote shell. Show the items from `review show <batchId>`, including the answers, and ask the candidate to type the approval phrase (for example `APPROVE KTR-42`). Pass their exact words to `review approve --stdin`:
 
 ```json

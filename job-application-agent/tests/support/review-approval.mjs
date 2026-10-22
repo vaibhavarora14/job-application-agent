@@ -34,7 +34,7 @@ export function withTestReview(env, args, input) {
   const stateDir = env?.JOB_APPLICATION_AGENT_STATE_DIR;
   if (!stateDir || !input || typeof input !== 'object' || 'reviewBatchId' in input) return input;
   if (args?.[0] === 'outreach' && args?.[1] === 'handoff') {
-    return { ...input, ...approveItemsSync(stateDir, [{ type: 'email', opportunityId: input.id, draftRevision: input.draftRevision, company: 'Example', text: 'Test draft.' }]) };
+    return { ...input, ...approveItemsSync(stateDir, [{ type: 'email', opportunityId: input.id, draftRevision: input.draftRevision, company: 'Example', to: 'hiring@example.com', text: 'Test draft.' }]) };
   }
   if (args?.[0] !== 'ledger' || args?.[1] !== 'add') return input;
   if (typeof input.url !== 'string' || !input.id || LIVE_HOST_FIXTURES.test(input.url)) return input;

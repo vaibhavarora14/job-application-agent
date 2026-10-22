@@ -1,9 +1,10 @@
 // One-shot local approval page for a review batch. Listens on 127.0.0.1 only, behind a
-// random path secret, serves static HTML with no scripts and no external requests, and
-// exits after the candidate decides or after the timeout.
-import { randomBytes, timingSafeEqual } from 'node:crypto';
+// random path secret, serves HTML whose only script is one fixed, nonce-bound inline snippet
+// (the live approve count), makes no external requests, and exits after the candidate
+// decides or after the timeout.
+import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
 import { createServer } from 'node:http';
-import { writeFile, rename, chmod, unlink } from 'node:fs/promises';
+import { readFile, writeFile, rename, chmod, unlink } from 'node:fs/promises';
 import { join } from 'node:path';
 import { isEntrypoint } from './entrypoint.mjs';
 import { approvalPhrase, approveBatch, closeBatch, effectiveStatus, loadBatch } from './review-batch.mjs';
@@ -19,9 +20,23 @@ function displayUrl(url) {
 function safeHref(url) {
   try { const u = new URL(url); return ['http:', 'https:'].includes(u.protocol) ? u.href : null; } catch { return null; }
 }
-function formatTime(iso) {
+/** Zone label such as IST, CEST or PDT. Falls back to the initials of the long name when the short one is a GMT offset. */
+export function zoneLabel(date, timeZone) {
+  const part = (style) => new Intl.DateTimeFormat('en-US', { timeZone, timeZoneName: style }).formatToParts(date).find((p) => p.type === 'timeZoneName')?.value ?? '';
+  const short = part('short');
+  if (short && !/^(GMT|UTC)[+-]/.test(short)) return short;
+  const long = part('long');
+  if (/^Coordinated Universal Time$/i.test(long)) return 'UTC';
+  const initials = long.split(/\s+/).filter((w) => /^[A-Z]/.test(w)).map((w) => w[0]).join('');
+  return initials.length >= 2 ? initials : short || 'UTC';
+}
+
+/** "Fri 23 Oct, 2:03 PM IST" in the machine's local zone (or `timeZone`). */
+export function formatTime(iso, timeZone = undefined) {
   const date = new Date(iso);
-  return date.toLocaleString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit', timeZoneName: 'short' });
+  const parts = Object.fromEntries(new Intl.DateTimeFormat('en-GB', { timeZone, weekday: 'short', day: 'numeric', month: 'short' }).formatToParts(date).map((p) => [p.type, p.value]));
+  const clock = new Intl.DateTimeFormat('en-US', { timeZone, hour: 'numeric', minute: '2-digit', hour12: true }).format(date);
+  return `${parts.weekday} ${parts.day} ${parts.month}, ${clock} ${zoneLabel(date, timeZone)}`;
 }
 
 const STYLE = `
@@ -59,7 +74,7 @@ dt .pill{margin-left:6px}
 dd{margin:2px 0 0;white-space:pre-wrap;font-size:14px;background:#fbf4e6;border-radius:8px;padding:8px 10px}
 dd.flagged{background:var(--amber-soft)}
 .email{white-space:pre-wrap;font-size:14px;background:#fbf4e6;border-radius:8px;padding:10px 12px;margin:10px 0 0}
-.bar{position:fixed;left:0;right:0;bottom:0;background:rgba(255,250,240,.97);border-top:1px solid var(--line);box-shadow:0 -6px 24px rgba(23,63,53,.08)}
+.bar{position:fixed;z-index:10;left:0;right:0;bottom:0;background:var(--surface);border-top:1px solid var(--line);box-shadow:0 -6px 24px rgba(23,63,53,.08)}
 .bar-in{max-width:880px;margin:0 auto;padding:14px 24px 18px;display:grid;grid-template-columns:1fr auto;gap:10px 16px;align-items:end}
 label.code{display:grid;gap:6px;font-size:14px;color:var(--ink);font-weight:600}
 label.code span b{font:600 15px/1 ui-monospace,"SF Mono",Menlo,Consolas,monospace;background:var(--accent-soft);padding:2px 6px;border-radius:6px;letter-spacing:.04em}
@@ -73,6 +88,18 @@ button{font:600 15px/1 inherit;font-family:inherit;border-radius:10px;padding:13
 .ghost:hover{background:var(--coral-soft)}
 .err{grid-column:1/-1;color:var(--coral);font-size:14px;font-weight:600;margin:0}
 .done{background:var(--surface);border:1px solid var(--line);border-radius:16px;padding:28px;margin-top:28px}
+.rlink{color:var(--accent);font-weight:600}
+.dim{color:var(--muted)}
+dd.why{margin:0;padding:0 2px;background:none;font-size:13px;color:var(--amber);white-space:normal}
+.hdrs{grid-column:2;display:grid;gap:4px;margin-top:8px;font-size:14px}
+.hdrs div{display:grid;grid-template-columns:72px 1fr;gap:8px}
+.hdrs span{color:var(--muted)}
+.hdrs b{color:var(--ink);font-weight:600;word-break:break-word}
+.primary:disabled{background:#9aa9a3;cursor:not-allowed}
+.res{list-style:none;padding:0;margin:8px 0 0;display:grid;gap:8px;font-size:15px}
+.res li{padding:10px 12px;border-radius:10px;background:#fbf4e6;color:var(--ink)}
+.res .ok{border-left:4px solid var(--accent)}
+.res .no{border-left:4px solid var(--line);color:var(--muted)}
 .done h1{margin-top:0}
 @media (max-width:640px){
  .wrap{padding:20px 16px 200px}
@@ -85,38 +112,54 @@ button{font:600 15px/1 inherit;font-family:inherit;border-radius:10px;padding:13
  label.code{font-size:13px}
 }`;
 
-function shell(title, body) {
-  return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="referrer" content="no-referrer"><title>${escapeHtml(title)}</title><style>${STYLE}</style></head><body><div class="wrap"><div class="brand"><span class="mark">J</span>JobAppAgent · Batch review</div>${body}</div></body></html>`;
+// The only script: keeps the primary button's count in step with the ticked boxes. Fixed text,
+// never interpolated, and allowed by a per-response CSP nonce.
+export const COUNT_SCRIPT = 'const b=document.getElementById("go");function u(){const n=document.querySelectorAll(".check input:checked").length;b.textContent=n?"Approve "+n+" item"+(n>1?"s":""):"Nothing ticked";b.disabled=!n}document.querySelectorAll(".check input").forEach(function(i){i.addEventListener("change",u)});';
+
+function shell(title, body, { nonce = null } = {}) {
+  const script = nonce ? `<script nonce="${escapeHtml(nonce)}">${COUNT_SCRIPT}</script>` : '';
+  return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="referrer" content="same-origin"><title>${escapeHtml(title)}</title><style>${STYLE}</style></head><body><div class="wrap"><div class="brand"><span class="mark">J</span>JobAppAgent · Batch review</div>${body}</div>${script}</body></html>`;
 }
+const approveLabel = (n) => (n ? `Approve ${n} item${n === 1 ? '' : 's'}` : 'Nothing ticked');
 
 function answersBlock(item) {
   const entries = Object.entries(item.answers);
   if (!entries.length) return '<details><summary>No drafted answers. Profile fields and résumé only</summary></details>';
-  const flagged = new Set(item.flaggedAnswers);
-  const rows = entries.map(([key, value]) => `<dt>${escapeHtml(key)}${flagged.has(key) ? '<span class="pill flag">Check this</span>' : ''}</dt><dd${flagged.has(key) ? ' class="flagged"' : ''}>${escapeHtml(value)}</dd>`).join('');
-  return `<details${flagged.size ? ' open' : ''}><summary>${entries.length} drafted answer${entries.length === 1 ? '' : 's'} to be sent${flagged.size ? ` · ${flagged.size} flagged` : ''}</summary><dl>${rows}</dl></details>`;
+  const flagged = new Map(item.flaggedAnswers.map((flag) => [flag.answer, flag.reason]));
+  const rows = entries.map(([key, value]) => (flagged.has(key)
+    ? `<dt>${escapeHtml(key)}<span class="pill flag">Check this</span></dt><dd class="flagged">${escapeHtml(value)}</dd><dd class="why">Flagged because ${escapeHtml(lowerFirst(flagged.get(key)))} Untick if you want to answer it yourself.</dd>`
+    : `<dt>${escapeHtml(key)}</dt><dd>${escapeHtml(value)}</dd>`)).join('');
+  return `<details open><summary>${entries.length} drafted answer${entries.length === 1 ? '' : 's'} to be sent${flagged.size ? ` · ${flagged.size} flagged` : ''}</summary><dl>${rows}</dl></details>`;
+}
+
+function lowerFirst(reason) {
+  const text = String(reason).trim().replace(/^because\s+/i, '');
+  const sentence = /[.!?]$/.test(text) ? text : `${text}.`;
+  return /^[A-Z][a-z]/.test(sentence) ? sentence[0].toLowerCase() + sentence.slice(1) : sentence;
 }
 
 function itemCard(item, checked) {
   const id = `c-${escapeHtml(item.itemId)}`;
   const box = `<span class="check"><input type="checkbox" id="${id}" name="item" value="${escapeHtml(item.itemId)}"${checked ? ' checked' : ''}></span>`;
   if (item.type === 'email') {
-    return `<li class="card">${box}<label class="title" for="${id}"><span class="num">${item.number}</span><span class="company">${escapeHtml(item.company)}</span><span class="role">Recruiting email</span></label><div class="sub"><span class="pill kind">Email</span>${item.recipient ? `<span>To ${escapeHtml(item.recipient)}</span>` : ''}<span>Draft revision ${item.draftRevision}</span></div><details open><summary>Exact text you will send</summary><p class="email">${escapeHtml(item.text)}</p></details></li>`;
+    const to = item.recipient ? `${item.recipient} · ${item.to}` : item.to;
+    const hdrs = `<div class="hdrs"><div><span>To</span><b>${escapeHtml(to)}</b></div><div><span>Subject</span><b>${item.subject ? escapeHtml(item.subject) : '<span class="dim">No subject</span>'}</b></div><div><span>Attached</span><b>${item.attachResume ? 'Your résumé (same PDF as above)' : '<span class="dim">Nothing</span>'}</b></div></div>`;
+    return `<li class="card" id="item-${escapeHtml(item.itemId)}">${box}<label class="title" for="${id}"><span class="num">${item.number}</span><span class="company">${escapeHtml(item.company)}</span><span class="role">Recruiting email</span></label><div class="sub"><span class="pill kind">Email</span></div>${hdrs}<details open><summary>Exact text that will be sent</summary><p class="email">${escapeHtml(item.text)}</p></details></li>`;
   }
   const href = safeHref(item.url);
   const link = href ? `<a href="${escapeHtml(href)}" target="_blank" rel="noreferrer noopener">${escapeHtml(displayUrl(item.url))}</a>` : escapeHtml(item.url);
-  return `<li class="card">${box}<label class="title" for="${id}"><span class="num">${item.number}</span><span class="company">${escapeHtml(item.company)}</span><span class="role">${escapeHtml(item.role)}</span></label><div class="sub"><span class="pill">Fit ${item.fitScore}</span>${item.purpose === 'retry' ? '<span class="pill flag">Resend</span>' : ''}${item.ats ? `<span class="pill kind">${escapeHtml(item.ats)}</span>` : ''}${link}</div>${answersBlock(item)}</li>`;
+  return `<li class="card" id="item-${escapeHtml(item.itemId)}">${box}<label class="title" for="${id}"><span class="num">${item.number}</span><span class="company">${escapeHtml(item.company)}</span><span class="role">${escapeHtml(item.role)}</span></label><div class="sub"><span class="pill">Fit ${item.fitScore}</span>${item.purpose === 'retry' ? '<span class="pill flag">Resend</span>' : ''}${item.ats ? `<span class="pill kind">${escapeHtml(item.ats)}</span>` : ''}${link}</div>${answersBlock(item)}</li>`;
 }
 
-function resumeLine(batch) {
-  if (!batch.resume?.sha256) return 'No résumé on file';
-  const kb = Number.isInteger(batch.resume.bytes) ? ` · ${Math.max(1, Math.round(batch.resume.bytes / 1024))} KB` : '';
-  return `Your canonical résumé${kb} · <span title="sha256 ${escapeHtml(batch.resume.sha256)}">${escapeHtml(batch.resume.sha256.slice(0, 8))}</span>`;
+function resumeLine(batch, action) {
+  if (!batch.resume?.sha256) return '<b>No résumé on file</b>';
+  const kb = Number.isInteger(batch.resume.bytes) ? ` <span class="dim">(${Math.max(1, Math.round(batch.resume.bytes / 1024))} KB)</span>` : '';
+  return `<a class="rlink" href="${escapeHtml(action)}/resume.pdf" target="_blank" rel="noreferrer noopener" title="sha256 ${escapeHtml(batch.resume.sha256)}">Open the exact PDF that will be sent</a>${kb}`;
 }
 
-export function renderReviewPage(batch, { action, error = null, selected = null, now = new Date() } = {}) {
+export function renderReviewPage(batch, { action, error = null, selected = null, now = new Date(), nonce = null, timeZone = undefined } = {}) {
   const status = effectiveStatus(batch, now);
-  if (status !== 'pending') return renderDecided(batch, now);
+  if (status !== 'pending') return renderDecided(batch, now, timeZone);
   const chosen = selected ? new Set(selected) : new Set(batch.items.map((item) => item.itemId));
   const apps = batch.items.filter((item) => item.type === 'application').length;
   const emails = batch.items.length - apps;
@@ -124,25 +167,33 @@ export function renderReviewPage(batch, { action, error = null, selected = null,
   const body = `
 <h1>Review ${counts} before anything is sent</h1>
 <p class="lede">Your agent filled these but has not sent them. Read each one, untick anything you don't want sent, then type the code to approve. Approval covers exactly what you see here, once.</p>
-<div class="meta"><span>Résumé: <b>${resumeLine(batch)}</b></span><span>Decide by <b>${escapeHtml(formatTime(batch.pendingExpiresAt))}</b></span><span>Batch <b>${escapeHtml(batch.code)}</b></span></div>
-<div class="notice">Only you should use this page; your agent must not open or operate it. If an answer or the résumé changes after you approve, the agent has to ask you again. Approval lasts 24 hours.</div>
+<div class="meta"><span>Résumé: ${resumeLine(batch, action)}</span><span>Decide by <b>${escapeHtml(formatTime(batch.pendingExpiresAt, timeZone))}</b></span><span>Batch <b>${escapeHtml(batch.code)}</b></span></div>
+<div class="notice">Only you can approve this. Your agent can’t open this page. If any answer or the résumé changes after you approve, it has to ask you again.</div>
 <form method="post" action="${escapeHtml(action)}" autocomplete="off">
 <ol class="list">${batch.items.map((item) => itemCard(item, chosen.has(item.itemId))).join('')}</ol>
 <div class="bar"><div class="bar-in">
 ${error ? `<p class="err" role="alert">${escapeHtml(error)}</p>` : ''}
-<label class="code"><span>Type <b>${escapeHtml(batch.code)}</b> to approve the ticked items</span><input type="text" name="code" inputmode="text" autocapitalize="characters" spellcheck="false" maxlength="12" placeholder="${escapeHtml(batch.code)}" required></label>
-<div class="actions"><button class="ghost" type="submit" name="decision" value="reject" formnovalidate>Reject all</button><button class="primary" type="submit" name="decision" value="approve">Approve ticked</button></div>
+<label class="code"><span>Type <b>${escapeHtml(batch.code)}</b> to approve the ticked items</span><input type="text" name="code" inputmode="text" autocapitalize="characters" spellcheck="false" maxlength="12" required></label>
+<div class="actions"><button class="ghost" type="submit" name="decision" value="reject" formnovalidate>Reject all</button><button class="primary" type="submit" name="decision" value="approve" id="go"${chosen.size ? '' : ' disabled'}>${approveLabel(chosen.size)}</button></div>
 </div></div>
 </form>`;
-  return shell(`Review batch ${batch.code} · JobAppAgent`, body);
+  return shell(`Review batch ${batch.code} · JobAppAgent`, body, { nonce });
 }
 
-function renderDecided(batch, now) {
+function itemLabel(item) {
+  return item.type === 'email' ? `Email to ${item.recipient ?? item.to} at ${item.company}` : `${item.company}, ${item.role}`;
+}
+
+function renderDecided(batch, now, timeZone) {
   const status = effectiveStatus(batch, now);
   if (status === 'approved') {
-    const n = batch.approvedItemIds.length;
-    const removed = batch.items.length - n;
-    return shell('Approved · JobAppAgent', `<div class="done"><h1>Approved ${n} of ${batch.items.length}</h1><p class="lede">Your agent can now send ${n === 1 ? 'this item' : 'these items'}, each once, until ${escapeHtml(formatTime(batch.expiresAt))}.${removed ? ` ${removed} unticked item${removed === 1 ? '' : 's'} will not be sent.` : ''} You can close this tab and go back to your agent.</p></div>`);
+    const approved = new Set(batch.approvedItemIds);
+    const n = approved.size;
+    const rows = [
+      ...batch.items.filter((item) => approved.has(item.itemId)).map((item) => `<li class="ok">Will send · ${escapeHtml(itemLabel(item))}</li>`),
+      ...batch.items.filter((item) => !approved.has(item.itemId)).map((item) => `<li class="no">Won’t send · ${escapeHtml(itemLabel(item))} (unticked)</li>`),
+    ].join('');
+    return shell('Approved · JobAppAgent', `<div class="done"><h1>Approved ${n} of ${batch.items.length}</h1><p class="lede">Your agent can send each of these once, until ${escapeHtml(formatTime(batch.expiresAt, timeZone))}. You can close this tab.</p><ul class="res">${rows}</ul></div>`);
   }
   if (status === 'rejected') return shell('Rejected · JobAppAgent', '<div class="done"><h1>Batch rejected</h1><p class="lede">Nothing in this batch will be sent. You can close this tab and tell your agent what to change.</p></div>');
   if (status === 'revoked') return shell('Revoked · JobAppAgent', '<div class="done"><h1>Batch revoked</h1><p class="lede">This batch was withdrawn. Nothing more from it will be sent.</p></div>');
@@ -168,42 +219,70 @@ export async function startReviewPage({ stateDir, batchId, timeoutMs = REVIEW_PA
   let origin = '';
   let finish;
   const done = new Promise((resolveDone) => { finish = resolveDone; });
-  const headers = {
-    'content-type': 'text/html; charset=utf-8',
+  const baseHeaders = {
     'cache-control': 'no-store',
-    'content-security-policy': "default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'",
     'x-frame-options': 'DENY',
-    'referrer-policy': 'no-referrer',
+    // same-origin, not no-referrer: under no-referrer browsers send `Origin: null` on the form
+    // POST, which the origin check below must refuse. Outbound job links carry rel=noreferrer.
+    'referrer-policy': 'same-origin',
     'x-content-type-options': 'nosniff',
   };
-  const send = (response, status, html) => { response.writeHead(status, headers); response.end(html); };
+  // Each response gets its own CSP nonce, recorded on the response object.
+  const send = (response, status, html) => {
+    const nonce = response.cspNonce ?? randomBytes(16).toString('base64');
+    response.writeHead(status, {
+      ...baseHeaders,
+      'content-type': 'text/html; charset=utf-8',
+      'content-security-policy': `default-src 'none'; style-src 'unsafe-inline'; script-src 'nonce-${nonce}'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'`,
+    });
+    response.end(html);
+  };
+  const pageFor = (response) => (batch, extra = {}) => {
+    response.cspNonce = randomBytes(16).toString('base64');
+    return renderReviewPage(batch, { action: path, nonce: response.cspNonce, ...extra });
+  };
+  // Serves the canonical résumé only while it is byte-identical to the one this batch was staged with.
+  const sendResume = async (response) => {
+    const batch = await loadBatch(stateDir, batchId);
+    let bytes = null;
+    try { bytes = await readFile(join(stateDir, 'resume.pdf')); } catch { bytes = null; }
+    if (!bytes || !batch.resume?.sha256 || createHash('sha256').update(bytes).digest('hex') !== batch.resume.sha256) {
+      return send(response, 409, shell('Résumé changed · JobAppAgent', '<div class="done"><h1>The résumé changed</h1><p class="lede">The PDF on file is not the one this batch was prepared with. Don’t approve; ask your agent to prepare the batch again.</p></div>'));
+    }
+    response.writeHead(200, { ...baseHeaders, 'content-type': 'application/pdf', 'content-disposition': 'inline; filename="resume.pdf"', 'content-length': bytes.length, 'content-security-policy': "default-src 'none'; frame-ancestors 'none'" });
+    return response.end(bytes);
+  };
   const server = createServer(async (request, response) => {
     try {
       const host = request.headers.host ?? '';
       if (host !== origin.slice('http://'.length)) return send(response, 421, 'Wrong host');
       const url = new URL(request.url, origin);
+      const page = pageFor(response);
+      if (request.method === 'GET' && sameSecret(url.pathname, `${path}/resume.pdf`)) return sendResume(response);
       if (!sameSecret(url.pathname, path)) return send(response, 404, 'Not found');
-      if (request.method === 'GET') return send(response, 200, renderReviewPage(await loadBatch(stateDir, batchId), { action: path }));
+      if (request.method === 'GET') return send(response, 200, page(await loadBatch(stateDir, batchId)));
       if (request.method !== 'POST') return send(response, 405, 'Method not allowed');
       const requestOrigin = request.headers.origin;
       if (requestOrigin != null && requestOrigin !== origin) return send(response, 403, 'Cross-origin request refused');
+      const fetchSite = request.headers['sec-fetch-site'];
+      if (fetchSite != null && !['same-origin', 'none'].includes(fetchSite)) return send(response, 403, 'Cross-site request refused');
       if (!/^application\/x-www-form-urlencoded/.test(request.headers['content-type'] ?? '')) return send(response, 415, 'Unsupported form');
       const form = await readForm(request);
       const batch = await loadBatch(stateDir, batchId);
-      if (effectiveStatus(batch) !== 'pending') return send(response, 200, renderReviewPage(batch, { action: path }));
+      if (effectiveStatus(batch) !== 'pending') return send(response, 200, page(batch));
       if (form.get('decision') === 'reject') {
         const closed = await closeBatch(stateDir, batchId, 'rejected');
-        send(response, 200, renderReviewPage(closed, { action: path }));
+        send(response, 200, page(closed));
         return finish('rejected');
       }
       const selected = form.getAll('item');
-      if (!selected.length) return send(response, 422, renderReviewPage(batch, { action: path, selected, error: 'Nothing is ticked. Tick at least one item, or choose Reject all.' }));
+      if (!selected.length) return send(response, 422, page(batch, { selected, error: 'Nothing is ticked. Tick at least one item, or choose Reject all.' }));
       const code = String(form.get('code') ?? '');
       if (`APPROVE ${code.trim().toUpperCase()}` !== approvalPhrase(batch)) {
-        return send(response, 422, renderReviewPage(batch, { action: path, selected, error: `That code doesn't match. Type ${batch.code} exactly.` }));
+        return send(response, 422, page(batch, { selected, error: `That code doesn't match. Type ${batch.code} exactly.` }));
       }
       const { batch: approved } = await approveBatch(stateDir, batchId, { channel: 'local-page', phrase: approvalPhrase(batch), itemIds: selected });
-      send(response, 200, renderReviewPage(approved, { action: path }));
+      send(response, 200, page(approved));
       return finish('approved');
     } catch (error) {
       if (!response.headersSent) send(response, 400, shell('Error · JobAppAgent', `<div class="done"><h1>Something went wrong</h1><p class="lede">${escapeHtml(error.message)}</p></div>`));

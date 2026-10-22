@@ -10,9 +10,9 @@ import { fileURLToPath } from 'node:url';
 import { commandCategory } from '../scripts/job-application.mjs';
 import { runOutreach } from '../scripts/outreach-cli.mjs';
 import {
-  REVIEW_BATCH_MAX_ITEMS, applicationMatcher, approvalPhrase, approveBatch, consumeReview, loadBatch, stageBatch, verifyReview,
+  REVIEW_BATCH_MAX_ITEMS, applicationMatcher, approvalPhrase, approveBatch, consumeReview, loadBatch, resumeDigest, stageBatch, verifyReview,
 } from '../scripts/review-batch.mjs';
-import { renderReviewPage, startReviewPage } from '../scripts/review-page.mjs';
+import { COUNT_SCRIPT, formatTime, renderReviewPage, startReviewPage } from '../scripts/review-page.mjs';
 
 const script = fileURLToPath(new URL('../scripts/job-application.mjs', import.meta.url));
 
@@ -62,9 +62,12 @@ test('stage validates size, duplicates and item shape', async (t) => {
   await assert.rejects(stageBatch(directory, { items: many }), /at most 25/);
   await assert.rejects(stageBatch(directory, { items: [item(), item()] }), /same application twice/);
   await assert.rejects(stageBatch(directory, { items: [{ ...item(), type: 'fax' }] }), /type must be/);
-  await assert.rejects(stageBatch(directory, { items: [item({ flaggedAnswers: ['missing'] })] }), /flaggedAnswers/);
+  await assert.rejects(stageBatch(directory, { items: [item({ flaggedAnswers: [{ answer: 'missing', reason: 'x' }] })] }), /flaggedAnswers/);
+  await assert.rejects(stageBatch(directory, { items: [item({ flaggedAnswers: ['Sponsorship'] })] }), /flaggedAnswers\[0\]/);
+  await assert.rejects(stageBatch(directory, { items: [item({ flaggedAnswers: [{ answer: 'Sponsorship' }] })] }), /reason/);
+  await assert.rejects(stageBatch(directory, { items: [{ type: 'email', opportunityId: 'opp-1', draftRevision: 2, company: 'Acme', text: 'Hello' }] }), /\.to/);
   await assert.rejects(stageBatch(directory, { items: [item({ extra: 1 })] }), /Unknown items\[0\] property: extra/);
-  const batch = await stageBatch(directory, { items: [item(), { type: 'email', opportunityId: 'opp-1', draftRevision: 2, company: 'Acme', text: 'Hello' }] });
+  const batch = await stageBatch(directory, { items: [item(), { type: 'email', opportunityId: 'opp-1', draftRevision: 2, company: 'Acme', to: 'jo@acme.example', text: 'Hello' }] });
   assert.match(batch.code, /^[A-Z]{3}-\d{2}$/);
   assert.equal(batch.items.length, 2);
   if (process.platform !== 'win32') {
@@ -161,7 +164,7 @@ test('outreach handoff needs an approved email item for that draft revision', as
   const directory = await stateDir(t);
   const opts = { stateDirectory: directory, cloudClient: { config: async () => null }, migrate: async () => {}, guard: async () => {} };
   await assert.rejects(runOutreach(['handoff', '--stdin'], { ...opts, input: { id: 'opp-1', draftRevision: 1 } }), /outreach handoff needs a batch approval/);
-  const review = await approved(directory, [{ type: 'email', opportunityId: 'opp-1', draftRevision: 2, company: 'Acme', text: 'Hello' }]);
+  const review = await approved(directory, [{ type: 'email', opportunityId: 'opp-1', draftRevision: 2, company: 'Acme', to: 'jo@acme.example', text: 'Hello' }]);
   await assert.rejects(
     runOutreach(['handoff', '--stdin'], { ...opts, input: { id: 'opp-1', draftRevision: 1, reviewBatchId: review.reviewBatchId, reviewToken: review.reviewToken } }),
     /draft revision changed \(approved 2\)/,
@@ -219,7 +222,7 @@ function http(url, { method = 'GET', body, headers = {} } = {}) {
 test('the local review page escapes job content and approves only with the typed code', async (t) => {
   const directory = await stateDir(t);
   const batch = await stageBatch(directory, { items: [
-    item({ company: '<script>alert(1)</script>', answers: { 'Q<1>': 'A & "B"' }, flaggedAnswers: ['Q<1>'] }),
+    item({ company: '<script>alert(1)</script>', answers: { 'Q<1>': 'A & "B"' }, flaggedAnswers: [{ answer: 'Q<1>', reason: 'The <b>posting</b> lists a band' }] }),
     item({ applicationId: 'beta-1', company: 'Beta', url: 'https://jobs.lever.co/beta/1' }),
   ] });
   const page = await startReviewPage({ stateDir: directory, batchId: batch.batchId, timeoutMs: 60_000 });
@@ -228,22 +231,47 @@ test('the local review page escapes job content and approves only with the typed
 
   const get = await http(page.url);
   assert.equal(get.status, 200);
-  assert.match(get.headers['content-security-policy'], /default-src 'none'/);
-  assert.doesNotMatch(get.text, /<script\b/i);
+  const csp = get.headers['content-security-policy'];
+  assert.match(csp, /default-src 'none'/);
+  const nonce = csp.match(/script-src 'nonce-([A-Za-z0-9+/=]+)'/)?.[1];
+  assert.ok(nonce, csp);
+  // The only script is the fixed live-count snippet, bound to this response's nonce.
+  const scripts = [...get.text.matchAll(/<script\b[^>]*>([\s\S]*?)<\/script>/gi)];
+  assert.equal(scripts.length, 1);
+  assert.equal(scripts[0][0], `<script nonce="${nonce}">${COUNT_SCRIPT}</script>`);
+  assert.doesNotMatch(COUNT_SCRIPT, /https?:|fetch|XMLHttpRequest|innerHTML|eval/);
+  assert.notEqual((await http(page.url)).headers['content-security-policy'], csp);
+  assert.match(get.text, /id="go">Approve 2 items</);
+  assert.doesNotMatch(get.text, /placeholder=/);
+  assert.match(get.text, /Flagged because the &lt;b&gt;posting&lt;\/b&gt; lists a band\. Untick if you want to answer it yourself\./);
+  assert.match(get.text, /Only you can approve this\. Your agent can’t open this page\./);
+  assert.doesNotMatch(get.text, /Approval lasts 24 hours/);
   assert.match(get.text, /&lt;script&gt;alert\(1\)&lt;\/script&gt;/);
   assert.match(get.text, /A &amp; &quot;B&quot;/);
   assert.equal((await http(`${url.origin}/review/wrong`)).status, 404);
   assert.equal((await http(page.url, { headers: { host: 'evil.example' } })).status, 421);
   assert.equal((await http(page.url, { method: 'POST', body: 'decision=approve&item=i1&code=X', headers: { origin: 'https://evil.example' } })).status, 403);
+  assert.equal((await http(page.url, { method: 'POST', body: 'decision=approve&item=i1&code=X', headers: { origin: 'null' } })).status, 403);
+  assert.equal((await http(page.url, { method: 'POST', body: 'decision=approve&item=i1&code=X', headers: { 'sec-fetch-site': 'cross-site' } })).status, 403);
+  // Browsers only send a usable Origin on the form POST when the referrer policy allows it.
+  assert.equal(get.headers['referrer-policy'], 'same-origin');
+  assert.match(get.text, /<meta name="referrer" content="same-origin">/);
+  assert.match(get.text, /rel="noreferrer noopener"/);
 
   const wrong = await http(page.url, { method: 'POST', body: 'decision=approve&item=i1&code=ZZZ-00' });
   assert.equal(wrong.status, 422);
   assert.match(wrong.text, /doesn&#39;t match/);
+  assert.match(wrong.text, /id="go">Approve 1 item</);
+  const none = await http(page.url, { method: 'POST', body: 'decision=approve&code=ZZZ-00' });
+  assert.equal(none.status, 422);
+  assert.match(none.text, /id="go" disabled>Nothing ticked</);
   assert.equal((await loadBatch(directory, batch.batchId)).status, 'pending');
 
   const ok = await http(page.url, { method: 'POST', body: `decision=approve&item=i1&code=${batch.code.toLowerCase()}` });
   assert.equal(ok.status, 200);
   assert.match(ok.text, /Approved 1 of 2/);
+  assert.match(ok.text, /Will send · &lt;script&gt;alert\(1\)&lt;\/script&gt;, Staff Engineer/);
+  assert.match(ok.text, /Won’t send · Beta, Staff Engineer \(unticked\)/);
   const stored = await loadBatch(directory, batch.batchId);
   assert.equal(stored.status, 'approved');
   assert.equal(stored.approvalChannel, 'local-page');
@@ -278,4 +306,48 @@ test('review open starts a detached local page', async (t) => {
   const status = cli(env, ['review', 'status', staged.json.batchId]);
   assert.equal(status.json.status, 'approved');
   assert.match(status.json.reviewToken, /^rbt1\./);
+});
+
+test('the review page shows email headers, opens answers by default and serves the exact résumé', async (t) => {
+  const directory = await stateDir(t);
+  await writeFile(join(directory, 'resume.pdf'), Buffer.alloc(148_480, 1));
+  const resume = await resumeDigest(join(directory, 'resume.pdf'));
+  const batch = await stageBatch(directory, { items: [
+    item(),
+    item({ applicationId: 'plain', url: 'https://jobs.example.org/plain', answers: {} }),
+    { type: 'email', opportunityId: 'opp-1', draftRevision: 2, company: 'Raycast', recipient: 'Thomas', to: 'thomas@raycast.example', subject: 'Senior Engineer, Extensions', attachResume: true, text: 'Hi Thomas' },
+  ] }, { resume });
+  const page = await startReviewPage({ stateDir: directory, batchId: batch.batchId, timeoutMs: 60_000 });
+  t.after(() => page.close());
+  const html = (await http(page.url)).text;
+  assert.match(html, /<span>To<\/span><b>Thomas · thomas@raycast\.example<\/b>/);
+  assert.match(html, /<span>Subject<\/span><b>Senior Engineer, Extensions<\/b>/);
+  assert.match(html, /<span>Attached<\/span><b>Your résumé \(same PDF as above\)<\/b>/);
+  assert.match(html, /Exact text that will be sent/);
+  assert.match(html, /<details open><summary>2 drafted answers to be sent/);
+  assert.match(html, /<details><summary>No drafted answers/);
+  assert.match(html, new RegExp(`title="sha256 ${resume.sha256}">Open the exact PDF that will be sent</a> <span class="dim">\\(145 KB\\)`));
+  assert.doesNotMatch(html, new RegExp(`>${resume.sha256.slice(0, 8)}<`));
+  const pdf = await http(`${page.url}/resume.pdf`);
+  assert.equal(pdf.status, 200);
+  assert.equal(pdf.headers['content-type'], 'application/pdf');
+  assert.equal(Number(pdf.headers['content-length']), 148_480);
+  assert.equal((await http(`${new URL(page.url).origin}/review/wrong/resume.pdf`)).status, 404);
+  await writeFile(join(directory, 'resume.pdf'), Buffer.alloc(10, 2));
+  assert.equal((await http(`${page.url}/resume.pdf`)).status, 409);
+});
+
+test('the email headers are part of the approval', async (t) => {
+  const directory = await stateDir(t);
+  const base = { type: 'email', opportunityId: 'opp-1', draftRevision: 2, company: 'Acme', to: 'jo@acme.example', text: 'Hello' };
+  const one = await stageBatch(directory, { items: [base] });
+  const two = await stageBatch(directory, { items: [{ ...base, to: 'someone-else@acme.example' }] });
+  assert.notEqual(one.items[0].textSha256, two.items[0].textSha256);
+});
+
+test('times read like "Fri 23 Oct, 2:03 PM IST" in the local zone', () => {
+  assert.equal(formatTime('2026-10-23T08:33:00Z', 'Asia/Calcutta'), 'Fri 23 Oct, 2:03 PM IST');
+  assert.equal(formatTime('2026-10-23T08:33:00Z', 'UTC'), 'Fri 23 Oct, 8:33 AM UTC');
+  assert.match(formatTime('2026-07-23T08:33:00Z', 'Europe/Berlin'), /^Thu 23 Jul, 10:33 AM CEST$/);
+  assert.match(formatTime('2026-10-23T08:33:00Z', 'America/Los_Angeles'), /^Fri 23 Oct, 1:33 AM PDT$/);
 });
