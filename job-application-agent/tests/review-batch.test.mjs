@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
+import { request } from 'node:http';
 import { join } from 'node:path';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
@@ -11,6 +12,7 @@ import { runOutreach } from '../scripts/outreach-cli.mjs';
 import {
   REVIEW_BATCH_MAX_ITEMS, applicationMatcher, approvalPhrase, approveBatch, consumeReview, loadBatch, stageBatch, verifyReview,
 } from '../scripts/review-batch.mjs';
+import { renderReviewPage, startReviewPage } from '../scripts/review-page.mjs';
 
 const script = fileURLToPath(new URL('../scripts/job-application.mjs', import.meta.url));
 
@@ -27,6 +29,7 @@ function envFor(directory) {
     JOB_APPLICATION_AGENT_CLOUD_CONFIG: join(directory, 'cloud-config.json'),
     JOB_APPLICATION_AGENT_SOURCE_COMMUNITY_URL: 'http://127.0.0.1:9',
     JOB_APPLICATION_AGENT_TELEMETRY_URL: 'http://127.0.0.1:9',
+    JOB_APPLICATION_AGENT_NO_BROWSER: '1',
     JOB_APPLICATION_AGENT_KEYCHAIN_SERVICE: `job-application-agent-test-${process.pid}-${Math.random().toString(36).slice(2)}`,
   };
 }
@@ -173,7 +176,7 @@ test('review commands run through the CLI and count as batch telemetry', async (
   assert.equal(staged.status, 0, staged.stderr);
   assert.equal(staged.json.status, 'pending');
   assert.match(staged.json.table, /1\. APPLY {2}Acme \| Staff Engineer/);
-  assert.match(staged.json.next, /Never type the phrase for the candidate/);
+  assert.match(staged.json.next, /Never open, read the code from, or operate the review page yourself/);
   const shown = cli(env, ['review', 'show', staged.json.batchId]);
   assert.deepEqual(shown.json.items[0].answers, answers);
   assert.equal(cli(env, ['review', 'status', staged.json.batchId]).json.reviewToken, undefined);
@@ -199,4 +202,80 @@ test('an old grant that carried submit prints the batch-review notice once', asy
   assert.equal(first.json.maySubmitRoutineApplications, false);
   assert.ok(!first.json.scopes.includes('submit'));
   assert.doesNotMatch(cli(env, ['autonomy', 'status']).stderr, /no longer covers/);
+});
+
+function http(url, { method = 'GET', body, headers = {} } = {}) {
+  return new Promise((resolve, reject) => {
+    const req = request(url, { method, headers: { ...(body ? { 'content-type': 'application/x-www-form-urlencoded' } : {}), ...headers } }, (res) => {
+      let text = ''; res.setEncoding('utf8');
+      res.on('data', (c) => { text += c; });
+      res.on('end', () => resolve({ status: res.statusCode, headers: res.headers, text }));
+    });
+    req.on('error', reject);
+    req.end(body);
+  });
+}
+
+test('the local review page escapes job content and approves only with the typed code', async (t) => {
+  const directory = await stateDir(t);
+  const batch = await stageBatch(directory, { items: [
+    item({ company: '<script>alert(1)</script>', answers: { 'Q<1>': 'A & "B"' }, flaggedAnswers: ['Q<1>'] }),
+    item({ applicationId: 'beta-1', company: 'Beta', url: 'https://jobs.lever.co/beta/1' }),
+  ] });
+  const page = await startReviewPage({ stateDir: directory, batchId: batch.batchId, timeoutMs: 60_000 });
+  t.after(() => page.close());
+  const url = new URL(page.url);
+
+  const get = await http(page.url);
+  assert.equal(get.status, 200);
+  assert.match(get.headers['content-security-policy'], /default-src 'none'/);
+  assert.doesNotMatch(get.text, /<script>/);
+  assert.match(get.text, /&lt;script&gt;alert\(1\)&lt;\/script&gt;/);
+  assert.match(get.text, /A &amp; &quot;B&quot;/);
+  assert.equal((await http(`${url.origin}/review/wrong`)).status, 404);
+  assert.equal((await http(page.url, { headers: { host: 'evil.example' } })).status, 421);
+  assert.equal((await http(page.url, { method: 'POST', body: 'decision=approve&item=i1&code=X', headers: { origin: 'https://evil.example' } })).status, 403);
+
+  const wrong = await http(page.url, { method: 'POST', body: 'decision=approve&item=i1&code=ZZZ-00' });
+  assert.equal(wrong.status, 422);
+  assert.match(wrong.text, /doesn&#39;t match/);
+  assert.equal((await loadBatch(directory, batch.batchId)).status, 'pending');
+
+  const ok = await http(page.url, { method: 'POST', body: `decision=approve&item=i1&code=${batch.code.toLowerCase()}` });
+  assert.equal(ok.status, 200);
+  assert.match(ok.text, /Approved 1 of 2/);
+  const stored = await loadBatch(directory, batch.batchId);
+  assert.equal(stored.status, 'approved');
+  assert.equal(stored.approvalChannel, 'local-page');
+  assert.deepEqual(stored.approvedItemIds, ['i1']);
+  assert.equal(await page.done, 'approved');
+});
+
+test('the review page can reject a batch and renders decided states', async (t) => {
+  const directory = await stateDir(t);
+  const batch = await stageBatch(directory, { items: [item()] });
+  const page = await startReviewPage({ stateDir: directory, batchId: batch.batchId, timeoutMs: 60_000 });
+  t.after(() => page.close());
+  const rejected = await http(page.url, { method: 'POST', body: 'decision=reject' });
+  assert.match(rejected.text, /Batch rejected/);
+  assert.equal((await loadBatch(directory, batch.batchId)).status, 'rejected');
+  assert.match(renderReviewPage({ ...batch, status: 'pending', pendingExpiresAt: '2000-01-01T00:00:00Z' }, { action: '/x' }), /expired/);
+});
+
+test('review open starts a detached local page', async (t) => {
+  const directory = await stateDir(t);
+  const env = envFor(directory);
+  const staged = cli(env, ['review', 'stage', '--stdin'], { items: [item()] });
+  const opened = cli(env, ['review', 'open', staged.json.batchId]);
+  assert.equal(opened.status, 0, opened.stderr);
+  assert.match(opened.json.url, /^http:\/\/127\.0\.0\.1:\d+\/review\//);
+  assert.equal(opened.json.browserOpened, false);
+  const again = cli(env, ['review', 'open', staged.json.batchId]);
+  assert.equal(again.json.url, opened.json.url);
+  const batch = await loadBatch(directory, staged.json.batchId);
+  const done = await http(opened.json.url, { method: 'POST', body: `decision=approve&item=i1&code=${batch.code}` });
+  assert.match(done.text, /Approved 1 of 1/);
+  const status = cli(env, ['review', 'status', staged.json.batchId]);
+  assert.equal(status.json.status, 'approved');
+  assert.match(status.json.reviewToken, /^rbt1\./);
 });
