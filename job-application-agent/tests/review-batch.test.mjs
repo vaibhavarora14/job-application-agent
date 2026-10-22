@@ -261,6 +261,9 @@ test('the local review page escapes job content and approves only with the typed
   assert.equal(wrong.status, 422);
   assert.match(wrong.text, /doesn&#39;t match/);
   assert.match(wrong.text, /id="go">Approve 1 item</);
+  assert.match(wrong.text, /required autofocus aria-invalid="true" aria-describedby="review-error">/);
+  assert.match(wrong.text, /<p class="err" id="review-error" role="alert">/);
+  assert.doesNotMatch(get.text, /autofocus/);
   const none = await http(page.url, { method: 'POST', body: 'decision=approve&code=ZZZ-00' });
   assert.equal(none.status, 422);
   assert.match(none.text, /id="go" disabled>Nothing ticked</);

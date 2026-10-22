@@ -42,7 +42,7 @@ export function formatTime(iso, timeZone = undefined) {
 const STYLE = `
 :root{--ink:#173f35;--text:#486159;--muted:#5d746c;--bg:#f2e9d8;--surface:#fffaf0;--line:#d8ccb7;--accent:#2f755f;--accent-strong:#245e4c;--accent-soft:#dfeee6;--coral:#9f4d42;--coral-soft:#f4e2dc;--amber-soft:#f6ead0;--amber:#7a5a12}
 *{box-sizing:border-box}
-html{-webkit-text-size-adjust:100%}
+html{-webkit-text-size-adjust:100%;scroll-padding-bottom:220px}
 body{margin:0;background:var(--bg);color:var(--text);font:16px/1.5 ui-sans-serif,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif}
 .wrap{max-width:880px;margin:0 auto;padding:32px 24px 180px}
 .brand{display:flex;align-items:center;gap:10px;color:var(--ink);font-weight:600;font-size:15px;letter-spacing:.01em}
@@ -172,8 +172,8 @@ export function renderReviewPage(batch, { action, error = null, selected = null,
 <form method="post" action="${escapeHtml(action)}" autocomplete="off">
 <ol class="list">${batch.items.map((item) => itemCard(item, chosen.has(item.itemId))).join('')}</ol>
 <div class="bar"><div class="bar-in">
-${error ? `<p class="err" role="alert">${escapeHtml(error)}</p>` : ''}
-<label class="code"><span>Type <b>${escapeHtml(batch.code)}</b> to approve the ticked items</span><input type="text" name="code" inputmode="text" autocapitalize="characters" spellcheck="false" maxlength="12" required></label>
+${error ? `<p class="err" id="review-error" role="alert">${escapeHtml(error)}</p>` : ''}
+<label class="code"><span>Type <b>${escapeHtml(batch.code)}</b> to approve the ticked items</span><input type="text" name="code" inputmode="text" autocapitalize="characters" spellcheck="false" maxlength="12" required${error ? ' autofocus aria-invalid="true" aria-describedby="review-error"' : ''}></label>
 <div class="actions"><button class="ghost" type="submit" name="decision" value="reject" formnovalidate>Reject all</button><button class="primary" type="submit" name="decision" value="approve" id="go"${chosen.size ? '' : ' disabled'}>${approveLabel(chosen.size)}</button></div>
 </div></div>
 </form>`;
