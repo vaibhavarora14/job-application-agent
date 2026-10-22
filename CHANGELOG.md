@@ -1,5 +1,11 @@
 # Changelog
 
+## 3.7.21
+
+- Tests never reach the production telemetry relay by default. Previously only `node --test` (`NODE_TEST_CONTEXT`) and GitHub Actions were detected. Now any test run uses the local dead endpoint: `npm test` and `npm run privacy-audit` load `tests/support/no-live-telemetry.mjs`, which sets `JAA_TEST=1` for every spawned CLI and makes an in-process fetch to the production relay fail; `npm_lifecycle_event` test/prepack scripts and test files run directly with `node file.test.mjs` are detected too. Opt in explicitly with `JAA_TEST_LIVE_TELEMETRY=1`. An explicit `JOB_APPLICATION_AGENT_TELEMETRY_URL` still wins. Real CLI use is unchanged (production by default; generic `CI=true` does not opt out).
+- New guard test `tests/telemetry-test-isolation.test.mjs` fails if a test run would resolve or fetch the production relay, or if any test file names it.
+- Relay (already deployed, no client protocol change): installs are counted in the public total at their first real activity rather than at `installation_started`; 398 installs created by the test suite's fixture `ledger add` were excluded from the lifetime count; `interviews` is no longer in `/api/public-stats`.
+
 ## 3.7.20
 
 - `score`: local guard against runaway assessment loops. Each `score --stdin` call is its own CLI process, so an agent (or a script it writes) piping a whole feed through `score` could re-assess the same jobs without bound; one install logged 2,768 assessments and 246 invalid-input errors in two hours with no submissions. The guard keeps counters in `assessment-guard.json` in the private state directory, so it holds across invocations:

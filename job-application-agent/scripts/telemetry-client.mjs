@@ -22,19 +22,48 @@ export function isGitHubActions(env = process.env) {
   return value !== '' && value !== 'false' && value !== '0';
 }
 
+function truthyFlag(value) {
+  const normalized = String(value ?? '').trim().toLowerCase();
+  return normalized !== '' && normalized !== 'false' && normalized !== '0';
+}
+
+// npm lifecycle scripts that run this repository's test suite (npm sets npm_lifecycle_event).
+const TEST_LIFECYCLE_EVENTS = new Set(['test', 'pretest', 'posttest', 'prepack', 'prepublishOnly', 'privacy-audit']);
+const TEST_ENTRYPOINT = /(^|[\\/])[^\\/]+[._-]test\.[cm]?js$/i;
+
+/**
+ * True when this process belongs to a test run. Test runs never reach the production relay
+ * unless JAA_TEST_LIVE_TELEMETRY=1 is set explicitly.
+ * - NODE_TEST_CONTEXT: set by `node --test` and inherited by CLIs that tests spawn.
+ * - GITHUB_ACTIONS: every GitHub Actions step. Deliberately not the generic CI variable, which
+ *   real candidates' agent runtimes commonly export.
+ * - JAA_TEST: set by the repository's test setup (tests/support/no-live-telemetry.mjs) and
+ *   inherited by spawned CLIs.
+ * - npm_lifecycle_event: `npm test`, `npm run prepack`, and friends.
+ * - argv[1] is a *.test.mjs file: a test file run directly with `node file.test.mjs`.
+ */
+export function isTestRun(env = process.env, argv = process.argv) {
+  if (env.NODE_TEST_CONTEXT) return true;
+  if (isGitHubActions(env)) return true;
+  if (truthyFlag(env.JAA_TEST)) return true;
+  if (TEST_LIFECYCLE_EVENTS.has(String(env.npm_lifecycle_event ?? ''))) return true;
+  return TEST_ENTRYPOINT.test(String(argv?.[1] ?? ''));
+}
+
+/** Explicit opt-in for a test run that must talk to the production relay. */
+export function liveTelemetryAllowedInTests(env = process.env) {
+  return String(env.JAA_TEST_LIVE_TELEMETRY ?? '').trim() === '1';
+}
+
 /**
  * Relay endpoint for this process. An explicit JOB_APPLICATION_AGENT_TELEMETRY_URL always wins.
- * Otherwise never fall back to production:
- * - under `node --test` (NODE_TEST_CONTEXT is inherited by CLIs that tests spawn), and
- * - inside GitHub Actions (second safeguard for scripts that spawn the CLI outside the test
- *   runner or strip NODE_TEST_CONTEXT from a child env).
- * CI runs were registering throwaway installations and command events in the production
- * relay, PostHog, and the public installation count.
+ * Otherwise a test run (see isTestRun) uses an unroutable local endpoint, never production,
+ * unless JAA_TEST_LIVE_TELEMETRY=1. Test runs were registering throwaway installations and
+ * fixture ledger events in the production relay, PostHog, and the public installation count.
  */
-export function defaultTelemetryEndpoint(env = process.env) {
+export function defaultTelemetryEndpoint(env = process.env, argv = process.argv) {
   if (env.JOB_APPLICATION_AGENT_TELEMETRY_URL) return env.JOB_APPLICATION_AGENT_TELEMETRY_URL;
-  if (env.NODE_TEST_CONTEXT) return TEST_RUNNER_TELEMETRY_ENDPOINT;
-  if (isGitHubActions(env)) return TEST_RUNNER_TELEMETRY_ENDPOINT;
+  if (isTestRun(env, argv) && !liveTelemetryAllowedInTests(env)) return TEST_RUNNER_TELEMETRY_ENDPOINT;
   return PRODUCTION_TELEMETRY_ENDPOINT;
 }
 

@@ -49,6 +49,9 @@ function contactBodies(relay) {
   return relay.requests.filter((request) => String(request.url).endsWith('/v1/contact')).map((request) => request.body);
 }
 
+// A real CLI invocation (not a test file), for endpoint checks that model production use.
+const CLI_ARGV = ['node', '/usr/lib/node_modules/job-application-agent/job-application-agent/scripts/job-application.mjs'];
+
 test('new installations disclose and send the first event immediately', async (t) => {
   const directory = await mkdtemp(join(tmpdir(), 'telemetry-new-'));
   t.after(() => rm(directory, { recursive: true, force: true }));
@@ -606,10 +609,10 @@ test('quarantine is bounded', async (t) => {
 });
 
 test('relay endpoints never default to production under node --test', () => {
-  assert.equal(defaultTelemetryEndpoint({}), PRODUCTION_TELEMETRY_ENDPOINT);
+  assert.equal(defaultTelemetryEndpoint({}, CLI_ARGV), PRODUCTION_TELEMETRY_ENDPOINT);
   assert.equal(defaultTelemetryEndpoint({ NODE_TEST_CONTEXT: 'child-v8' }), TEST_RUNNER_TELEMETRY_ENDPOINT);
   assert.equal(defaultTelemetryEndpoint({ NODE_TEST_CONTEXT: 'child', JOB_APPLICATION_AGENT_TELEMETRY_URL: 'http://127.0.0.1:1234' }), 'http://127.0.0.1:1234');
-  assert.equal(defaultSourceCommunityEndpoint({}), PRODUCTION_TELEMETRY_ENDPOINT);
+  assert.equal(defaultSourceCommunityEndpoint({}, CLI_ARGV), PRODUCTION_TELEMETRY_ENDPOINT);
   assert.equal(defaultSourceCommunityEndpoint({ NODE_TEST_CONTEXT: 'child' }), TEST_RUNNER_TELEMETRY_ENDPOINT);
   assert.equal(defaultSourceCommunityEndpoint({ NODE_TEST_CONTEXT: 'child', JOB_APPLICATION_AGENT_SOURCE_COMMUNITY_URL: 'http://127.0.0.1:9' }), 'http://127.0.0.1:9');
   // This very process runs under the test runner, so the module-level default is already safe.
@@ -632,9 +635,9 @@ test('GitHub Actions never defaults to the production relay, even outside the te
 });
 
 test('generic CI=true alone keeps production telemetry (agent runtimes often export CI)', () => {
-  assert.equal(defaultTelemetryEndpoint({ CI: 'true' }), PRODUCTION_TELEMETRY_ENDPOINT);
-  assert.equal(defaultTelemetryEndpoint({ CI: '1' }), PRODUCTION_TELEMETRY_ENDPOINT);
-  assert.equal(defaultSourceCommunityEndpoint({ CI: 'true' }), PRODUCTION_TELEMETRY_ENDPOINT);
+  assert.equal(defaultTelemetryEndpoint({ CI: 'true' }, CLI_ARGV), PRODUCTION_TELEMETRY_ENDPOINT);
+  assert.equal(defaultTelemetryEndpoint({ CI: '1' }, CLI_ARGV), PRODUCTION_TELEMETRY_ENDPOINT);
+  assert.equal(defaultSourceCommunityEndpoint({ CI: 'true' }, CLI_ARGV), PRODUCTION_TELEMETRY_ENDPOINT);
 });
 
 test('a CLI process spawned without NODE_TEST_CONTEXT inside GitHub Actions resolves a dead local relay', () => {
@@ -649,7 +652,8 @@ const s = await import(${JSON.stringify(moduleUrl('source-community-client.mjs')
 process.stdout.write(JSON.stringify([t.DEFAULT_TELEMETRY_ENDPOINT, s.DEFAULT_SOURCE_COMMUNITY_ENDPOINT]));`;
   const run = (childEnv) => JSON.parse(execFileSync(process.execPath, ['--input-type=module', '-e', source], { env: childEnv, encoding: 'utf8' }));
   assert.deepEqual(run(env), [TEST_RUNNER_TELEMETRY_ENDPOINT, TEST_RUNNER_TELEMETRY_ENDPOINT]);
+  // Outside every test marker (a real `node -e` / CLI process), production is the default.
   const outsideCi = { ...env };
-  delete outsideCi.GITHUB_ACTIONS;
+  for (const key of ['GITHUB_ACTIONS', 'JAA_TEST', 'npm_lifecycle_event']) delete outsideCi[key];
   assert.deepEqual(run(outsideCi), [PRODUCTION_TELEMETRY_ENDPOINT, PRODUCTION_TELEMETRY_ENDPOINT]);
 });

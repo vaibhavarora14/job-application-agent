@@ -199,7 +199,9 @@ test('validation commands are portable across Windows and pipefail shells', asyn
   const workflow = await readFile(new URL('../../.github/workflows/validate.yml', import.meta.url), 'utf8');
   const smokePackage = await readFile(new URL('../../scripts/smoke-package.mjs', import.meta.url), 'utf8');
 
-  assert.equal(packageJson.scripts.test, 'node --test', 'the shell must not be responsible for expanding test globs');
+  // Optional --import of the test setup (no live telemetry); never a shell-expanded glob.
+  assert.match(packageJson.scripts.test, /^node --test( --import \.\/[\w./-]+\.mjs)?$/, 'the shell must not be responsible for expanding test globs');
+  assert.doesNotMatch(packageJson.scripts.test, /\*/);
   assert.match(workflow, /tar -tzf "\$package_file" > "\$package_listing"/);
   assert.doesNotMatch(workflow, /tar -tzf "\$package_file" \| grep/, 'tar must not receive SIGPIPE under pipefail');
   assert.match(smokePackage, /process\.env\.npm_execpath/);

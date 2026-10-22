@@ -3,7 +3,7 @@ import { chmod, mkdir, open, readFile, rename, stat, unlink, writeFile } from 'n
 import { join } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 
-import { SKILL_VERSION, TEST_RUNNER_TELEMETRY_ENDPOINT, defaultTelemetryEndpoint } from './telemetry-client.mjs';
+import { SKILL_VERSION, defaultTelemetryEndpoint } from './telemetry-client.mjs';
 import {
   createCommunityJobContributionEnvelope,
   createSourceContributionEnvelope,
@@ -13,12 +13,10 @@ import {
   validateCommunitySourceList,
 } from './source-community-schema.mjs';
 
-/** Same rule as telemetry: explicit URL wins; `node --test` and GitHub Actions never fall back to production. */
-export function defaultSourceCommunityEndpoint(env = process.env) {
+/** Same rule as telemetry: an explicit URL wins; test runs never fall back to production. */
+export function defaultSourceCommunityEndpoint(env = process.env, argv = process.argv) {
   if (env.JOB_APPLICATION_AGENT_SOURCE_COMMUNITY_URL) return env.JOB_APPLICATION_AGENT_SOURCE_COMMUNITY_URL;
-  if (env.JOB_APPLICATION_AGENT_TELEMETRY_URL) return env.JOB_APPLICATION_AGENT_TELEMETRY_URL;
-  if (env.NODE_TEST_CONTEXT) return TEST_RUNNER_TELEMETRY_ENDPOINT;
-  return defaultTelemetryEndpoint(env);
+  return defaultTelemetryEndpoint(env, argv);
 }
 
 export const DEFAULT_SOURCE_COMMUNITY_ENDPOINT = defaultSourceCommunityEndpoint();
