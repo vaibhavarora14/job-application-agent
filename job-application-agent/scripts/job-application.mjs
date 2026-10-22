@@ -2551,8 +2551,22 @@ async function cloudCommand(action, value) {
     return cloudState.markIntentSentUnverified(string(input.intentId, 'intentId', 200), string(input.leaseId, 'leaseId', 200));
   }
   if (action === 'intent-confirm' && value === '--stdin') {
-    const input = await jsonStdin();
-    return cloudState.confirmIntent(string(input.intentId, 'intentId', 200), object(input.application, 'application'), string(input.leaseId, 'leaseId', 200), input.idempotencyKey);
+    const { reviewBatchId, reviewToken, ...input } = object(await jsonStdin(), 'intent');
+    const application = object(input.application, 'application');
+    // Confirming an intent records the application, so it needs the same approval as ledger add.
+    let reviewed = null;
+    const dir = await ensureStateDir();
+    if (requiresBatchReview(application.url)) {
+      reviewed = await verifyReview(dir, { reviewBatchId, reviewToken }, {
+        action: 'cloud intent-confirm',
+        match: applicationMatcher({ applicationId: application.id, url: application.url, answers: application.answers ?? {} }),
+        checkResume: true,
+        resumeSha256: (await currentResumeDigest())?.sha256,
+      });
+    }
+    const confirmed = await cloudState.confirmIntent(string(input.intentId, 'intentId', 200), application, string(input.leaseId, 'leaseId', 200), input.idempotencyKey);
+    if (reviewed) await consumeReview(dir, reviewed.batch.batchId, reviewed.item.itemId, 'cloud-intent-confirm');
+    return confirmed;
   }
   throw usageError(['cloud', action, value]);
 }

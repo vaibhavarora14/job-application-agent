@@ -9,7 +9,7 @@ This applies in both modes. In `review-each` each batch holds one application. I
 The CLI does not click Submit. It gates the sanctioned steps around the click:
 
 - `cloud intent-prepare` refuses to issue a transmission intent;
-- `ledger add` refuses to record a submission;
+- `ledger add` and `cloud intent-confirm` refuse to record a submission;
 - `ledger retry` refuses to record a replacement transmission;
 - `outreach handoff` refuses to hand over copyable text.
 

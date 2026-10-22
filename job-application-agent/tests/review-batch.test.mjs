@@ -145,11 +145,13 @@ test('expired approvals, forged tokens, edited batch files and a changed rÃ©sumÃ
   await assert.rejects(verifyReview(directory, creds, { action: 'test', match }), /not valid for this batch/);
 });
 
-test('cloud intent-prepare refuses to prepare a live send without an approval', async (t) => {
+test('cloud intent-prepare and intent-confirm refuse a live send without an approval', async (t) => {
   const directory = await stateDir(t);
   const env = envFor(directory);
   const intent = cli(env, ['cloud', 'intent-prepare', '--stdin'], { applicationId: 'acme-staff-1', canonicalUrl: item().url, leaseId: 'lease' });
   assert.match(intent.stderr, /cloud intent-prepare needs a batch approval/);
+  const confirm = cli(env, ['cloud', 'intent-confirm', '--stdin'], { intentId: 'i', leaseId: 'l', application: entry() });
+  assert.match(confirm.stderr, /cloud intent-confirm needs a batch approval/);
 });
 
 test('outreach handoff needs an approved email item for that draft revision', async (t) => {
