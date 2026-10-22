@@ -62,7 +62,7 @@ function cliEnv(directory, extra = {}) {
     JOB_APPLICATION_AGENT_CLOUD_CONFIG: join(directory, 'cloud-config.json'),
     JOB_APPLICATION_AGENT_SOURCE_COMMUNITY_URL: 'http://127.0.0.1:9',
     JOB_APPLICATION_AGENT_TELEMETRY_URL: 'http://127.0.0.1:9',
-    JOB_APPLICATION_AGENT_KEYCHAIN_SERVICE: `job-application-agent-test-${process.pid}-${Math.random().toString(36).slice(2)}`,
+    JOB_APPLICATION_AGENT_KEYCHAIN_SERVICE: `com.vaibhavarora.job-application-agent.test-${process.pid}-${Math.random().toString(36).slice(2)}`,
     JOB_APPLICATION_AGENT_ASSESSMENT_BACKOFF_MS: '0',
     ...extra,
   };

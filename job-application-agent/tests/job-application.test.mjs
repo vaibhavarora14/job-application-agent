@@ -97,7 +97,7 @@ function isolatedCliEnv(directory) {
     JOB_APPLICATION_AGENT_CLOUD_CONFIG: join(directory, 'cloud-config.json'),
     JOB_APPLICATION_AGENT_SOURCE_COMMUNITY_URL: 'http://127.0.0.1:9',
     // Never read the host's real stored profile (the ledger guard consults submissionMode).
-    JOB_APPLICATION_AGENT_KEYCHAIN_SERVICE: `job-application-agent-test-${process.pid}-${Math.random().toString(36).slice(2)}`,
+    JOB_APPLICATION_AGENT_KEYCHAIN_SERVICE: `com.vaibhavarora.job-application-agent.test-${process.pid}-${Math.random().toString(36).slice(2)}`,
   };
 }
 

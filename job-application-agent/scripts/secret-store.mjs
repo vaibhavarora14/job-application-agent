@@ -149,9 +149,32 @@ function createLinuxStore({ execFileSync: exec, service, account }) {
   };
 }
 
+// The Windows helper only accepts the fixed service name or a dotted sub-name of it
+// (tests use `<service>.test-…`); windows-profile-store.ps1 enforces the same rule.
+export function isAllowedWindowsService(service) {
+  return typeof service === 'string'
+    && /^[A-Za-z0-9._-]{1,200}$/.test(service)
+    && (service === DEFAULT_SECRET_SERVICE || service.startsWith(`${DEFAULT_SECRET_SERVICE}.`));
+}
+
 function windowsRequest(exec, scriptPath, payload, plaintext = '') {
+  if (!isAllowedWindowsService(payload.service)) {
+    throw new Error(`Windows profile storage only uses the ${DEFAULT_SECRET_SERVICE} service name (or ${DEFAULT_SECRET_SERVICE}.<suffix>). Unset or fix JOB_APPLICATION_AGENT_KEYCHAIN_SERVICE and retry.`);
+  }
   const input = `${JSON.stringify(payload)}\n${plaintext}`;
   try {
+    // Why `-ExecutionPolicy Bypass` stays: Windows 10/11 ship with the
+    // `Restricted` client policy, under which no .ps1 file runs at all, so
+    // `-File` without it fails on a default machine. The override applies to
+    // this one child process only; it never changes the machine or user policy.
+    // The alternatives are worse. `-EncodedCommand` hides the script from
+    // review and AV/AMSI heuristics. `-Command` with the script inline (or `-Command -`
+    // from stdin) breaks on Windows PowerShell 5.1 quoting and multi-line block
+    // parsing, and stdin already carries the request. Moving the plaintext to an
+    // environment variable would expose it to same-user processes. Authenticode
+    // signing would help only under AllSigned and needs a code-signing
+    // certificate the project does not have. The script is a fixed file shipped
+    // in the package (never user-supplied), and it validates every request.
     return exec('powershell.exe', [
       '-NoProfile',
       '-NonInteractive',
@@ -165,7 +188,9 @@ function windowsRequest(exec, scriptPath, payload, plaintext = '') {
       windowsHide: true,
       maxBuffer: 20 * 1024 * 1024,
     });
-  } catch {
+  } catch (error) {
+    const rejected = /Windows profile storage rejected the request: ([a-z .-]+)\./.exec(String(error?.stderr ?? ''));
+    if (rejected) throw new Error(`Windows profile storage rejected the request: ${rejected[1]}. No profile data was logged.`);
     throw new Error('Windows profile storage failed. Unlock Windows Credential Manager and retry; no profile data was logged.');
   }
 }
