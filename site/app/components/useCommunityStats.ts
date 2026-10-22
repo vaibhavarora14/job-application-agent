@@ -9,7 +9,6 @@ export type CommunityStats = {
     activeInstallations30d: number;
     jobsAssessed: number;
     applicationsSubmitted: number;
-    interviews: number;
     offers: number;
   };
   timeline: Array<{ day: string; assessed: number; submitted: number }>;

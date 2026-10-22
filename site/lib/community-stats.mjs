@@ -18,7 +18,8 @@ function integer(value) {
 
 function metricSet(input) {
   if (!isRecord(input)) return null;
-  const keys = ["installations", "activeInstallations30d", "jobsAssessed", "applicationsSubmitted", "interviews", "offers"];
+  // `interviews` is never public (decision 2026-10-22). Older relays still send it; it is ignored.
+  const keys = ["installations", "activeInstallations30d", "jobsAssessed", "applicationsSubmitted", "offers"];
   const result = {};
   for (const key of keys) {
     const value = integer(input[key]);
@@ -66,7 +67,7 @@ export function validateCommunityStats(input) {
     window: { retentionMonths: 24, activityDays: 30 },
     metrics,
     timeline,
-    breakdowns: { ats, seniority, outcomes },
+    breakdowns: { ats, seniority, outcomes: publicOutcomeEntries(outcomes) },
     privacy: {
       aggregateOnly: true,
       minimumSegmentCount: input.privacy.minimumSegmentCount,
@@ -77,9 +78,8 @@ export function validateCommunityStats(input) {
 }
 
 /**
- * Outcome labels that are still collected and returned by the stats API but are
- * intentionally not displayed on any public surface (decision 2026-10-21: the
- * reported-interviews count is too small to show).
+ * Outcome labels that are collected privately but never returned or displayed on any
+ * public surface (decisions 2026-10-21 / 2026-10-22: the interviews count is not public).
  */
 export const HIDDEN_PUBLIC_OUTCOME_LABELS = Object.freeze(["interview", "interviews"]);
 

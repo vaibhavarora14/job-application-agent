@@ -64,10 +64,19 @@ test("public outcome entries never surface the interviews count", () => {
     { label: "withdrawn", count: 26 },
   ]);
   assert.deepEqual(publicOutcomeEntries(), []);
-  // The API keeps collecting and returning the field for older clients.
-  const result = validateCommunityStats(validStats);
+  // The interviews count is never returned publicly, whether or not the relay still sends it.
+  const result = validateCommunityStats({ ...validStats, breakdowns: { ...validStats.breakdowns, outcomes } });
   assert.equal(result.ok, true);
-  assert.equal(result.data.metrics.interviews, 4);
+  assert.equal("interviews" in result.data.metrics, false);
+  assert.deepEqual(result.data.breakdowns.outcomes, [
+    { label: "rejected", count: 332 },
+    { label: "withdrawn", count: 26 },
+  ]);
+  assert.doesNotMatch(JSON.stringify(result.data), /interview/i);
+  const { interviews: _interviews, ...metricsWithoutInterviews } = validStats.metrics;
+  const newer = validateCommunityStats({ ...validStats, metrics: metricsWithoutInterviews });
+  assert.equal(newer.ok, true, "a relay that no longer sends interviews is accepted");
+  assert.equal(newer.data.metrics.installations, 195);
 });
 
 test("stats dashboard and homepage proof render outcomes through the public filter only", async () => {
