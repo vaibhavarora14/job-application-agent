@@ -229,7 +229,7 @@ test('the local review page escapes job content and approves only with the typed
   const get = await http(page.url);
   assert.equal(get.status, 200);
   assert.match(get.headers['content-security-policy'], /default-src 'none'/);
-  assert.doesNotMatch(get.text, /<script>/);
+  assert.doesNotMatch(get.text, /<script\b/i);
   assert.match(get.text, /&lt;script&gt;alert\(1\)&lt;\/script&gt;/);
   assert.match(get.text, /A &amp; &quot;B&quot;/);
   assert.equal((await http(`${url.origin}/review/wrong`)).status, 404);
