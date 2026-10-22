@@ -1,8 +1,8 @@
 <div align="center">
 
-# JobAppAgent: open-source job application agent
+# JobAppAgent: open-source AI job application agent
 
-### Find better roles, apply with verified facts, and learn from outcomes.
+### Search roles, match them to one verified résumé, apply within your rules on Greenhouse, Ashby and Lever, and track confirmed submissions.
 
 [![Validate](https://github.com/vaibhavarora14/job-application-agent/actions/workflows/validate.yml/badge.svg)](https://github.com/vaibhavarora14/job-application-agent/actions/workflows/validate.yml)
 [![npm](https://img.shields.io/npm/v/job-application-agent?logo=npm&color=CB3837)](https://www.npmjs.com/package/job-application-agent)
@@ -23,9 +23,9 @@ npx skills add vaibhavarora14/job-application-agent
 
 ---
 
-Job Application Agent is an [Agent Skill](https://agentskills.io/specification) that helps a coding agent discover, evaluate, complete, and track your own job applications. It uses one verified résumé, checks eligibility and duplicates, and records only confirmed submissions.
+JobAppAgent (Job Application Agent) is an [Agent Skill](https://agentskills.io/specification) that helps a coding agent discover, evaluate, complete, and track your own job applications. It uses one verified résumé, checks eligibility and duplicates, and records only confirmed submissions.
 
-> **☁️ Cloud access, coming soon.** A hosted agent that runs this same loop for you, so the search keeps going without your laptop. It isn't live yet. A [founding reservation ($49)](https://jobappagent.com) locks the founding price, and we email you when access opens. This open-source skill stays free under the MIT License.
+<!-- demo-video: embed goes here after approval -->
 
 ## 🔒 Privacy in 30 seconds
 
@@ -172,6 +172,39 @@ New rounds derive reviewed and qualified totals from private per-lead records, i
 
 Rounds require recorded attempts across at least three distinct discovery sources, including a successful search, and source attribution for confirmed submissions. If more than 60% of submissions come from one source, the agent must explain the concentration. Blockers and empty results are reported; fit requirements never change to meet a source quota. See [round coverage](job-application-agent/references/RUNS.md#discovery-coverage).
 
+<details>
+<summary><strong>Installation and update details</strong></summary>
+
+The installer places the skill at `~/.agents/skills/job-application-agent` and enables automatic updates by default. Compatible vendor skill directories are also supported when they already exist.
+
+```bash
+npx job-application-agent@latest status
+npx job-application-agent@latest update
+npx job-application-agent@latest updates disable
+npx job-application-agent@latest updates enable
+```
+
+Updates are staged and validated before replacement. Private candidate state lives outside the replaceable skill directory.
+
+</details>
+
+## 📍 Where to find it
+
+- [jobappagent.com](https://jobappagent.com) — product site and founding reservation for cloud access (coming soon)
+- [GitHub](https://github.com/vaibhavarora14/job-application-agent)
+- [npm](https://www.npmjs.com/package/job-application-agent)
+- [skills.sh](https://skills.sh/vaibhavarora14/job-application-agent)
+- [skills.re](https://skills.re/skills/vaibhavarora14/job-application-agent/job-application-agent)
+- [OpenAgentSkill](https://www.openagentskill.com/skills/vaibhavarora14-job-application-agent-job-application-agent)
+- [awesome-claude-skills catalog (Chat2AnyLLM)](https://chat2anyllm.github.io/awesome-claude-skills/)
+- [Agent Skills discussion](https://github.com/agentskills/agentskills/discussions/537)
+- [awesome-agent-skills (Community Skills)](https://github.com/VoltAgent/awesome-agent-skills)
+- [SkillHub](https://www.skillhub.club/app/skills/b99cbef5-2445-47d0-94d0-e6d1fac81263) (may still be in review)
+- [ClawHub](https://clawhub.ai/vaibhavarora14/skills/job-application-agent)
+- [cursor.directory](https://cursor.directory/plugins/job-application-agent) (pending review)
+
+> **☁️ Cloud access, coming soon.** A hosted agent that runs this same loop for you, so the search keeps going without your laptop. It isn't live yet. A [founding reservation ($49)](https://jobappagent.com) locks the founding price, and we email you when access opens. This open-source skill stays free under the MIT License.
+
 ## 🔐 Privacy
 
 | Data | Where it stays |
@@ -203,37 +236,6 @@ node ~/.agents/skills/job-application-agent/scripts/job-application.mjs sources 
 ```
 
 See [`ANALYTICS.md`](job-application-agent/references/ANALYTICS.md) for the event contract and retention policy, or view the [public aggregate dashboard](https://job-application-agent-telemetry.varora1406.workers.dev/).
-
-<details>
-<summary><strong>Installation and update details</strong></summary>
-
-The installer places the skill at `~/.agents/skills/job-application-agent` and enables automatic updates by default. Compatible vendor skill directories are also supported when they already exist.
-
-```bash
-npx job-application-agent@latest status
-npx job-application-agent@latest update
-npx job-application-agent@latest updates disable
-npx job-application-agent@latest updates enable
-```
-
-Updates are staged and validated before replacement. Private candidate state lives outside the replaceable skill directory.
-
-</details>
-
-## 📍 Where to find it
-
-- [jobappagent.com](https://jobappagent.com) — product site and founding reservation for cloud access (coming soon)
-- [GitHub](https://github.com/vaibhavarora14/job-application-agent)
-- [npm](https://www.npmjs.com/package/job-application-agent)
-- [skills.sh](https://skills.sh/vaibhavarora14/job-application-agent)
-- [skills.re](https://skills.re/skills/vaibhavarora14/job-application-agent/job-application-agent)
-- [OpenAgentSkill](https://www.openagentskill.com/skills/vaibhavarora14-job-application-agent-job-application-agent)
-- [awesome-claude-skills catalog (Chat2AnyLLM)](https://chat2anyllm.github.io/awesome-claude-skills/)
-- [Agent Skills discussion](https://github.com/agentskills/agentskills/discussions/537)
-- [awesome-agent-skills (Community Skills)](https://github.com/VoltAgent/awesome-agent-skills)
-- [SkillHub](https://www.skillhub.club/app/skills/b99cbef5-2445-47d0-94d0-e6d1fac81263) (may still be in review)
-- [ClawHub](https://clawhub.ai/vaibhavarora14/skills/job-application-agent)
-- [cursor.directory](https://cursor.directory/plugins/job-application-agent) (pending review)
 
 ## 🧰 Develop
 
