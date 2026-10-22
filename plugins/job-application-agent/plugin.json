@@ -53,7 +53,7 @@
       },
       "publication": {
         "countries": [],
-        "release_notes": "First Plugins Directory listing (3.7.18): skills-only Job Application Agent guidance; asks before running npm/GitHub installs; review mode by default; error analytics redact paths and usernames."
+        "release_notes": "First Plugins Directory listing: skills-only Job Application Agent guidance; asks before running npm/GitHub installs; review mode by default; error analytics redact paths and usernames."
       }
     }
   }
