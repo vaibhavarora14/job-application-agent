@@ -37,7 +37,12 @@ import {
 } from './attention-questions.mjs';
 import { confirmOutreachTowardRound, loadOutreachRoundView, loadSentVerifiedOutreach, outreachConfirmationEvents, projectOutreachRoundCounts, resolveOutreachRoundId } from './outreach-round.mjs';
 import { isFixtureOrSandboxApply, resolveApplyKind } from './ats/apply-url-gate.mjs';
-import { assessmentJobKey, createAssessmentGuard, isAssessmentGuardStop } from './assessment-guard.mjs';
+import { ASSESSMENT_GUARD_FILE, assessmentJobKey, createAssessmentGuard, invalidJobMessage, isAssessmentGuardStop } from './assessment-guard.mjs';
+import {
+  ASSESSMENT_DECISIONS_FILE, COMMUNITY_FEED_BLOCKERS, COMMUNITY_FEED_SOURCE_ID, RESUME_UPLOAD_BLOCKER, ROUND_EVIDENCE_FILE, ROUND_GATES_VERSION,
+  afterSubmissionCoverageMessage, communityFeedRequirementMessage, evaluateRoundCoverage, feedPulls, isPerJobApproval, latestAssessmentDecision, leadTimesBySource,
+  resumePreflightRecord, roundGatesRecord, routineSubmitGateMessage,
+} from './routine-gates.mjs';
 import { LEGACY_GRANT_NOTICE, applicationMatcher, approveBatch, batchToken, batchView, closeBatch, consumeReview, listBatches, loadBatch, resumeDigest, stageBatch, verifyReview } from './review-batch.mjs';
 import { reviewPageInfoFile } from './review-page.mjs';
 
@@ -888,7 +893,7 @@ function sourceId(value, label) {
 
 function knownDiscoverySourceId(value, label) {
   const id = sourceId(value, label);
-  if (!SOURCE_CATALOG_IDS.has(id) && !COMMUNITY_SOURCE_ID.test(id)) throw new Error(`${label} must match a packaged or community source ID.`);
+  if (!SOURCE_CATALOG_IDS.has(id) && !COMMUNITY_SOURCE_ID.test(id) && id !== COMMUNITY_FEED_SOURCE_ID) throw new Error(`${label} must match a packaged or community source ID.`);
   return id;
 }
 
@@ -1189,6 +1194,20 @@ export function validateLedgerCheckCandidate(input) {
   };
 }
 
+export const RESUME_FIELD_UNKNOWN = 'unknown';
+
+/**
+ * `ledger add` with a telemetry block must say whether the form had a résumé/CV field. An explicit
+ * `resumeUploaded: true` already implies it. Only the CLI requires this; the relay schema is unchanged.
+ */
+export function assertResumeFieldPresentReported(rawTelemetry) {
+  if (rawTelemetry == null || typeof rawTelemetry !== 'object' || Array.isArray(rawTelemetry)) return;
+  if (Object.hasOwn(rawTelemetry, 'resumeFieldPresent') && rawTelemetry.resumeFieldPresent != null) return;
+  if (rawTelemetry.resumeUploaded === true) return;
+  throw new Error('ledger add refused: entry.telemetry.resumeFieldPresent is required. Report true if this form had a résumé/CV upload or selection field (even optional or unused), '
+    + 'false if it had none, or "unknown" only if you never saw the form. Check every step of multi-step and one-click flows such as LinkedIn Easy Apply. Nothing was recorded; add the key and retry.');
+}
+
 export function validateSubmissionTelemetry(input) {
   if (input == null) return {};
   const value = object(input, 'entry.telemetry');
@@ -1220,8 +1239,11 @@ export function validateSubmissionTelemetry(input) {
   if (cleaned.profileResumeOnFile != null && typeof cleaned.profileResumeOnFile !== 'boolean') {
     throw new Error('entry.telemetry.profileResumeOnFile must be a Boolean.');
   }
+  // "unknown" is an explicit answer for a form the agent never saw; it is never sent anywhere
+  // (application_submitted leaves the key out, exactly like older CLIs).
+  if (cleaned.resumeFieldPresent === RESUME_FIELD_UNKNOWN) delete cleaned.resumeFieldPresent;
   if (cleaned.resumeFieldPresent != null && typeof cleaned.resumeFieldPresent !== 'boolean') {
-    throw new Error('entry.telemetry.resumeFieldPresent must be a Boolean (true if the form had a résumé/CV upload field, false if it had none); omit it when unknown.');
+    throw new Error('entry.telemetry.resumeFieldPresent must be true (the form had a résumé/CV upload or selection field), false (it had none) or "unknown" (you never saw the form).');
   }
   if (cleaned.resumeFieldPresent === false && cleaned.resumeUploaded === true) {
     throw new Error('entry.telemetry.resumeFieldPresent cannot be false when resumeUploaded is true; a résumé upload means the form had a résumé/CV field.');
@@ -1841,6 +1863,90 @@ async function openReviewPage(dir, batchId) {
   };
 }
 
+// Local-only gate evidence (see routine-gates.mjs). Never appended to cloud state or telemetry.
+async function appendRoundEvidence(event) {
+  return withStateLock('round-evidence', async (dir) => {
+    const file = join(dir, ROUND_EVIDENCE_FILE);
+    await appendFile(file, `${JSON.stringify(event)}\n`, { mode: 0o600 });
+    await chmod(file, 0o600);
+    return event;
+  });
+}
+
+async function roundEvidence(dir) {
+  return jsonLines(join(dir, ROUND_EVIDENCE_FILE));
+}
+
+/** Can the browser upload the canonical résumé to an ATS form? Checks only; never uploads or sends anything. */
+export async function resumeUploadPreflight() {
+  const checkedAt = new Date().toISOString();
+  const blocked = (reason) => ({ ok: false, blocker: RESUME_UPLOAD_BLOCKER, reason, checkedAt });
+  let path;
+  try { ({ path } = await canonicalResumePath()); } catch (error) { return blocked(error.message); }
+  let handle;
+  try { handle = await open(path, 'r'); } catch (error) {
+    return blocked(`The canonical résumé is not readable (${error.code ?? 'read error'}). Fix its permissions or import it again with resume import.`);
+  }
+  try {
+    const details = await handle.stat();
+    if (!details.isFile() || details.size === 0) return blocked('The canonical résumé file is empty. Import the résumé again with resume import.');
+    const header = Buffer.alloc(5);
+    await handle.read(header, 0, 5, 0);
+    if (header.toString('latin1') !== '%PDF-') return blocked('The canonical résumé is not a PDF, the supported upload type. Import a PDF or Google Docs résumé again with resume import.');
+    return { ok: true, type: 'pdf', checkedAt };
+  } catch (error) {
+    return blocked(`The canonical résumé could not be read (${error.code ?? 'read error'}). Import it again with resume import.`);
+  } finally {
+    await handle.close();
+  }
+}
+
+function resumeBlockers(preflight) {
+  if (!preflight || preflight.ok) return [];
+  return [{
+    blocker: RESUME_UPLOAD_BLOCKER,
+    reason: preflight.reason,
+    checkedAt: preflight.checkedAt,
+    impact: 'ATS forms that need a résumé upload cannot be completed. Tell the candidate and fix the résumé; do not quietly narrow the round to one-click boards.',
+  }];
+}
+
+async function recordCommunityFeedPull(community, result) {
+  const ok = community.lastJobRead?.ok === true;
+  await appendRoundEvidence({ type: 'community-feed-pull', ok, jobCount: Array.isArray(result?.jobs) ? result.jobs.length : 0, at: new Date().toISOString() });
+  return ok;
+}
+
+// Latest score decision per job key (hash), kept so a routine-auto send can be checked against
+// what `score` actually decided. Job key hashes, decisions, scores and times only.
+async function recordAssessmentDecision(job, result) {
+  // Same key as the skip record: the URL when scored with one, else company + title.
+  const key = assessmentJobKey(job);
+  if (!key) return;
+  await withStateLock('assessment-decisions', async (dir) => {
+    const file = join(dir, ASSESSMENT_DECISIONS_FILE);
+    const state = await readPrivateJson(file, { version: 1, jobs: {} }).catch(() => ({ version: 1, jobs: {} }));
+    const jobs = state?.jobs && typeof state.jobs === 'object' && !Array.isArray(state.jobs) ? state.jobs : {};
+    const record = { decision: result.decision, autoEligible: result.autoEligible === true, score: result.score, at: new Date().toISOString() };
+    jobs[key] = record;
+    await writePrivateJson(file, { version: 1, jobs });
+  });
+}
+
+async function latestDecisionFor(dir, { url, company, role }) {
+  const keys = [assessmentJobKey({ url }), assessmentJobKey({ company, title: role })].filter(Boolean);
+  const decisions = await readPrivateJson(join(dir, ASSESSMENT_DECISIONS_FILE), null).catch(() => null);
+  const guard = await readPrivateJson(join(dir, ASSESSMENT_GUARD_FILE), null).catch(() => null);
+  return latestAssessmentDecision(keys, { decisions, guard });
+}
+
+async function isRoutineAutoSend(entry) {
+  if (entry.approval === 'STANDING AUTHORIZATION') return true;
+  const grant = await readPrivateJson(join(await ensureStateDir(), 'autonomy.json'), null).catch(() => null);
+  if (autonomyView(grant).enabled) return true;
+  return storedSubmissionModeOrNull() === 'routine-auto';
+}
+
 // Skip decisions are final. `score` records each skip/exclude (job key hash, decision, reason,
 // time; no job text) in a private local file that the assessment-guard reset does not touch, and
 // `review stage` and `ledger add` refuse that job. A later re-score never clears it, so changing
@@ -1856,6 +1962,19 @@ async function recordAssessmentSkip(job, result) {
     const jobs = state?.jobs && typeof state.jobs === 'object' && !Array.isArray(state.jobs) ? state.jobs : {};
     if (jobs[key]) return;
     jobs[key] = { decision: result.decision, reason: skipReasonFromAssessment(result), at: new Date().toISOString() };
+    await writePrivateJson(file, { version: 1, jobs });
+  });
+}
+
+async function recordAssessmentBlock(job) {
+  const key = assessmentJobKey(job);
+  if (!key) return;
+  await withStateLock('assessment-skips', async (dir) => {
+    const file = join(dir, ASSESSMENT_SKIPS_FILE);
+    const state = await readPrivateJson(file, { version: 1, jobs: {} }).catch(() => ({ version: 1, jobs: {} }));
+    const jobs = state?.jobs && typeof state.jobs === 'object' && !Array.isArray(state.jobs) ? state.jobs : {};
+    if (jobs[key]) return;
+    jobs[key] = { decision: 'blocked', reason: 'invalid-input-retries', at: new Date().toISOString() };
     await writePrivateJson(file, { version: 1, jobs });
   });
 }
@@ -1992,7 +2111,7 @@ async function ledgerCheck(candidate) {
   return duplicateResult(entries, normalized, outcomes);
 }
 
-async function ledgerAdd(entryInput, duplicateOverride, companyReapplyOverride, cloudIntent = null, review = null) {
+async function ledgerAdd(entryInput, duplicateOverride, companyReapplyOverride, cloudIntent = null, review = null, { routineAuto = false } = {}) {
   const entry = validateLedgerEntry(entryInput);
   return withStateLock('applications', async (dir) => {
     const file = join(dir, 'applications.ndjson');
@@ -2022,6 +2141,13 @@ async function ledgerAdd(entryInput, duplicateOverride, companyReapplyOverride, 
         resumeSha256: review.resumeSha256,
       });
     }
+    // A one-application batch is the candidate's approval of this job; a routine batch item also
+    // needs the latest score to be review + autoEligible.
+    const perJobApproval = Boolean(reviewed) && isPerJobApproval(reviewed.batch);
+    if (reviewed && routineAuto && !perJobApproval) {
+      const refusal = routineSubmitGateMessage(await latestDecisionFor(dir, entry), entry.company);
+      if (refusal) throw new Error(refusal);
+    }
     const reapproved = ['cooldown-active', 'follow-up-present'].includes(duplicate.companyReapply.decision)
       ? { ...entry, reapplicationApproval: 'candidate-explicit' }
       : entry;
@@ -2044,7 +2170,14 @@ async function ledgerAdd(entryInput, duplicateOverride, companyReapplyOverride, 
       }
     }
     if (reviewed) await consumeReview(dir, reviewed.batch.batchId, reviewed.item.itemId, 'ledger-add');
-    return { recorded: storedEntry.id, review: buildReview([...entries, storedEntry], outcomes, [], new Date(), await jsonLines(join(dir, 'delivery.ndjson'))), ...(cloudIntent ? { cloudIntent: cloudIntent.intentId } : {}) };
+    let roundCount = null;
+    if (entry.roundId) {
+      await appendRoundEvidence({ type: 'submit-recorded', roundId: entry.roundId, applicationId: entry.id, at: new Date().toISOString() });
+      if (isLoggedNotAgentFilled(entry) && !perJobApproval && roundGatesRecord(await roundEvidence(dir), entry.roundId)) {
+        roundCount = { counted: false, reason: 'entryOrigin=logged entries count toward a round target only with a per-job approval (a one-application review batch). The entry is recorded in the ledger but not counted for this round.' };
+      }
+    }
+    return { recorded: storedEntry.id, ...(roundCount ? { roundCount } : {}), review: buildReview([...entries, storedEntry], outcomes, [], new Date(), await jsonLines(join(dir, 'delivery.ndjson'))), ...(cloudIntent ? { cloudIntent: cloudIntent.intentId } : {}) };
   });
 }
 
@@ -2128,7 +2261,9 @@ async function recordLead(input) {
     const events = await jsonLines(join(dir, 'discovery.ndjson'));
     if (round.completed && !event.supersedes && !events.some(e => e.id === event.id)) throw new Error('Completed rounds accept only corrections to existing leads.');
     validateLeadReferences(event, events);
-    return appendAccounting('discovery', event);
+    const result = await appendAccounting('discovery', event);
+    if (result.recorded) await appendRoundEvidence({ type: 'lead-recorded', roundId: event.roundId, sourceId: event.sourceId, leadId: event.id, at: new Date().toISOString() });
+    return result;
   });
 }
 async function leadHistory(roundId) {
@@ -2150,7 +2285,17 @@ async function roundStart(input) {
     occurredAt: isoDate(value.startedAt, 'round.startedAt'),
   };
   await appendPrivateEvent('rounds', event);
-  return { roundId: event.roundId, requestedCount: event.requestedCount, startedAt: event.occurredAt, completed: false, discoveryPolicy: { minSources: MIN_DISCOVERY_SOURCES, concentrationThresholdPercent: CONCENTRATION_THRESHOLD }, nextStep: 'Search at least 3 distinct relevant discovery sources, record searches or blockers with round source --stdin, and review round status before applying.' };
+  await appendRoundEvidence({ type: 'round-gates', version: ROUND_GATES_VERSION, roundId: event.roundId, at: new Date().toISOString() });
+  const resumePreflight = await resumeUploadPreflight();
+  await appendRoundEvidence({ type: 'resume-preflight', roundId: event.roundId, ...resumePreflight });
+  const blockers = resumeBlockers(resumePreflight);
+  return {
+    roundId: event.roundId, requestedCount: event.requestedCount, startedAt: event.occurredAt, completed: false,
+    discoveryPolicy: { minSources: MIN_DISCOVERY_SOURCES, concentrationThresholdPercent: CONCENTRATION_THRESHOLD, communityFeedPullRequired: true, coverageMustPrecedeSubmissions: true },
+    resumePreflight,
+    blockers,
+    nextStep: `${blockers.length ? `Résumé upload is unavailable (${RESUME_UPLOAD_BLOCKER}): tell the candidate now; ATS forms that need a résumé will fail. ` : ''}Run sources jobs (the community job feed, required once per round), search at least 3 distinct relevant discovery sources, record each reviewed lead with round lead --stdin and each search or blocker with round source --stdin, and review round status before applying. Coverage recorded after the round's submissions does not count.`,
+  };
 }
 
 function discoveryGroup(id) {
@@ -2228,6 +2373,28 @@ async function roundSource(input) {
       throw new Error(`Source count assertions do not match recorded leads (recorded for this source: reviewed ${reviewedCount}, qualified ${qualifiedCount}). Record every reviewed lead with round lead --stdin before round source, or omit reviewedCount/qualifiedCount so they are derived.`);
     }
     if (status === 'blocked' && (!SOURCE_BLOCKERS.has(blocker) || reviewedCount !== 0 || qualifiedCount !== 0)) throw new Error('Blocked sources require a documented blocker and zero counts.');
+    const evidence = await roundEvidence(dir);
+    const gates = roundGatesRecord(evidence, round.roundId);
+    if (gates) {
+      const pulls = feedPulls(evidence, Date.parse(gates.at));
+      if (sourceId === COMMUNITY_FEED_SOURCE_ID && status === 'searched' && !pulls.some((pull) => pull.ok === true)) {
+        throw new Error(`Coverage refused: ${COMMUNITY_FEED_SOURCE_ID} is marked searched, but no successful \`sources jobs\` pull was recorded in this round. Run \`sources jobs\` and review its leads first. If that call failed, record the source as blocked with blocker access-unavailable (community feed unavailable).`);
+      }
+      if (sourceId === COMMUNITY_FEED_SOURCE_ID && status === 'blocked' && (!pulls.some((pull) => pull.ok !== true) || !COMMUNITY_FEED_BLOCKERS.includes(blocker))) {
+        throw new Error(`Coverage refused: ${COMMUNITY_FEED_SOURCE_ID} can be recorded as blocked (community feed unavailable) only after a \`sources jobs\` call in this round failed, with blocker access-unavailable or site-error. Run \`sources jobs\` first; if it returns leads, review them and record the source as searched.`);
+      }
+      if (sourceId !== COMMUNITY_FEED_SOURCE_ID && status === 'searched' && !['recruiter-inbound', 'user-supplied-leads'].includes(sourceId)) {
+        if (!leads.length) {
+          throw new Error(`Coverage refused: ${sourceId} is marked searched, but no leads were recorded for it in this round. Record every reviewed lead with round lead --stdin before round source (an empty search is one lead with disposition "no-relevant-opening" and the search URL); a source you could not search is "blocked" with its blocker.`);
+        }
+        // Leads recorded only after every submission so far are after-the-fact coverage.
+        const lastSubmissionAt = round.routineGates?.coverage?.lastSubmissionAt;
+        const earliest = leadTimesBySource(evidence, round.roundId, await jsonLines(join(dir, 'discovery.ndjson'))).get(sourceId)?.[0];
+        if (lastSubmissionAt && Number.isFinite(earliest) && earliest > Date.parse(lastSubmissionAt)) {
+          throw new Error(afterSubmissionCoverageMessage([sourceId], lastSubmissionAt));
+        }
+      }
+    }
     const applications = await jsonLines(join(dir, 'applications.ndjson'));
     for (const id of applicationIds) {
       const entry = applications.find((item) => item.id === id && item.roundId === round.roundId && item.status === 'submitted');
@@ -2459,9 +2626,21 @@ async function roundStatus(roundId = null) {
   if (!id) throw new Error('No application round has been started.');
   const started = starts.find((event) => event.roundId === id);
   if (!started) throw new Error('Application round was not found.');
-  const matching = (await jsonLines(join(dir, 'applications.ndjson')))
+  const evidence = await roundEvidence(dir);
+  const gates = roundGatesRecord(evidence, id);
+  const roundSubmitted = (await jsonLines(join(dir, 'applications.ndjson')))
     .filter((entry) => entry.roundId === id && entry.status === 'submitted')
     .filter((entry) => !isFixtureOrSandboxApply(entry));
+  // Gated rounds: an entry logged after the fact counts toward the target only with a per-job approval.
+  const uncountedLoggedApplicationIds = [];
+  const matching = [];
+  for (const entry of roundSubmitted) {
+    if (gates && isLoggedNotAgentFilled(entry)) {
+      const batch = entry.reviewBatchId ? await loadBatch(dir, entry.reviewBatchId).catch(() => null) : null;
+      if (!isPerJobApproval(batch)) { uncountedLoggedApplicationIds.push(entry.id); continue; }
+    }
+    matching.push(entry);
+  }
   const applications = [...new Map(matching.map((entry, index) => [canonicalApplicationKey(entry, String(index)), entry])).values()];
   const delivery = deliveryProjection(matching, await jsonLines(join(dir, 'delivery.ndjson')));
   const effectiveKeys = new Set(matching.filter((entry,i) => delivery.applications[i].counted).map(canonicalApplicationKey));
@@ -2479,6 +2658,23 @@ async function roundStatus(roundId = null) {
   const audit = started.discoveryPolicyVersion === 2 ? discoveryProjection(await jsonLines(join(dir, 'discovery.ndjson')), { roundId: id }) : null;
   const attention = await attentionList(id);
   const completion = events.find((event) => event.type === 'completed' && event.roundId === id);
+  const discovery = { ...discoverySummary(events.filter((event) => event.roundId === id), effectiveApplications, completion, audit),
+    ...(audit ? { reviewedCount: audit.reviewedCount, qualifiedCount: audit.qualifiedCount, uniqueLeadCount: audit.uniqueLeadCount, dispositionCounts: audit.dispositionCounts, conflicts: audit.conflicts,
+      missingLeadApplicationIds: effectiveApplications.filter(app => !audit.leads.some(lead => !lead.conflict && lead.disposition === 'qualified' && lead.applicationId === app.id && lead.sourceId === (app.discoverySourceId ?? events.filter(e => e.type === 'source-checked' && e.applicationIds?.includes(app.id)).at(-1)?.sourceId) && (normalizedText(lead.company) === normalizedText(app.company) && (lead.employerJobId && app.employerJobId ? lead.employerJobId.toLowerCase() === app.employerJobId.toLowerCase() : canonicalUrl(lead.url) === canonicalUrl(app.url))))).map(app => app.id) } : { accounting: 'legacy-unverified' }) };
+  let routineGates = null;
+  if (gates) {
+    const submitTimes = new Map(evidence.filter((item) => item.type === 'submit-recorded' && item.roundId === id).map((item) => [item.applicationId, item.at]));
+    const coverage = evaluateRoundCoverage({
+      gates, evidence, roundId: id,
+      sourceEvents: events.filter((event) => event.type === 'source-checked' && event.roundId === id),
+      leads: (await jsonLines(join(dir, 'discovery.ndjson'))).filter((event) => event.type === 'lead-reviewed' && event.roundId === id),
+      submissions: effectiveApplications.map((entry) => ({ id: entry.id, at: submitTimes.get(entry.id) ?? entry.submittedAt })),
+      group: discoveryGroup, minSources: MIN_DISCOVERY_SOURCES,
+    });
+    discovery.coverageSatisfied = discovery.coverageSatisfied && coverage.coverageSatisfied;
+    const resumePreflight = resumePreflightRecord(evidence, id);
+    routineGates = { enforced: true, resumePreflight, blockers: resumeBlockers(resumePreflight), uncountedLoggedApplicationIds, coverage };
+  }
   return {
     roundId: id,
     requestedCount: started.requestedCount,
@@ -2495,9 +2691,8 @@ async function roundStatus(roundId = null) {
     receiptUnknownEmailCount: delivery.receiptUnknownEmailCount,
     shortfallCount: Math.max(0, started.requestedCount - confirmedCount),
     needsRecovery: Boolean(completion) && confirmedCount < started.requestedCount,
-    discovery: { ...discoverySummary(events.filter((event) => event.roundId === id), effectiveApplications, completion, audit),
-      ...(audit ? { reviewedCount: audit.reviewedCount, qualifiedCount: audit.qualifiedCount, uniqueLeadCount: audit.uniqueLeadCount, dispositionCounts: audit.dispositionCounts, conflicts: audit.conflicts,
-        missingLeadApplicationIds: effectiveApplications.filter(app => !audit.leads.some(lead => !lead.conflict && lead.disposition === 'qualified' && lead.applicationId === app.id && lead.sourceId === (app.discoverySourceId ?? events.filter(e => e.type === 'source-checked' && e.applicationIds?.includes(app.id)).at(-1)?.sourceId) && (normalizedText(lead.company) === normalizedText(app.company) && (lead.employerJobId && app.employerJobId ? lead.employerJobId.toLowerCase() === app.employerJobId.toLowerCase() : canonicalUrl(lead.url) === canonicalUrl(app.url))))).map(app => app.id) } : { accounting: 'legacy-unverified' }) },
+    discovery,
+    ...(routineGates ? { routineGates } : {}),
     startedAt: started.occurredAt,
     ...(completion ? { completedAt: completion.occurredAt } : {}),
   };
@@ -2511,7 +2706,13 @@ async function roundComplete(input) {
   const result = await withStateLock('applications', () => withStateLock('rounds', async (dir) => {
     const status = await roundStatus(string(value.roundId, 'round.roundId', 180));
     if (status.completed) return { ...status, completionRecorded: false };
-    if (status.confirmedCount < status.requestedCount) throw new Error(`Round requires ${status.requestedCount} confirmed submissions before completion.`);
+    const uncounted = status.routineGates?.uncountedLoggedApplicationIds ?? [];
+    if (status.confirmedCount < status.requestedCount) throw new Error(`Round requires ${status.requestedCount} confirmed submissions before completion.${uncounted.length ? ` ${uncounted.length} entryOrigin=logged ${uncounted.length === 1 ? 'entry is' : 'entries are'} not counted without a per-job approval (a one-application review batch).` : ''}`);
+    if (status.routineGates?.enforced) {
+      const coverage = status.routineGates.coverage;
+      if (coverage.afterSubmissionSourceIds.length) throw new Error(afterSubmissionCoverageMessage(coverage.afterSubmissionSourceIds, coverage.lastSubmissionAt));
+      if (!coverage.communityFeed.satisfied) throw new Error(communityFeedRequirementMessage());
+    }
     if (!status.discovery.coverageSatisfied) throw new Error('Round requires attempts across at least 3 distinct discovery sources, including at least one searched source. Record coverage and blockers with round source --stdin.');
     if (status.discovery.unattributedCount) throw new Error('Round requires discovery source attribution for every confirmed submission. Supply missing attribution using round source applicationIds; do not rewrite the ledger.');
     if (status.discovery.conflicts?.length || status.discovery.missingLeadApplicationIds?.length) throw new Error('Round requires qualified lead records for every submission and resolution of conflicting assessments.');
@@ -2524,7 +2725,8 @@ async function roundComplete(input) {
     const file = join(dir, 'rounds.ndjson');
     await appendFile(file, `${JSON.stringify(event)}\n`, { mode: 0o600 });
     await chmod(file, 0o600);
-    return { ...status, discovery: { ...status.discovery, ...explanation }, completed: true, completionRecorded: true, completedAt: event.occurredAt };
+    const warnings = (status.routineGates?.blockers ?? []).map((item) => `${item.blocker}: ${item.reason} Report this blocker to the candidate with the round summary.`);
+    return { ...status, discovery: { ...status.discovery, ...explanation }, completed: true, completionRecorded: true, completedAt: event.occurredAt, ...(warnings.length ? { warnings } : {}) };
   }));
   if (result.completionRecorded) await appendCloudEvent('rounds', { type: 'completed', roundId: result.roundId, occurredAt: result.completedAt, ...(result.discovery.concentrationReason ? { concentrationReason: result.discovery.concentrationReason, concentrationEvidence: result.discovery.concentrationEvidence } : {}) });
   return result;
@@ -2863,12 +3065,17 @@ async function executeCommand([area, action, value], telemetry, session, communi
     } catch (error) {
       if (isAssessmentGuardStop(error)) throw error;
       const status = await guard.failure(ticket, error, { invalidInput: telemetryErrorCode(error) === 'invalid_input' }, writePrivateJson).catch(() => null);
+      if (status?.jobBlocked) {
+        await recordAssessmentBlock(job);
+        error.message = `${error.message} ${invalidJobMessage(status.jobBlocked.count, status.jobBlocked.lastMessage)}`;
+      }
       if (status?.stopped && status.stopReason === 'invalid_input') {
         error.message = `${error.message} Assessment guard: ${status.consecutiveInvalidInput} score calls in a row failed with invalid input; further score calls are refused until ${status.stoppedUntil}. STOP the run, fix the job JSON, and tell the user.`;
       }
       throw error;
     }
     result.assessmentGuard = await guard.success(ticket, result, writePrivateJson);
+    await recordAssessmentDecision(job, result);
     await emitDomainEvent(telemetry, session, await telemetryJobAssessed(job, result));
     if (result.decision === 'skip' || result.decision === 'exclude') {
       await recordAssessmentSkip(job, result);
@@ -2896,6 +3103,8 @@ async function executeCommand([area, action, value], telemetry, session, communi
     // Read the stored profile only for thin submits so filled submits never depend on profile storage.
     const profileSubmissionMode = isThinSubmission(baseEntry, fillMetrics) ? storedSubmissionModeOrNull() : null;
     const fillGuard = assertSubmissionFillGuard(baseEntry, fillMetrics, input.thinSubmissionOverride, { profileSubmissionMode, jobApprovalMode });
+    // After the empty-submit guard (its refusal is the more basic one), before anything is recorded.
+    assertResumeFieldPresentReported(input.telemetry);
     if (fillGuard.thinSubmissionOverrideUsed) {
       await assertAndRecordThinOverrideUse(fillGuard.candidateConfirmation, baseEntry.url);
     }
@@ -2913,7 +3122,8 @@ async function executeCommand([area, action, value], telemetry, session, communi
     const review = requiresBatchReview(entry.url)
       ? { credentials: { reviewBatchId: input.reviewBatchId, reviewToken: input.reviewToken }, resumeSha256: (await currentResumeDigest())?.sha256 }
       : null;
-    result = await ledgerAdd(entry, input.duplicateOverride, input.companyReapplyOverride, input.cloudIntentId && input.cloudLeaseId ? { intentId: input.cloudIntentId, leaseId: input.cloudLeaseId } : null, review);
+    const routineAuto = review ? await isRoutineAutoSend(entry) : false;
+    result = await ledgerAdd(entry, input.duplicateOverride, input.companyReapplyOverride, input.cloudIntentId && input.cloudLeaseId ? { intentId: input.cloudIntentId, leaseId: input.cloudLeaseId } : null, review, { routineAuto });
     result.communityJob = await communityJobsSync(community, { limit: 1, applicationIds: [entry.id] });
     const fillTelemetryReview = telemetrySupplied ? await reviewRapidFireFillTelemetry(entry, input.telemetry) : null;
     if (fillTelemetryReview) result.fillTelemetryReview = fillTelemetryReview;
@@ -2969,8 +3179,11 @@ async function executeCommand([area, action, value], telemetry, session, communi
   else if (area === 'sources' && action === 'suggest' && value === '--stdin') result = await sourcesSuggest(await jsonStdin(), community);
   else if (area === 'sources' && action === 'pending' && value == null) result = await communityPendingStatus();
   else if (area === 'sources' && action === 'sync' && value == null) result = await syncAllCommunityData(community);
-  else if (area === 'sources' && action === 'jobs' && value == null) result = await community.listJobs();
-  else if (area === 'sources' && action === 'jobs' && value === '--stdin') result = await community.listJobs(await jsonStdin());
+  else if (area === 'sources' && action === 'jobs' && (value == null || value === '--stdin')) {
+    result = await community.listJobs(value === '--stdin' ? await jsonStdin() : undefined);
+    // Recorded locally so `round source`/`round complete` can verify the community feed was pulled.
+    if (!await recordCommunityFeedPull(community, result)) result = { ...result, communityFeedUnavailable: true };
+  }
   else if (area === 'sources' && action === 'sharing' && ['status', 'enable', 'disable', 'reset'].includes(value)) {
     result = await community.configure(value);
     if (value === 'enable') result.communityJobs = await communityJobsSync(community);

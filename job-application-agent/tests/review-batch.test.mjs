@@ -128,7 +128,11 @@ test('changed answers, a job outside the batch, a removed job and a reused appro
   const removed = cli(env, ['ledger', 'add', '--stdin'], { ...entry({ id: 'beta-1', company: 'Beta', url: 'https://jobs.lever.co/beta/1' }), ...creds });
   assert.match(removed.stderr, /removed item 2 \(Beta\)/);
 
-  assert.equal(cli(env, ['ledger', 'add', '--stdin'], { ...entry(), ...creds }).status, 0);
+  // Item 1 of a routine (multi-job) batch: under STANDING AUTHORIZATION it also needs a review +
+  // autoEligible score decision, and none was recorded here...
+  assert.match(cli(env, ['ledger', 'add', '--stdin'], { ...entry(), ...creds }).stderr, /Routine-auto submit refused for Acme: no score decision is recorded/);
+  // ...while an attended send of the same approved item is recorded.
+  assert.equal(cli(env, ['ledger', 'add', '--stdin'], { ...entry({ approval: 'APPROVE SUBMIT' }), ...creds }).status, 0);
   const match = applicationMatcher({ applicationId: 'acme-staff-1', url: item().url, answers });
   await assert.rejects(verifyReview(directory, creds, { action: 'test', match }), /already used/);
   await assert.rejects(consumeReview(directory, review.reviewBatchId, 'i1', 'again'), /already used/);

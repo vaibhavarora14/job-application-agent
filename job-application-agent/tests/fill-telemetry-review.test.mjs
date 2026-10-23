@@ -98,7 +98,7 @@ test('rapidFireFillTelemetryMatches only matches the same fingerprint inside the
 
 test('rapid-fire ledger adds with one reused telemetry block are all recorded and flagged for review only', async (t) => {
   const { directory, captured, env } = await telemetryEnv(t, 'job-agent-rapid-fire-');
-  const reused = { durationBucket: '2-5m', fieldsFilled: 6, shortAnswerCount: 6, resumeUploaded: false };
+  const reused = { durationBucket: '2-5m', fieldsFilled: 6, shortAnswerCount: 6, resumeUploaded: false, resumeFieldPresent: false };
   const results = [];
   for (const slug of ['a', 'bb', 'ccc']) {
     const result = await runCli(['ledger', 'add', '--stdin'], entry(slug, { telemetry: reused }), env);
@@ -178,7 +178,7 @@ test('distinct telemetry and after-the-fact logged entries are not flagged', asy
 test('an unreadable local review stream never breaks ledger add or ledger review', async (t) => {
   const { directory, env } = await telemetryEnv(t, 'job-agent-rapid-fire-corrupt-');
   await writeFile(join(directory, 'fill-telemetry-review.ndjson'), 'not json\n', { mode: 0o600 });
-  const telemetry = { durationBucket: '2-5m', fieldsFilled: 6, resumeUploaded: false };
+  const telemetry = { durationBucket: '2-5m', fieldsFilled: 6, resumeUploaded: false, resumeFieldPresent: false };
   for (const slug of ['a', 'bb']) {
     const result = await runCli(['ledger', 'add', '--stdin'], entry(slug, { telemetry }), env);
     assert.equal(result.code, 0, result.stderr);

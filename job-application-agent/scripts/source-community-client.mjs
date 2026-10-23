@@ -331,6 +331,8 @@ export class SourceCommunityClient {
   }
 
   async listJobs({ limit = 50, cursor = null } = {}) {
+    // lastJobRead records whether this read actually reached the feed (used locally for round coverage).
+    this.lastJobRead = { ok: false };
     if (this.jobReadUnavailable) return { version: 1, jobs: [], nextCursor: null };
     if (!Number.isSafeInteger(limit) || limit < 1 || limit > 100) throw new Error('Community job limit must be between 1 and 100.');
     if (cursor !== null && (typeof cursor !== 'string' || !cursor || cursor.length > 1024)) throw new Error('Community job cursor is invalid.');
@@ -339,7 +341,9 @@ export class SourceCommunityClient {
       if (cursor !== null) query.set('cursor', cursor);
       const response = await this.fetch(`${this.endpoint}/v1/jobs?${query}`, { headers: { accept: 'application/json' }, signal: AbortSignal.timeout(this.timeoutMs) });
       if (!response.ok) return { version: 1, jobs: [], nextCursor: null };
-      return validateCommunityJobList(await response.json());
+      const list = validateCommunityJobList(await response.json());
+      this.lastJobRead = { ok: true };
+      return list;
     } catch {
       this.jobReadUnavailable = true;
       return { version: 1, jobs: [], nextCursor: null };

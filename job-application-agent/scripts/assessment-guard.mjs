@@ -7,7 +7,9 @@
 //   - never re-scores identical input for the same job inside the window (returns the earlier
 //     result without emitting telemetry) and refuses a job after a few attempts;
 //   - backs off exponentially after invalid input and hard-stops after N consecutive
-//     invalid-input failures (default 5) with a message that says to stop and what to fix.
+//     invalid-input failures (default 5) with a message that says to stop and what to fix;
+//   - caps invalid-input failures on the same job (default 3, with backoff between them): after
+//     that the job is blocked for the run and the CLI records it as a final local skip.
 // The state holds job keys (hashes), input digests, timestamps and the last decision only.
 
 import { createHash, randomUUID } from 'node:crypto';
@@ -22,6 +24,7 @@ export const ASSESSMENT_GUARD_DEFAULTS = Object.freeze({
   windowMinutes: 360,
   maxPerJob: 3,
   maxConsecutiveInvalid: 5,
+  maxInvalidPerJob: 3,
   maxConsecutiveRepeats: 20,
   stopMinutes: 30,
   backoffBaseMs: 1_000,
@@ -33,6 +36,7 @@ const ENV_KEYS = Object.freeze({
   windowMinutes: ['JOB_APPLICATION_AGENT_ASSESSMENT_WINDOW_MINUTES', 1, 7 * 24 * 60],
   maxPerJob: ['JOB_APPLICATION_AGENT_MAX_ASSESSMENTS_PER_JOB', 1, 100],
   maxConsecutiveInvalid: ['JOB_APPLICATION_AGENT_MAX_CONSECUTIVE_INVALID', 1, 1_000],
+  maxInvalidPerJob: ['JOB_APPLICATION_AGENT_MAX_INVALID_PER_JOB', 1, 100],
   maxConsecutiveRepeats: ['JOB_APPLICATION_AGENT_MAX_CONSECUTIVE_REPEATS', 1, 10_000],
   stopMinutes: ['JOB_APPLICATION_AGENT_ASSESSMENT_STOP_MINUTES', 0, 7 * 24 * 60],
   backoffBaseMs: ['JOB_APPLICATION_AGENT_ASSESSMENT_BACKOFF_MS', 0, 60_000],
@@ -101,7 +105,7 @@ export function assessmentInputDigest(job, target) {
 }
 
 function emptyState() {
-  return { version: 1, assessments: [], jobs: {}, invalid: { consecutive: 0, lastAt: null, lastMessage: null }, repeats: 0, stop: null };
+  return { version: 1, assessments: [], jobs: {}, invalidJobs: {}, invalid: { consecutive: 0, lastAt: null, lastMessage: null }, repeats: 0, stop: null };
 }
 
 function normalizeState(raw) {
@@ -109,6 +113,7 @@ function normalizeState(raw) {
   if (!raw || typeof raw !== 'object' || raw.version !== 1) return state;
   if (Array.isArray(raw.assessments)) state.assessments = raw.assessments.filter((row) => row && typeof row.at === 'string');
   if (raw.jobs && typeof raw.jobs === 'object' && !Array.isArray(raw.jobs)) state.jobs = raw.jobs;
+  if (raw.invalidJobs && typeof raw.invalidJobs === 'object' && !Array.isArray(raw.invalidJobs)) state.invalidJobs = raw.invalidJobs;
   if (raw.invalid && typeof raw.invalid === 'object') {
     state.invalid = {
       consecutive: Number.isInteger(raw.invalid.consecutive) && raw.invalid.consecutive > 0 ? raw.invalid.consecutive : 0,
@@ -126,6 +131,9 @@ function prune(state, nowMs, config) {
   state.assessments = state.assessments.filter((row) => Date.parse(row.at) > cutoff);
   for (const [key, job] of Object.entries(state.jobs)) {
     if (!job || typeof job !== 'object' || !(Date.parse(job.lastAt) > cutoff)) delete state.jobs[key];
+  }
+  for (const [key, job] of Object.entries(state.invalidJobs)) {
+    if (!job || typeof job !== 'object' || !(Date.parse(job.lastAt) > cutoff)) delete state.invalidJobs[key];
   }
   if (state.stop && !(Date.parse(state.stop.until) > nowMs)) state.stop = null;
   return state;
@@ -175,6 +183,13 @@ function stopMessage(stop, config) {
     + `${resume}`;
 }
 
+/** Refusal for a job whose own score input kept failing validation. */
+export function invalidJobMessage(count, lastMessage) {
+  return `Assessment guard: this job failed with invalid input ${count} times in this run, so it is now blocked and recorded as skipped (invalid-input-retries). `
+    + 'STOP retrying it: it will not be scored, staged or submitted. '
+    + `Last error: ${lastMessage || 'invalid job input'} Tell the user which job failed and why, and move on to other jobs. ${SCHEMA_HINT}`;
+}
+
 export function createAssessmentGuard({ dir, withLock, env = process.env, now = () => new Date(), sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms)) }) {
   const config = assessmentGuardConfig(env);
   const file = () => join(dir(), ASSESSMENT_GUARD_FILE);
@@ -209,6 +224,8 @@ export function createAssessmentGuard({ dir, withLock, env = process.env, now = 
       maxPerJob: config.maxPerJob,
       consecutiveInvalidInput: state.invalid.consecutive,
       maxConsecutiveInvalidInput: config.maxConsecutiveInvalid,
+      maxInvalidInputPerJob: config.maxInvalidPerJob,
+      blockedInvalidJobs: Object.values(state.invalidJobs).filter((job) => job?.count >= config.maxInvalidPerJob).length,
       stopped: Boolean(state.stop && Date.parse(state.stop.until) > nowMs),
       ...(state.stop ? { stopReason: state.stop.reason, stoppedUntil: state.stop.until } : {}),
     };
@@ -251,14 +268,28 @@ export function createAssessmentGuard({ dir, withLock, env = process.env, now = 
      */
     async before(job, target, write) {
       const snapshot = prune(await load(), now().getTime(), config);
-      if (!snapshot.stop && snapshot.invalid.consecutive > 0 && snapshot.invalid.lastAt) {
-        const wait = Date.parse(snapshot.invalid.lastAt) + invalidInputBackoffMs(snapshot.invalid.consecutive, config) - now().getTime();
+      const jobKey = assessmentJobKey(job);
+      if (!snapshot.stop) {
+        let wait = 0;
+        if (snapshot.invalid.consecutive > 0 && snapshot.invalid.lastAt) {
+          wait = Date.parse(snapshot.invalid.lastAt) + invalidInputBackoffMs(snapshot.invalid.consecutive, config) - now().getTime();
+        }
+        // Per-job backoff: a job that keeps failing waits longer even when other jobs succeed in between.
+        const invalidJob = jobKey ? snapshot.invalidJobs[jobKey] : null;
+        if (invalidJob?.count > 0 && invalidJob.count < config.maxInvalidPerJob && invalidJob.lastAt) {
+          wait = Math.max(wait, Date.parse(invalidJob.lastAt) + invalidInputBackoffMs(invalidJob.count, config) - now().getTime());
+        }
         if (wait > 0) await sleep(Math.min(wait, config.backoffMaxMs));
       }
-      const jobKey = assessmentJobKey(job);
       const digest = assessmentInputDigest(job, target);
       return mutate((state) => {
         if (state.stop) throw refuse(state);
+        const invalidJob = jobKey ? state.invalidJobs[jobKey] : null;
+        if (invalidJob?.count >= config.maxInvalidPerJob) {
+          const first = invalidJob.refusalNotified !== true;
+          invalidJob.refusalNotified = true;
+          throw new AssessmentGuardStop(invalidJobMessage(invalidJob.count, invalidJob.lastMessage), { reason: 'same_job_invalid', suppressTelemetry: !first });
+        }
         const at = now().toISOString();
         const record = jobKey ? state.jobs[jobKey] : null;
         if (record) {
@@ -301,6 +332,7 @@ export function createAssessmentGuard({ dir, withLock, env = process.env, now = 
     async success(ticket, result, write) {
       return mutate((state) => {
         state.invalid = { consecutive: 0, lastAt: null, lastMessage: null };
+        if (ticket?.jobKey) delete state.invalidJobs[ticket.jobKey];
         const at = now().toISOString();
         if (ticket?.reservation) {
           state.repeats = 0;
@@ -332,7 +364,14 @@ export function createAssessmentGuard({ dir, withLock, env = process.env, now = 
         if (state.invalid.consecutive >= config.maxConsecutiveInvalid && !state.stop) {
           setStop(state, 'invalid_input', state.invalid.consecutive, { lastMessage: state.invalid.lastMessage });
         }
-        return view(state);
+        let jobBlocked = null;
+        if (ticket?.jobKey) {
+          const previous = state.invalidJobs[ticket.jobKey];
+          const count = (previous?.count ?? 0) + 1;
+          state.invalidJobs[ticket.jobKey] = { count, lastAt: state.invalid.lastAt, lastMessage: state.invalid.lastMessage };
+          if (count >= config.maxInvalidPerJob) jobBlocked = { count, lastMessage: state.invalid.lastMessage };
+        }
+        return { ...view(state), ...(jobBlocked ? { jobBlocked } : {}) };
       }, write);
     },
   };

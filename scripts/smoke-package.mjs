@@ -69,12 +69,14 @@ try {
   assert.equal(round.discoveryPolicy.minSources, 3);
   assert.equal(round.discoveryPolicy.concentrationThresholdPercent, 60);
   assert.equal(run(['round', 'status', round.roundId]).discovery.coverageSatisfied, false);
-  for (const sourceId of ['linkedin-jobs-feed', 'indeed', 'hacker-news-who-is-hiring']) {
-    run(['round', 'source', '--stdin'], { roundId: round.roundId, sourceId, status: 'searched', reviewedCount: 0, qualifiedCount: 0, evidence: 'Synthetic package verification: no matching results.' });
+  // Verified coverage: the community feed pull (offline here, so recorded as its blocker) and a
+  // recorded lead per searched board, all before the round's submission.
+  assert.equal(run(['sources', 'jobs']).communityFeedUnavailable, true);
+  run(['round', 'source', '--stdin'], { roundId: round.roundId, sourceId: 'community-jobs-feed', status: 'blocked', blocker: 'access-unavailable', evidence: 'Synthetic package verification: community feed unreachable offline.' });
+  for (const sourceId of ['linkedin-jobs-feed', 'hacker-news-who-is-hiring']) {
+    run(['round', 'lead', '--stdin'], { roundId: round.roundId, sourceId, url: `https://package.fixture.example/search/${sourceId}`, company: `${sourceId} search`, disposition: 'no-relevant-opening', evidence: 'Synthetic package verification: no matching results.' });
+    run(['round', 'source', '--stdin'], { roundId: round.roundId, sourceId, status: 'searched', evidence: 'Synthetic package verification: no matching results.' });
   }
-  const coverage = run(['round', 'status', round.roundId]).discovery;
-  assert.equal(coverage.coverageSatisfied, true);
-  assert.equal(coverage.searchedSourceCount, 3);
   const app = {
     id: 'smoke-app', company: 'Package Fixture', role: 'Senior Engineer', url: 'https://package.fixture.example/jobs/1',
     source: 'email', discoverySourceId: 'indeed', roundId: round.roundId, score: 90, status: 'submitted',
@@ -83,6 +85,10 @@ try {
   };
   run(['round','lead','--stdin'], { id: 'smoke-lead', roundId: round.roundId, sourceId: 'indeed', url: app.url, company: app.company, role: app.role, applicationId: app.id, disposition: 'qualified', observedAt: app.submittedAt, evidence: 'Synthetic package lead meets the target.' });
   assert.equal(run(['round','leads',round.roundId]).qualifiedCount, 1);
+  run(['round', 'source', '--stdin'], { roundId: round.roundId, sourceId: 'indeed', status: 'searched', evidence: 'Synthetic package verification: one qualifying lead.' });
+  const coverage = run(['round', 'status', round.roundId]).discovery;
+  assert.equal(coverage.coverageSatisfied, true);
+  assert.equal(coverage.searchedSourceCount, 3);
   // Batch review: a live submission needs the candidate's approval token.
   const approve = (items) => {
     const staged = run(['review', 'stage', '--stdin'], { items });

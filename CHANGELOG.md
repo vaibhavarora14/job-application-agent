@@ -1,5 +1,14 @@
 # Changelog
 
+## Unreleased
+
+- **Verified source coverage (local).** In rounds started by this version, `round source` refuses `status: "searched"` for a board with no `round lead` records in the round, or whose leads were all recorded after the round's latest submission. The community job feed is `community-jobs-feed`: `searched` needs a successful `sources jobs` pull since `round start`, and `blocked` (community feed unavailable, blocker `access-unavailable`/`site-error`) is accepted only after a `sources jobs` call in the round failed (its output now carries `communityFeedUnavailable: true`). `round complete` requires one community feed pull (or that recorded failure) before the round's submissions and rejects coverage recorded only after them. Evidence is kept in a private local `round-evidence.ndjson`; nothing new is synced or sent. Rounds started by older versions keep the earlier rules.
+- **Résumé upload preflight.** `round start` checks the canonical résumé is imported, readable, non-empty and a PDF, and records a `resume-upload-unavailable` blocker otherwise. It is returned by `round start`, listed in `round status` (`routineGates.blockers`) and repeated in `round complete` `warnings`.
+- **`resumeFieldPresent` is required** on every `ledger add` that carries a `telemetry` block (`true`, `false`, or `"unknown"` for a form the agent never saw; `resumeUploaded: true` implies `true`). `"unknown"` is not sent, so `application_submitted` and the relay schema are unchanged.
+- **Routine-auto submit gate.** Under a routine-auto profile, an autonomy grant or `STANDING AUTHORIZATION`, `ledger add` refuses an item from a multi-job review batch unless the job's latest `score` decision is `review` with `autoEligible: true` (kept locally in `assessment-decisions.json`: job-key hash, decision, score, time). `ask`, manual-review and unscored jobs need their own one-application batch. In gated rounds, `entryOrigin=logged` entries count toward the round target only with such a per-job approval.
+- **Per-job invalid-input cap.** `score` backs off between invalid-input failures of the same job and, after 3, blocks it and records it as a final local skip (`invalid-input-retries`), even when other jobs succeed in between.
+- Telemetry, relay and community payloads are unchanged.
+
 ## 3.8.3
 
 - **A skip is final.** When `score` returns `skip` or `exclude`, the CLI saves the job's hashed key, the decision, a coarse reason and the time in a private, local-only `assessment-skips.json` (no job text; never synced to cloud state or sent to any relay). `review stage` and `ledger add` now refuse that job in every mode. A re-score with changed input or `score guard-reset` does not clear it. Before this, a skipped job could still be staged, submitted and recorded.

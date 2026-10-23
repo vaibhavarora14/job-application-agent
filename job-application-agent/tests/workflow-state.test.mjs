@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
 import { withTestReview } from './support/review-approval.mjs';
+import { asLegacyRound } from './support/legacy-round.mjs';
 import { fileURLToPath } from 'node:url';
 
 import { communityJobsPending, communityJobsSync, sourcesList, sourcesSync, validateLedgerEntry } from '../scripts/job-application.mjs';
@@ -114,6 +115,8 @@ test('counts only unique confirmed ledger submissions for an explicit round', as
   const { directory, env } = await fixture(t, 'round');
   const started = cli(env, ['round', 'start', '--stdin'], { requestedCount: 30 });
   assert.match(started.roundId, /^round-/);
+  // Submits before discovery records: only a round from a pre-gates CLI completes this way.
+  await asLegacyRound(directory, started.roundId);
 
   cli(env, ['attention', 'add', '--stdin'], {
     roundId: started.roundId,
@@ -153,8 +156,9 @@ test('counts only unique confirmed ledger submissions for an explicit round', as
 });
 
 test('round completion requires distinct source coverage and explains concentration without imposing submission quotas', async (t) => {
-  const { env } = await fixture(t, 'source-coverage');
+  const { directory, env } = await fixture(t, 'source-coverage');
   const { roundId } = cli(env, ['round', 'start', '--stdin'], { requestedCount: 2 });
+  await asLegacyRound(directory, roundId);
   for (const i of [1, 2]) cli(env, ['ledger', 'add', '--stdin'], submission(i, roundId, { discoverySourceId: 'linkedin-jobs-feed' }));
   assert.match(cliFailure(env, ['round', 'complete', '--stdin'], { roundId }).stderr, /3 distinct discovery sources/i);
   recordLeads(env,roundId,'linkedin-jobs-feed',[submission(1,roundId),submission(2,roundId)],8);
@@ -180,6 +184,7 @@ test('round completion requires distinct source coverage and explains concentrat
 test('discovery coverage rejects invalid reports and requires attribution without rewriting confirmed ledger rows', async (t) => {
   const { env, directory } = await fixture(t, 'source-validation');
   const { roundId } = cli(env, ['round', 'start', '--stdin'], { requestedCount: 1 });
+  await asLegacyRound(directory, roundId);
   cli(env, ['ledger', 'add', '--stdin'], submission(1, roundId));
   const before = await readFile(join(directory, 'applications.ndjson'), 'utf8');
   const check = { roundId, sourceId: 'linkedin-jobs-feed', status: 'searched', reviewedCount: 4, qualifiedCount: 1, evidence: 'Checked relevant listings against the candidate target.' };
@@ -199,6 +204,9 @@ test('discovery coverage rejects invalid reports and requires attribution withou
 test('source diversity is independent of ATS and concentration explanations are unnecessary for a balanced mix', async (t) => {
   const { env } = await fixture(t, 'balanced-discovery');
   const { roundId } = cli(env, ['round', 'start', '--stdin'], { requestedCount: 5 });
+  // The community feed is unreachable in tests (127.0.0.1:9), so record that failed pull as its blocker.
+  assert.equal(cli(env, ['sources', 'jobs']).communityFeedUnavailable, true);
+  cli(env, ['round', 'source', '--stdin'], { roundId, sourceId: 'community-jobs-feed', status: 'blocked', blocker: 'access-unavailable', evidence: 'sources jobs could not reach the community feed.' });
   const ids = ['linkedin-jobs-feed', 'indeed', 'hacker-news-who-is-hiring'];
   for (const sourceId of ids) {
     const entries=Array.from({length:5},(_,i)=>submission(i+1,roundId)).filter((_,i)=>ids[i%3]===sourceId);

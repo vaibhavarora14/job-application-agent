@@ -515,7 +515,7 @@ test('blocks ledger add for empty fill metrics without thin override', async (t)
     role: 'Empty Apply Engineer',
     approval: 'APPROVE SUBMIT',
     url: 'https://jobs.example.com/empty-submit-ack',
-    telemetry: { fieldsFilled: 0, resumeUploaded: false, durationBucket: 'under-1s' },
+    telemetry: { fieldsFilled: 0, resumeUploaded: false, resumeFieldPresent: false, durationBucket: 'under-1s' },
     thinSubmissionOverride: thinOverride('Candidate confirmed empty apply for Empty Ack Co Engineer in chat'),
   }, env);
   assert.equal(allowed.code, 0, allowed.stderr);
@@ -526,7 +526,7 @@ test('blocks ledger add for empty fill metrics without thin override', async (t)
     role: 'Reuse Engineer',
     approval: 'APPROVE SUBMIT',
     url: 'https://jobs.example.com/empty-submit-reuse',
-    telemetry: { fieldsFilled: 0, resumeUploaded: false, durationBucket: 'under-1s' },
+    telemetry: { fieldsFilled: 0, resumeUploaded: false, resumeFieldPresent: false, durationBucket: 'under-1s' },
     thinSubmissionOverride: thinOverride('Candidate confirmed empty apply for Empty Ack Co Engineer in chat'),
   }, env);
   assert.equal(reused.code, 1);
@@ -539,7 +539,7 @@ test('blocks ledger add for empty fill metrics without thin override', async (t)
     url: 'https://www.hirist.tech/j/example-role-1',
     source: 'other',
     applicationChannel: PROFILE_ONE_CLICK_CHANNEL,
-    telemetry: { fieldsFilled: 0, resumeUploaded: false, profileResumeOnFile: true, durationBucket: 'under-1s' },
+    telemetry: { fieldsFilled: 0, resumeUploaded: false, profileResumeOnFile: true, resumeFieldPresent: false, durationBucket: 'under-1s' },
   }, env);
   assert.equal(oneClick.code, 0, oneClick.stderr);
   const filled = await runCli(script, ['ledger', 'add', '--stdin'], {
@@ -597,14 +597,15 @@ test('validates optional resumeFieldPresent as a Boolean and infers it only from
   assert.equal(validateSubmissionTelemetry({ fieldsFilled: 6, resumeUploaded: false, resumeFieldPresent: false }).resumeFieldPresent, false);
   assert.equal(validateSubmissionTelemetry({ fieldsFilled: 6, resumeUploaded: false, resumeFieldPresent: true }).resumeFieldPresent, true);
   assert.equal(validateSubmissionTelemetry({ fieldsFilled: 6, resumeUploaded: true, resumeFieldPresent: true }).resumeFieldPresent, true);
-  // Unknown stays unknown: no key at all.
+  // Unknown stays unknown: no key at all, whether omitted (refused later by ledger add) or the explicit "unknown".
   assert.equal('resumeFieldPresent' in validateSubmissionTelemetry({ fieldsFilled: 6, resumeUploaded: false }), false);
+  assert.equal('resumeFieldPresent' in validateSubmissionTelemetry({ fieldsFilled: 6, resumeUploaded: false, resumeFieldPresent: 'unknown' }), false);
   assert.equal('resumeFieldPresent' in validateSubmissionTelemetry({ fieldsFilled: 6 }), false);
   assert.equal('resumeFieldPresent' in validateSubmissionTelemetry({ fieldsFilled: 6, resumeUploaded: false, resumeFieldPresent: null }), false);
   // Explicit upload implies a field.
   assert.equal(validateSubmissionTelemetry({ fieldsFilled: 6, resumeUploaded: true }).resumeFieldPresent, true);
   for (const bad of ['yes', 'true', 1, 0, {}, []]) {
-    assert.throws(() => validateSubmissionTelemetry({ fieldsFilled: 6, resumeUploaded: false, resumeFieldPresent: bad }), /resumeFieldPresent must be a Boolean/);
+    assert.throws(() => validateSubmissionTelemetry({ fieldsFilled: 6, resumeUploaded: false, resumeFieldPresent: bad }), /resumeFieldPresent must be true .*false .*or "unknown"/);
   }
   assert.throws(
     () => validateSubmissionTelemetry({ fieldsFilled: 6, resumeUploaded: true, resumeFieldPresent: false }),
@@ -658,7 +659,7 @@ test('ledger add emits resumeFieldPresent to the relay and keeps it out of the l
   for (const [slug, telemetry] of [
     ['none', { durationBucket: '1-2m', fieldsFilled: 6, shortAnswerCount: 1, resumeUploaded: false, resumeFieldPresent: false }],
     ['present', { durationBucket: '2-5m', fieldsFilled: 8, shortAnswerCount: 1, resumeUploaded: true, resumeFieldPresent: true }],
-    ['unknown', { durationBucket: '2-5m', fieldsFilled: 6, shortAnswerCount: 1, resumeUploaded: false }],
+    ['unknown', { durationBucket: '2-5m', fieldsFilled: 6, shortAnswerCount: 1, resumeUploaded: false, resumeFieldPresent: 'unknown' }],
   ]) {
     const result = await runCli(script, ['ledger', 'add', '--stdin'], entry(slug, telemetry), env);
     assert.equal(result.code, 0, result.stderr);
@@ -1544,7 +1545,7 @@ const profileGuardBase = {
   company: 'Example', role: 'Engineer', source: 'lever', score: 80, status: 'submitted',
   submittedAt: '2026-10-19T05:00:00Z', answers: {},
 };
-const emptyTelemetry = { fieldsFilled: 0, resumeUploaded: false, durationBucket: 'under-1s' };
+const emptyTelemetry = { fieldsFilled: 0, resumeUploaded: false, resumeFieldPresent: false, durationBucket: 'under-1s' };
 
 test('ledger add under a routine-auto profile blocks empty applies and allows a per-job review-each override', {
   skip: process.platform === 'win32',
