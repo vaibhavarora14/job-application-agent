@@ -1,5 +1,13 @@
 # Changelog
 
+## 3.8.2
+
+- **Review flag for reused fill telemetry (never blocks).** After a live `ledger add` with fill telemetry, the CLI saves a digest of the telemetry block in a private, local-only `fill-telemetry-review.ndjson` (never synced to cloud state or sent to any relay). If another live add in the previous 120 seconds carried the identical block, the add is still recorded unchanged. The CLI then prints `WARNING: Flagged for review (not blocked)` on stderr, adds `fillTelemetryReview` to the `ledger add` output, and lists the flag under `fillTelemetryReviewFlags` in `ledger review`. Logged-after-the-fact entries (no telemetry block) are never checked. Telemetry is unchanged: no new fields or events, and `application_submitted` / `review_generated` send exactly what they did before.
+- SKILL.md (all copies) and `references/SCHEMAS.md`:
+  - always report `resumeFieldPresent` (`true`/`false`) after every live fill, explicitly including LinkedIn Easy Apply
+  - build each submit's telemetry from its own fill and never reuse one submit's telemetry for another
+  - log after-the-fact entries without a telemetry block so they are recorded as `entryOrigin=logged`
+
 ## 3.8.1
 
 Packaging and registry-scan fixes only; no behavior change.
