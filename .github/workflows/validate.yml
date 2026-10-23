@@ -5,7 +5,8 @@ on:
     branches: [main]
   pull_request:
     # `labeled` lets adding the `full-matrix` label start the macOS/Windows legs.
-    types: [opened, synchronize, reopened, labeled]
+    # `ready_for_review` starts CI when a draft is marked ready; drafts run nothing.
+    types: [opened, synchronize, reopened, ready_for_review, labeled]
   # Manual run of the whole matrix (all OS legs) on any ref, e.g. to prove a
   # test-only fix on Windows/macOS: gh workflow run validate.yml --ref main
   workflow_dispatch:
@@ -13,9 +14,17 @@ on:
 permissions:
   contents: read
 
+# One run per PR: a new push (or label) cancels the in-progress run for that PR.
+# Pushes to main and manual runs get a per-commit group and are never cancelled or replaced.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || format('{0}-{1}', github.ref, github.sha) }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   classify:
     name: classify
+    # Draft PRs run no CI; every other job needs classify (or repeats this guard).
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
     runs-on: ubuntu-latest
     timeout-minutes: 5
     outputs:
@@ -41,6 +50,7 @@ jobs:
 
   core:
     name: core
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -247,7 +257,8 @@ jobs:
 
   quality-gate:
     name: quality-gate
-    if: always()
+    # Reports on every ready PR, push and manual run; skipped only on drafts (which cannot merge).
+    if: always() && (github.event_name != 'pull_request' || github.event.pull_request.draft == false)
     needs: [classify, core, dependency-review, site, high-risk, high-risk-cross-os, codeql]
     runs-on: ubuntu-latest
     timeout-minutes: 5
