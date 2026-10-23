@@ -9,6 +9,11 @@
 - **Per-job invalid-input cap.** `score` backs off between invalid-input failures of the same job and, after 3, blocks it and records it as a final local skip (`invalid-input-retries`), even when other jobs succeed in between.
 - Telemetry, relay and community payloads are unchanged.
 
+### Compatibility cost (read before upgrading)
+
+- **Agents still on the old SKILL.md are refused on `ledger add` until they report `resumeFieldPresent`.** The old text said to omit it when unknown; a telemetry block without it is now refused. Fix: update the skill (reinstall/upgrade with `npx job-application-agent@latest update` to 3.8.4), or add `resumeFieldPresent: true | false | "unknown"` to the `telemetry` block.
+- **Jobs scored on versions before 3.8.4 have no recorded decision, so routine-auto can't log them** (unless the assessment-guard cache from the last 6 hours still has them). Fix: re-run `score` on those jobs, or stage each one alone in its own one-job review batch so the candidate approves it individually.
+
 ## 3.8.3
 
 - **A skip is final.** When `score` returns `skip` or `exclude`, the CLI saves the job's hashed key, the decision, a coarse reason and the time in a private, local-only `assessment-skips.json` (no job text; never synced to cloud state or sent to any relay). `review stage` and `ledger add` now refuse that job in every mode. A re-score with changed input or `score guard-reset` does not clear it. Before this, a skipped job could still be staged, submitted and recorded.
