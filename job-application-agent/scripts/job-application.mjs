@@ -622,8 +622,95 @@ export function warnAnswerKeyFillMetricsFallback(fillMetricsSource) {
     + '(fillMetricsSource=answer_keys, telemetrySupplied=false). '
     + 'Resend entry.telemetry with fieldsFilled, resumeUploaded, and startedAt/endedAt or durationMs '
     + 'so analytics duration and counts are accurate — do not omit the telemetry block. '
-    + 'Without it this entry is recorded as logged after the fact (entryOrigin=logged), not as an agent-filled submission.\n',
+    + 'Without it this entry is recorded as logged after the fact (entryOrigin=logged), not as an agent-filled submission. '
+    + 'That is expected only when you did not fill this application in this session; never invent or reuse telemetry for it.\n',
   );
+}
+
+// Local review-only check for rapid-fire ledger adds that reuse one fill-telemetry block.
+// It never blocks, drops or changes a ledger add and never changes what telemetry sends: it
+// only keeps a private local stream (never synced to cloud state or any relay) and flags
+// matches for the agent/candidate to review.
+const FILL_TELEMETRY_REVIEW_STREAM = 'fill-telemetry-review';
+export const FILL_TELEMETRY_REVIEW_WINDOW_MS = 120_000;
+export const FILL_TELEMETRY_REVIEW_REASON = 'identical-fill-telemetry-rapid-fire';
+
+/**
+ * Digest of the fill-telemetry block exactly as supplied (allowed keys only), or null when no
+ * fill telemetry was supplied. Two different live fills essentially never report byte-identical
+ * blocks, so the same digest a few seconds apart means one block was reused.
+ */
+export function fillTelemetryFingerprint(rawTelemetry) {
+  if (rawTelemetry == null || typeof rawTelemetry !== 'object' || Array.isArray(rawTelemetry)) return null;
+  const kept = Object.fromEntries(Object.entries(rawTelemetry)
+    .filter(([key, value]) => SUBMISSION_TELEMETRY_ALLOWED.has(key) && value != null));
+  if (!Object.keys(kept).length) return null;
+  return createHash('sha256').update(stableJson(kept)).digest('hex');
+}
+
+/**
+ * Pure decision: prior rows (from the local stream) that carry the same fingerprint and were
+ * recorded within the window before nowMs. Returns the matching application ids (may be empty).
+ */
+export function rapidFireFillTelemetryMatches(priorRows, { fingerprint, applicationId, nowMs, windowMs = FILL_TELEMETRY_REVIEW_WINDOW_MS }) {
+  if (!fingerprint) return [];
+  const ids = [];
+  for (const row of priorRows ?? []) {
+    if (row?.fingerprint !== fingerprint || !row.applicationId || row.applicationId === applicationId) continue;
+    const at = Date.parse(row.recordedAt);
+    if (!Number.isFinite(at) || nowMs - at > windowMs || at - nowMs > windowMs) continue;
+    if (!ids.includes(row.applicationId)) ids.push(row.applicationId);
+  }
+  return ids;
+}
+
+/**
+ * After a successful live `ledger add` with fill telemetry: record its fingerprint locally and
+ * return a review flag when another add in the window reused the identical block. Best-effort:
+ * any error is swallowed so the check can never break or alter a ledger add.
+ */
+export async function reviewRapidFireFillTelemetry(entry, rawTelemetry, { now = new Date() } = {}) {
+  try {
+    if (isFixtureOrSandboxApply(entry)) return null;
+    const fingerprint = fillTelemetryFingerprint(rawTelemetry);
+    if (!fingerprint) return null;
+    return await withStateLock(FILL_TELEMETRY_REVIEW_STREAM, async (dir) => {
+      const file = join(dir, `${FILL_TELEMETRY_REVIEW_STREAM}.ndjson`);
+      const prior = await jsonLines(file).catch(() => []);
+      const nowMs = now.getTime();
+      const matchingApplicationIds = rapidFireFillTelemetryMatches(prior, { fingerprint, applicationId: entry.id, nowMs });
+      const recordedAt = now.toISOString();
+      const flagged = matchingApplicationIds.length > 0;
+      const row = {
+        applicationId: entry.id,
+        recordedAt,
+        fingerprint,
+        ...(flagged ? { reviewFlag: FILL_TELEMETRY_REVIEW_REASON, matchingApplicationIds } : {}),
+      };
+      await appendFile(file, `${JSON.stringify(row)}\n`, { mode: 0o600 });
+      await chmod(file, 0o600);
+      if (!flagged) return null;
+      const message = `Flagged for review (not blocked): ledger add for ${entry.id} carried the same fill telemetry as `
+        + `${matchingApplicationIds.join(', ')} within ${FILL_TELEMETRY_REVIEW_WINDOW_MS / 1000}s. `
+        + 'Each live submit must report its own telemetry from its own fill (fieldsFilled, resumeUploaded, resumeFieldPresent, timing). '
+        + 'Never copy one submit\'s telemetry block to another. For entries logged after the fact, omit the telemetry block so they are recorded as entryOrigin=logged.';
+      process.stderr.write(`WARNING: ${message}\n`);
+      return { flagged: true, reason: FILL_TELEMETRY_REVIEW_REASON, windowSeconds: FILL_TELEMETRY_REVIEW_WINDOW_MS / 1000, matchingApplicationIds, recordedAt, message };
+    });
+  } catch {
+    return null;
+  }
+}
+
+/** Local review flags recorded by reviewRapidFireFillTelemetry (empty when none or unreadable). */
+async function fillTelemetryReviewFlags(dir) {
+  const rows = await jsonLines(join(dir, `${FILL_TELEMETRY_REVIEW_STREAM}.ndjson`)).catch(() => []);
+  return rows.filter((row) => row?.reviewFlag === FILL_TELEMETRY_REVIEW_REASON).map((row) => ({
+    applicationId: row.applicationId,
+    flaggedAt: row.recordedAt,
+    reason: row.reviewFlag,
+    matchingApplicationIds: Array.isArray(row.matchingApplicationIds) ? row.matchingApplicationIds : [],
+  }));
 }
 
 /**
@@ -2536,7 +2623,11 @@ async function ledgerReview() {
   const applications = await jsonLines(join(dir, 'applications.ndjson'));
   const outcomes = await jsonLines(join(dir, 'outcomes.ndjson'));
   const acknowledgements = await jsonLines(join(dir, 'reviews.ndjson'));
-  return buildReview(applications, outcomes, acknowledgements, new Date(), await jsonLines(join(dir, 'delivery.ndjson')));
+  const review = buildReview(applications, outcomes, acknowledgements, new Date(), await jsonLines(join(dir, 'delivery.ndjson')));
+  // Local-only review markers; reviewTelemetry() never reads this key.
+  const fillTelemetryReview = await fillTelemetryReviewFlags(dir);
+  if (fillTelemetryReview.length) review.fillTelemetryReviewFlags = fillTelemetryReview;
+  return review;
 }
 
 async function ledgerReviewAcknowledge(input) {
@@ -2788,6 +2879,8 @@ async function executeCommand([area, action, value], telemetry, session, communi
       : null;
     result = await ledgerAdd(entry, input.duplicateOverride, input.companyReapplyOverride, input.cloudIntentId && input.cloudLeaseId ? { intentId: input.cloudIntentId, leaseId: input.cloudLeaseId } : null, review);
     result.communityJob = await communityJobsSync(community, { limit: 1, applicationIds: [entry.id] });
+    const fillTelemetryReview = telemetrySupplied ? await reviewRapidFireFillTelemetry(entry, input.telemetry) : null;
+    if (fillTelemetryReview) result.fillTelemetryReview = fillTelemetryReview;
     if (!isFixtureOrSandboxApply(entry)) {
       const identity = await jobIdentity(entry.url);
       const lifecycleStartedAt = await telemetry.applicationStartedAt?.(identity.jobHash);
