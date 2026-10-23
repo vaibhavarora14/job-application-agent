@@ -1,5 +1,11 @@
 # Changelog
 
+## 3.8.3
+
+- **A skip is final.** When `score` returns `skip` or `exclude`, the CLI saves the job's hashed key, the decision, a coarse reason and the time in a private, local-only `assessment-skips.json` (no job text; never synced to cloud state or sent to any relay). `review stage` and `ledger add` now refuse that job in every mode. A re-score with changed input or `score guard-reset` does not clear it. Before this, a skipped job could still be staged, submitted and recorded.
+- **NEW REQUISITION is never confirmed unattended.** SKILL.md (all copies) and `references/SCHEMAS.md` no longer let the agent pass `duplicateOverride: "NEW REQUISITION CONFIRMED"` on its own judgment. In an unattended or `routine-auto` run it pauses the job instead, and a possible duplicate goes to the candidate in its batch review. The CLI already refuses a live `ledger add` without the candidate's batch approval (since 3.8.0), and a new regression test pins that, including with `routine-auto` and an autonomy grant.
+- Telemetry, UI and privacy collection are unchanged.
+
 ## 3.8.2
 
 - **Review flag for reused fill telemetry (never blocks).** After a live `ledger add` with fill telemetry, the CLI saves a digest of the telemetry block in a private, local-only `fill-telemetry-review.ndjson` (never synced to cloud state or sent to any relay). If another live add in the previous 120 seconds carried the identical block, the add is still recorded unchanged. The CLI then prints `WARNING: Flagged for review (not blocked)` on stderr, adds `fillTelemetryReview` to the `ledger add` output, and lists the flag under `fillTelemetryReviewFlags` in `ledger review`. Logged-after-the-fact entries (no telemetry block) are never checked. Telemetry is unchanged: no new fields or events, and `application_submitted` / `review_generated` send exactly what they did before.
