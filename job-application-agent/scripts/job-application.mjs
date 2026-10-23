@@ -37,7 +37,7 @@ import {
 } from './attention-questions.mjs';
 import { confirmOutreachTowardRound, loadOutreachRoundView, loadSentVerifiedOutreach, outreachConfirmationEvents, projectOutreachRoundCounts, resolveOutreachRoundId } from './outreach-round.mjs';
 import { isFixtureOrSandboxApply, resolveApplyKind } from './ats/apply-url-gate.mjs';
-import { createAssessmentGuard, isAssessmentGuardStop } from './assessment-guard.mjs';
+import { assessmentJobKey, createAssessmentGuard, isAssessmentGuardStop } from './assessment-guard.mjs';
 import { LEGACY_GRANT_NOTICE, applicationMatcher, approveBatch, batchToken, batchView, closeBatch, consumeReview, listBatches, loadBatch, resumeDigest, stageBatch, verifyReview } from './review-batch.mjs';
 import { reviewPageInfoFile } from './review-page.mjs';
 
@@ -1841,10 +1841,44 @@ async function openReviewPage(dir, batchId) {
   };
 }
 
+// Skip decisions are final. `score` records each skip/exclude (job key hash, decision, reason,
+// time; no job text) in a private local file that the assessment-guard reset does not touch, and
+// `review stage` and `ledger add` refuse that job. A later re-score never clears it, so changing
+// the job input cannot turn a skip into a send.
+const ASSESSMENT_SKIPS_FILE = 'assessment-skips.json';
+
+async function recordAssessmentSkip(job, result) {
+  const key = assessmentJobKey(job);
+  if (!key) return;
+  await withStateLock('assessment-skips', async (dir) => {
+    const file = join(dir, ASSESSMENT_SKIPS_FILE);
+    const state = await readPrivateJson(file, { version: 1, jobs: {} }).catch(() => ({ version: 1, jobs: {} }));
+    const jobs = state?.jobs && typeof state.jobs === 'object' && !Array.isArray(state.jobs) ? state.jobs : {};
+    if (jobs[key]) return;
+    jobs[key] = { decision: result.decision, reason: skipReasonFromAssessment(result), at: new Date().toISOString() };
+    await writePrivateJson(file, { version: 1, jobs });
+  });
+}
+
+async function assertJobNotSkipped(dir, { url, company, role }) {
+  const state = await readPrivateJson(join(dir, ASSESSMENT_SKIPS_FILE), null).catch(() => null);
+  const jobs = state?.jobs;
+  if (!jobs || typeof jobs !== 'object') return;
+  // A job scored with a URL is keyed by that URL; one scored without a URL by company + title.
+  const keys = [assessmentJobKey({ url }), assessmentJobKey({ company, title: role })].filter(Boolean);
+  const skipped = keys.map((key) => jobs[key]).find((record) => record && typeof record === 'object');
+  if (!skipped) return;
+  throw new Error(`Skipped job refused: score decided "${skipped.decision}" (${skipped.reason}) for ${company || 'this job'} at ${skipped.at}. A skipped or excluded job is never staged, submitted or recorded, in any mode. Do not apply; tell the candidate.`);
+}
+
 async function reviewCommand(action, value) {
   const dir = await ensureStateDir();
   if (action === 'stage' && value === '--stdin') {
-    const batch = await stageBatch(dir, await jsonStdin(), { resume: await currentResumeDigest({ refresh: true }) });
+    const input = await jsonStdin();
+    for (const item of Array.isArray(input?.items) ? input.items : []) {
+      if (item?.type === 'application' && (item.purpose ?? 'submit') === 'submit') await assertJobNotSkipped(dir, { url: item.url, company: item.company, role: item.role });
+    }
+    const batch = await stageBatch(dir, input, { resume: await currentResumeDigest({ refresh: true }) });
     return { ...batchView(batch), next: REVIEW_NEXT_STEP };
   }
   if (action === 'show' && typeof value === 'string') return batchView(await loadBatch(dir, value), new Date(), { includeContent: true });
@@ -1964,6 +1998,7 @@ async function ledgerAdd(entryInput, duplicateOverride, companyReapplyOverride, 
     const file = join(dir, 'applications.ndjson');
     const entries = await jsonLines(file);
     const outcomes = await jsonLines(join(dir, 'outcomes.ndjson'));
+    await assertJobNotSkipped(dir, entry);
     if (entry.roundId) {
       const roundEvents = await jsonLines(join(dir, 'rounds.ndjson'));
       if (!roundEvents.some((event) => event.type === 'started' && event.roundId === entry.roundId)) throw new Error('entry.roundId does not identify a started round.');
@@ -2836,6 +2871,7 @@ async function executeCommand([area, action, value], telemetry, session, communi
     result.assessmentGuard = await guard.success(ticket, result, writePrivateJson);
     await emitDomainEvent(telemetry, session, await telemetryJobAssessed(job, result));
     if (result.decision === 'skip' || result.decision === 'exclude') {
+      await recordAssessmentSkip(job, result);
       await emitDomainEvent(telemetry, session, await telemetryApplicationSkipped(job, result));
     } else if (result.decision === 'review') {
       await emitDomainEvent(telemetry, session, await telemetryApplicationStarted(job, {
