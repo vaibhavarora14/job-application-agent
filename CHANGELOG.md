@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 3.8.4
 
 - **Verified source coverage (local).** In rounds started by this version, `round source` refuses `status: "searched"` for a board with no `round lead` records in the round, or whose leads were all recorded after the round's latest submission. The community job feed is `community-jobs-feed`: `searched` needs a successful `sources jobs` pull since `round start`, and `blocked` (community feed unavailable, blocker `access-unavailable`/`site-error`) is accepted only after a `sources jobs` call in the round failed (its output now carries `communityFeedUnavailable: true`). `round complete` requires one community feed pull (or that recorded failure) before the round's submissions and rejects coverage recorded only after them. Evidence is kept in a private local `round-evidence.ndjson`; nothing new is synced or sent. Rounds started by older versions keep the earlier rules.
 - **Résumé upload preflight.** `round start` checks the canonical résumé is imported, readable, non-empty and a PDF, and records a `resume-upload-unavailable` blocker otherwise. It is returned by `round start`, listed in `round status` (`routineGates.blockers`) and repeated in `round complete` `warnings`.
