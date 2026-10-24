@@ -41,7 +41,7 @@ function page(path, init = {}) {
   });
 }
 
-test.beforeEach(() => {
+beforeEach(() => {
   resetEdgeCacheInflight();
 });
 
