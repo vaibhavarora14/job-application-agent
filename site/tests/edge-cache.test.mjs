@@ -1,12 +1,18 @@
-import test from 'node:test';
+import test, { beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
 import {
+  EDGE_CACHE_404_TTL_SECONDS,
+  EDGE_CACHE_SWR_SECONDS,
   EDGE_CACHE_STATUS_HEADER,
+  EDGE_CACHE_TTL_SECONDS,
   edgeCacheKey,
   edgeCacheTtlSeconds,
+  hasEdgeCacheAuthCookie,
   isEdgeCacheablePath,
   isEdgeCacheableRequest,
   isEdgeStorableResponse,
+  normalizeEdgeCacheSearch,
+  resetEdgeCacheInflight,
   serveWithEdgeCache,
 } from '../lib/edge-cache.mjs';
 
@@ -16,19 +22,31 @@ class MemoryCache {
   constructor() { this.store = new Map(); }
   async match(request) {
     const hit = this.store.get(request.url);
-    return hit ? new Response(hit.body, { status: hit.status, headers: hit.headers }) : undefined;
+    return hit ? new Response(hit.body.slice(0), { status: hit.status, statusText: hit.statusText, headers: new Headers(hit.headers) }) : undefined;
   }
   async put(request, response) {
-    this.store.set(request.url, { body: await response.text(), status: response.status, headers: new Headers(response.headers) });
+    this.store.set(request.url, {
+      body: await response.arrayBuffer(),
+      status: response.status,
+      statusText: response.statusText,
+      headers: new Headers(response.headers),
+    });
   }
 }
 
 function page(path, init = {}) {
-  return new Request(`${ORIGIN}${path}`, { headers: { 'x-forwarded-host': 'jobappagent.com', ...(init.headers ?? {}) }, method: init.method ?? 'GET' });
+  return new Request(`${ORIGIN}${path}`, {
+    headers: { 'x-forwarded-host': 'jobappagent.com', ...(init.headers ?? {}) },
+    method: init.method ?? 'GET',
+  });
 }
 
+test.beforeEach(() => {
+  resetEdgeCacheInflight();
+});
+
 test('only public document paths are cacheable', () => {
-  for (const path of ['/', '/jobs', '/jobs/senior-engineer-acme-abc123', '/platforms', '/platforms/greenhouse', '/privacy', '/terms', '/community-view', '/sitemap.xml', '/robots.txt']) {
+  for (const path of ['/', '/jobs', '/jobs/senior-engineer-acme-abc123', '/platforms', '/platforms/greenhouse', '/privacy', '/terms', '/community-view', '/open-source', '/compare', '/sitemap.xml', '/robots.txt']) {
     assert.equal(isEdgeCacheablePath(path), true, path);
   }
   for (const path of ['/api/community-stats', '/api/community-jobs', '/api/community-jobs-live']) {
@@ -39,14 +57,31 @@ test('only public document paths are cacheable', () => {
   }
 });
 
-test('router, query, auth and non-GET requests bypass the cache', () => {
+test('/jobs index is cacheable for anonymous GET (no personalised content)', () => {
+  assert.equal(isEdgeCacheableRequest(page('/jobs')), true);
+  assert.equal(isEdgeCacheablePath('/jobs'), true);
+});
+
+test('router, content query, auth and non-GET/HEAD requests bypass the cache', () => {
   assert.equal(isEdgeCacheableRequest(page('/jobs')), true);
   assert.equal(isEdgeCacheableRequest(page('/jobs?role=x')), false);
   assert.equal(isEdgeCacheableRequest(page('/jobs', { headers: { RSC: '1' } })), false);
   assert.equal(isEdgeCacheableRequest(page('/jobs', { headers: { 'Next-Router-Prefetch': '1' } })), false);
   assert.equal(isEdgeCacheableRequest(page('/jobs', { headers: { authorization: 'Bearer x' } })), false);
   assert.equal(isEdgeCacheableRequest(page('/jobs', { method: 'POST' })), false);
-  assert.equal(isEdgeCacheableRequest(page('/jobs', { method: 'HEAD' })), false);
+  assert.equal(isEdgeCacheableRequest(page('/jobs', { method: 'HEAD' })), true);
+});
+
+test('tracking query params are ignored; founding_purchase cookie bypasses', () => {
+  assert.equal(normalizeEdgeCacheSearch('/jobs', new URLSearchParams('utm_source=twitter&utm_campaign=c')).toString(), '');
+  assert.equal(isEdgeCacheableRequest(page('/jobs?utm_source=twitter&utm_medium=cpc')), true);
+  assert.equal(
+    edgeCacheKey(page('/jobs?utm_source=x'), 'r').url,
+    edgeCacheKey(page('/jobs'), 'r').url,
+  );
+  assert.equal(hasEdgeCacheAuthCookie('founding_purchase=abc; Path=/'), true);
+  assert.equal(hasEdgeCacheAuthCookie('other=1'), false);
+  assert.equal(isEdgeCacheableRequest(page('/jobs', { headers: { cookie: 'founding_purchase=11111111-1111-4111-8111-111111111111' } })), false);
 });
 
 test('cache key separates hosts and releases', () => {
@@ -58,7 +93,7 @@ test('cache key separates hosts and releases', () => {
   assert.ok(apex.startsWith(`${ORIGIN}/__jaa-edge-cache/index?`));
 });
 
-test('set-cookie and error responses are never stored', () => {
+test('set-cookie and non-200 responses are never stored; job 404s are', () => {
   assert.equal(isEdgeStorableResponse(page('/jobs'), new Response('x', { status: 200 })), true);
   assert.equal(isEdgeStorableResponse(page('/jobs'), new Response('x', { status: 200, headers: { 'set-cookie': 'a=b' } })), false);
   assert.equal(isEdgeStorableResponse(page('/jobs'), new Response('x', { status: 500 })), false);
@@ -66,7 +101,7 @@ test('set-cookie and error responses are never stored', () => {
   assert.equal(isEdgeStorableResponse(page('/privacy'), new Response('x', { status: 404 })), false);
 });
 
-test('second request is served from cache with original client headers', async () => {
+test('miss then hit: second request is served from cache without re-render', async () => {
   const cache = new MemoryCache();
   const pending = [];
   let renders = 0;
@@ -85,7 +120,7 @@ test('second request is served from cache with original client headers', async (
   const second = await serveWithEdgeCache(page('/jobs'), options);
   assert.equal(renders, 1);
   assert.equal(second.headers.get(EDGE_CACHE_STATUS_HEADER), 'HIT');
-  assert.equal(second.headers.get('cache-control'), 'no-store, must-revalidate');
+  assert.match(second.headers.get('cache-control') ?? '', /s-maxage=3600/);
   assert.equal(second.headers.get('vary'), 'RSC');
   assert.equal(second.headers.get('x-frame-options'), 'DENY');
   assert.equal(await second.text(), '<html>render 1</html>');
@@ -95,12 +130,202 @@ test('second request is served from cache with original client headers', async (
   assert.equal(rsc.headers.get(EDGE_CACHE_STATUS_HEADER), null);
 });
 
+test('stale-while-revalidate serves STALE and refreshes once in the background', async () => {
+  const cache = new MemoryCache();
+  const pending = [];
+  let renders = 0;
+  let clock = 1_000_000;
+  const render = async () => {
+    renders += 1;
+    return new Response(`<html>v${renders}</html>`, { headers: { 'content-type': 'text/html' } });
+  };
+  const options = {
+    cache,
+    release: 'r1',
+    waitUntil: (p) => pending.push(p),
+    render,
+    now: () => clock,
+  };
+
+  assert.equal((await serveWithEdgeCache(page('/jobs/slug-a'), options)).headers.get(EDGE_CACHE_STATUS_HEADER), 'MISS');
+  await Promise.all(pending.splice(0));
+  assert.equal(renders, 1);
+
+  clock += (EDGE_CACHE_TTL_SECONDS + 1) * 1000;
+  const stale = await serveWithEdgeCache(page('/jobs/slug-a'), options);
+  assert.equal(stale.headers.get(EDGE_CACHE_STATUS_HEADER), 'STALE');
+  assert.equal(await stale.text(), '<html>v1</html>');
+
+  // Burst of stale hits must coalesce to one background render.
+  const burst = await Promise.all([
+    serveWithEdgeCache(page('/jobs/slug-a'), options),
+    serveWithEdgeCache(page('/jobs/slug-a'), options),
+    serveWithEdgeCache(page('/jobs/slug-a'), options),
+  ]);
+  for (const response of burst) assert.equal(response.headers.get(EDGE_CACHE_STATUS_HEADER), 'STALE');
+  await Promise.all(pending.splice(0));
+  assert.equal(renders, 2);
+
+  clock += 1;
+  const after = await serveWithEdgeCache(page('/jobs/slug-a'), options);
+  assert.equal(after.headers.get(EDGE_CACHE_STATUS_HEADER), 'HIT');
+  assert.equal(await after.text(), '<html>v2</html>');
+});
+
+test('cookie bypass returns BYPASS and does not store', async () => {
+  const cache = new MemoryCache();
+  const pending = [];
+  let renders = 0;
+  const render = async () => {
+    renders += 1;
+    return new Response('private', { headers: { 'content-type': 'text/html' } });
+  };
+  const req = page('/jobs', { headers: { cookie: 'founding_purchase=11111111-1111-4111-8111-111111111111' } });
+  const response = await serveWithEdgeCache(req, { cache, release: 'r1', waitUntil: (p) => pending.push(p), render });
+  assert.equal(response.headers.get(EDGE_CACHE_STATUS_HEADER), 'BYPASS');
+  assert.equal(await response.text(), 'private');
+  await Promise.all(pending);
+  assert.equal(cache.store.size, 0);
+  assert.equal(renders, 1);
+});
+
+test('content-affecting query bypass returns BYPASS', async () => {
+  const cache = new MemoryCache();
+  const pending = [];
+  const response = await serveWithEdgeCache(page('/jobs?role=backend'), {
+    cache,
+    release: 'r1',
+    waitUntil: (p) => pending.push(p),
+    render: async () => new Response('fresh'),
+  });
+  assert.equal(response.headers.get(EDGE_CACHE_STATUS_HEADER), 'BYPASS');
+  assert.equal(cache.store.size, 0);
+});
+
+test('Set-Cookie responses are not stored (BYPASS after render)', async () => {
+  const cache = new MemoryCache();
+  const pending = [];
+  const response = await serveWithEdgeCache(page('/jobs'), {
+    cache,
+    release: 'r1',
+    waitUntil: (p) => pending.push(p),
+    render: async () => new Response('x', { status: 200, headers: { 'set-cookie': 'founding_purchase=abc' } }),
+  });
+  assert.equal(response.headers.get(EDGE_CACHE_STATUS_HEADER), 'BYPASS');
+  await Promise.all(pending);
+  assert.equal(cache.store.size, 0);
+});
+
+test('non-200 responses are not cached', async () => {
+  const cache = new MemoryCache();
+  const pending = [];
+  const response = await serveWithEdgeCache(page('/jobs'), {
+    cache,
+    release: 'r1',
+    waitUntil: (p) => pending.push(p),
+    render: async () => new Response('err', { status: 503 }),
+  });
+  assert.equal(response.headers.get(EDGE_CACHE_STATUS_HEADER), 'BYPASS');
+  await Promise.all(pending);
+  assert.equal(cache.store.size, 0);
+});
+
+test('404 on /jobs/<slug> is stored with a short TTL', async () => {
+  const cache = new MemoryCache();
+  const pending = [];
+  let clock = 5_000_000;
+  const response = await serveWithEdgeCache(page('/jobs/missing-role-abc'), {
+    cache,
+    release: 'r1',
+    waitUntil: (p) => pending.push(p),
+    render: async () => new Response('gone', { status: 404 }),
+    now: () => clock,
+  });
+  assert.equal(response.headers.get(EDGE_CACHE_STATUS_HEADER), 'MISS');
+  assert.equal(edgeCacheTtlSeconds('/jobs/missing-role-abc', 404), EDGE_CACHE_404_TTL_SECONDS);
+  await Promise.all(pending);
+  assert.equal(cache.store.size, 1);
+  const stored = [...cache.store.values()][0];
+  assert.equal(stored.status, 404);
+  assert.match(stored.headers.get('cache-control') ?? '', new RegExp(`max-age=${EDGE_CACHE_404_TTL_SECONDS}`));
+
+  const hit = await serveWithEdgeCache(page('/jobs/missing-role-abc'), {
+    cache,
+    release: 'r1',
+    waitUntil: (p) => pending.push(p),
+    render: async () => new Response('should-not-run', { status: 404 }),
+    now: () => clock,
+  });
+  assert.equal(hit.headers.get(EDGE_CACHE_STATUS_HEADER), 'HIT');
+  assert.equal(await hit.text(), 'gone');
+});
+
+test('HEAD is answered from cache without a second body render', async () => {
+  const cache = new MemoryCache();
+  const pending = [];
+  let renders = 0;
+  /** @type {string[]} */
+  const methods = [];
+  const render = async (req = page('/jobs')) => {
+    renders += 1;
+    methods.push(req.method);
+    return new Response('<html>body</html>', { headers: { 'content-type': 'text/html', 'x-frame-options': 'DENY' } });
+  };
+  const options = { cache, release: 'r1', waitUntil: (p) => pending.push(p), render };
+
+  const headMiss = await serveWithEdgeCache(page('/jobs', { method: 'HEAD' }), options);
+  assert.equal(headMiss.headers.get(EDGE_CACHE_STATUS_HEADER), 'MISS');
+  assert.equal(headMiss.headers.get('x-frame-options'), 'DENY');
+  assert.equal(await headMiss.text(), '');
+  assert.deepEqual(methods, ['GET']);
+  await Promise.all(pending.splice(0));
+
+  const headHit = await serveWithEdgeCache(page('/jobs', { method: 'HEAD' }), options);
+  assert.equal(headHit.headers.get(EDGE_CACHE_STATUS_HEADER), 'HIT');
+  assert.equal(await headHit.text(), '');
+  assert.equal(renders, 1);
+
+  const getHit = await serveWithEdgeCache(page('/jobs'), options);
+  assert.equal(getHit.headers.get(EDGE_CACHE_STATUS_HEADER), 'HIT');
+  assert.equal(await getHit.text(), '<html>body</html>');
+  assert.equal(renders, 1);
+});
+
+test('concurrent misses on the same key render once', async () => {
+  const cache = new MemoryCache();
+  const pending = [];
+  let renders = 0;
+  let releaseRender;
+  const gate = new Promise((resolve) => { releaseRender = resolve; });
+  const render = async () => {
+    renders += 1;
+    await gate;
+    return new Response(`once-${renders}`, { headers: { 'content-type': 'text/html' } });
+  };
+  const options = { cache, release: 'r1', waitUntil: (p) => pending.push(p), render };
+  const tasks = Promise.all([
+    serveWithEdgeCache(page('/jobs/slug-b'), options),
+    serveWithEdgeCache(page('/jobs/slug-b'), options),
+    serveWithEdgeCache(page('/jobs/slug-b'), options),
+  ]);
+  await new Promise((r) => setTimeout(r, 10));
+  assert.equal(renders, 1);
+  releaseRender();
+  const responses = await tasks;
+  for (const response of responses) {
+    assert.equal(response.headers.get(EDGE_CACHE_STATUS_HEADER), 'MISS');
+    assert.equal(await response.text(), 'once-1');
+  }
+  await Promise.all(pending);
+  assert.equal(renders, 1);
+});
+
 test('no cache available falls through to render', async () => {
   const response = await serveWithEdgeCache(page('/jobs'), { cache: undefined, waitUntil: () => {}, render: async () => new Response('ok') });
   assert.equal(await response.text(), 'ok');
 });
 
-test('public API JSON keeps its query in the key; pages with a query still bypass', () => {
+test('public API JSON keeps its query in the key; pages with a content query still bypass', () => {
   assert.equal(isEdgeCacheableRequest(page('/api/community-jobs?limit=1')), true);
   assert.equal(isEdgeCacheableRequest(page('/api/community-stats')), true);
   assert.equal(isEdgeCacheableRequest(page('/jobs?limit=1')), false);
@@ -110,9 +335,13 @@ test('public API JSON keeps its query in the key; pages with a query still bypas
   assert.equal(isEdgeStorableResponse(page('/api/community-stats'), new Response('<html>', { headers: { 'content-type': 'text/html' } })), false);
 });
 
-test('static pages get a longer TTL than data-backed pages', () => {
+test('chosen TTLs: ~1h fresh, ~1h SWR, 60s for job 404s', () => {
+  assert.equal(EDGE_CACHE_TTL_SECONDS, 3600);
+  assert.equal(EDGE_CACHE_SWR_SECONDS, 3600);
+  assert.equal(EDGE_CACHE_404_TTL_SECONDS, 60);
   assert.equal(edgeCacheTtlSeconds('/privacy'), 3600);
   assert.equal(edgeCacheTtlSeconds('/platforms/greenhouse'), 3600);
-  assert.equal(edgeCacheTtlSeconds('/jobs'), 300);
-  assert.equal(edgeCacheTtlSeconds('/api/community-stats'), 300);
+  assert.equal(edgeCacheTtlSeconds('/jobs'), 3600);
+  assert.equal(edgeCacheTtlSeconds('/jobs/slug', 404), 60);
+  assert.equal(edgeCacheTtlSeconds('/api/community-stats'), 3600);
 });

@@ -63,15 +63,19 @@ const worker = {
       return secured;
     }
 
-    // Public documents (/, /jobs, /jobs/<slug>, ...) are served from the Cache API for
-    // a few minutes so crawler and first-load traffic does not re-run SSR each time.
+    // Public documents (/, /jobs, /jobs/<slug>, ...) use Cache API + SWR so crawler
+    // traffic is served from cache (HIT/STALE) instead of re-running SSR each time.
     return serveWithEdgeCache(request, {
       cache: workersDefaultCache(),
       release: env.SENTRY_RELEASE,
       waitUntil: (promise) => ctx.waitUntil(promise),
-      render: async () => {
-        const secured = withPublicSecurityHeaders(await handler.fetch(request, env, ctx), request, env);
-        captureApiServerError(request, secured);
+      render: async (renderRequest = request) => {
+        const secured = withPublicSecurityHeaders(
+          await handler.fetch(renderRequest, env, ctx),
+          renderRequest,
+          env,
+        );
+        captureApiServerError(renderRequest, secured);
         return secured;
       },
     });
