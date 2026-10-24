@@ -2,10 +2,13 @@ import test, { beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   EDGE_CACHE_404_TTL_SECONDS,
+  EDGE_CACHE_API_SWR_SECONDS,
+  EDGE_CACHE_API_TTL_SECONDS,
   EDGE_CACHE_SWR_SECONDS,
   EDGE_CACHE_STATUS_HEADER,
   EDGE_CACHE_TTL_SECONDS,
   edgeCacheKey,
+  edgeCacheSwrSeconds,
   edgeCacheTtlSeconds,
   hasEdgeCacheAuthCookie,
   isEdgeCacheablePath,
@@ -49,10 +52,10 @@ test('only public document paths are cacheable', () => {
   for (const path of ['/', '/jobs', '/jobs/senior-engineer-acme-abc123', '/platforms', '/platforms/greenhouse', '/privacy', '/terms', '/community-view', '/open-source', '/compare', '/sitemap.xml', '/robots.txt']) {
     assert.equal(isEdgeCacheablePath(path), true, path);
   }
-  for (const path of ['/api/community-stats', '/api/community-jobs', '/api/community-jobs-live']) {
+  for (const path of ['/api/community-stats', '/api/community-jobs']) {
     assert.equal(isEdgeCacheablePath(path), true, path);
   }
-  for (const path of ['/attention/abc', '/checkout/return', '/api/checkout', '/api/checkout/status', '/api/health', '/api/attention/x/answers', '/api/webhooks/dodo', '/jobs/a/b', '/_vinext/image']) {
+  for (const path of ['/api/community-jobs-live', '/attention/abc', '/checkout/return', '/api/checkout', '/api/checkout/status', '/api/health', '/api/attention/x/answers', '/api/webhooks/dodo', '/jobs/a/b', '/_vinext/image']) {
     assert.equal(isEdgeCacheablePath(path), false, path);
   }
 });
@@ -335,13 +338,78 @@ test('public API JSON keeps its query in the key; pages with a content query sti
   assert.equal(isEdgeStorableResponse(page('/api/community-stats'), new Response('<html>', { headers: { 'content-type': 'text/html' } })), false);
 });
 
-test('chosen TTLs: ~1h fresh, ~1h SWR, 60s for job 404s', () => {
+test('/api/community-jobs-live always bypasses: no cache match/put, render every request', async () => {
+  assert.equal(isEdgeCacheablePath('/api/community-jobs-live'), false);
+  assert.equal(isEdgeCacheableRequest(page('/api/community-jobs-live?limit=1')), false);
+
+  let matches = 0;
+  let puts = 0;
+  const cache = {
+    async match() {
+      matches += 1;
+      return undefined;
+    },
+    async put() {
+      puts += 1;
+    },
+  };
+  const pending = [];
+  let renders = 0;
+  const render = async () => {
+    renders += 1;
+    return Response.json({ jobs: [], nextCursor: null, render: renders });
+  };
+  const options = { cache, release: 'r1', waitUntil: (p) => pending.push(p), render };
+
+  const first = await serveWithEdgeCache(page('/api/community-jobs-live?limit=1'), options);
+  const second = await serveWithEdgeCache(page('/api/community-jobs-live?limit=1'), options);
+  await Promise.all(pending);
+
+  assert.equal(first.headers.get(EDGE_CACHE_STATUS_HEADER), 'BYPASS');
+  assert.equal(second.headers.get(EDGE_CACHE_STATUS_HEADER), 'BYPASS');
+  assert.equal(renders, 2);
+  assert.equal(matches, 0);
+  assert.equal(puts, 0);
+  assert.deepEqual(await first.json(), { jobs: [], nextCursor: null, render: 1 });
+  assert.deepEqual(await second.json(), { jobs: [], nextCursor: null, render: 2 });
+});
+
+test('community-stats and community-jobs use 300s fresh + 300s SWR', async () => {
+  assert.equal(EDGE_CACHE_API_TTL_SECONDS, 300);
+  assert.equal(EDGE_CACHE_API_SWR_SECONDS, 300);
+  assert.equal(edgeCacheTtlSeconds('/api/community-stats'), 300);
+  assert.equal(edgeCacheSwrSeconds('/api/community-stats'), 300);
+  assert.equal(edgeCacheTtlSeconds('/api/community-jobs'), 300);
+  assert.equal(edgeCacheSwrSeconds('/api/community-jobs'), 300);
+
+  const cache = new MemoryCache();
+  const pending = [];
+  const response = await serveWithEdgeCache(page('/api/community-stats'), {
+    cache,
+    release: 'r1',
+    waitUntil: (p) => pending.push(p),
+    render: async () => Response.json({ ok: true }),
+  });
+  assert.equal(response.headers.get(EDGE_CACHE_STATUS_HEADER), 'MISS');
+  assert.match(response.headers.get('cache-control') ?? '', /s-maxage=300/);
+  assert.match(response.headers.get('cache-control') ?? '', /stale-while-revalidate=300/);
+  await Promise.all(pending);
+  const stored = [...cache.store.values()][0];
+  assert.match(stored.headers.get('cache-control') ?? '', /max-age=600/);
+});
+
+test('chosen TTLs: pages 3600+3600, APIs 300+300, job 404 60s', () => {
   assert.equal(EDGE_CACHE_TTL_SECONDS, 3600);
   assert.equal(EDGE_CACHE_SWR_SECONDS, 3600);
+  assert.equal(EDGE_CACHE_API_TTL_SECONDS, 300);
+  assert.equal(EDGE_CACHE_API_SWR_SECONDS, 300);
   assert.equal(EDGE_CACHE_404_TTL_SECONDS, 60);
-  assert.equal(edgeCacheTtlSeconds('/privacy'), 3600);
-  assert.equal(edgeCacheTtlSeconds('/platforms/greenhouse'), 3600);
-  assert.equal(edgeCacheTtlSeconds('/jobs'), 3600);
+  for (const path of ['/', '/jobs', '/jobs/slug-a', '/platforms', '/platforms/greenhouse', '/privacy', '/terms', '/open-source', '/compare', '/sitemap.xml', '/robots.txt', '/manifest.webmanifest', '/community-view']) {
+    assert.equal(edgeCacheTtlSeconds(path), 3600, path);
+    assert.equal(edgeCacheSwrSeconds(path), 3600, path);
+  }
   assert.equal(edgeCacheTtlSeconds('/jobs/slug', 404), 60);
-  assert.equal(edgeCacheTtlSeconds('/api/community-stats'), 3600);
+  assert.equal(edgeCacheSwrSeconds('/jobs/slug', 404), 0);
+  assert.equal(edgeCacheTtlSeconds('/api/community-stats'), 300);
+  assert.equal(edgeCacheTtlSeconds('/api/community-jobs'), 300);
 });

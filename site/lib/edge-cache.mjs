@@ -20,14 +20,19 @@
  *   routes never touch this cache.
  * - Document pages: tracking query params (`utm_*`, `gclid`, …) are stripped from
  *   the key; any remaining query bypasses the cache. Public aggregate JSON proxies
- *   keep their validated query in the key.
+ *   keep their validated query in the key. `/api/community-jobs-live` is never
+ *   edge-cached (always BYPASS) so liveness stays fresh.
  * - Only 200 responses (and 404 for /jobs/<slug>, short TTL) without Set-Cookie.
  * - Key includes forwarded host and deployed release so a deploy never serves the
  *   previous build's HTML.
  */
 
+/** Document / page fresh + SWR window (~1h). */
 export const EDGE_CACHE_TTL_SECONDS = 3600;
 export const EDGE_CACHE_SWR_SECONDS = 3600;
+/** Aggregate JSON APIs (stats + jobs list) — shorter so board data stays fresher. */
+export const EDGE_CACHE_API_TTL_SECONDS = 300;
+export const EDGE_CACHE_API_SWR_SECONDS = 300;
 export const EDGE_CACHE_404_TTL_SECONDS = 60;
 /** Debug header: HIT | MISS | STALE | BYPASS */
 export const EDGE_CACHE_STATUS_HEADER = "x-cache";
@@ -69,22 +74,16 @@ const ROUTER_REQUEST_HEADERS = [
  * Public aggregate JSON proxied from the telemetry relay. Their in-route Cache API
  * lookups never hit inside vinext, so each call re-ran ~20-35 ms of fetch + validation.
  * Query (limit/cursor) is part of the key.
+ * `/api/community-jobs-live` is intentionally excluded — always BYPASS.
  */
 const PUBLIC_API_PATHS = new Set([
   "/api/community-stats",
   "/api/community-jobs",
-  "/api/community-jobs-live",
 ]);
 
-/** Rarely changing marketing pages — same 1h fresh window, longer SWR is unnecessary. */
-const LONG_TTL_EXACT = new Set([
-  "/privacy",
-  "/terms",
-  "/platforms",
-  "/open-source",
-  "/compare",
-  "/robots.txt",
-  "/manifest.webmanifest",
+/** Paths that must never touch caches.default (always x-cache: BYPASS). */
+const EDGE_CACHE_NEVER_PATHS = new Set([
+  "/api/community-jobs-live",
 ]);
 
 const JOB_DETAIL = /^\/jobs\/[^/]+$/;
@@ -107,12 +106,13 @@ export function isEdgeCacheablePath(pathname) {
 
 export function edgeCacheTtlSeconds(pathname, status = 200) {
   if (status === 404 && JOB_DETAIL.test(pathname)) return EDGE_CACHE_404_TTL_SECONDS;
-  if (LONG_TTL_EXACT.has(pathname) || PLATFORM_DETAIL.test(pathname)) return EDGE_CACHE_TTL_SECONDS;
+  if (PUBLIC_API_PATHS.has(pathname)) return EDGE_CACHE_API_TTL_SECONDS;
   return EDGE_CACHE_TTL_SECONDS;
 }
 
 export function edgeCacheSwrSeconds(pathname, status = 200) {
   if (status === 404) return 0;
+  if (PUBLIC_API_PATHS.has(pathname)) return EDGE_CACHE_API_SWR_SECONDS;
   return EDGE_CACHE_SWR_SECONDS;
 }
 
@@ -151,7 +151,7 @@ export function hasEdgeCacheAuthCookie(cookieHeader) {
 
 /**
  * @param {Request} request
- * @returns {null | "method" | "path" | "query" | "authorization" | "cookie" | "router"}
+ * @returns {null | "method" | "path" | "never" | "query" | "authorization" | "cookie" | "router"}
  */
 export function edgeCacheBypassReason(request) {
   if (request.method !== "GET" && request.method !== "HEAD") return "method";
@@ -161,6 +161,7 @@ export function edgeCacheBypassReason(request) {
   } catch {
     return "path";
   }
+  if (EDGE_CACHE_NEVER_PATHS.has(url.pathname)) return "never";
   if (!isEdgeCacheablePath(url.pathname)) return "path";
   if (url.search.length > 512) return "query";
   if (normalizeEdgeCacheSearch(url.pathname, url.searchParams) === null) return "query";
@@ -342,11 +343,12 @@ function storeOptionsFor(request, response, now) {
  */
 export async function serveWithEdgeCache(request, { cache, release, waitUntil, render, now = Date.now }) {
   const bypass = edgeCacheBypassReason(request);
+  if (bypass === "never" || bypass === "cookie" || bypass === "authorization" || bypass === "query") {
+    // Never touch caches.default for these — including community-jobs-live.
+    return withEdgeCacheStatus(await callRender(render, request), "BYPASS");
+  }
   if (!cache || bypass === "method" || bypass === "path" || bypass === "router") {
     return callRender(render, request);
-  }
-  if (bypass === "cookie" || bypass === "authorization" || bypass === "query") {
-    return withEdgeCacheStatus(await callRender(render, request), "BYPASS");
   }
 
   const isHead = request.method === "HEAD";
