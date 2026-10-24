@@ -13,6 +13,14 @@
  * concurrent miss/stale refreshes for the same key so a burst triggers at most
  * one render per isolate.
  *
+ * Important (apex topology): `jobappagent.com` reaches this Worker through the
+ * Vercel rewrite in `site-proxy/` (`server: Vercel`). Shared CDN caches must NOT
+ * store our HTML, or they freeze the first `x-cache: MISS` and never let a later
+ * request reach `caches.default` (which does HIT on workers.dev). Client /
+ * CDN-facing Cache-Control is therefore `private, no-store` plus
+ * `Vercel-CDN-Cache-Control: no-store`. The Cache API copy uses its own
+ * `Cache-Control: public, max-age=fresh+SWR` and `x-jaa-edge-fresh-until`.
+ *
  * Scope:
  * - GET/HEAD only. No Authorization. No session/auth cookies (`founding_purchase`
  *   is the only app cookie today). No RSC/router request headers.
@@ -36,9 +44,14 @@ export const EDGE_CACHE_API_SWR_SECONDS = 300;
 export const EDGE_CACHE_404_TTL_SECONDS = 60;
 /** Debug header: HIT | MISS | STALE | BYPASS */
 export const EDGE_CACHE_STATUS_HEADER = "x-cache";
-const ORIGINAL_CACHE_CONTROL_HEADER = "x-jaa-edge-orig-cache-control";
-const ORIGINAL_VARY_HEADER = "x-jaa-edge-orig-vary";
 const FRESH_UNTIL_HEADER = "x-jaa-edge-fresh-until";
+/** Outbound to browsers / Vercel — must not be shared-cached in front of the Worker. */
+export const EDGE_CACHE_CLIENT_CACHE_CONTROL = "private, no-store";
+export const EDGE_CACHE_CDN_CACHE_CONTROL = "no-store";
+
+/** Vinext/Next Vary list observed in production; never store or re-emit on cache hits. */
+export const RENDERER_VARY_HEADER =
+  "RSC, Next-Router-State-Tree, Next-Router-Prefetch, Next-Router-Segment-Prefetch, Next-Url, X-Vinext-Interception-Context, X-Vinext-Mounted-Slots, X-Vinext-Rsc-Render-Mode, X-Vinext-Rsc-State-Fingerprint";
 
 /** Only cookie the site Worker sets today (checkout). Bypass whenever present. */
 export const EDGE_CACHE_AUTH_COOKIES = Object.freeze(["founding_purchase"]);
@@ -185,6 +198,8 @@ function requestHost(request, url) {
 
 /**
  * Stable GET cache key (HEAD shares the GET entry).
+ * Built as a plain Request from a normalized URL with **no headers**, so Vary on
+ * the stored response cannot fragment or reject the entry.
  * @param {Request} request
  * @param {string | undefined} release
  */
@@ -211,15 +226,54 @@ export function isEdgeStorableResponse(request, response) {
   return response.status === 404 && JOB_DETAIL.test(pathname);
 }
 
-function clientCacheControl(ttlSeconds, swrSeconds) {
-  if (swrSeconds > 0) {
-    return `public, max-age=0, s-maxage=${ttlSeconds}, stale-while-revalidate=${swrSeconds}`;
-  }
-  return `public, max-age=0, s-maxage=${ttlSeconds}`;
+/**
+ * Whether Cache-Control forbids storing in a Cache-API-like store.
+ * Cloudflare ignores / refuses entries that are effectively uncacheable.
+ * @param {string | null} cacheControl
+ */
+export function isUncacheableCacheControl(cacheControl) {
+  if (!cacheControl) return false;
+  const cc = cacheControl.toLowerCase();
+  if (/\bno-store\b/.test(cc)) return true;
+  if (/\bprivate\b/.test(cc) && !/\bs-maxage=[1-9]\d*\b/.test(cc)) return true;
+  const maxAge = cc.match(/\bmax-age=(\d+)\b/);
+  const sMaxAge = cc.match(/\bs-maxage=(\d+)\b/);
+  const maxAgeZero = maxAge ? Number(maxAge[1]) === 0 : false;
+  const sMaxAgePositive = sMaxAge ? Number(sMaxAge[1]) > 0 : false;
+  // max-age=0 with no positive s-maxage is not worth storing (renderer default).
+  if (maxAgeZero && !sMaxAgePositive) return true;
+  return false;
 }
 
 /**
- * Copy that the Cache API stores (TTL = fresh + SWR so stale entries remain matchable).
+ * Vary values Cloudflare's Cache API will not usefully store (RSC/router list or *).
+ * @param {string | null} vary
+ */
+export function isProblematicVary(vary) {
+  if (!vary) return false;
+  if (vary.trim() === "*") return true;
+  return /rsc|next-router|next-url|x-vinext/i.test(vary);
+}
+
+/** Apply browser/CDN headers so Vercel (and others) do not shared-cache in front of us. */
+export function applyClientEdgeHeaders(headers, state) {
+  headers.delete("set-cookie");
+  headers.delete("vary");
+  headers.delete("age");
+  headers.delete("expires");
+  headers.delete("cf-cache-status");
+  headers.delete(FRESH_UNTIL_HEADER);
+  headers.set("cache-control", EDGE_CACHE_CLIENT_CACHE_CONTROL);
+  headers.set("CDN-Cache-Control", EDGE_CACHE_CDN_CACHE_CONTROL);
+  headers.set("Vercel-CDN-Cache-Control", EDGE_CACHE_CDN_CACHE_CONTROL);
+  headers.set(EDGE_CACHE_STATUS_HEADER, state);
+  return headers;
+}
+
+/**
+ * Copy that the Cache API stores. Always rewrite Cache-Control / Vary / Set-Cookie:
+ * the renderer sends `public, max-age=0` + a long RSC Vary, which Cloudflare will
+ * refuse or treat as immediately stale. Freshness for SWR is `x-jaa-edge-fresh-until`.
  * @param {Response} response
  * @param {{ ttlSeconds?: number, swrSeconds?: number, now?: number }} [options]
  */
@@ -228,44 +282,33 @@ export function toStoredResponse(response, options = {}) {
   const swrSeconds = options.swrSeconds ?? EDGE_CACHE_SWR_SECONDS;
   const now = options.now ?? Date.now();
   const headers = new Headers(response.headers);
-  const original = headers.get("cache-control");
-  if (original != null) headers.set(ORIGINAL_CACHE_CONTROL_HEADER, original);
+  // Storage policy only — never keep the renderer's max-age=0 / no-store / Vary.
+  headers.delete("set-cookie");
+  headers.delete("vary");
+  headers.delete("age");
+  headers.delete("expires");
+  headers.delete("cf-cache-status");
+  headers.delete("CDN-Cache-Control");
+  headers.delete("Vercel-CDN-Cache-Control");
+  headers.delete(EDGE_CACHE_STATUS_HEADER);
   headers.set("cache-control", `public, max-age=${ttlSeconds + swrSeconds}`);
   headers.set(FRESH_UNTIL_HEADER, String(now + ttlSeconds * 1000));
-  const vary = headers.get("vary");
-  if (vary != null) headers.set(ORIGINAL_VARY_HEADER, vary);
-  headers.delete("vary");
-  headers.delete(EDGE_CACHE_STATUS_HEADER);
   return new Response(response.body, { status: response.status, statusText: response.statusText, headers });
 }
 
 /**
- * Restore client-facing headers on a cache hit/stale serve.
+ * Client-facing headers on a cache hit/stale serve (no Vary, no shared CDN cache).
  * @param {Response} cached
  * @param {"HIT" | "STALE"} state
- * @param {{ ttlSeconds?: number, swrSeconds?: number }} [options]
  */
-export function fromStoredResponse(cached, state = "HIT", options = {}) {
-  const ttlSeconds = options.ttlSeconds ?? EDGE_CACHE_TTL_SECONDS;
-  const swrSeconds = options.swrSeconds ?? EDGE_CACHE_SWR_SECONDS;
-  const headers = new Headers(cached.headers);
-  headers.delete(ORIGINAL_CACHE_CONTROL_HEADER);
-  headers.delete(FRESH_UNTIL_HEADER);
-  headers.set("cache-control", clientCacheControl(ttlSeconds, swrSeconds));
-  const vary = headers.get(ORIGINAL_VARY_HEADER);
-  headers.delete(ORIGINAL_VARY_HEADER);
-  if (vary != null) headers.set("vary", vary);
-  headers.delete("cf-cache-status");
-  headers.delete("age");
-  headers.delete("expires");
-  headers.set(EDGE_CACHE_STATUS_HEADER, state);
+export function fromStoredResponse(cached, state = "HIT") {
+  const headers = applyClientEdgeHeaders(new Headers(cached.headers), state);
   return new Response(cached.body, { status: cached.status, statusText: cached.statusText, headers });
 }
 
 /** @param {Response} response @param {string} state */
 export function withEdgeCacheStatus(response, state) {
-  const headers = new Headers(response.headers);
-  headers.set(EDGE_CACHE_STATUS_HEADER, state);
+  const headers = applyClientEdgeHeaders(new Headers(response.headers), state);
   return new Response(response.body, { status: response.status, statusText: response.statusText, headers });
 }
 
@@ -359,12 +402,9 @@ export async function serveWithEdgeCache(request, { cache, release, waitUntil, r
   try {
     const cached = await cache.match(key);
     if (cached) {
-      const pathname = new URL(request.url).pathname;
       const freshUntil = Number(cached.headers.get(FRESH_UNTIL_HEADER) || 0);
-      const ttlSeconds = edgeCacheTtlSeconds(pathname, cached.status);
-      const swrSeconds = edgeCacheSwrSeconds(pathname, cached.status);
       if (currentNow() < freshUntil) {
-        const hit = fromStoredResponse(cached, "HIT", { ttlSeconds, swrSeconds });
+        const hit = fromStoredResponse(cached, "HIT");
         return isHead ? asHeadResponse(hit) : hit;
       }
       // Still inside Cache API max-age (fresh + SWR): serve stale, refresh once.
@@ -380,7 +420,7 @@ export async function serveWithEdgeCache(request, { cache, release, waitUntil, r
           }
         }).catch(() => {}),
       );
-      const stale = fromStoredResponse(cached, "STALE", { ttlSeconds, swrSeconds });
+      const stale = fromStoredResponse(cached, "STALE");
       return isHead ? asHeadResponse(stale) : stale;
     }
   } catch {
@@ -392,11 +432,8 @@ export async function serveWithEdgeCache(request, { cache, release, waitUntil, r
     try {
       const raced = await cache.match(key);
       if (raced) {
-        const pathname = new URL(request.url).pathname;
-        const ttlSeconds = edgeCacheTtlSeconds(pathname, raced.status);
-        const swrSeconds = edgeCacheSwrSeconds(pathname, raced.status);
         const state = currentNow() < Number(raced.headers.get(FRESH_UNTIL_HEADER) || 0) ? "HIT" : "STALE";
-        const rebuilt = fromStoredResponse(raced, state, { ttlSeconds, swrSeconds });
+        const rebuilt = fromStoredResponse(raced, state);
         return {
           status: rebuilt.status,
           statusText: rebuilt.statusText,
@@ -422,19 +459,19 @@ export async function serveWithEdgeCache(request, { cache, release, waitUntil, r
     }
 
     const opts = storeOptionsFor(request, rendered, currentNow());
-    const forClient = withEdgeCacheStatus(rendered, "MISS");
-    const clientHeaders = new Headers(forClient.headers);
-    clientHeaders.set("cache-control", clientCacheControl(opts.ttlSeconds, opts.swrSeconds));
-    const body = await forClient.arrayBuffer();
-    const toCache = toStoredResponse(new Response(body.slice(0), {
-      status: forClient.status,
-      statusText: forClient.statusText,
-      headers: clientHeaders,
+    // Buffer once: store a Cache-API-safe copy (rewritten CC / no Vary), return a
+    // client copy that Vercel must not shared-cache (`private, no-store`).
+    const body = await rendered.arrayBuffer();
+    const stored = toStoredResponse(new Response(body.slice(0), {
+      status: rendered.status,
+      statusText: rendered.statusText,
+      headers: rendered.headers,
     }), opts);
-    waitUntil(cache.put(key, toCache).catch(() => {}));
+    waitUntil(cache.put(key, stored).catch(() => {}));
+    const clientHeaders = applyClientEdgeHeaders(new Headers(rendered.headers), "MISS");
     return {
-      status: forClient.status,
-      statusText: forClient.statusText,
+      status: rendered.status,
+      statusText: rendered.statusText,
       headers: [...clientHeaders.entries()],
       body,
       cacheStatus: "MISS",

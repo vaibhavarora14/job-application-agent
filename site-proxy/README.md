@@ -19,6 +19,24 @@ custom domains to the Cloudflare Worker:
 - **Origin Worker**: Deployed via GitHub Actions (`.github/workflows/deploy-site.yml`)
   to Cloudflare Workers on every push to `main`.
 
+## Edge cache (Workers Cache API)
+
+The Worker (`site/lib/edge-cache.mjs`) stores anonymous HTML in `caches.default`.
+That cache **does HIT** when the Worker is hit directly
+(`*.workers.dev`). The apex must not be shared-cached by Vercel in front of the
+Worker: a cached `x-cache: MISS` response would be replayed forever and origin
+would never see a second request. The Worker therefore sends
+`Cache-Control: private, no-store` and `Vercel-CDN-Cache-Control: no-store` on
+edge-cached routes so Vercel always re-originates; freshness lives only in
+`caches.default`.
+
+### Out-of-repo option (not applied by this repo)
+
+To drop the Vercel hop entirely (optional, free Cloudflare DNS + Worker route):
+point `jobappagent.com` at Cloudflare and attach a route to
+`job-application-agent-site`. Do **not** change live DNS/routes from CI; that is
+an operator change outside this repository.
+
 Host-aware routing in `site/proxy.ts` rewrites `stats.jobappagent.com/` to
 `/community-view`. Founding CTA copy is shared via `FOUNDING_CTA_LABEL`
 (`Reserve for $49`) in `site/lib/payment-core.mjs` and `FoundingCheckout`.

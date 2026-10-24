@@ -4,9 +4,12 @@ import {
   EDGE_CACHE_404_TTL_SECONDS,
   EDGE_CACHE_API_SWR_SECONDS,
   EDGE_CACHE_API_TTL_SECONDS,
+  EDGE_CACHE_CDN_CACHE_CONTROL,
+  EDGE_CACHE_CLIENT_CACHE_CONTROL,
   EDGE_CACHE_SWR_SECONDS,
   EDGE_CACHE_STATUS_HEADER,
   EDGE_CACHE_TTL_SECONDS,
+  RENDERER_VARY_HEADER,
   edgeCacheKey,
   edgeCacheSwrSeconds,
   edgeCacheTtlSeconds,
@@ -14,9 +17,12 @@ import {
   isEdgeCacheablePath,
   isEdgeCacheableRequest,
   isEdgeStorableResponse,
+  isProblematicVary,
+  isUncacheableCacheControl,
   normalizeEdgeCacheSearch,
   resetEdgeCacheInflight,
   serveWithEdgeCache,
+  toStoredResponse,
 } from '../lib/edge-cache.mjs';
 
 const ORIGIN = 'https://job-application-agent-site.varora1406.workers.dev';
@@ -33,6 +39,40 @@ class MemoryCache {
       status: response.status,
       statusText: response.statusText,
       headers: new Headers(response.headers),
+    });
+  }
+}
+
+/**
+ * Mimics Cloudflare Workers Cache API constraints that bit production:
+ * - refuses Cache-Control that is effectively uncacheable (no-store / max-age=0)
+ * - refuses problematic Vary (RSC / Next-Router / *)
+ * - keys are URL-only (no request headers on the Request)
+ */
+class CloudflareLikeCache {
+  constructor() { this.store = new Map(); this.puts = 0; this.rejected = 0; }
+  async match(request) {
+    const hit = this.store.get(new URL(request.url).href);
+    if (!hit) return undefined;
+    const cc = hit.headers.get('cache-control') ?? '';
+    const maxAge = Number((cc.match(/\bmax-age=(\d+)\b/i) || [])[1] ?? 0);
+    if (maxAge <= 0 || Date.now() > hit.storedAt + maxAge * 1000) return undefined;
+    return new Response(hit.body.slice(0), { status: hit.status, statusText: hit.statusText, headers: new Headers(hit.headers) });
+  }
+  async put(request, response) {
+    this.puts += 1;
+    const cc = response.headers.get('cache-control');
+    const vary = response.headers.get('vary');
+    if (isUncacheableCacheControl(cc) || isProblematicVary(vary)) {
+      this.rejected += 1;
+      return; // no-op — Cloudflare does not keep the entry
+    }
+    this.store.set(new URL(request.url).href, {
+      body: await response.arrayBuffer(),
+      status: response.status,
+      statusText: response.statusText,
+      headers: new Headers(response.headers),
+      storedAt: Date.now(),
     });
   }
 }
@@ -117,20 +157,85 @@ test('miss then hit: second request is served from cache without re-render', asy
   const options = { cache, release: 'r1', waitUntil: (p) => pending.push(p), render };
   const first = await serveWithEdgeCache(page('/jobs'), options);
   assert.equal(first.headers.get(EDGE_CACHE_STATUS_HEADER), 'MISS');
+  assert.equal(first.headers.get('cache-control'), EDGE_CACHE_CLIENT_CACHE_CONTROL);
+  assert.equal(first.headers.get('vercel-cdn-cache-control'), EDGE_CACHE_CDN_CACHE_CONTROL);
+  assert.equal(first.headers.get('vary'), null);
   assert.equal(await first.text(), '<html>render 1</html>');
   await Promise.all(pending);
 
   const second = await serveWithEdgeCache(page('/jobs'), options);
   assert.equal(renders, 1);
   assert.equal(second.headers.get(EDGE_CACHE_STATUS_HEADER), 'HIT');
-  assert.match(second.headers.get('cache-control') ?? '', /s-maxage=3600/);
-  assert.equal(second.headers.get('vary'), 'RSC');
+  assert.equal(second.headers.get('cache-control'), EDGE_CACHE_CLIENT_CACHE_CONTROL);
+  assert.equal(second.headers.get('vary'), null);
   assert.equal(second.headers.get('x-frame-options'), 'DENY');
   assert.equal(await second.text(), '<html>render 1</html>');
 
   const rsc = await serveWithEdgeCache(page('/jobs', { headers: { RSC: '1' } }), options);
   assert.equal(renders, 2);
   assert.equal(rsc.headers.get(EDGE_CACHE_STATUS_HEADER), null);
+});
+
+test('renderer max-age=0 + RSC Vary: Cloudflare-like Cache API still HITs on second request', async () => {
+  // Production vinext headers. Without rewriting CC/Vary before cache.put, CF refuses
+  // the entry and every request stays MISS (the apex bug when origin is actually hit).
+  assert.equal(isUncacheableCacheControl('public, max-age=0'), true);
+  assert.equal(isProblematicVary(RENDERER_VARY_HEADER), true);
+  assert.equal(isUncacheableCacheControl(`public, max-age=${EDGE_CACHE_TTL_SECONDS + EDGE_CACHE_SWR_SECONDS}`), false);
+
+  const raw = new Response('<html>job</html>', {
+    status: 200,
+    headers: {
+      'content-type': 'text/html; charset=utf-8',
+      'cache-control': 'public, max-age=0',
+      vary: RENDERER_VARY_HEADER,
+    },
+  });
+  // Control: storing the renderer response as-is must be rejected.
+  const control = new CloudflareLikeCache();
+  await control.put(edgeCacheKey(page('/jobs/slug-cf'), 'r1'), raw.clone());
+  assert.equal(control.rejected, 1);
+  assert.equal(control.store.size, 0);
+
+  // toStoredResponse rewrites CC and strips Vary — CF-like store accepts it.
+  const fixed = toStoredResponse(raw.clone(), { ttlSeconds: 3600, swrSeconds: 3600, now: Date.now() });
+  assert.match(fixed.headers.get('cache-control') ?? '', /max-age=7200/);
+  assert.equal(fixed.headers.get('vary'), null);
+
+  const cache = new CloudflareLikeCache();
+  const pending = [];
+  let renders = 0;
+  const render = async () => {
+    renders += 1;
+    return new Response(`<html>job ${renders}</html>`, {
+      status: 200,
+      headers: {
+        'content-type': 'text/html; charset=utf-8',
+        'cache-control': 'public, max-age=0',
+        vary: RENDERER_VARY_HEADER,
+      },
+    });
+  };
+  const options = { cache, release: 'r1', waitUntil: (p) => pending.push(p), render };
+  const first = await serveWithEdgeCache(page('/jobs/slug-cf'), options);
+  assert.equal(first.headers.get(EDGE_CACHE_STATUS_HEADER), 'MISS');
+  await Promise.all(pending);
+  assert.equal(cache.rejected, 0);
+  assert.equal(cache.store.size, 1);
+
+  const second = await serveWithEdgeCache(page('/jobs/slug-cf'), options);
+  assert.equal(renders, 1);
+  assert.equal(second.headers.get(EDGE_CACHE_STATUS_HEADER), 'HIT');
+  assert.equal(second.headers.get('cache-control'), EDGE_CACHE_CLIENT_CACHE_CONTROL);
+  assert.equal(second.headers.get('cdn-cache-control'), EDGE_CACHE_CDN_CACHE_CONTROL);
+  assert.equal(second.headers.get('vary'), null);
+  assert.equal(await second.text(), '<html>job 1</html>');
+});
+
+test('cache key Request carries no headers (stable across Vary)', () => {
+  const key = edgeCacheKey(page('/jobs', { headers: { RSC: '1', 'next-router-prefetch': '1' } }), 'rel');
+  assert.equal([...key.headers.keys()].length, 0);
+  assert.equal(key.method, 'GET');
 });
 
 test('stale-while-revalidate serves STALE and refreshes once in the background', async () => {
@@ -391,11 +496,12 @@ test('community-stats and community-jobs use 300s fresh + 300s SWR', async () =>
     render: async () => Response.json({ ok: true }),
   });
   assert.equal(response.headers.get(EDGE_CACHE_STATUS_HEADER), 'MISS');
-  assert.match(response.headers.get('cache-control') ?? '', /s-maxage=300/);
-  assert.match(response.headers.get('cache-control') ?? '', /stale-while-revalidate=300/);
+  assert.equal(response.headers.get('cache-control'), EDGE_CACHE_CLIENT_CACHE_CONTROL);
+  assert.equal(response.headers.get('vercel-cdn-cache-control'), EDGE_CACHE_CDN_CACHE_CONTROL);
   await Promise.all(pending);
   const stored = [...cache.store.values()][0];
   assert.match(stored.headers.get('cache-control') ?? '', /max-age=600/);
+  assert.equal(stored.headers.get('vary'), null);
 });
 
 test('chosen TTLs: pages 3600+3600, APIs 300+300, job 404 60s', () => {
