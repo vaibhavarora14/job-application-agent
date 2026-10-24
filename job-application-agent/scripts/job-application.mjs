@@ -541,6 +541,19 @@ export function routineAutoProfileThinSubmitError() {
 }
 
 /**
+ * The honest profile one-click path that assertSubmissionFillGuard allows for an empty-looking
+ * submit: a non-fixture apply with fill telemetry, 0 fields filled and no résumé uploaded, recorded
+ * with applicationChannel profile_one_click and telemetry.profileResumeOnFile true.
+ * Sent as the Boolean `profileOneClick` on application_submitted (no URL, employer or résumé data).
+ */
+export function isProfileOneClickSubmission(entry, metrics) {
+  if (isFixtureOrSandboxApply(entry)) return false;
+  if (!metrics || metrics.fillMetricsSource === 'empty') return false;
+  if (!(metrics.fieldsFilled === 0 && metrics.resumeUploaded !== true)) return false;
+  return applicationChannelOf(entry) === PROFILE_ONE_CLICK_CHANNEL && metrics.profileResumeOnFile === true;
+}
+
+/**
  * Block ledger add when fill metrics are missing or the submission looks empty.
  * Fixture / vendor-sandbox applies are exempt.
  * Honest one-click path: applicationChannel profile_one_click + telemetry.profileResumeOnFile.
@@ -563,8 +576,7 @@ export function assertSubmissionFillGuard(entry, metrics, thinOverride = null, o
     return { path: 'filled', thinSubmissionOverrideUsed: false };
   }
 
-  const channel = applicationChannelOf(entry);
-  if (channel === PROFILE_ONE_CLICK_CHANNEL && metrics.profileResumeOnFile === true) {
+  if (isProfileOneClickSubmission(entry, metrics)) {
     return { path: 'profile_one_click', thinSubmissionOverrideUsed: false };
   }
 
@@ -765,6 +777,10 @@ export async function telemetryApplicationSubmitted(entry, details = {}) {
       // (answer-key fallback), i.e. not agent-filled. Omitted otherwise, so ordinary agent submits
       // keep the pre-existing property set.
       ...(ENTRY_ORIGINS.has(entryOrigin) ? { entryOrigin } : {}),
+      // Boolean only: true when the submit took the honest profile one-click path
+      // (profile_one_click channel + profileResumeOnFile, 0 fields, no résumé), the same rule
+      // assertSubmissionFillGuard allows. Optional in the schema: older CLIs omit it.
+      profileOneClick: isProfileOneClickSubmission(entry, metrics),
     },
   };
 }

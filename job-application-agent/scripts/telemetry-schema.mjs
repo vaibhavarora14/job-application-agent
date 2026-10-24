@@ -130,6 +130,10 @@ export const EVENT_SCHEMAS = {
       // not agent-filled. Omitted for agent-filled submits, so older relays/clients are unaffected.
       // Relays must deploy this key before a CLI that sends it is published.
       entryOrigin: enumValue(values('agent', 'logged')),
+      // Optional Boolean: true = submitted via the honest profile one-click path
+      // (applicationChannel profile_one_click + telemetry.profileResumeOnFile). Older CLIs omit it.
+      // Relays must deploy this key before a CLI that sends it is published.
+      profileOneClick: boolean,
     },
   },
   round_completed: { required: { requestedCount: integer(1, 1000), submittedCount: integer(0, 1000), assessedCount: integer(0, 10000), skippedCount: integer(0, 10000), pausedCount: integer(0, 10000), errorCount: integer(0, 10000), durationBucket: enumValue(DURATIONS) }, optional: { attemptedSourceCount: integer(0, 10000), searchedSourceCount: integer(0, 10000), blockedSourceCount: integer(0, 10000), maxSourceSharePercent: integer(0, 100), concentrationReason: enumValue(CONCENTRATION_REASONS) } },

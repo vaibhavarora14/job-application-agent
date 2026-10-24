@@ -129,6 +129,17 @@ export function relayCompatibleEvent(event) {
   return { ...event, properties };
 }
 
+/**
+ * application_submitted without the optional profileOneClick key, or null when the event has none.
+ * Used once after a relay that predates the key (strict allowlist) answers 400 invalid_event, so
+ * a CLI released before the relay is deployed still gets its submissions counted.
+ */
+export function withoutProfileOneClick(event) {
+  if (event?.event !== 'application_submitted' || !event.properties || !('profileOneClick' in event.properties)) return null;
+  const { profileOneClick: _unused, ...properties } = event.properties;
+  return { ...event, properties };
+}
+
 export async function prepareTelemetryInput(input) {
   if (!input || Array.isArray(input) || typeof input !== 'object') return validateEvent(input);
   for (const key of Object.keys(input)) if (!['event', 'properties'].includes(key)) throw new Error(`Unknown telemetry input property: ${key}.`);
@@ -691,6 +702,17 @@ export class TelemetryClient {
           headers: { 'content-type': 'application/json' },
           body: JSON.stringify(createTelemetryEnvelope({ installationId: next.installationId, token: next.token, event, skillVersion: SKILL_VERSION })),
         });
+      }
+      if (response.status === 400) {
+        const legacy = withoutProfileOneClick(event);
+        if (legacy && (await relayErrorCode(response)) === 'invalid_event') {
+          event = legacy;
+          response = await this.fetchWithRetry(`${this.endpoint}/v1/events`, {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify(createTelemetryEnvelope({ installationId: next.installationId, token: next.token, event, skillVersion: SKILL_VERSION })),
+          });
+        }
       }
       if (!response.ok) {
         if (isPermanentRejection(response.status)) {

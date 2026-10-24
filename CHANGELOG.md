@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+- **Telemetry: optional `profileOneClick` on `application_submitted`.** A Boolean: `true` when the submit went through the honest profile one-click path that `ledger add` allows for a 0-field, no-résumé, non-fixture submit (`applicationChannel: "profile_one_click"` with `telemetry.profileResumeOnFile: true`), `false` for every other submit. It is derived by the CLI from the same rule as the empty-submit guard and carries no job URL, employer, résumé contents or file names. Older CLIs omit it and stay valid.
+- Relay (shared schema): accepts `profileOneClick` as an optional Boolean on `application_submitted`; events without it are accepted unchanged. **The telemetry relay must be deployed with this schema before a CLI that sends it is published.** As a safety net, if a relay that predates the key answers `invalid_event`, the CLI resends that `application_submitted` once without `profileOneClick`, so the submission is still counted.
+
 ## 3.8.4
 
 - **Verified source coverage (local).** In rounds started by this version, `round source` refuses `status: "searched"` for a board with no `round lead` records in the round, or whose leads were all recorded after the round's latest submission. The community job feed is `community-jobs-feed`: `searched` needs a successful `sources jobs` pull since `round start`, and `blocked` (community feed unavailable, blocker `access-unavailable`/`site-error`) is accepted only after a `sources jobs` call in the round failed (its output now carries `communityFeedUnavailable: true`). `round complete` requires one community feed pull (or that recorded failure) before the round's submissions and rejects coverage recorded only after them. Evidence is kept in a private local `round-evidence.ndjson`; nothing new is synced or sent. Rounds started by older versions keep the earlier rules.

@@ -15,6 +15,7 @@ import {
   relayCompatibleEvent,
   TelemetryClient,
   TEST_RUNNER_TELEMETRY_ENDPOINT,
+  withoutProfileOneClick,
 } from '../scripts/telemetry-client.mjs';
 import { defaultSourceCommunityEndpoint } from '../scripts/source-community-client.mjs';
 
@@ -407,6 +408,45 @@ test('legacy queued application_submitted with thinSubmissionOverrideUsed false 
   const sent = requests.find((request) => request.body?.event === 'application_submitted');
   assert.ok(sent, 'queued submission was sent');
   assert.equal('thinSubmissionOverrideUsed' in sent.body.properties, false);
+});
+
+test('application_submitted with profileOneClick is resent without it to a strict relay that predates the key', async (t) => {
+  const directory = await mkdtemp(join(tmpdir(), 'telemetry-profile-one-click-'));
+  t.after(() => rm(directory, { recursive: true, force: true }));
+  const requests = [];
+  let strict = true;
+  const fetch = async (url, options = {}) => {
+    const body = options.body ? JSON.parse(options.body) : null;
+    requests.push({ url, body });
+    if (url.endsWith('/v1/install')) return Response.json({ installationId: '11111111-1111-4111-8111-111111111111', token: 'relay-token', expiresAt: '2099-01-01T00:00:00.000Z' });
+    if (strict && body?.properties && 'profileOneClick' in body.properties) return Response.json({ error: 'invalid_event' }, { status: 400 });
+    return Response.json({ accepted: true, eventId: '22222222-2222-4222-8222-222222222222' }, { status: 202 });
+  };
+  const submitted = {
+    event: 'application_submitted',
+    properties: {
+      company: 'Example', title: 'Engineer', jobHash: 'a'.repeat(64), domain: 'jobs.example.com', ats: 'other',
+      durationBucket: 'under-1s', fieldsFilled: 0, shortAnswerCount: 0, resumeUploaded: false, approvalMode: 'review-each',
+      telemetrySupplied: true, fillMetricsSource: 'telemetry', profileOneClick: true,
+    },
+  };
+  const client = new TelemetryClient({ stateDir: directory, endpoint: 'https://relay.example.com', fetch, stderr: () => {}, timeoutMs: 50 });
+  const session = await client.beginCommand('apply');
+  assert.equal((await client.record(submitted, session)).sent, true);
+  const attempts = requests.filter((request) => request.body?.event === 'application_submitted');
+  assert.equal(attempts.length, 2);
+  assert.equal(attempts[0].body.properties.profileOneClick, true);
+  assert.equal('profileOneClick' in attempts[1].body.properties, false);
+  // An updated relay gets the key on the first try.
+  strict = false;
+  requests.length = 0;
+  const next = { ...submitted, properties: { ...submitted.properties, jobHash: 'b'.repeat(64), profileOneClick: false } };
+  assert.equal((await client.record(next, session)).sent, true);
+  const updated = requests.filter((request) => request.body?.event === 'application_submitted');
+  assert.equal(updated.length, 1);
+  assert.equal(updated[0].body.properties.profileOneClick, false);
+  assert.equal(withoutProfileOneClick({ event: 'application_paused', properties: { profileOneClick: true } }), null);
+  assert.equal(withoutProfileOneClick({ event: 'application_submitted', properties: { ats: 'lever' } }), null);
 });
 
 test('relayCompatibleEvent keeps a true thinSubmissionOverrideUsed and leaves other events untouched', () => {

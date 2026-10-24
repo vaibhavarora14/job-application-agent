@@ -11,6 +11,7 @@ import { createServer } from 'node:http';
 import {
   assertAndRecordThinOverrideUse,
   assertSubmissionFillGuard,
+  isProfileOneClickSubmission,
   buildReview,
   commandCategory,
   durationBucket,
@@ -636,6 +637,50 @@ test('application_submitted carries resumeFieldPresent only when known and still
   assert.equal(JSON.stringify(present).includes('resume.pdf'), false);
 });
 
+test('application_submitted carries Boolean profileOneClick from the same rule as the fill guard', async () => {
+  const live = {
+    company: 'Hirist Co', role: 'Backend Engineer', url: 'https://www.hirist.tech/j/example-role-1',
+    source: 'other', approval: 'APPROVE SUBMIT', answers: {},
+  };
+  const oneClickEntry = { ...live, applicationChannel: PROFILE_ONE_CLICK_CHANNEL };
+  const oneClickMetrics = resolveSubmissionFillMetrics(oneClickEntry, { fieldsFilled: 0, resumeUploaded: false, profileResumeOnFile: true });
+  const send = async (entry, metrics) => telemetryApplicationSubmitted(entry, { ...metrics, telemetrySupplied: true });
+
+  // True: the honest profile one-click path the guard allows (0 fields, no résumé, profile résumé on file).
+  assert.equal(assertSubmissionFillGuard(oneClickEntry, oneClickMetrics).path, 'profile_one_click');
+  assert.equal(isProfileOneClickSubmission(oneClickEntry, oneClickMetrics), true);
+  const yes = await send(oneClickEntry, oneClickMetrics);
+  assert.equal(yes.properties.profileOneClick, true);
+
+  // False: an ordinary filled submit, the one-click channel without profileResumeOnFile, a
+  // one-click channel that still filled fields, and an attended thin override.
+  const filledMetrics = resolveSubmissionFillMetrics(live, { fieldsFilled: 6, resumeUploaded: true });
+  const noProfileResume = resolveSubmissionFillMetrics(oneClickEntry, { fieldsFilled: 3, resumeUploaded: false });
+  const oneClickFilled = resolveSubmissionFillMetrics(oneClickEntry, { fieldsFilled: 2, resumeUploaded: false, profileResumeOnFile: true });
+  const thin = resolveSubmissionFillMetrics(live, { fieldsFilled: 0, resumeUploaded: false });
+  const no = [
+    await send(live, filledMetrics),
+    await send(oneClickEntry, noProfileResume),
+    await send(oneClickEntry, oneClickFilled),
+    await telemetryApplicationSubmitted(live, { ...thin, telemetrySupplied: true, thinSubmissionOverrideUsed: true }),
+    await telemetryApplicationSubmitted(oneClickEntry, { telemetrySupplied: false, fillMetricsSource: 'empty' }),
+  ];
+  for (const event of no) assert.equal(event.properties.profileOneClick, false);
+  assert.equal(assertSubmissionFillGuard(oneClickEntry, oneClickFilled).path, 'filled');
+  // Fixture / vendor-sandbox applies never count as the one-click path.
+  assert.equal(isProfileOneClickSubmission({ ...oneClickEntry, applyKind: 'fixture' }, oneClickMetrics), false);
+
+  // Boolean only, never the job URL or résumé details; every shape validates against the relay schema.
+  for (const event of [yes, ...no]) {
+    assert.equal(typeof event.properties.profileOneClick, 'boolean');
+    assert.deepEqual(validateEvent(event), event);
+    assert.equal(JSON.stringify(event).includes('hirist.tech/j/'), false);
+  }
+  // Omitted (older CLIs): still a valid application_submitted.
+  const { profileOneClick: _omit, ...legacy } = yes.properties;
+  assert.equal('profileOneClick' in validateEvent({ event: 'application_submitted', properties: legacy }).properties, false);
+});
+
 test('ledger add emits resumeFieldPresent to the relay and keeps it out of the ledger row', async (t) => {
   const directory = await mkdtemp(join(tmpdir(), 'job-agent-resume-field-'));
   t.after(() => rm(directory, { recursive: true, force: true }));
@@ -689,7 +734,10 @@ test('ordinary application_submitted stays within the pre-3.7.9 relay property s
     telemetrySupplied: true, fillMetricsSource: 'telemetry', fieldsFilled: 9, shortAnswerCount: 1, resumeUploaded: true, durationBucket: '2-5m',
     thinSubmissionOverrideUsed: false,
   });
-  const unknown = Object.keys(event.properties).filter((key) => !PRE_379_RELAY_KEYS.has(key));
+  // profileOneClick (Boolean, always sent by newer CLIs) is the one addition: the client resends
+  // without it when a relay that predates the key answers invalid_event (see telemetry-client tests).
+  assert.equal(event.properties.profileOneClick, false);
+  const unknown = Object.keys(event.properties).filter((key) => !PRE_379_RELAY_KEYS.has(key) && key !== 'profileOneClick');
   assert.deepEqual(unknown, []);
 });
 
