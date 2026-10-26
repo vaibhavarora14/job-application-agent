@@ -34,7 +34,7 @@ Claims such as **atomic**, **safe**, **exact**, **verified**, or **never** need 
 
 ## External PR checklist (ledger / installer)
 
-For ledger-lock, installer, or persistence changes (see [#14](https://github.com/vaibhavarora14/job-application-agent/pull/14) and [#15](https://github.com/vaibhavarora14/job-application-agent/pull/15)):
+For ledger-lock, installer, or persistence changes (see [#14](https://github.com/onima-tech/job-application-agent/pull/14) and [#15](https://github.com/onima-tech/job-application-agent/pull/15)):
 
 1. Synchronize with current `main` before requesting re-review.
 2. Add the adversarial regressions already required on those PRs—do not invent weaker substitutes:

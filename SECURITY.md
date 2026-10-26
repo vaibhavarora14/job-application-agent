@@ -2,7 +2,7 @@
 
 ## Reporting a vulnerability
 
-Please report suspected security or privacy vulnerabilities through [GitHub private vulnerability reporting](https://github.com/vaibhavarora14/job-application-agent/security/advisories/new).
+Please report suspected security or privacy vulnerabilities through [GitHub private vulnerability reporting](https://github.com/onima-tech/job-application-agent/security/advisories/new).
 
 Include the affected file or workflow, reproduction steps, expected impact, and any suggested mitigation. Remove personal data, résumé content, application records, browser data, credentials, tokens, and secrets before submitting the report.
 

@@ -2,7 +2,7 @@
 
 ## Scope
 
-This package is Marketplace metadata + Cursor skill/command wrappers around the public npm CLI/skill. Report vulnerabilities via [GitHub private vulnerability reporting](https://github.com/vaibhavarora14/job-application-agent/security/advisories/new).
+This package is Marketplace metadata + Cursor skill/command wrappers around the public npm CLI/skill. Report vulnerabilities via [GitHub private vulnerability reporting](https://github.com/onima-tech/job-application-agent/security/advisories/new).
 
 ## Credentials & secrets
 

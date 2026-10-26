@@ -19,7 +19,7 @@ export const metadata: Metadata = {
 
 /** Public sources for the table, numbered as in the reviewed copy. */
 const SOURCES: Record<number, string> = {
-  1: "https://github.com/vaibhavarora14/job-application-agent",
+  1: "https://github.com/onima-tech/job-application-agent",
   2: "https://github.com/torontodeveloper/job-application-agent",
   3: "https://github.com/Yaima/agent-apply",
   4: "https://github.com/Pickle-Pixel/ApplyPilot",
@@ -43,7 +43,7 @@ type Approval = { tone: "yes" | "no" | "neutral"; label: string; standalone?: bo
 type Row = { name: string; repo?: string; refs: number[]; approval: Approval; cells: [string, string, string, string, string, string] };
 
 const ROWS: Row[] = [
-  { name: "JobAppAgent", approval: { tone: "yes", label: "yes, by default" }, repo: "vaibhavarora14/job-application-agent", refs: [1], cells: [
+  { name: "JobAppAgent", approval: { tone: "yes", label: "yes, by default" }, repo: "onima-tech/job-application-agent", refs: [1], cells: [
     "Searches, matches, fills and submits. `review-each` is the default. Optional `routine-auto` submits routine applications in batches you've authorised, and pauses for sensitive steps.",
     "Uses the browser your coding agent provides. Submits to Greenhouse, Ashby and Lever, which test fixtures cover. Other documented channels: LinkedIn, Workable, Comeet, Rippling, SmartRecruiters, Google Forms, company career sites and email. Workday is listed but not yet submitted to or tested. It won't automate LinkedIn or X sign-in or messaging.",
     "Yes by default (`review-each`). Optional `routine-auto`.",
@@ -174,6 +174,6 @@ export default function Compare() {
     <ol>
       {Object.entries(SOURCES).map(([ref, href]) => <li key={ref} value={Number(ref)}><a href={href} rel="noopener">{href.replace(/^https:\/\//, "")}</a></li>)}
     </ol>
-    <p className={styles.crossLinks}><Link href="/open-source">About the project</Link> · <a href="https://github.com/vaibhavarora14/job-application-agent">View on GitHub</a></p>
+    <p className={styles.crossLinks}><Link href="/open-source">About the project</Link> · <a href="https://github.com/onima-tech/job-application-agent">View on GitHub</a></p>
   </main>;
 }

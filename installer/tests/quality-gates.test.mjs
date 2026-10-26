@@ -175,7 +175,7 @@ test('validation exposes a stable quality gate and a six-combination high-risk m
   assert.match(workflow, /name:\s*quality-gate/);
   assert.match(workflow, /matrix:/);
   // Ubuntu on every high-risk change; macOS/Windows on push to main or a `full-matrix` PR label.
-  assert.match(workflow, /^\s{2}high-risk:\n(?:\s{4}.*\n)*?\s{8}os:\s*\[ubuntu-latest\]/m);
+  assert.match(workflow, /^\s{2}high-risk:\n(?:\s{4}.*\n)*?\s{8}os:\s*\[blacksmith-2vcpu-ubuntu-2404\]/m);
   assert.match(workflow, /^\s{2}high-risk-cross-os:\n(?:\s{4}.*\n)*?\s{8}os:\s*\[macos-latest, windows-latest\]/m);
   assert.match(workflow, /github\.event_name == 'push' && github\.ref == 'refs\/heads\/main'/);
   assert.match(workflow, /contains\(github\.event\.pull_request\.labels\.\*\.name, 'full-matrix'\)/);

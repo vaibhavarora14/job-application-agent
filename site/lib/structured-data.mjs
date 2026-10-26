@@ -2,7 +2,7 @@
 
 export const SITE_ORIGIN = "https://jobappagent.com";
 export const STATS_ORIGIN = "https://stats.jobappagent.com";
-export const GITHUB_URL = "https://github.com/vaibhavarora14/job-application-agent";
+export const GITHUB_URL = "https://github.com/onima-tech/job-application-agent";
 
 const ORGANIZATION_ID = `${SITE_ORIGIN}/#organization`;
 const WEBSITE_ID = `${SITE_ORIGIN}/#website`;

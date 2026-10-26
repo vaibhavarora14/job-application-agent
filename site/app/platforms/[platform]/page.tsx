@@ -50,6 +50,6 @@ export default async function PlatformGuide({ params }: Props) {
     <textarea className={styles.prompt} id="setup-prompt" readOnly value={prompt} rows={12} spellCheck={false} />
     <h2>Verify before your first application</h2>
     <p>Check that your agent can load the complete skill, keep your profile private, upload a synthetic PDF on a local test page, and hand the browser back to you. Then review one real application. Only visible confirmation counts as submitted.</p>
-    <p><a href={platform.docsUrl}>Read the official {platform.name} documentation</a> · <a href="https://github.com/vaibhavarora14/job-application-agent">Inspect the open-source project</a></p>
+    <p><a href={platform.docsUrl}>Read the official {platform.name} documentation</a> · <a href="https://github.com/onima-tech/job-application-agent">Inspect the open-source project</a></p>
   </main>;
 }

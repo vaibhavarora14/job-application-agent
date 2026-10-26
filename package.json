@@ -46,10 +46,10 @@
   "homepage": "https://jobappagent.com",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/vaibhavarora14/job-application-agent.git"
+    "url": "git+https://github.com/onima-tech/job-application-agent.git"
   },
   "bugs": {
-    "url": "https://github.com/vaibhavarora14/job-application-agent/issues"
+    "url": "https://github.com/onima-tech/job-application-agent/issues"
   },
   "publishConfig": {
     "access": "public",

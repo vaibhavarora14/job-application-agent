@@ -19,7 +19,7 @@ test("site JSON-LD graph includes Organization, WebSite, and SoftwareApplication
   assert.doesNotMatch(serialized, /"offers"/);
   assert.doesNotMatch(serialized, /\$49|49\.00|"price"/);
   assert.match(serialized, /jobappagent\.com/);
-  assert.match(serialized, /github\.com\/vaibhavarora14\/job-application-agent/);
+  assert.match(serialized, /github\.com\/onima-tech\/job-application-agent/);
 
   // schema.org-shaped: required identity fields present
   for (const node of graph["@graph"]) {
@@ -58,7 +58,7 @@ test("/open-source SoftwareApplication JSON-LD names JobAppAgent, MIT, repo, and
   assert.equal(node["@type"], "SoftwareApplication");
   assert.equal(node.name, "JobAppAgent");
   assert.equal(node.alternateName, "job-application-agent");
-  assert.equal(node.codeRepository, "https://github.com/vaibhavarora14/job-application-agent");
+  assert.equal(node.codeRepository, "https://github.com/onima-tech/job-application-agent");
   assert.equal(node.applicationCategory, "DeveloperApplication");
   assert.match(node.license, /MIT/);
   const serialized = JSON.stringify(node);

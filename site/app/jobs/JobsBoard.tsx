@@ -201,7 +201,7 @@ export function JobsBoard({
         <p className={styles.foot}>
           Listings come from the community registry. A maintainer reviews each one before it appears.
           Know a role?{" "}
-          <a href="https://github.com/vaibhavarora14/job-application-agent/blob/main/job-application-agent/references/SOURCES.md">
+          <a href="https://github.com/onima-tech/job-application-agent/blob/main/job-application-agent/references/SOURCES.md">
             Submit it to the registry ↗
           </a>
         </p>

@@ -28,7 +28,7 @@ npx job-application-agent@latest install
 Alternative, only if the user prefers the skills CLI (copies the skill from GitHub):
 
 ```bash
-npx skills add vaibhavarora14/job-application-agent
+npx skills add onima-tech/job-application-agent
 ```
 
 After an approved install, confirm with (read-only):
@@ -68,7 +68,7 @@ Do not invent a second profile store. Prefer the installed skill scripts under `
 
 ## Full skill source
 
-Canonical skill tree (scripts + references): [`job-application-agent/`](https://github.com/vaibhavarora14/job-application-agent/tree/main/job-application-agent) in this repository after install, or on GitHub.
+Canonical skill tree (scripts + references): [`job-application-agent/`](https://github.com/onima-tech/job-application-agent/tree/main/job-application-agent) in this repository after install, or on GitHub.
 
 Product site: https://jobappagent.com
 

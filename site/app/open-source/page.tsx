@@ -9,7 +9,7 @@ import styles from "../components/ContentPage.module.css";
 const TITLE = "JobAppAgent: the open-source job application agent";
 const DESCRIPTION = "JobAppAgent is an open-source job application agent (MIT). It applies from one verified résumé within your rules. By default you approve each submit.";
 const URL = "https://jobappagent.com/open-source";
-const REPO = "https://github.com/vaibhavarora14/job-application-agent";
+const REPO = "https://github.com/onima-tech/job-application-agent";
 
 export const metadata: Metadata = {
   title: { absolute: TITLE },
@@ -30,7 +30,7 @@ export default function OpenSource() {
     <Link className="legal-back" href="/">← Back to the product</Link>
     <h1>JobAppAgent, the <span className={styles.nb}>open‑source</span> job application agent</h1>
     <p>JobAppAgent is an open-source job application agent for people applying to jobs for themselves. It runs inside a browser-capable coding agent on your computer. It searches for roles, checks each one against your verified résumé and preferences, fills in the applications that pass, and keeps a record of everything. A job counts as applied only after the site shows a confirmation.</p>
-    <p>JobAppAgent, the GitHub repo <code>vaibhavarora14/job-application-agent</code> and the npm package <code>job-application-agent</code> are the same project. It is MIT licensed.</p>
+    <p>JobAppAgent, the GitHub repo <code>onima-tech/job-application-agent</code> and the npm package <code>job-application-agent</code> are the same project. It is MIT licensed.</p>
     <p className={styles.smallPrint}>JobAppAgent isn&apos;t affiliated with other GitHub repositories that use the name &quot;job-application-agent&quot;.</p>
 
     <OpenSourceStats className={styles.stats} />
@@ -54,7 +54,7 @@ export default function OpenSource() {
     <CopyCode code="npx job-application-agent@latest install" />
     <p>That installs the full skill. It tells you when a new version is out and installs nothing until you ask. To opt in to automatic updates, run <code>npx job-application-agent@latest updates enable</code>.</p>
     <p>If you&apos;d rather use the skills CLI:</p>
-    <CopyCode code="npx skills add vaibhavarora14/job-application-agent" />
+    <CopyCode code="npx skills add onima-tech/job-application-agent" />
     <p>Check the install:</p>
     <CopyCode code="npx job-application-agent@latest status" />
     <p>Then ask your agent: &quot;Use job-application-agent to onboard my résumé and job preferences.&quot;</p>
@@ -86,11 +86,11 @@ export default function OpenSource() {
 
     <h2>FAQ</h2>
     <div className={`faq ${styles.faq}`}>
-      <details><summary>What is JobAppAgent?</summary><p>JobAppAgent is an open-source job application agent, MIT licensed, published as <code>vaibhavarora14/job-application-agent</code> on GitHub and <code>job-application-agent</code> on npm. It runs inside a coding agent on your computer. It searches for roles, matches them to one verified résumé and your preferences, applies within rules you set, and records an application only after a visible confirmation.</p></details>
+      <details><summary>What is JobAppAgent?</summary><p>JobAppAgent is an open-source job application agent, MIT licensed, published as <code>onima-tech/job-application-agent</code> on GitHub and <code>job-application-agent</code> on npm. It runs inside a coding agent on your computer. It searches for roles, matches them to one verified résumé and your preferences, applies within rules you set, and records an application only after a visible confirmation.</p></details>
       <details><summary>Does JobAppAgent submit applications without asking me?</summary><p>Not by default. JobAppAgent starts in <code>review-each</code> mode, so you approve every application before it goes out. You can turn on <code>routine-auto</code> for destinations or batches you&apos;ve authorised. Even then it pauses for sign-in, CAPTCHA, legal and demographic questions, and anything it can&apos;t verify. The confirmation prompts in your browser and agent still apply in either mode.</p></details>
-      <details><summary>How do I install JobAppAgent?</summary><p>Run <code>npx job-application-agent@latest install</code> with Node.js 20 or newer, then check it with <code>npx job-application-agent@latest status</code>. You can also install it with the skills CLI: <code>npx skills add vaibhavarora14/job-application-agent</code>.</p></details>
+      <details><summary>How do I install JobAppAgent?</summary><p>Run <code>npx job-application-agent@latest install</code> with Node.js 20 or newer, then check it with <code>npx job-application-agent@latest status</code>. You can also install it with the skills CLI: <code>npx skills add onima-tech/job-application-agent</code>.</p></details>
       <details><summary>Where does JobAppAgent keep my data?</summary><p>Profile facts stay in your OS credential store, and your résumé and application ledgers stay in an owner-only folder on your computer. Anonymous usage analytics, a private contact record (your saved name and email) and community sharing of public job links are on by default. You can turn each one off with a CLI command.</p></details>
-      <details><summary>Is JobAppAgent the same as other &quot;job-application-agent&quot; repositories on GitHub?</summary><p>No. JobAppAgent is <code>vaibhavarora14/job-application-agent</code>, the project behind jobappagent.com and the <code>job-application-agent</code> npm package. Other repositories with the same name are separate projects.</p></details>
+      <details><summary>Is JobAppAgent the same as other &quot;job-application-agent&quot; repositories on GitHub?</summary><p>No. JobAppAgent is <code>onima-tech/job-application-agent</code>, the project behind jobappagent.com and the <code>job-application-agent</code> npm package. Other repositories with the same name are separate projects.</p></details>
     </div>
 
     <section className={styles.crossLinks} aria-label="Install and links">

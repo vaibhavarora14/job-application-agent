@@ -9,7 +9,7 @@
     "url": "https://jobappagent.com"
   },
   "homepage": "https://jobappagent.com",
-  "repository": "https://github.com/vaibhavarora14/job-application-agent",
+  "repository": "https://github.com/onima-tech/job-application-agent",
   "license": "MIT",
   "keywords": [
     "agent-skills",
@@ -41,7 +41,7 @@
         "websiteURL": "https://jobappagent.com",
         "privacyPolicyURL": "https://jobappagent.com/privacy",
         "termsOfServiceURL": "https://jobappagent.com/terms",
-        "supportURL": "https://github.com/vaibhavarora14/job-application-agent/blob/main/plugins/job-application-agent/SUPPORT.md",
+        "supportURL": "https://github.com/onima-tech/job-application-agent/blob/main/plugins/job-application-agent/SUPPORT.md",
         "defaultPrompt": [
           "Help me set up Job Application Agent and install the CLI runtime.",
           "Assess this job posting against my verified profile and eligibility rules.",

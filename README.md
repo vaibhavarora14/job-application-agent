@@ -4,7 +4,7 @@
 
 ### Search roles, match them to one verified résumé, apply within your rules on Greenhouse, Ashby and Lever, and track confirmed submissions.
 
-[![Validate](https://github.com/vaibhavarora14/job-application-agent/actions/workflows/validate.yml/badge.svg)](https://github.com/vaibhavarora14/job-application-agent/actions/workflows/validate.yml)
+[![Validate](https://github.com/onima-tech/job-application-agent/actions/workflows/validate.yml/badge.svg)](https://github.com/onima-tech/job-application-agent/actions/workflows/validate.yml)
 [![npm](https://img.shields.io/npm/v/job-application-agent?logo=npm&color=CB3837)](https://www.npmjs.com/package/job-application-agent)
 [![MIT License](https://img.shields.io/badge/license-MIT-2563EB.svg)](LICENSE)
 [![Agent Skills](https://img.shields.io/badge/Agent_Skills-compatible-111827)](job-application-agent/SKILL.md)
@@ -18,7 +18,7 @@ npx job-application-agent@latest install
 ```
 
 ```bash
-npx skills add vaibhavarora14/job-application-agent
+npx skills add onima-tech/job-application-agent
 ```
 
 ---
@@ -44,7 +44,7 @@ npx job-application-agent@latest install
 ```
 
 ```bash
-npx skills add vaibhavarora14/job-application-agent
+npx skills add onima-tech/job-application-agent
 ```
 
 Then tell your coding agent:
@@ -200,7 +200,7 @@ Updates are staged and validated before replacement. Private candidate state liv
 ## 📍 Where to find it
 
 - [jobappagent.com](https://jobappagent.com) — product site and founding reservation for cloud access (coming soon)
-- [GitHub](https://github.com/vaibhavarora14/job-application-agent)
+- [GitHub](https://github.com/onima-tech/job-application-agent)
 - [npm](https://www.npmjs.com/package/job-application-agent)
 - [skills.sh](https://skills.sh/vaibhavarora14/job-application-agent)
 - [skills.re](https://skills.re/skills/vaibhavarora14/job-application-agent/job-application-agent)

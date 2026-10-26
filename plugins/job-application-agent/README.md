@@ -68,6 +68,6 @@ Once listed in the OpenAI Plugins Directory, install from ChatGPT Work or Codex 
 
 ## Related
 
-- GitHub: https://github.com/vaibhavarora14/job-application-agent
+- GitHub: https://github.com/onima-tech/job-application-agent
 - npm: https://www.npmjs.com/package/job-application-agent
 - License: MIT via repository root [`LICENSE`](../../LICENSE)

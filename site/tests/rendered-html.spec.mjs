@@ -269,7 +269,7 @@ test("open-source and compare pages pair JobAppAgent with open-source job applic
   const compareHtml = await compare.text();
   assert.match(openHtml, /<title>JobAppAgent: the open-source job application agent<\/title>/);
   assert.match(openHtml, /<h1>JobAppAgent, the <span class="[^"]+">open\u2011source<\/span> job application agent<\/h1>/);
-  assert.match(openHtml, /the GitHub repo <code>vaibhavarora14\/job-application-agent<\/code> and the npm package <code>job-application-agent<\/code> are the same project/);
+  assert.match(openHtml, /the GitHub repo <code>onima-tech\/job-application-agent<\/code> and the npm package <code>job-application-agent<\/code> are the same project/);
   assert.match(openHtml, />Confirmed applications</);
   assert.doesNotMatch(openHtml, /Applications submitted/);
   assert.match(openHtml, />Copy</);
@@ -277,7 +277,7 @@ test("open-source and compare pages pair JobAppAgent with open-source job applic
   assert.match(openHtml, /href="\/compare"[^>]*>See how it compares</);
   assert.match(openHtml, /rel="canonical" href="https:\/\/jobappagent\.com\/open-source"/);
   assert.match(openHtml, /"@type":"SoftwareApplication","name":"JobAppAgent","alternateName":"job-application-agent"/);
-  assert.match(openHtml, /"codeRepository":"https:\/\/github\.com\/vaibhavarora14\/job-application-agent"/);
+  assert.match(openHtml, /"codeRepository":"https:\/\/github\.com\/onima-tech\/job-application-agent"/);
   assert.match(compareHtml, /<title>Open-source job application agents compared \| JobAppAgent<\/title>/);
   assert.match(compareHtml, /<h1>How JobAppAgent compares to other <span class="[^"]+">open\u2011source<\/span> job agents<\/h1>/);
   assert.match(compareHtml, /href="\/open-source"[^>]*>About the project</);
