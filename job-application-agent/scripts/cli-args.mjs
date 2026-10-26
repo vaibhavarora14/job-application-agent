@@ -89,16 +89,17 @@ export function normalizeCliArgs(input) {
   if (area === 'cloud' && (args[1] === 'lease' || args[1] === 'intent') && /^[a-z]+$/.test(args[2] ?? '')) {
     args = ['cloud', `${args[1]}-${args[2]}`, ...args.slice(3)];
   }
-  const alias = ACTION_ALIASES[area]?.[args[1]];
+  const aliases = Object.hasOwn(ACTION_ALIASES, area) ? ACTION_ALIASES[area] : undefined;
+  const alias = aliases && Object.hasOwn(aliases, args[1]) ? aliases[args[1]] : undefined;
   if (alias) args = [area, alias, ...args.slice(2)];
   // A stdin subcommand given its JSON inline is equivalent to `--stdin`.
-  if (inlineJson !== undefined && STDIN_ACTIONS[area]?.includes(args[1]) && args[2] === '--stdin') args = args.slice(0, 3);
+  if (inlineJson !== undefined && Object.hasOwn(STDIN_ACTIONS, area) && STDIN_ACTIONS[area].includes(args[1]) && args[2] === '--stdin') args = args.slice(0, 3);
   return { args, ...(inlineJson !== undefined ? { inlineJson } : {}) };
 }
 
 /** Usage text for `help` output: every area, or one area. */
 export function usageFor(area) {
-  if (area && COMMAND_USAGE[area]) return { usage: [COMMAND_USAGE[area]] };
+  if (area && Object.hasOwn(COMMAND_USAGE, area)) return { usage: [COMMAND_USAGE[area]] };
   return {
     usage: Object.values(COMMAND_USAGE),
     note: 'Run node scripts/job-application.mjs <area> help for one area. Commands marked --stdin read exactly one JSON object from standard input.',
