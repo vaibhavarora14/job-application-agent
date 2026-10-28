@@ -41,7 +41,8 @@ test("server-renders the focused cloud offer and honest community proof", async 
   assert.match(html, /What am I paying for\?/);
   assert.match(html, /founding-price reservation for cloud access/);
   // Pre-purchase limits: buyers see the CAPTCHA/question pauses before paying.
-  assert.match(html, /Not 100% hands-off: some applications pause for a CAPTCHA or an employer question, and the agent waits for a quick step from you before it carries on\./);
+  assert.match(html, /You stay in the loop\. Some applications pause for a CAPTCHA or an employer question, and the agent waits for a quick step from you before it carries on\./);
+  assert.match(html, /After payment we email a confirmation, not an instant dashboard\./);
   assert.match(html, /<summary>Is it fully hands-off\?<\/summary>/);
   assert.match(html, /Not completely\. Some applications stop at a CAPTCHA or a question only you can answer\. The agent pauses there and asks you to take a quick step, then keeps going\./);
   assert.doesNotMatch(html, /41\.73/);

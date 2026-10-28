@@ -48,7 +48,7 @@ export default function Home() {
 
       <section className="section page-width" id="founding">
         <div className="founding-card">
-          <div><p className="eyebrow">Founding reservation</p><h2>Reserve founding access</h2><p>Pay $49 to lock founding reservation pricing. After payment we email a confirmation — not an instant dashboard. Cloud access remains coming soon; no launch date promised.</p><p className="founding-limits">Not 100% hands-off: some applications pause for a CAPTCHA or an employer question, and the agent waits for a quick step from you before it carries on.</p></div>
+          <div><p className="eyebrow">Founding reservation</p><h2>Reserve founding access</h2><p>Pay $49 to lock founding reservation pricing. After payment we email a confirmation, not an instant dashboard. Cloud access remains coming soon; no launch date promised.</p><p className="founding-limits">You stay in the loop. Some applications pause for a CAPTCHA or an employer question, and the agent waits for a quick step from you before it carries on.</p></div>
           <div className="offer-panel"><div><span>FOUNDING RESERVATION</span><strong>$49</strong><small>Founding reservation · $49</small></div><ul><li>Scheduled job discovery</li><li>Persistent, resumable runs</li><li>Decision notifications</li><li>Secure checkout by Dodo Payments</li></ul><FoundingCheckout /></div>
         </div>
       </section>
