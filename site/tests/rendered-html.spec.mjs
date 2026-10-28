@@ -377,10 +377,47 @@ test("publishes an indexable jobs board with shared site chrome", async () => {
     // Whole page must stay free of founding pricing (header included).
     assert.doesNotMatch(html, /\$49|Reserve for \$49|Reserve founding|Founding reservation|FOUNDING RESERVATION/i);
     assert.doesNotMatch(html, /contributor_hash|contributorHash/);
-    assert.match(html, /Reviewed and live, checked daily|Apply with your agent|Roles reviewed by maintainers/);
+    assert.match(html, /Roles reviewed by maintainers/);
     assert.match(html, /Example Labs|Senior Backend Engineer/);
-    // List-row apply CTAs are outline secondary; solid primary stays on detail.
-    assert.match(html, /button button-secondary[^>]*>Apply with your agent/);
+    // Redesign B: each role is one link; no per-row buttons; filters (sheet + sidebar) and count.
+    assert.doesNotMatch(html, /Apply with your agent<\/a>/);
+    assert.match(html, /<a[^>]+href="\/jobs\/example-labs-senior-backend-engineer-aaaaaaaaaaaaaaaa"/);
+    assert.match(html, /5 open roles/);
+    assert.match(html, /Newest posted first/);
+    assert.match(html, /aria-haspopup="dialog"[^>]*>.*?Filters/);
+    assert.match(html, /<legend>Workplace<\/legend>/);
+    assert.match(html, /<legend>Minimum pay, per year<\/legend>/);
+    assert.match(html, /Include roles without listed pay/);
+    assert.doesNotMatch(html, /<legend>[^<]*(ATS|Source|Channel)/i);
+    // Honest pay: employer range with currency in the pay chip; nothing when pay is unknown.
+    assert.match(html, /class="_?chip[^"]*_?chipPay[^"]*">\$150K–\$235K USD</);
+    assert.doesNotMatch(html, /Pay not listed|Not listed/);
+    // At most 2 chips per role row.
+    for (const row of html.match(/<a[^>]+href="\/jobs\/[^"]+"[^>]*>[\s\S]*?<\/a>/g) ?? []) {
+      assert.ok((row.match(/class="_?chip[\s_"]/g) ?? []).length <= 2, row);
+    }
+    assert.match(html, /Showing 5 of 5/);
+    assert.doesNotMatch(html, /Show \d+ more/);
+
+    const remote = await (await render("/jobs?workplace=remote")).text();
+    assert.match(remote, /3 roles match/);
+    assert.match(remote, /aria-label="Remove filter Remote"/);
+    assert.doesNotMatch(remote, /Platform Engineer, Payments/);
+
+    const payOnly = await (await render("/jobs?nopay=0")).text();
+    assert.match(payOnly, /2 roles match/);
+    assert.doesNotMatch(payOnly, /Senior Backend Engineer/);
+
+    const zero = await (await render("/jobs?workplace=onsite")).text();
+    assert.match(zero, /0 roles match/);
+    assert.match(zero, /No roles match these filters/);
+    assert.match(zero, /“On-site” rules out every match\. Without it, 5 roles match\./);
+    assert.match(zero, /Remove “On-site”/);
+
+    const failed = await (await render("/jobs?design=error")).text();
+    assert.match(failed, /We couldn(?:&#x27;|')t load the role list/);
+    assert.match(failed, /Try again/);
+    assert.match(failed, /Roles did not load/);
 
     const closed = await render("/jobs/example-mark-product-designer-eeeeeeeeeeeeeeee");
     assert.equal(closed.status, 200);
@@ -394,23 +431,31 @@ test("publishes an indexable jobs board with shared site chrome", async () => {
     const open = await render("/jobs/example-labs-senior-backend-engineer-aaaaaaaaaaaaaaaa");
     assert.equal(open.status, 200);
     const openHtml = await open.text();
-    assert.match(openHtml, /Reviewed and live, checked daily/);
-    assert.match(openHtml, /Last checked /);
-    assert.doesNotMatch(openHtml, /Last checked [^<"']{0,40}Reviewed and live/);
-    assert.match(openHtml, /npx job-application-agent@latest apply /);
-    assert.match(openHtml, /Apply in review mode/);
+    // Apply bar: Copy prompt (primary) + Open posting on <ATS> (secondary), prompt preview, full CLI.
+    assert.match(openHtml, /Copy prompt/);
+    assert.match(openHtml, /Open posting on Greenhouse/);
+    assert.match(openHtml, /Preview the prompt/);
+    assert.match(openHtml, /Apply to this role with JobAppAgent in review mode/);
+    assert.match(openHtml, /URL: https:\/\/boards\.greenhouse\.io\/exampleco\/jobs\/1001/);
+    assert.match(openHtml, /npx job-application-agent@latest apply https:\/\/boards\.greenhouse\.io\/exampleco\/jobs\/1001/);
+    assert.match(openHtml, /For Cursor, Claude Code or Codex/);
+    assert.doesNotMatch(openHtml, />Apply<\/(a|button)>/);
+    assert.match(openHtml, /From Example Labs(?:&#x27;|')s Greenhouse posting\. Checked /);
     assert.match(openHtml, /og:url" content="https:\/\/jobappagent\.com\/jobs\//);
     assert.match(openHtml, /application\/ld\+json/);
     assert.match(openHtml, /validThrough/);
     assert.match(openHtml, /TELECOMMUTE|applicantLocationRequirements/);
-    // Unknown pay reads "Pay not listed"; other unknown facts are omitted, never "Not listed".
-    assert.match(openHtml, /Pay not listed|<strong>Pay<\/strong>[^<]*\d/);
-    assert.doesNotMatch(openHtml, /Not listed/);
+    // Unknown pay: no Pay row and no placeholder text; other unknown facts are omitted too.
+    assert.doesNotMatch(openHtml, /<dt>Pay<\/dt>/);
+    assert.doesNotMatch(openHtml, /Pay not listed|Not listed/);
+    assert.match(openHtml, /<dt>Workplace<\/dt><dd>Remote<\/dd>/);
+    assert.match(openHtml, /<dt>Type<\/dt><dd>Full-time<\/dd>/);
 
     // Design-approved pay bands: muted "Name:" then the bold range as its own unsplittable span.
     const threeBands = await (await render("/jobs/example-pay-platform-engineer-payments-bbbbbbbbbbbbbbbb")).text();
     assert.match(threeBands, /class="_?payBandName[^"]*">Engineer II:<\/span> <span class="_?payBandRange[^"]*">\$150K–\$180K USD<\/span>/);
     assert.match(threeBands, /class="_?payBandRange[^"]*">\$150K–\$250K USD OTE<\/span>/);
+    assert.match(threeBands, /<dt>Pay<\/dt>/);
     assert.doesNotMatch(threeBands, /more bands?</);
     const sixBands = await (await render("/jobs/example-health-product-designer-mobile-dddddddddddddddd")).text();
     assert.equal((sixBands.match(/class="_?payBandRange/g) ?? []).length, 4);

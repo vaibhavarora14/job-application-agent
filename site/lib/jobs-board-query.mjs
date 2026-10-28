@@ -234,11 +234,12 @@ function matches(job, query, now) {
     if (!query.loc.toLowerCase().split(' ').filter(Boolean).every((term) => hay.includes(term))) return false;
   }
   if (query.pay || !query.nopay) {
-    const usd = usdAnnualMax(job);
-    if (usd == null) {
+    if (!employerSalary(job)) {
       if (!query.nopay) return false;
-    } else if (query.pay && usd < query.pay * 1000) {
-      return false;
+    } else if (query.pay) {
+      // Listed pay must reach the threshold; a currency without a rate never does.
+      const usd = usdAnnualMax(job);
+      if (usd == null || usd < query.pay * 1000) return false;
     }
   }
   if (query.posted) {

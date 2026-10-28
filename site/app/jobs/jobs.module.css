@@ -1022,15 +1022,16 @@
   font-weight: 500;
 }
 
-/* Pay bands: muted "Name:" then the range at 600, never split across lines. */
+/* Pay bands (#183 rules): one band per line, muted "Name:" then the range at 600 that never splits. */
 .payBands {
   display: flex;
-  flex-wrap: wrap;
-  gap: 4px 20px;
+  flex-direction: column;
+  gap: 2px;
 }
 
 .payBand {
-  display: inline;
+  display: block;
+  overflow-wrap: normal;
 }
 
 .payBandName {
@@ -1039,17 +1040,20 @@
 }
 
 .payBandRange {
+  color: var(--j-ink);
   font-weight: 600;
   white-space: nowrap;
 }
 
 .payBandMore {
+  align-self: flex-start;
   display: inline-flex;
   align-items: center;
   min-height: 44px;
-  margin: -12px 0;
-  color: var(--j-link);
-  font-weight: 600;
+  margin-bottom: -12px;
+  color: var(--j-muted);
+  font-size: 14px;
+  font-weight: 500;
   text-decoration: underline;
   text-underline-offset: 3px;
 }

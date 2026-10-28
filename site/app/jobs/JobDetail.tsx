@@ -93,10 +93,13 @@ function Facts({ job }: { job: BoardJob }) {
   const workplace = workplaceLabel(job);
   if (workplace) cells.push({ key: "workplace", label: "Workplace", value: workplace });
   const place = locationLabel(job);
-  // A long place list gets its own row instead of a tall narrow cell.
-  if (place && place !== workplace) cells.push({ key: "location", label: "Location", value: place, wide: place.length > 48 });
+  const showPlace = Boolean(place && place !== workplace);
+  // A long place list gets its own full row, after the short facts, instead of a tall narrow cell.
+  const longPlace = showPlace && place.length > 48;
+  if (showPlace && !longPlace) cells.push({ key: "location", label: "Location", value: place });
   const type = employmentLabel(job.location?.employmentType);
   if (type) cells.push({ key: "type", label: "Type", value: type });
+  if (longPlace) cells.push({ key: "location", label: "Location", value: place, wide: true });
   if (cells.length === 0) return null;
   const narrow = cells.filter((cell) => !cell.wide);
   // Two columns on phones: an odd last cell spans the row so no empty slot shows.
@@ -252,8 +255,7 @@ export function JobDetail({
               </section>
               <Facts job={job} />
               <p className={styles.prov}>
-                {ats && ats !== job.company ? `From ${job.company}'s ${ats} posting.` : `From ${job.company}'s posting.`}
-                {checked ? ` Checked ${checked}.` : ""}
+                {`${ats && ats !== job.company ? `From ${job.company}'s ${ats} posting.` : `From ${job.company}'s posting.`}${checked ? ` Checked ${checked}.` : ""}`}
               </p>
               <a className={styles.tl} href={job.url} target="_blank" rel="noopener noreferrer">
                 {postingLabel(job, "Read the full posting")}
