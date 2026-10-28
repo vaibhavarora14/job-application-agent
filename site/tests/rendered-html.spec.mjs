@@ -392,7 +392,8 @@ test("publishes an indexable jobs board with shared site chrome", async () => {
     assert.doesNotMatch(html, /monthly exchange rates|Only roles where the employer states a level/);
     assert.doesNotMatch(html, /<legend>[^<]*(ATS|Source|Channel)/i);
     // Honest pay: employer range with currency in the pay chip; nothing when pay is unknown.
-    assert.match(html, /class="_?chip[^"]*_?chipPay[^"]*">\$150K–\$235K USD</);
+    // The range sits in its own no-wrap span so it never splits; the suffix may wrap under it.
+    assert.match(html, /class="_?chip[^"]*_?chipPay[^"]*"><span class="[^"]*payRange[^"]*">\$150K–\$235K<\/span> USD</);
     assert.doesNotMatch(html, /Pay not listed|Not listed/);
     // At most 2 chips per role row.
     for (const row of html.match(/<a[^>]+href="\/jobs\/[^"]+"[^>]*>[\s\S]*?<\/a>/g) ?? []) {
