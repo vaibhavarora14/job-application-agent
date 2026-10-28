@@ -278,29 +278,59 @@ export function extractLocation(job, data) {
   return result;
 }
 
+/** One Map per records array so slug pages never re-scan the location index. */
+const recordsByJobIdCache = new WeakMap();
+
+/**
+ * Slug-keyed / jobId-keyed lookup over the directory location index.
+ * Built once per `index.records` array (WeakMap); subsequent gets are O(1).
+ * @param {{ records?: unknown[] } | null | undefined} index
+ * @returns {Map<string, object>}
+ */
+export function locationRecordsByJobId(index) {
+  const records = index?.records;
+  if (!Array.isArray(records)) return new Map();
+  let map = recordsByJobIdCache.get(records);
+  if (!map) {
+    map = new Map(records.map((record) => [record.jobId, record]));
+    recordsByJobIdCache.set(records, map);
+  }
+  return map;
+}
+
+/**
+ * Attach directory location metadata to a single job via O(1) jobId lookup.
+ * Does not iterate `index.records`.
+ * @param {object} job
+ * @param {{ records?: unknown[] } | null | undefined} index
+ * @param {number} [now]
+ */
+export function attachLocationToJob(job, index, now = Date.now()) {
+  const record = locationRecordsByJobId(index).get(job.jobId);
+  const age = now - Date.parse(record?.checkedAt);
+  const valid = record && record.url === job.url && record.role === job.role && record.company === job.company && age >= 0 && age <= 30 * 86400000;
+  if (!valid) return { ...job, location: null };
+
+  const countries = unique((record.countries || []).map(countryLabel));
+  const salary = (record.salary && !record.salary.isEstimated) ? record.salary : null;
+  const employmentType = record.employmentType || extractEmploymentType(job.role);
+  const experienceLevel = record.experienceLevel || extractExperienceLevel(job.role);
+
+  return {
+    ...job,
+    location: {
+      ...record,
+      countries,
+      salary,
+      employmentType,
+      experienceLevel
+    }
+  };
+}
+
 export function attachLocations(jobs, index, now = Date.now()) {
-  const records = new Map(index.records.map(record => [record.jobId, record]));
-  return jobs.map(job => {
-    const record = records.get(job.jobId);
-    const age = now - Date.parse(record?.checkedAt);
-    const valid = record && record.url === job.url && record.role === job.role && record.company === job.company && age >= 0 && age <= 30 * 86400000;
-    if (!valid) return { ...job, location: null };
-
-    const countries = unique((record.countries || []).map(countryLabel));
-    const salary = (record.salary && !record.salary.isEstimated) ? record.salary : null;
-    const employmentType = record.employmentType || extractEmploymentType(job.role);
-    const experienceLevel = record.experienceLevel || extractExperienceLevel(job.role);
-
-    return {
-      ...job,
-      location: {
-        ...record,
-        countries,
-        salary,
-        employmentType,
-        experienceLevel
-      }
-    };
-  });
+  // Warm the shared Map once, then attach per job without re-scanning records.
+  locationRecordsByJobId(index);
+  return jobs.map((job) => attachLocationToJob(job, index, now));
 }
 

@@ -1,10 +1,16 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { JobDetail } from "../JobDetail";
-import { findJobBySlug, loadJobsBoard } from "../../../lib/load-jobs-board.mjs";
-import { jobPostingJsonLd, similarOpenRoles, isListedOpenJob, TRUST_LINE } from "../../../lib/live-jobs.mjs";
+import type { BoardJob } from "../JobsBoard";
+import { loadJobPageBySlug } from "../../../lib/job-page-data.mjs";
+import { jobPostingJsonLd, TRUST_LINE } from "../../../lib/live-jobs.mjs";
 
 type Props = { params: Promise<{ slug: string }> };
+type JobPageData = {
+  job: BoardJob & { closedAt?: string | null };
+  similar: BoardJob[];
+  now: number;
+};
 
 export const dynamic = "force-dynamic";
 
@@ -16,13 +22,11 @@ export async function headers() {
 
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const { slug } = await params;
-  const board = await loadJobsBoard();
-  const job = findJobBySlug(board.all, slug);
+  const page = (await loadJobPageBySlug(slug)) as JobPageData | null;
   // Missing / stale-open → notFound(); leave robots to app/not-found.tsx to avoid duplicate metas.
-  if (!job) return { title: "Role not found" };
-  const staleOpen = job.livenessStatus !== "closed" && !isListedOpenJob(job, board.now);
-  if (staleOpen) return { title: "Role not found" };
+  if (!page) return { title: "Role not found" };
 
+  const { job } = page;
   const closed = job.livenessStatus === "closed";
   const title = closed ? `${job.role} (closed)` : job.role;
   const description = closed
@@ -56,14 +60,10 @@ export function generateStaticParams() {
 
 export default async function JobPage({ params }: Props) {
   const { slug } = await params;
-  const board = await loadJobsBoard();
-  const job = findJobBySlug(board.all, slug);
-  if (!job) notFound();
+  const page = (await loadJobPageBySlug(slug)) as JobPageData | null;
+  if (!page) notFound();
 
-  const staleOpen = job.livenessStatus !== "closed" && !isListedOpenJob(job, board.now);
-  if (staleOpen) notFound();
-
-  const similar = job.livenessStatus === "closed" ? similarOpenRoles(job, board.open, 3) : [];
+  const { job, similar } = page;
   const jsonLd = jobPostingJsonLd(job);
 
   return <JobDetail job={job} similar={similar} jsonLd={jsonLd} />;
