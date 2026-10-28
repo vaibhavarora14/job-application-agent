@@ -16,8 +16,6 @@ import { SiteFooter, SiteHeader } from "../components/SiteChrome";
 import styles from "./jobs.module.css";
 import type { BoardJob } from "./JobsBoard";
 
-const AGENTS_HINT = "For Cursor, Claude Code or Codex. You approve before anything is sent.";
-
 function BackIcon() {
   return (
     <svg viewBox="0 0 20 20" aria-hidden="true" className={styles.btnIcon}>
@@ -130,10 +128,7 @@ function ApplyCard({ job }: { job: BoardJob }) {
     <div className={styles.railCard}>
       <h2 className={styles.railTitle}>Apply with your agent</h2>
       <h2 className={styles.howTitle}>How applying works</h2>
-      <p className={styles.railLead}>
-        Copy a prompt for Cursor, Claude Code or Codex. Your agent fills the application on {job.company}&apos;s
-        posting and stops for your approval before anything is sent.
-      </p>
+      <p className={styles.railLead}>Your agent fills the application and waits for your OK.</p>
       <div className={styles.railActions}>
         <CopyButton
           value={prompt}
@@ -141,35 +136,41 @@ function ApplyCard({ job }: { job: BoardJob }) {
           copiedLabel="Copied"
           icon={<CopyIcon />}
           className={`${styles.btn} ${styles.pri} ${styles.full}`}
-          copiedNote="Copied. Paste it into your agent."
-          noteClassName={styles.copiedNote}
+          copiedNote="Prompt copied. Paste it into your agent."
+          noteClassName={styles.sr}
         />
         <a className={`${styles.btn} ${styles.btn2} ${styles.full}`} href={job.url} target="_blank" rel="noopener noreferrer">
           {postingLabel(job, "Open posting")}
           <ExternalIcon />
         </a>
       </div>
-      <details className={styles.pv}>
-        <summary>
-          Preview the prompt
-          <ChevronIcon />
-        </summary>
-        <pre>{prompt}</pre>
-      </details>
-      <div className={styles.rule} />
-      <p className={styles.lab}>Prefer the terminal?</p>
-      <div className={styles.cmd}>
-        <code>{cli}</code>
-        <CopyButton value={cli} ariaLabel="Copy command" icon={<CopyIcon />} className={styles.iconBtn} />
+      <div className={styles.disclosures}>
+        <details className={styles.pv}>
+          <summary>
+            Preview the prompt
+            <ChevronIcon />
+          </summary>
+          <pre>{prompt}</pre>
+        </details>
+        <details className={styles.pv}>
+          <summary>
+            Prefer the terminal?
+            <ChevronIcon />
+          </summary>
+          <div className={styles.cmd}>
+            <code>{cli}</code>
+            <CopyButton value={cli} ariaLabel="Copy command" icon={<CopyIcon />} className={styles.iconBtn} />
+          </div>
+        </details>
       </div>
     </div>
   );
 }
 
+/** Phone/tablet: just the two actions; copy feedback is the button label (and a screen-reader note). */
 function ApplyBar({ job }: { job: BoardJob }) {
   return (
     <div className={styles.abar}>
-      <p className={styles.abHint}>{AGENTS_HINT}</p>
       <div className={styles.abRow}>
         <CopyButton
           value={buildApplyAgentPrompt(job)}
@@ -177,8 +178,8 @@ function ApplyBar({ job }: { job: BoardJob }) {
           copiedLabel="Copied"
           icon={<CopyIcon />}
           className={`${styles.btn} ${styles.pri} ${styles.grow}`}
-          copiedNote="Copied. Paste it into your agent on your computer."
-          noteClassName={styles.abNote}
+          copiedNote="Prompt copied. Paste it into your agent."
+          noteClassName={styles.sr}
         />
         <a className={`${styles.btn} ${styles.btn2}`} href={job.url} target="_blank" rel="noopener noreferrer">
           Open posting
@@ -204,8 +205,6 @@ export function JobDetail({
   const posted = employerPostedAt(job, now);
   const department = job.location?.department ?? "";
   const meta = [posted ? `Posted ${formatReviewedDate(posted)}` : "", department].filter(Boolean).join(" · ");
-  const ats = channelLabel(job.applicationChannel);
-  const checked = formatReviewedDate(job.lastCheckedAt ?? job.lastSeenAt);
 
   return (
     <div className={`${styles.container}${closed ? "" : ` ${styles.hasBar}`}`}>
@@ -254,9 +253,6 @@ export function JobDetail({
                 {meta ? <p className={styles.meta}>{meta}</p> : null}
               </section>
               <Facts job={job} />
-              <p className={styles.prov}>
-                {`${ats && ats !== job.company ? `From ${job.company}'s ${ats} posting.` : `From ${job.company}'s posting.`}${checked ? ` Checked ${checked}.` : ""}`}
-              </p>
               <a className={styles.tl} href={job.url} target="_blank" rel="noopener noreferrer">
                 {postingLabel(job, "Read the full posting")}
                 <ExternalIcon />

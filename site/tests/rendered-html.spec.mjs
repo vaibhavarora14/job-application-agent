@@ -388,6 +388,8 @@ test("publishes an indexable jobs board with shared site chrome", async () => {
     assert.match(html, /<legend>Workplace<\/legend>/);
     assert.match(html, /<legend>Minimum pay, per year<\/legend>/);
     assert.match(html, /Include roles without listed pay/);
+    assert.match(html, /Compared in USD</);
+    assert.doesNotMatch(html, /monthly exchange rates|Only roles where the employer states a level/);
     assert.doesNotMatch(html, /<legend>[^<]*(ATS|Source|Channel)/i);
     // Honest pay: employer range with currency in the pay chip; nothing when pay is unknown.
     assert.match(html, /class="_?chip[^"]*_?chipPay[^"]*">\$150K–\$235K USD</);
@@ -438,9 +440,15 @@ test("publishes an indexable jobs board with shared site chrome", async () => {
     assert.match(openHtml, /Apply to this role with JobAppAgent in review mode/);
     assert.match(openHtml, /URL: https:\/\/boards\.greenhouse\.io\/exampleco\/jobs\/1001/);
     assert.match(openHtml, /npx job-application-agent@latest apply https:\/\/boards\.greenhouse\.io\/exampleco\/jobs\/1001/);
-    assert.match(openHtml, /For Cursor, Claude Code or Codex/);
+    // Design P1: no helper line in the bar; one-line card lead; CLI folded into a quiet disclosure.
+    assert.doesNotMatch(openHtml, /For Cursor, Claude Code or Codex/);
+    assert.match(openHtml, /Your agent fills the application and waits for your OK\./);
+    assert.match(openHtml, /<summary>Preview the prompt/);
+    assert.match(openHtml, /<summary>Prefer the terminal\?/);
+    assert.doesNotMatch(openHtml, /<details[^>]* open/);
+    assert.match(openHtml, /Read the full posting on Greenhouse/);
     assert.doesNotMatch(openHtml, />Apply<\/(a|button)>/);
-    assert.match(openHtml, /From Example Labs(?:&#x27;|')s Greenhouse posting\. Checked /);
+    assert.doesNotMatch(openHtml, /posting\. Checked /);
     assert.match(openHtml, /og:url" content="https:\/\/jobappagent\.com\/jobs\//);
     assert.match(openHtml, /application\/ld\+json/);
     assert.match(openHtml, /validThrough/);

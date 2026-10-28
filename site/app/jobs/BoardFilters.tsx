@@ -136,7 +136,7 @@ function FilterFields({
             <i />
           </button>
         </div>
-        <p className={styles.hint}>Compared in USD at monthly exchange rates.</p>
+        <p className={styles.hint}>Compared in USD</p>
       </fieldset>
       <fieldset className={styles.fg}>
         <legend>Seniority</legend>
@@ -147,7 +147,6 @@ function FilterFields({
             </Toggle>
           ))}
         </div>
-        <p className={styles.hint}>Only roles where the employer states a level.</p>
       </fieldset>
       <fieldset className={styles.fg}>
         <legend>Posted</legend>

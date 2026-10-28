@@ -4,6 +4,19 @@ import { compactLocation, shortPostedLabel, workplaceLabel } from "../../lib/job
 import styles from "./jobs.module.css";
 import type { BoardJob } from "./JobsBoard";
 
+/** The range never splits; a long suffix ("USD total comp") may wrap under it in the narrow pay column. */
+function PayChip({ label }: { label: string }) {
+  const cut = label.indexOf(" ");
+  const range = cut === -1 ? label : label.slice(0, cut);
+  const rest = cut === -1 ? "" : label.slice(cut);
+  return (
+    <span className={`${styles.chip} ${styles.chipPay}`}>
+      <span className={styles.payRange}>{range}</span>
+      {rest}
+    </span>
+  );
+}
+
 /**
  * One role as a single link. Stacks as a card on narrow lists and becomes a
  * ~64px row (title/company · location · workplace · pay · posted) at 840px+.
@@ -22,7 +35,7 @@ export function JobRow({ job, now }: { job: BoardJob; now: number }) {
       {workplace || pay ? (
         <span className={styles.jFacts}>
           <span className={styles.jWork}>{workplace ? <span className={styles.chip}>{workplace}</span> : null}</span>
-          <span className={styles.jPay}>{pay ? <span className={`${styles.chip} ${styles.chipPay}`}>{pay}</span> : null}</span>
+          <span className={styles.jPay}>{pay ? <PayChip label={pay} /> : null}</span>
         </span>
       ) : null}
       {posted ? <span className={styles.jDate}>{posted}</span> : null}
