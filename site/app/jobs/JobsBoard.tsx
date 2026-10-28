@@ -10,6 +10,7 @@ import {
 } from "../../lib/live-jobs.mjs";
 import { SiteFooter, SiteHeader } from "../components/SiteChrome";
 import styles from "./jobs.module.css";
+import type { JobSalary } from "./location-types";
 
 export type BoardJob = {
   jobId: string;
@@ -26,8 +27,15 @@ export type BoardJob = {
     label?: string;
     cities?: string[];
     countries?: string[];
+    countryCodes?: string[];
+    places?: { locality?: string; region?: string; country: string }[];
     workplace?: string;
-    employmentType?: string;
+    employmentType?: string | null;
+    experienceLevel?: string | null;
+    salary?: JobSalary | null;
+    department?: string | null;
+    team?: string | null;
+    postedAt?: string | null;
   } | null;
 };
 

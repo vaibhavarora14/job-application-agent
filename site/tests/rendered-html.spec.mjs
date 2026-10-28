@@ -403,6 +403,19 @@ test("publishes an indexable jobs board with shared site chrome", async () => {
     assert.match(openHtml, /application\/ld\+json/);
     assert.match(openHtml, /validThrough/);
     assert.match(openHtml, /TELECOMMUTE|applicantLocationRequirements/);
+    // Unknown pay reads "Pay not listed"; other unknown facts are omitted, never "Not listed".
+    assert.match(openHtml, /Pay not listed|<strong>Pay<\/strong>[^<]*\d/);
+    assert.doesNotMatch(openHtml, /Not listed/);
+
+    // Design-approved pay bands: muted "Name:" then the bold range as its own unsplittable span.
+    const threeBands = await (await render("/jobs/example-pay-platform-engineer-payments-bbbbbbbbbbbbbbbb")).text();
+    assert.match(threeBands, /class="_?payBandName[^"]*">Engineer II:<\/span> <span class="_?payBandRange[^"]*">\$150K–\$180K USD<\/span>/);
+    assert.match(threeBands, /class="_?payBandRange[^"]*">\$150K–\$250K USD OTE<\/span>/);
+    assert.doesNotMatch(threeBands, /more bands?</);
+    const sixBands = await (await render("/jobs/example-health-product-designer-mobile-dddddddddddddddd")).text();
+    assert.equal((sixBands.match(/class="_?payBandRange/g) ?? []).length, 4);
+    assert.match(sixBands, /<a class="_?payBandMore[^"]*" href="https:\/\/apply\.workable\.com\/examplehealth\/j\/ABCDEF1234"[^>]*>\+2 more bands<\/a>/);
+    assert.doesNotMatch(sixBands, /total comp|£85K/);
     assert.doesNotMatch(openHtml, /\$49|Reserve for \$49|Reserve founding|Founding reservation|FOUNDING RESERVATION/i);
   } finally {
     if (previous === undefined) delete process.env.USE_JOBS_BOARD_FIXTURES;
