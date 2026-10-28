@@ -334,7 +334,8 @@ test('review fix: explicit weekly and daily pay units are kept', () => {
 });
 
 test('review fix: the refresh workflow only ever pushes a checkout of main', async () => {
-  const workflow = await readFile(new URL('../../.github/workflows/job-locations-refresh.yml', import.meta.url), 'utf8');
+  // Normalise CRLF: Windows runners check the workflow out with \r\n (core.autocrlf), which broke the \n-only pattern.
+  const workflow = (await readFile(new URL('../../.github/workflows/job-locations-refresh.yml', import.meta.url), 'utf8')).replace(/\r\n/g, '\n');
   const refresh = workflow.slice(workflow.indexOf('\n  refresh:'), workflow.indexOf('\n  alert:'));
   assert.match(refresh, /actions\/checkout@[^\n]+\n\s+with:\n(?:\s+#[^\n]*\n)*\s+ref: main/);
   assert.match(refresh, /git rev-parse --abbrev-ref HEAD\)" != "main"/);
