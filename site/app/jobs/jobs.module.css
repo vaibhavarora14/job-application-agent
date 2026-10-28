@@ -1,44 +1,30 @@
 /*
  * /jobs and /jobs/<slug>, direction B (white base, ink + electric blue).
- * Tokens are scoped to these pages; the homepage palette is untouched.
+ * Palette tokens come from globals.css :root (shared by every route).
  * Fonts: DM Sans for UI, Libre Baskerville for the H1 only, Plex Mono for CLI/prompt only.
  */
 .container {
-  --page: #ffffff;
-  --panel: #f8fafc;
-  --hair: #e2e8f0;
-  --ctl: #8492a6;
-  --row-hover: #f5f8fc;
+  /* Palette lives in globals.css :root (site-wide theme B); these are /jobs-only extras + aliases. */
   --skel: #edf1f6;
-  --j-ink: #0f172a;
-  --j-body: #334155;
-  --j-muted: #5b6b80;
-  --j-accent: #2563eb;
-  --j-accent-hover: #1d4ed8;
-  --j-link: #1d4ed8;
-  --j-focus: #2563eb;
-  --work-bg: #eff5ff;
-  --work-fg: #1e40af;
-  --work-bd: #c7dbfe;
-  --pay-bg: #ecfdf5;
-  --pay-fg: #065f46;
-  --pay-bd: #a7f3d0;
-  --sel-bg: #eff5ff;
+  --j-ink: var(--ink);
+  --j-body: var(--text);
+  --j-muted: var(--muted);
+  --j-accent: var(--accent);
+  --j-accent-hover: var(--accent-hover);
+  --j-link: var(--accent-text);
+  --j-focus: var(--focus);
+  --work-bg: var(--accent-soft);
+  --work-fg: var(--accent-deep);
+  --work-bd: var(--accent-line);
+  --pay-bg: var(--ok-soft);
+  --pay-fg: var(--ok);
+  --pay-bd: var(--ok-line);
+  --sel-bg: var(--accent-soft);
   --sel-fg: #1e3a8a;
-  --sel-bd: #2563eb;
-  --err: #b42318;
-  --err-bg: #fef3f2;
-  --err-bd: #fecdca;
-  /* Shared chrome (SiteHeader/SiteFooter) reads these. */
-  --ink: var(--j-ink);
-  --text: var(--j-body);
-  --muted: var(--j-muted);
-  --line: var(--hair);
-  --surface: var(--page);
-  --background: var(--page);
-  --accent-text: var(--j-accent);
-  --accent-soft: var(--work-bg);
-  --green: var(--j-link);
+  --sel-bd: var(--accent);
+  --err: var(--coral);
+  --err-bg: var(--coral-soft);
+  --err-bd: var(--coral-line);
   min-height: 100vh;
   display: flex;
   flex-direction: column;
@@ -57,11 +43,6 @@
   letter-spacing: 0;
   text-transform: none;
   color: var(--j-body);
-}
-
-/* Plex Mono stays for CLI/prompt text only on these pages. */
-.container :global(.brand-tagline) {
-  display: none;
 }
 
 @media (max-width: 1023px) {

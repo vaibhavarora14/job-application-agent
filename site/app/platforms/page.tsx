@@ -4,6 +4,7 @@ import catalog from "../../../job-application-agent/platforms.json";
 import { JsonLd } from "../components/JsonLd";
 import { breadcrumbListJsonLd } from "../../lib/structured-data.mjs";
 import styles from "./platforms.module.css";
+import { SiteFooter, SiteHeader } from "../components/SiteChrome";
 
 export const metadata: Metadata = {
   title: "Choose your agent",
@@ -16,9 +17,10 @@ export default function Platforms() {
     { name: "Home", path: "/" },
     { name: "Platforms", path: "/platforms" },
   ]);
-  return <main className={`legal page-width ${styles.guide}`}>
+  return <div className="site-shell">
+    <SiteHeader foundingCta={false} />
+    <main className={`legal page-width ${styles.guide}`}>
     <JsonLd data={breadcrumbs} />
-    <Link className="legal-back" href="/">← Back to the product</Link>
     <p className="eyebrow">Open-source agent · setup guides</p>
     <h1>Your job search.<br />Your choice of agent.</h1>
     <p>One verified résumé, clear preferences, and a record of confirmed applications. Bring the workflow into the agent you already use.</p>
@@ -34,5 +36,7 @@ export default function Platforms() {
     <h2>Keep your application history together</h2>
     <p>Optional private cloud state connects one person’s trusted hosts. It coordinates submissions so two agents do not apply to the same role. Each candidate needs their own private state and credentials.</p>
     <p>More about the project: <Link href="/open-source">About the project</Link> · <Link href="/compare">See how it compares</Link></p>
-  </main>;
+  </main>
+    <SiteFooter />
+  </div>;
 }

@@ -5,6 +5,7 @@ import { CopyCode } from "../components/CopyCode";
 import { OpenSourceStats } from "../components/OpenSourceStats";
 import { breadcrumbListJsonLd, openSourceSoftwareJsonLd } from "../../lib/structured-data.mjs";
 import styles from "../components/ContentPage.module.css";
+import { SiteFooter, SiteHeader } from "../components/SiteChrome";
 
 const TITLE = "JobAppAgent: the open-source job application agent";
 const DESCRIPTION = "JobAppAgent is an open-source job application agent (MIT). It applies from one verified résumé within your rules. By default you approve each submit.";
@@ -24,10 +25,11 @@ export default function OpenSource() {
     { name: "Home", path: "/" },
     { name: "Open source", path: "/open-source" },
   ]);
-  return <main className={`legal page-width ${styles.page}`}>
+  return <div className="site-shell">
+    <SiteHeader foundingCta={false} />
+    <main className={`legal page-width ${styles.page}`}>
     <JsonLd data={openSourceSoftwareJsonLd()} />
     <JsonLd data={breadcrumbs} />
-    <Link className="legal-back" href="/">← Back to the product</Link>
     <h1>JobAppAgent, the <span className={styles.nb}>open‑source</span> job application agent</h1>
     <p>JobAppAgent is an open-source job application agent for people applying to jobs for themselves. It runs inside a browser-capable coding agent on your computer. It searches for roles, checks each one against your verified résumé and preferences, fills in the applications that pass, and keeps a record of everything. A job counts as applied only after the site shows a confirmation.</p>
     <p>JobAppAgent, the GitHub repo <code>vaibhavarora14/job-application-agent</code> and the npm package <code>job-application-agent</code> are the same project. It is MIT licensed.</p>
@@ -98,5 +100,7 @@ export default function OpenSource() {
       <CopyCode code="npx job-application-agent@latest install" />
       <p><a href={REPO}>View on GitHub</a> · <Link href="/compare">See how it compares</Link></p>
     </section>
-  </main>;
+  </main>
+    <SiteFooter />
+  </div>;
 }
