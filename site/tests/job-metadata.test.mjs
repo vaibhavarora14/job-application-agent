@@ -9,10 +9,12 @@ import {
   greenhouseSalary,
   ashbySalary,
   formatPayLabel,
+  compensationKind,
+  parseSalaryDetails,
   LOCATION_RECORD_MAX_AGE_MS,
 } from '../lib/job-locations.mjs';
 import { jobPostingJsonLd, postedDate, employerSalary } from '../lib/live-jobs.mjs';
-import { locationIndexFreshness } from '../lib/job-locations-freshness.mjs';
+import { locationIndexFreshness, locationSnapshotShrinkCheck } from '../lib/job-locations-freshness.mjs';
 
 const now = Date.parse('2026-10-28T10:00:00.000Z');
 const base = {
@@ -60,7 +62,7 @@ test('Ashby structured compensation, department, team and publish date are store
   assert.deepEqual(result.countryCodes, ['US']);
   assert.equal(result.salary.label, '$125K–$190K USD');
   assert.equal(result.salary.currency, 'USD');
-  assert.deepEqual(result.salary.ranges, [{ min: 125000, max: 190000, currency: 'USD', period: 'year', location: null, label: '$125K–$190K USD' }]);
+  assert.deepEqual(result.salary.ranges, [{ min: 125000, max: 190000, currency: 'USD', period: 'year', kind: 'base', location: null, label: '$125K–$190K USD' }]);
   assert.equal(result.salary.basis, 'ats');
   assert.equal(result.salary.source, 'employer');
   assert.equal(result.employmentType, 'full-time');
@@ -198,6 +200,8 @@ test('committed snapshot is well-formed and carries no unresolved queue in the b
       assert.equal(record.salary.isEstimated, false);
       assert.match(record.salary.currency, /^[A-Z]{3}$/);
       assert.ok(Array.isArray(record.salary.ranges) && record.salary.ranges.length > 0);
+      assert.ok(['base', 'ote', 'total'].includes(record.salary.kind));
+      if (record.salary.kind !== 'base') assert.match(record.salary.label, / (OTE|total comp)$/);
     }
     for (const place of record.places ?? []) assert.match(place.country, /^[A-Z]{2}$/);
   }
@@ -211,4 +215,69 @@ test('committed location snapshot has not passed the 30-day cutoff', async () =>
   const freshness = locationIndexFreshness(index, Date.now());
   assert.notEqual(freshness.status, 'expired', `job-locations.json is ${freshness.ageDays} days old; refresh it before shipping`);
   assert.notEqual(freshness.status, 'invalid');
+});
+
+const liveJob = {
+  ...base,
+  url: 'https://job-boards.greenhouse.io/acme/jobs/9',
+  location: { label: 'New York, NY', cities: [], countries: [], countryCodes: ['US'], workplace: 'onsite', places: [{ locality: 'New York', region: 'NY', country: 'US' }], salary: null },
+};
+
+test('review fix: refreshed snapshot fails closed when empty or sharply reduced', () => {
+  const committed = { snapshotCount: 1600, records: Array.from({ length: 580 }, (_, i) => ({ jobId: `j${i}` })) };
+  const sized = (n, snapshotCount = 1600) => ({ snapshotCount, records: Array.from({ length: n }, (_, i) => ({ jobId: `j${i}` })) });
+  assert.equal(locationSnapshotShrinkCheck(committed, sized(560)).ok, true);
+  assert.equal(locationSnapshotShrinkCheck(committed, sized(290)).ok, true);
+  const reduced = locationSnapshotShrinkCheck(committed, sized(289));
+  assert.equal(reduced.ok, false);
+  assert.match(reduced.reason, /fewer than 50%/);
+  assert.match(locationSnapshotShrinkCheck(committed, sized(0)).reason, /0 records/);
+  assert.match(locationSnapshotShrinkCheck(committed, sized(0, 0)).reason, /feed|empty/);
+  assert.equal(locationSnapshotShrinkCheck(null, sized(10)).ok, true);
+  assert.equal(locationSnapshotShrinkCheck(null, sized(0)).ok, false);
+});
+
+test('review fix: a country qualifier in parentheses is parsed before other parenthetical text is stripped', () => {
+  assert.deepEqual(placesFromLabel('Cardiff, London or Remote (UK)').map((place) => place.country), ['GB', 'GB']);
+  assert.deepEqual(placesFromLabel('Remote (United States) · Remote (Canada)'), [{ country: 'US' }, { country: 'CA' }]);
+  assert.deepEqual(placesFromLabel('London (UK)'), [{ locality: 'London', country: 'GB' }]);
+  assert.deepEqual(placesFromLabel('Remote (US/Canada) / Berlin, Germany'), [{ country: 'US' }, { country: 'CA' }, { locality: 'Berlin', country: 'DE' }]);
+  // Non-country parentheticals and regions are still ignored, never guessed.
+  assert.deepEqual(placesFromLabel('Hybrid (London)'), []);
+  assert.deepEqual(placesFromLabel('Remote Global (US, EU)'), []);
+  const job = { ...base, url: 'https://job-boards.greenhouse.io/monzo/jobs/7' };
+  const record = extractLocation(job, { id: 7, title: 'Software Engineer', absolute_url: job.url, location: { name: 'Cardiff, London or Remote (UK)' } }, now);
+  assert.deepEqual(record.countryCodes, ['GB']);
+  const ld = jobPostingJsonLd({ ...liveJob, location: { ...record, workplace: 'remote' } });
+  assert.equal(ld.jobLocationType, 'TELECOMMUTE');
+  assert.equal(ld.applicantLocationRequirements.name, 'United Kingdom');
+});
+
+test('review fix: OTE / total compensation is labelled honestly and kept out of baseSalary', () => {
+  assert.equal(compensationKind('OTE is $170-220k'), 'ote');
+  assert.equal(compensationKind('On-target earnings'), 'ote');
+  assert.equal(compensationKind('Total compensation range'), 'total');
+  assert.equal(compensationKind('Base salary range'), 'base');
+  const ote = parseSalaryDetails('OTE is $170-220k');
+  assert.equal(ote.kind, 'ote');
+  assert.equal(ote.label, '$170K–$220K USD OTE');
+  const gh = greenhouseSalary({ pay_input_ranges: [{ min_cents: 15000000, max_cents: 25000000, currency_type: 'USD', title: 'US Pay Range (OTE)', blurb: '<p>target OTE</p>' }] });
+  assert.equal(gh.kind, 'ote');
+  assert.equal(gh.label, '$150K–$250K USD OTE');
+  const ldOte = jobPostingJsonLd({ ...liveJob, location: { ...liveJob.location, salary: { ...gh, isEstimated: false, source: 'employer' } } });
+  assert.equal(ldOte.baseSalary, undefined);
+  assert.equal(employerSalary({ location: { salary: gh } }).label, '$150K–$250K USD OTE');
+  const basePay = greenhouseSalary({ pay_input_ranges: [{ min_cents: 15000000, max_cents: 25000000, currency_type: 'USD', title: 'US base salary range' }] });
+  assert.equal(basePay.kind, 'base');
+  const ldBase = jobPostingJsonLd({ ...liveJob, location: { ...liveJob.location, salary: basePay } });
+  assert.equal(ldBase.baseSalary.value.minValue, 150000);
+});
+
+test('review fix: a trailing country code wins over a matching US state only with evidence', () => {
+  assert.deepEqual(placesFromLabel('Bengaluru, IN'), [{ locality: 'Bengaluru', country: 'IN' }]);
+  assert.deepEqual(placesFromLabel('Toronto, ON, CA'), [{ locality: 'Toronto', region: 'ON', country: 'CA' }]);
+  assert.deepEqual(placesFromLabel('Austin, TX'), [{ locality: 'Austin', region: 'TX', country: 'US' }]);
+  assert.deepEqual(placesFromLabel('Boston, MA'), [{ locality: 'Boston', region: 'MA', country: 'US' }]);
+  assert.deepEqual(placesFromLabel('San Francisco, CA'), [{ locality: 'San Francisco', region: 'CA', country: 'US' }]);
+  assert.deepEqual(placesFromLabel('Indianapolis, IN'), [{ locality: 'Indianapolis', region: 'IN', country: 'US' }]);
 });

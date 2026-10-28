@@ -25,3 +25,24 @@ export function locationIndexFreshness(index, now = Date.now()) {
         : 'fresh';
   return { ok: status === 'fresh' || status === 'refresh', ageDays: Number(ageDays.toFixed(2)), collectedAt, status };
 }
+
+/** A refreshed snapshot must keep at least this share of the committed records. */
+export const LOCATION_INDEX_MIN_RETAINED_RATIO = 0.5;
+
+/**
+ * Fail-closed guard before a refreshed snapshot replaces the committed one: an empty
+ * feed page or a broken ATS endpoint must never wipe metadata from every listed role.
+ * @param {{ records?: unknown[], snapshotCount?: number } | null | undefined} previous committed index (null when none)
+ * @param {{ records?: unknown[], snapshotCount?: number }} next refreshed index
+ * @param {{ minRatio?: number }} [options]
+ * @returns {{ ok: boolean, reason: string | null, previous: number, next: number }}
+ */
+export function locationSnapshotShrinkCheck(previous, next, { minRatio = LOCATION_INDEX_MIN_RETAINED_RATIO } = {}) {
+  const before = Array.isArray(previous?.records) ? previous.records.length : 0;
+  const after = Array.isArray(next?.records) ? next.records.length : 0;
+  const result = (reason) => ({ ok: reason === null, reason, previous: before, next: after });
+  if (!Number.isFinite(next?.snapshotCount) || next.snapshotCount <= 0) return result('published-jobs snapshot is empty');
+  if (after === 0) return result('refreshed snapshot has 0 records');
+  if (before > 0 && after < before * minRatio) return result(`refreshed snapshot has ${after} records, fewer than ${Math.round(minRatio * 100)}% of the committed ${before}`);
+  return result(null);
+}

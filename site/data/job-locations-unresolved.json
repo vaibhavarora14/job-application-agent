@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "collectedAt": "2026-10-28T10:17:06.401Z",
+  "collectedAt": "2026-10-28T10:33:52.036Z",
   "snapshotCount": 1626,
   "unresolved": [
     {
@@ -1401,7 +1401,7 @@
       "url": "https://jobs.lever.co/jobandtalent/1ac9295f-fd5c-42eb-bb17-f483a7cf800c",
       "company": "Job&Talent",
       "role": "GRC Senior Analyst",
-      "reason": "The operation was aborted due to timeout"
+      "reason": "HTTP 404"
     },
     {
       "jobId": "community-job-33952ee74c72c18e",
@@ -5042,6 +5042,13 @@
       "company": "Earth2",
       "role": "Senior Full Stack Developer",
       "reason": "Needs page inspection / unsupported ATS"
+    },
+    {
+      "jobId": "community-job-aab19afe0911d251",
+      "url": "https://jobs.ashbyhq.com/whippy/da02ad44-9668-4f93-94e3-bf1a6e09ad8b",
+      "company": "Whippy",
+      "role": "Software Engineer: Frontend",
+      "reason": "No exact matching structured location"
     },
     {
       "jobId": "community-job-aab19cbb5805dc2f",

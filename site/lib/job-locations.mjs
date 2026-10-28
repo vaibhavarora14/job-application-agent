@@ -91,6 +91,18 @@ const HTML_ENTITIES = {
   '&ndash;': '–'
 };
 
+/**
+ * What a stated pay figure covers: `ote` (on-target earnings incl. variable pay), `total`
+ * (total compensation) or `base`. Only `base` may be published as Schema.org baseSalary.
+ * @returns {'base' | 'ote' | 'total'}
+ */
+export function compensationKind(text) {
+  const value = String(text ?? '');
+  if (/\bOTE\b|on[- ]target[- ]earnings?/i.test(value)) return 'ote';
+  if (/total[- ](?:cash[- ]|target[- ]|annual[- ])?comp(?:ensation)?\b|\bTC\b|total[- ]rewards?/i.test(value)) return 'total';
+  return 'base';
+}
+
 export function parseSalaryDetails(text) {
   if (!text || typeof text !== 'string') return null;
   const clean = text
@@ -126,7 +138,7 @@ export function parseSalaryDetails(text) {
       }
       const period = rm[8] ? (rm[8].startsWith('m') ? 'month' : rm[8].startsWith('h') ? 'hour' : 'year') : (min > 30000 ? 'year' : min > 3000 ? 'month' : 'hour');
       if (min > 0 && max >= min && max < 2000000) {
-        return formatSalary(min, max, currency, period, false, 'employer');
+        return formatSalary(min, max, currency, period, false, 'employer', compensationKind(cand));
       }
     }
 
@@ -138,7 +150,7 @@ export function parseSalaryDetails(text) {
       if (sm[3] || (val < 1000 && (sm[0].includes('k') || sm[0].includes('K')))) val *= 1000;
       const period = sm[5] ? (sm[5].startsWith('m') ? 'month' : sm[5].startsWith('h') ? 'hour' : 'year') : (val > 30000 ? 'year' : val > 3000 ? 'month' : 'hour');
       if (val >= 15 && val < 2000000) {
-        return formatSalary(val, val, currency, period, false, 'employer');
+        return formatSalary(val, val, currency, period, false, 'employer', compensationKind(cand));
       }
     }
   }
@@ -162,16 +174,18 @@ function compactAmount(value) {
  * Display label for one pay range, e.g. `$135K–$300K USD`, `€110.5K–€181.5K`, `$45–$60 USD /hr`.
  * `$` alone is ambiguous, so USD also carries its code; currencies without a symbol show the code only.
  */
-export function formatPayLabel(min, max, currency, period) {
+const KIND_SUFFIX = { ote: ' OTE', total: ' total comp' };
+
+export function formatPayLabel(min, max, currency, period, kind = 'base') {
   const sym = CURRENCY_SYMBOLS[currency];
   const amount = (value) => (sym ? `${sym}${compactAmount(value)}` : compactAmount(value));
   const span = min === max ? amount(min) : `${amount(min)}–${amount(max)}`;
   const code = !sym ? ` ${currency}` : currency === 'USD' ? ' USD' : '';
-  return `${span}${code}${PERIOD_SUFFIX[period] ?? ''}`;
+  return `${span}${code}${PERIOD_SUFFIX[period] ?? ''}${KIND_SUFFIX[kind] ?? ''}`;
 }
 
-function payRange(min, max, currency, period, location = null) {
-  return { min, max, currency, period, location: typeof location === 'string' && location.trim() ? location.trim() : null, label: formatPayLabel(min, max, currency, period) };
+function payRange(min, max, currency, period, location = null, kind = 'base') {
+  return { min, max, currency, period, kind, location: typeof location === 'string' && location.trim() ? location.trim() : null, label: formatPayLabel(min, max, currency, period, kind) };
 }
 
 /**
@@ -180,8 +194,8 @@ function payRange(min, max, currency, period, location = null) {
  */
 function salaryFromRanges(ranges, isEstimated, source) {
   if (!ranges.length) return null;
-  const { currency, period } = ranges[0];
-  const same = ranges.filter((range) => range.currency === currency && range.period === period);
+  const { currency, period, kind } = ranges[0];
+  const same = ranges.filter((range) => range.currency === currency && range.period === period && range.kind === kind);
   const min = Math.min(...same.map((range) => range.min));
   const max = Math.max(...same.map((range) => range.max));
   const multiplier = PERIOD_MULTIPLIER[period] ?? 1;
@@ -192,15 +206,16 @@ function salaryFromRanges(ranges, isEstimated, source) {
     annualMax: Math.round(max * multiplier),
     currency,
     period,
-    label: (isEstimated ? 'Est. ' : '') + formatPayLabel(min, max, currency, period),
+    kind,
+    label: (isEstimated ? 'Est. ' : '') + formatPayLabel(min, max, currency, period, kind),
     ranges,
     isEstimated,
     source
   };
 }
 
-function formatSalary(min, max, currency, period, isEstimated, source) {
-  return salaryFromRanges([payRange(min, max, currency, period)], isEstimated, source);
+function formatSalary(min, max, currency, period, isEstimated, source, kind = 'base') {
+  return salaryFromRanges([payRange(min, max, currency, period, null, kind)], isEstimated, source);
 }
 
 /**
@@ -306,28 +321,76 @@ const WORKPLACE_WORDS = /\b(remote|hybrid|on-?site|in-?office|distributed|anywhe
  */
 export function placesFromLabel(text) {
   const places = [];
-  for (const raw of String(text ?? '').split(/\s*(?:;|\||\/|\bor\b|·)\s*/i)) {
+  const parts = String(text ?? '').split(/\s*(?:;|\||\/(?![^(]*\))|\bor\b(?![^(]*\))|·)\s*/i);
+  // A parenthetical that is only countries ("Remote (UK)", "(US/Canada)") qualifies the label.
+  const qualifiers = parts.map(parentheticalCountries);
+  const labelQualifier = [...new Set(qualifiers.flat())];
+  parts.forEach((raw, index) => {
+    const own = qualifiers[index];
     const part = raw.replace(/\([^)]*\)/g, ' ').replace(WORKPLACE_WORDS, ' ').replace(/^[\s,:–—-]+|[\s,:–—-]+$/g, '').replace(/\s+/g, ' ').trim();
-    if (!part) continue;
-    const segments = part.split(',').map((segment) => segment.trim()).filter(Boolean);
-    if (segments.length >= 2) {
-      const last = segments[segments.length - 1];
-      if (US_STATES.has(last.toUpperCase()) && last.length === 2) {
-        places.push({ locality: segments[0], region: last.toUpperCase(), country: 'US' });
-        continue;
-      }
-      const country = countryCodeOf(last);
-      if (country) {
-        const place = { locality: segments[0], country };
-        if (segments.length >= 3) place.region = segments[segments.length - 2];
-        places.push(place);
-      }
-      continue;
+    if (!part) {
+      for (const country of own) places.push({ country });
+      return;
     }
-    const country = countryCodeOf(part);
-    if (country) places.push({ country });
-  }
+    const parsed = placeFromPart(part);
+    if (parsed) {
+      places.push(parsed);
+      return;
+    }
+    // No country of its own: use this part's parenthetical country, else the label's single one.
+    const fallback = own.length === 1 ? own : labelQualifier.length === 1 ? labelQualifier : [];
+    for (const country of fallback) {
+      const segments = part.split(',').map((segment) => segment.trim()).filter(Boolean);
+      places.push(own.length === 1 && segments.length === 1 ? { locality: segments[0], country } : { country });
+    }
+  });
   return places;
+}
+
+/** Countries named in a part's parentheses, only when every item there is a country (or a workplace word). */
+function parentheticalCountries(part) {
+  const codes = [];
+  for (const [, inner] of String(part).matchAll(/\(([^)]*)\)/g)) {
+    const items = inner.replace(WORKPLACE_WORDS, ' ').split(/\s*(?:,|\/|&|\band\b|\bor\b)\s*/i).map((item) => item.trim()).filter(Boolean);
+    const found = items.map(countryCodeOf);
+    if (items.length && found.every(Boolean)) codes.push(...found);
+  }
+  return [...new Set(codes)];
+}
+
+// Codes that are both a US state and an ISO country. "Boston, MA" stays US; the country reading
+// wins only with explicit evidence: a province-style middle token ("Toronto, ON, CA") or a known city.
+const NON_US_CITIES = {
+  IN: ['bengaluru', 'bangalore', 'mumbai', 'delhi', 'new delhi', 'hyderabad', 'chennai', 'pune', 'gurgaon', 'gurugram', 'noida', 'kolkata', 'ahmedabad', 'jaipur', 'kochi'],
+  CA: ['toronto', 'vancouver', 'montreal', 'montréal', 'ottawa', 'calgary', 'edmonton', 'waterloo', 'kitchener', 'winnipeg', 'halifax', 'quebec city', 'victoria, bc'],
+  DE: ['berlin', 'munich', 'münchen', 'hamburg', 'frankfurt', 'cologne', 'köln', 'stuttgart', 'düsseldorf'],
+  IL: ['tel aviv', 'tel aviv-yafo', 'jerusalem', 'haifa', 'herzliya', 'ramat gan'],
+  AR: ['buenos aires', 'córdoba'],
+  CO: ['bogotá', 'bogota', 'medellín', 'medellin'],
+  ID: ['jakarta', 'bali'],
+  MA: ['casablanca', 'rabat'],
+  PA: ['panama city'],
+};
+
+function placeFromPart(part) {
+  const segments = part.split(',').map((segment) => segment.trim()).filter(Boolean);
+  if (segments.length < 2) {
+    const country = countryCodeOf(part);
+    return country ? { country } : null;
+  }
+  const last = segments[segments.length - 1];
+  const upper = last.toUpperCase();
+  const country = countryCodeOf(last);
+  if (last.length === 2 && US_STATES.has(upper)) {
+    const middle = segments.length >= 3 ? segments[segments.length - 2] : '';
+    const provinceStyle = /^[A-Za-z]{2}$/.test(middle) && !US_STATES.has(middle.toUpperCase());
+    const knownCity = NON_US_CITIES[upper]?.includes(segments[0].toLowerCase());
+    if (!(country && (provinceStyle || knownCity))) return { locality: segments[0], region: upper, country: 'US' };
+  }
+  if (!country) return null;
+  const place = { locality: segments[0], country };
+  if (segments.length >= 3) place.region = segments[segments.length - 2];
+  return place;
 }
 
 function addressPlace(postalAddress, fallbackLabel) {
@@ -359,10 +422,10 @@ function uniquePlaces(places) {
 
 const PERIODS = { '1 YEAR': 'year', '1 MONTH': 'month', '1 HOUR': 'hour', 'per-year-salary': 'year', 'per-month-salary': 'month', 'per-hour-wage': 'hour', year: 'year', month: 'month', hour: 'hour' };
 
-function validRange(min, max, currency, period, location) {
+function validRange(min, max, currency, period, location, kind = 'base') {
   if (!Number.isFinite(min) || !Number.isFinite(max) || min <= 0 || max < min || max >= 10_000_000) return null;
   if (typeof currency !== 'string' || !/^[A-Z]{3}$/.test(currency) || !period) return null;
-  return payRange(min, max, currency, period, location);
+  return payRange(min, max, currency, period, location, kind);
 }
 
 function structuredSalary(ranges) {
@@ -391,7 +454,8 @@ export function greenhouseSalary(entry) {
   // Greenhouse does not publish an interval: sub-1,000 amounts are hourly wages.
   return structuredSalary(ranges.map((range) => {
     const min = range.min_cents / 100, max = range.max_cents / 100;
-    return validRange(min, max, range.currency_type.toUpperCase(), max < 1000 ? 'hour' : 'year', range.title);
+    const kind = compensationKind(`${range.title ?? ''} ${range.blurb ?? ''}`);
+    return validRange(min, max, range.currency_type.toUpperCase(), max < 1000 ? 'hour' : 'year', range.title, kind);
   }));
 }
 

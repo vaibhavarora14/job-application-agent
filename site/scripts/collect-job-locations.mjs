@@ -1,11 +1,17 @@
 // Owner-run, read-only network collection. No job moderation or production writes.
-import { mkdir, writeFile, rename } from 'node:fs/promises';
+// Refuses to write (exit 1) an empty or sharply reduced snapshot; pass --allow-shrink to override after review.
+import { mkdir, writeFile, rename, readFile } from 'node:fs/promises';
 import { loadPublishedJobs } from '../lib/jobs-search.mjs';
 import { atsTarget, extractLocation } from '../lib/job-locations.mjs';
+import { locationSnapshotShrinkCheck } from '../lib/job-locations-freshness.mjs';
 
 const feed = 'https://job-application-agent-telemetry.varora1406.workers.dev';
 const snapshot = await loadPublishedJobs((path, options) => fetch(`${feed}${path.replace('/api/community-jobs', '/v1/jobs')}`, { ...options, redirect: 'error', signal: AbortSignal.timeout(20000) }));
 console.log(`Snapshot: ${snapshot.length} published job IDs`);
+if (!snapshot.length) {
+  console.error('FAIL: the published-jobs feed returned 0 jobs; refusing to replace the committed snapshot.');
+  process.exit(1);
+}
 const cache = new Map();
 async function readJson(url) {
   if (!cache.has(url)) cache.set(url, (async () => {
@@ -59,6 +65,12 @@ const collectedAt = new Date().toISOString();
 // The site bundles only job-locations.json (records). The unresolved queue is a
 // maintenance artifact, kept in its own file so it never adds Worker parse CPU.
 const result = { version: 1, collectedAt, snapshotCount: snapshot.length, records };
+const committed = await readFile(new URL('job-locations.json', directory), 'utf8').then(JSON.parse, () => null);
+const shrink = locationSnapshotShrinkCheck(committed, result);
+if (!shrink.ok && !process.argv.includes('--allow-shrink')) {
+  console.error(`FAIL: ${shrink.reason}; refusing to replace the committed snapshot. Re-run with --allow-shrink only after checking the feed and ATS endpoints.`);
+  process.exit(1);
+}
 const queue = { version: 1, collectedAt, snapshotCount: snapshot.length, unresolved };
 for (const [name, body] of [['job-locations.json', result], ['job-locations-unresolved.json', queue]]) {
   const temporary = new URL(`${name}.tmp`, directory);

@@ -374,7 +374,8 @@ export function jobPostingJsonLd(job, { siteUrl = 'https://jobappagent.com' } = 
   }
 
   const salary = employerSalary(job);
-  if (salary) {
+  // baseSalary is base pay only: OTE / total-compensation figures stay on the page (labelled) but out of it.
+  if (salary && (salary.kind ?? 'base') === 'base') {
     posting.baseSalary = {
       '@type': 'MonetaryAmount',
       currency: salary.currency,
