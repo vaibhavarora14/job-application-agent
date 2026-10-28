@@ -39,15 +39,13 @@ export function SiteHeader({
           {primaryNavLinks(community)}
           {foundingCta ? <FoundingCheckout compact /> : null}
         </div>
-        {/* Phone menu for /jobs* (no founding CTA). Hidden on wider breakpoints via CSS. */}
-        {!foundingCta ? (
-          <details className="site-mobile-menu">
-            <summary>Menu</summary>
-            <div className="site-mobile-menu-links">
-              {primaryNavLinks(community)}
-            </div>
-          </details>
-        ) : null}
+        {/* Menu disclosure on every page below 64rem (nav links are hidden there). */}
+        <details className="site-mobile-menu">
+          <summary>Menu</summary>
+          <div className="site-mobile-menu-links">
+            {primaryNavLinks(community)}
+          </div>
+        </details>
       </div>
     </nav>
   </>;

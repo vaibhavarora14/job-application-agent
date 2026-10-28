@@ -16,11 +16,11 @@ function SuccessBody({ fixture }: { fixture: boolean }) {
     <p>Thank you. Here is what happens next:</p>
     <ul className="payment-return-next">
       <li>We email a reservation confirmation to the address collected at checkout, usually within 24 hours.</li>
-      <li>Cloud access remains coming soon — no access window starts at payment.</li>
+      <li>Cloud access is coming soon. Your access window does not start at payment.</li>
       <li>There is no instant self-serve dashboard yet.</li>
     </ul>
     {fixture
-      ? <p className="payment-return-fixture-note">Design fixture only — this URL does not confirm a live payment.</p>
+      ? <p className="payment-return-fixture-note">Design fixture only. This URL does not confirm a live payment.</p>
       : <p className="payment-return-secondary">Check the inbox for the email you used at checkout.</p>}
     <Link className="button" href="/">Back home</Link>
   </>;

@@ -5,6 +5,7 @@ import { CopyCode } from "../components/CopyCode";
 import { OpenSourceStats } from "../components/OpenSourceStats";
 import { breadcrumbListJsonLd, openSourceSoftwareJsonLd } from "../../lib/structured-data.mjs";
 import styles from "../components/ContentPage.module.css";
+import { SiteFooter, SiteHeader } from "../components/SiteChrome";
 
 const TITLE = "JobAppAgent: the open-source job application agent";
 const DESCRIPTION = "JobAppAgent is an open-source job application agent (MIT). It applies from one verified résumé within your rules. By default you approve each submit.";
@@ -24,7 +25,9 @@ export default function OpenSource() {
     { name: "Home", path: "/" },
     { name: "Open source", path: "/open-source" },
   ]);
-  return <main className={`legal page-width ${styles.page}`}>
+  return <div className="site-shell">
+    <SiteHeader foundingCta={false} />
+    <main className={`legal page-width ${styles.page}`}>
     <JsonLd data={openSourceSoftwareJsonLd()} />
     <JsonLd data={breadcrumbs} />
     <Link className="legal-back" href="/">← Back to the product</Link>
@@ -98,5 +101,7 @@ export default function OpenSource() {
       <CopyCode code="npx job-application-agent@latest install" />
       <p><a href={REPO}>View on GitHub</a> · <Link href="/compare">See how it compares</Link></p>
     </section>
-  </main>;
+  </main>
+    <SiteFooter />
+  </div>;
 }

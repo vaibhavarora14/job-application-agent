@@ -1,7 +1,7 @@
 "use client";
 
 import { publicOutcomeEntries } from "../../lib/community-stats.mjs";
-import { compactNumber, fullNumber, useCommunityStats } from "./useCommunityStats";
+import { compactNumber, fullNumber, hasLifetimeCounters, useCommunityStats } from "./useCommunityStats";
 
 function Leaderboard({ title, subtitle, entries }: { title: string; subtitle: string; entries: Array<{ label: string; count: number }> }) {
   const maximum = Math.max(1, ...entries.map((entry) => entry.count));
@@ -17,6 +17,7 @@ function Leaderboard({ title, subtitle, entries }: { title: string; subtitle: st
 
 export function CommunityDashboard() {
   const { data, error, loading } = useCommunityStats();
+  const counted = hasLifetimeCounters(data);
   const outcomesReported = data?.breakdowns.outcomes.reduce((total, entry) => total + entry.count, 0) ?? 0;
   const outcomeCoverage = data?.metrics.applicationsSubmitted
     ? Math.round((outcomesReported / data.metrics.applicationsSubmitted) * 1000) / 10
@@ -26,9 +27,9 @@ export function CommunityDashboard() {
 
   return <main id="main" className="dashboard page-width">
     <section className="dashboard-hero">
-      <div><p className="eyebrow">Aggregate product evidence</p><h1>See the work the agent is doing.</h1><p>Verified, anonymous activity from Job Application Agent installations. This page shows adoption, execution, and reported outcomes—not job listings or individual profiles.</p></div>
+      <div><p className="eyebrow">Aggregate product evidence</p><h1>See the work the agent is doing.</h1><p>Verified, anonymous activity from Job Application Agent installations. This page shows adoption, execution, and reported outcomes, not job listings or individual profiles.</p></div>
       <div className="dashboard-hero-meta">
-        <div className={`live-status${error ? " live-status-error" : ""}`} role="status"><span />{error ? "Live feed resting" : loading ? "Connecting to live aggregate data" : "Live anonymous community data"}</div>
+        {error ? null : <div className="live-status" role="status"><span />{loading ? "Connecting to live aggregate data" : "Live anonymous community data"}</div>}
         <a className="dashboard-method-link" href="#methodology">How this evidence works ↓</a>
       </div>
     </section>
@@ -38,12 +39,12 @@ export function CommunityDashboard() {
         <div><p className="eyebrow">Evidence at a glance</p><h2 id="evidence-heading">Current adoption and verified execution.</h2></div>
         <p>Installations are lifetime cumulative totals. Assessed jobs show research volume. Submitted applications require a confirmed employer or ATS success state.</p>
       </div>
-      <div className="dashboard-metrics" aria-label="Community totals" aria-busy={loading}>
-        <article><strong>{data ? compactNumber.format(data.metrics.installations) : loading ? <span className="metric-pending">Loading</span> : <span className="metric-empty">—</span>}</strong><span>Total installations</span></article>
-        <article><strong>{data ? compactNumber.format(data.metrics.applicationsSubmitted) : loading ? <span className="metric-pending">Loading</span> : <span className="metric-empty">—</span>}</strong><span>Verified applications submitted</span></article>
-        <article><strong>{data ? compactNumber.format(data.metrics.jobsAssessed) : loading ? <span className="metric-pending">Loading</span> : <span className="metric-empty">—</span>}</strong><span>Jobs assessed</span></article>
-      </div>
-      {error ? <p className="data-note data-note-error" role="status">Live aggregate data is resting. Evidence will return when the feed is available — we do not invent placeholder counts.</p> : null}
+      {/* Tiles render only with real lifetime counters; otherwise nothing (no placeholders). */}
+      {counted ? <div className="dashboard-metrics" aria-label="Community totals">
+        <article><strong>{compactNumber.format(data.metrics.installations)}</strong><span>Total installations</span></article>
+        <article><strong>{compactNumber.format(data.metrics.applicationsSubmitted)}</strong><span>Verified applications submitted</span></article>
+        <article><strong>{compactNumber.format(data.metrics.jobsAssessed)}</strong><span>Jobs assessed</span></article>
+      </div> : null}
     </section>
 
     <section className="dashboard-section" aria-labelledby="execution-heading">
@@ -63,8 +64,10 @@ export function CommunityDashboard() {
         </article>
         <article className="dashboard-panel outcome-panel">
           <div className="panel-heading"><div><h3>Outcome coverage</h3><p>Early signal, not a placement claim</p></div></div>
-          <strong className="outcome-number">{data ? `${outcomeCoverage}%` : loading ? <span className="metric-pending">Loading</span> : <span className="metric-empty">—</span>}</strong>
-          <p>of {data ? fullNumber.format(data.metrics.applicationsSubmitted) : "—"} verified applications have a reported outcome</p>
+          {counted ? <>
+            <strong className="outcome-number">{`${outcomeCoverage}%`}</strong>
+            <p>of {fullNumber.format(data.metrics.applicationsSubmitted)} verified applications have a reported outcome</p>
+          </> : <p className="empty-data">Waiting for verified activity.</p>}
           <div className="outcome-list">{publicOutcomeEntries(data?.breakdowns.outcomes ?? []).map((entry) => <span key={entry.label}><i />{fullNumber.format(entry.count)} {entry.label}</span>)}</div>
         </article>
       </div>

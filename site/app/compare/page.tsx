@@ -4,6 +4,7 @@ import type { ReactNode } from "react";
 import { JsonLd } from "../components/JsonLd";
 import { breadcrumbListJsonLd } from "../../lib/structured-data.mjs";
 import styles from "../components/ContentPage.module.css";
+import { SiteFooter, SiteHeader } from "../components/SiteChrome";
 
 const TITLE = "Open-source job application agents compared | JobAppAgent";
 const DESCRIPTION = "How JobAppAgent, an open-source job application agent, compares with ApplyPilot, career-ops, LangHire and others on automation, ATS support, approval.";
@@ -120,7 +121,9 @@ export default function Compare() {
     { name: "Home", path: "/" },
     { name: "Compare", path: "/compare" },
   ]);
-  return <main className={`legal page-width ${styles.page} ${styles.wide}`}>
+  return <div className="site-shell">
+    <SiteHeader foundingCta={false} />
+    <main className={`legal page-width ${styles.page} ${styles.wide}`}>
     <JsonLd data={breadcrumbs} />
     <Link className="legal-back" href="/">← Back to the product</Link>
     <h1>How JobAppAgent compares to other <span className={styles.nb}>open‑source</span> job agents</h1>
@@ -175,5 +178,7 @@ export default function Compare() {
       {Object.entries(SOURCES).map(([ref, href]) => <li key={ref} value={Number(ref)}><a href={href} rel="noopener">{href.replace(/^https:\/\//, "")}</a></li>)}
     </ol>
     <p className={styles.crossLinks}><Link href="/open-source">About the project</Link> · <a href="https://github.com/vaibhavarora14/job-application-agent">View on GitHub</a></p>
-  </main>;
+  </main>
+    <SiteFooter />
+  </div>;
 }

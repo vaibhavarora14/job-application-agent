@@ -17,32 +17,36 @@ test("server-renders the focused cloud offer and honest community proof", async 
   assert.equal(response.headers.get("x-frame-options"), "DENY");
   const html = await response.text();
   assert.match(html, /Find the role\./);
-  assert.match(html, /id="launch-countdown-title">Cloud access</);
+  // deploy-site.yml verify strings stay on the page after the design-review rework.
+  assert.match(html, /Cloud access opens later; no launch date is set/);
+  assert.match(html, /Cloud · Coming soon/);
   assert.match(html, /Founding reservation · \$49/);
   assert.match(html, /Founding reservation open/);
+  assert.match(html, /COMING SOON/);
   assert.match(html, /FOUNDING RESERVATION/);
   assert.match(html, /Smarter agent on cloud\./);
-  assert.match(html, /Cloud access is coming soon — a hosted agent that runs for you/);
-  assert.match(html, /Cloud access remains coming soon; no launch date promised/);
   assert.match(html, /Cloud access is coming soon\. \$49 reserves founding pricing/);
+  // Design review: no status card, no duplicate price line, no unapproved founder note.
+  assert.doesNotMatch(html, /launch-countdown-title|<small>Founding reservation · \$49<\/small>/);
+  assert.doesNotMatch(html, /Why I’m taking money before Cloud exists|maker of JobAppAgent/);
   assert.doesNotMatch(html, /October\s*1(?:5)?,?\s*2026|2026-10-(?:01|15)|datetime="2026-10/i);
   assert.doesNotMatch(html, /Time remaining until cloud launch|Scheduled start|T− ACTIVE|DATE REACHED/i);
-  assert.match(html, /Total installations/);
+  // Lifetime counters render client-side only once real (no placeholder SSR).
   assert.doesNotMatch(html, /Active installations · last 30 days|last 30 days/i);
-  assert.match(html, /Verified applications submitted/);
-  assert.match(html, /Jobs assessed/);
+  assert.doesNotMatch(html, /resting|metric-empty/i);
   assert.match(html, /Reserve for \$49/);
   assert.match(html, /India\/regional founding price \+ GST may appear at checkout/);
   assert.match(html, /Verified facts only/);
   assert.match(html, /Secure checkout by Dodo Payments/);
   assert.match(html, /Reserve founding access/);
-  assert.match(html, /lock founding reservation pricing/);
+  assert.match(html, /lock the founding price/);
   assert.match(html, /email a confirmation/);
   assert.match(html, /What am I paying for\?/);
   assert.match(html, /founding-price reservation for cloud access/);
   // Pre-purchase limits: buyers see the CAPTCHA/question pauses before paying.
   assert.match(html, /You stay in the loop\. Some applications pause for a CAPTCHA or an employer question, and the agent waits for a quick step from you before it carries on\./);
-  assert.match(html, /After payment we email a confirmation, not an instant dashboard\./);
+  assert.match(html, /We email a confirmation\./);
+  assert.match(html, /There is no instant self-serve dashboard yet\./);
   assert.match(html, /<summary>Is it fully hands-off\?<\/summary>/);
   assert.match(html, /Not completely\. Some applications stop at a CAPTCHA or a question only you can answer\. The agent pauses there until you take a quick step, then keeps going\./);
   assert.doesNotMatch(html, /asks you to take a quick step/);
@@ -50,8 +54,9 @@ test("server-renders the focused cloud offer and honest community proof", async 
   assert.doesNotMatch(html, /60 days|automatically refund|money-back|money back/i);
   assert.doesNotMatch(html, /HOSTED OPEN|Founding hosted open|unlock activatable|When do my 90 days|starts when we activate|still verifying|when cloud opens|when cloud access is ready|hold the founding price/i);
   assert.doesNotMatch(html, /Hosted \+ cloud sequence|Hosted continuity|Hosted and Cloud are both|Hosted access remains coming soon|founding-price reservation for hosted/i);
-  assert.match(html, /Agent foundation<\/span><strong>RELEASED<\/strong>/);
-  assert.match(html, /Cloud access<\/span><strong>COMING SOON<\/strong>/);
+  // Status card removed (design review); the progress checklist carries released vs coming soon.
+  assert.match(html, /Open-source agent released on npm and GitHub/);
+  assert.match(html, /class="launch-state"><i aria-hidden="true"><\/i>COMING SOON</);
   assert.doesNotMatch(html, /WINDOW OPEN|cloud launch window is now open/i);
   assert.doesNotMatch(html, /Cloud access<\/span><strong>OPEN<\/strong>/);
   assert.doesNotMatch(html, /filled\s*[≠!=]+\s*applied/i);
@@ -113,7 +118,7 @@ test("server-renders a design-only checkout success fixture without claiming pai
   const html = await response.text();
   assert.match(html, /Success preview|founding reservation is confirmed/i);
   assert.match(html, /email a reservation confirmation/i);
-  assert.match(html, /no access window starts at payment/i);
+  assert.match(html, /Your access window does not start at payment/i);
   assert.match(html, /no instant self-serve dashboard/i);
   assert.match(html, /Design fixture only/i);
   assert.match(html, /Back home/);
@@ -155,7 +160,7 @@ test("branded 404 page uses plain recovery copy and site CTAs", async () => {
   assert.match(source, /We can’t find that page/);
   assert.match(source, /Your agent and applications aren’t affected/);
   assert.match(source, /Go to JobAppAgent home/);
-  assert.match(source, /Browse published jobs/);
+  assert.match(source, /Browse open roles/);
   assert.match(source, /href="\/jobs"/);
   assert.match(source, /SiteHeader/);
   assert.match(source, /SiteFooter/);
@@ -204,9 +209,11 @@ test("community and homepage CTAs use Reserve for $49", async () => {
   const [home, community] = await Promise.all([render("/"), render("/community-view")]);
   assert.equal(home.status, 200);
   assert.equal(community.status, 200);
-  for (const html of [await home.text(), await community.text()]) {
+  const homeHtml = await home.text();
+  // Design review: the regional note sits only under the offer-panel button, not the header CTA.
+  assert.match(homeHtml, /India\/regional founding price \+ GST may appear at checkout/);
+  for (const html of [homeHtml, await community.text()]) {
     assert.match(html, /Reserve for \$49/);
-    assert.match(html, /India\/regional founding price \+ GST may appear at checkout/);
     assert.doesNotMatch(html, /Activate founding access|Unlock activatable|Reserve 90-day access/i);
     assert.doesNotMatch(html, /41\.73/);
   }
@@ -219,8 +226,8 @@ test("server-renders the branded community dashboard", async () => {
   assert.match(html, /Aggregate product evidence/);
   assert.match(html, /See the work the agent is doing/);
   assert.match(html, /Current adoption and verified execution/);
-  assert.match(html, /Total installations/);
   assert.match(html, /lifetime cumulative totals/i);
+  assert.doesNotMatch(html, /Live feed resting|is resting|of — verified/);
   assert.doesNotMatch(html, /Active installations · last 30 days|Active installation.*last 30 days/i);
   assert.match(html, /Activity over time, with outcomes kept in context/);
   assert.match(html, /Verified submissions by day/);
@@ -238,10 +245,14 @@ test("homepage community proof does not show an interviews stat", async () => {
   const response = await render("/");
   assert.equal(response.status, 200);
   const html = await response.text();
-  assert.match(html, /Total installations/);
-  assert.match(html, /Verified applications submitted/);
-  assert.match(html, /Jobs assessed/);
   assert.doesNotMatch(html, /interview/i);
+  const source = await import("node:fs/promises").then((fs) =>
+    fs.readFile(new URL("../app/components/CommunityProof.tsx", import.meta.url), "utf8"),
+  );
+  assert.match(source, /Total installations/);
+  assert.match(source, /Verified applications submitted/);
+  assert.match(source, /Jobs assessed/);
+  assert.match(source, /if \(!hasLifetimeCounters\(data\)\) return null;/);
 });
 
 test("publishes crawler guidance and a host-local apex sitemap", async () => {
@@ -276,8 +287,7 @@ test("open-source and compare pages pair JobAppAgent with open-source job applic
   assert.match(openHtml, /<title>JobAppAgent: the open-source job application agent<\/title>/);
   assert.match(openHtml, /<h1>JobAppAgent, the <span class="[^"]+">open\u2011source<\/span> job application agent<\/h1>/);
   assert.match(openHtml, /the GitHub repo <code>vaibhavarora14\/job-application-agent<\/code> and the npm package <code>job-application-agent<\/code> are the same project/);
-  assert.match(openHtml, />Confirmed applications</);
-  assert.doesNotMatch(openHtml, /Applications submitted/);
+  assert.doesNotMatch(openHtml, /Applications submitted|metric-empty/);
   assert.match(openHtml, />Copy</);
   assert.match(openHtml, />View on GitHub</);
   assert.match(openHtml, /href="\/compare"[^>]*>See how it compares</);
@@ -496,8 +506,10 @@ test("homepage revamp: free path first, Cloud reservation next, no dates or wait
   assert.match(html, /href="\/jobs"/);
   assert.match(html, /npx job-application-agent@latest install/);
   assert.match(html, /Available now/);
-  assert.match(html, /Coming with Cloud/);
+  assert.doesNotMatch(html, /Coming with Cloud|Launch readiness|designed, not live|One clear loop/);
   assert.match(html, /Try the free agent first/);
+  assert.match(html, /When does Cloud launch\?/);
+  assert.match(html, /<summary>Menu<\/summary>/);
   assert.match(html, /Reserve for \$49/);
   assert.match(html, /COMING SOON/);
   assert.doesNotMatch(html, /type="email"|waitlist|countdown timer|lifetime access|spots left/i);
