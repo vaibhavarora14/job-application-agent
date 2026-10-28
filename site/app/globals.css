@@ -139,7 +139,7 @@ button, input { font: inherit; }
 .section { padding-block: 6.5rem; scroll-margin-top: 5rem; }
 .section-heading { max-width: 45rem; margin-bottom: 3rem; }
 .section-heading h2, .boundary-layout h2, .founding-card h2, .methodology h2 { margin: .8rem 0 1rem; font-family: var(--font-display), serif; font-size: clamp(2.35rem, 4.5vw, 4rem); font-weight: 400; line-height: 1.12; letter-spacing: -.05em; overflow-wrap: break-word; }
-.section-heading > p:last-child, .boundary-layout > div:first-child > p:last-child, .founding-card > div:first-child > p:last-child { color: var(--text); font-size: 1.05rem; line-height: 1.7; }
+.section-heading > p:last-child, .boundary-layout > div:first-child > p:last-child, .founding-card > div:first-child > p:not(.eyebrow) { color: var(--text); font-size: 1.05rem; line-height: 1.7; }
 .process-grid { margin: 0; padding: 0; display: grid; grid-template-columns: repeat(3, 1fr); border-top: 1px solid var(--line); border-left: 1px solid var(--line); list-style: none; }
 .process-grid li { min-height: 16rem; padding: 2rem; border-right: 1px solid var(--line); border-bottom: 1px solid var(--line); background: var(--surface); }
 .process-grid span, .boundary-columns article > span, .offer-panel > div > span { color: var(--green); font: 600 .72rem var(--font-mono), monospace; letter-spacing: .08em; }
@@ -164,7 +164,8 @@ button, input { font: inherit; }
 .founding-card > div:first-child { min-width: 0; padding: 4rem; }
 .founding-card h2 { max-width: 100%; padding-block: .08em; }
 .founding-card .eyebrow { color: #8fd0b3; }
-.founding-card > div:first-child > p:last-child { color: #d5e4dc; }
+.founding-card > div:first-child > p:not(.eyebrow) { color: #d5e4dc; }
+.founding-card > div:first-child > p.founding-limits { margin-top: 1rem; font-size: .95rem; line-height: 1.6; }
 .offer-panel { margin: .75rem; padding: 3rem; border-radius: .85rem; display: grid; align-content: center; gap: 1.5rem; background: var(--surface); color: var(--ink); }
 .offer-panel > div { display: grid; }
 .offer-panel > div strong { font-size: 4rem; line-height: 1; letter-spacing: -.06em; }
