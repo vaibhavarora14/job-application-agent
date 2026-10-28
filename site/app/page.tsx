@@ -56,7 +56,7 @@ export default function Home() {
       <section className="section faq page-width">
         <div className="section-heading"><p className="eyebrow">Straight answers</p><h2>Before you reserve.</h2></div>
         <details><summary>When does Job Application Agent launch?</summary><p>Cloud access is coming soon. $49 reserves founding pricing; we email when access opens.</p></details>
-        <details><summary>Is it fully hands-off?</summary><p>Not completely. Some applications stop at a CAPTCHA or a question only you can answer. The agent pauses there and asks you to take a quick step, then keeps going.</p></details>
+        <details><summary>Is it fully hands-off?</summary><p>Not completely. Some applications stop at a CAPTCHA or a question only you can answer. The agent pauses there until you take a quick step, then keeps going.</p></details>
         <details><summary>Is this a mass-application bot?</summary><p>No. It filters aggressively and applies only inside rules you set. Unclear or sensitive decisions pause for you.</p></details>
         <details><summary>What am I paying for?</summary><p>A founding-price reservation for cloud access when it launches — not instant access.</p></details>
         <details><summary>How do I get access after paying?</summary><p>After payment we confirm your reservation by email. There is no instant self-serve dashboard yet.</p></details>
