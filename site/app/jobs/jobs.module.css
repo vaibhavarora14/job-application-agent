@@ -1286,8 +1286,13 @@
   }
 
   .railCard {
-    padding: 24px 24px 8px;
+    padding: 24px 16px 8px;
     border-radius: 16px;
+  }
+
+  /* One line at 1440: the lead needs ~340px at 14px; the rail gives 346px with 16px sides. */
+  .railLead {
+    font-size: 14px;
   }
 
   .railTitle {
