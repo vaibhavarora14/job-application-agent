@@ -8,6 +8,7 @@ import {
   countryCodeOf,
   greenhouseSalary,
   ashbySalary,
+  formatPayLabel,
   LOCATION_RECORD_MAX_AGE_MS,
 } from '../lib/job-locations.mjs';
 import { jobPostingJsonLd, postedDate, employerSalary } from '../lib/live-jobs.mjs';
@@ -57,7 +58,9 @@ test('Ashby structured compensation, department, team and publish date are store
   const result = extractLocation(job, data, now);
   assert.equal(result.workplace, 'remote');
   assert.deepEqual(result.countryCodes, ['US']);
-  assert.equal(result.salary.label, '$125k – $190k /yr');
+  assert.equal(result.salary.label, '$125K–$190K USD');
+  assert.equal(result.salary.currency, 'USD');
+  assert.deepEqual(result.salary.ranges, [{ min: 125000, max: 190000, currency: 'USD', period: 'year', location: null, label: '$125K–$190K USD' }]);
   assert.equal(result.salary.basis, 'ats');
   assert.equal(result.salary.source, 'employer');
   assert.equal(result.employmentType, 'full-time');
@@ -80,7 +83,8 @@ test('Greenhouse pay ranges, metadata and departments are read; nothing is defau
     first_published: '2026-07-21T16:24:17-04:00',
   };
   const result = extractLocation(job, gh, now);
-  assert.equal(result.salary.label, '$130k – $195k /yr');
+  assert.equal(result.salary.label, '$130K–$195K USD');
+  assert.deepEqual(result.salary.ranges.map((range) => [range.location, range.label]), [['Zone 1', '$166K–$195K USD'], ['Zone 3', '$130K–$152K USD']]);
   assert.equal(result.employmentType, 'full-time');
   assert.equal(result.experienceLevel, 'mid');
   assert.equal(result.department, 'Engineering');
@@ -121,7 +125,7 @@ test('JSON-LD: TELECOMMUTE only with a stated country, never Worldwide', () => {
 });
 
 test('JSON-LD: jobLocation, baseSalary, employmentType and datePosted come from the source', () => {
-  const salary = { min: 130000, max: 195000, annualMin: 130000, annualMax: 195000, currency: 'USD', period: 'year', label: '$130k – $195k /yr', isEstimated: false, source: 'employer', basis: 'ats' };
+  const salary = { min: 130000, max: 195000, annualMin: 130000, annualMax: 195000, currency: 'USD', period: 'year', label: '$130K–$195K USD', isEstimated: false, source: 'employer', basis: 'ats' };
   const job = {
     ...base,
     url: 'https://job-boards.greenhouse.io/acme/jobs/42',
@@ -138,7 +142,7 @@ test('JSON-LD: jobLocation, baseSalary, employmentType and datePosted come from 
   assert.equal(ld.datePosted, '2026-07-21');
   assert.equal(ld.jobLocationType, undefined);
   assert.equal(postedDate(job), '2026-07-21T20:24:17.000Z');
-  assert.equal(employerSalary(job).label, '$130k – $195k /yr');
+  assert.equal(employerSalary(job).label, '$130K–$195K USD');
 
   const unstated = jobPostingJsonLd({ ...job, location: { ...job.location, salary: { ...salary, isEstimated: true }, employmentType: null, postedAt: null } });
   assert.equal(unstated.baseSalary, undefined);
@@ -166,6 +170,22 @@ test('location index freshness flags refresh, alert and expiry', () => {
   assert.equal(locationIndexFreshness({}, now).ok, false);
 });
 
+test('Ashby compensation tiers keep each range with its location; labels match the design format', () => {
+  const salary = ashbySalary({ compensation: {
+    compensationTiers: [
+      { title: 'Germany', components: [{ compensationType: 'Salary', interval: '1 YEAR', currencyCode: 'EUR', minValue: 110500, maxValue: 181500 }] },
+      { title: 'Netherlands', components: [{ compensationType: 'Salary', interval: '1 YEAR', currencyCode: 'EUR', minValue: 100000, maxValue: 170000 }, { compensationType: 'EquityPercentage', interval: 'NONE' }] },
+    ],
+    summaryComponents: [{ compensationType: 'Salary', interval: '1 YEAR', currencyCode: 'EUR', minValue: 100000, maxValue: 181500 }],
+  } });
+  assert.equal(salary.label, '€100K–€181.5K');
+  assert.deepEqual(salary.ranges.map((range) => [range.location, range.label]), [['Germany', '€110.5K–€181.5K'], ['Netherlands', '€100K–€170K']]);
+  assert.equal(formatPayLabel(135000, 300000, 'USD', 'year'), '$135K–$300K USD');
+  assert.equal(formatPayLabel(45, 60, 'USD', 'hour'), '$45–$60 USD /hr');
+  assert.equal(formatPayLabel(90000, 120000, 'CHF', 'year'), '90K–120K CHF');
+  assert.equal(formatPayLabel(100000, 100000, 'GBP', 'year'), '£100K');
+});
+
 test('committed snapshot is well-formed and carries no unresolved queue in the bundled file', async () => {
   const index = JSON.parse(await readFile(new URL('../data/job-locations.json', import.meta.url), 'utf8'));
   assert.equal(index.version, 1);
@@ -174,7 +194,21 @@ test('committed snapshot is well-formed and carries no unresolved queue in the b
   assert.equal('unresolved' in index, false);
   for (const record of index.records) {
     assert.ok(record.jobId && record.checkedAt);
-    if (record.salary) assert.equal(record.salary.isEstimated, false);
+    if (record.salary) {
+      assert.equal(record.salary.isEstimated, false);
+      assert.match(record.salary.currency, /^[A-Z]{3}$/);
+      assert.ok(Array.isArray(record.salary.ranges) && record.salary.ranges.length > 0);
+    }
     for (const place of record.places ?? []) assert.match(place.country, /^[A-Z]{2}$/);
   }
+});
+
+// Hard guard: the site drops location records older than LOCATION_RECORD_MAX_AGE_MS, so an expired
+// snapshot silently blanks location, workplace and pay for every job. Fail CI until it is refreshed
+// (`npm run collect:job-locations` or the job-locations-refresh workflow).
+test('committed location snapshot has not passed the 30-day cutoff', async () => {
+  const index = JSON.parse(await readFile(new URL('../data/job-locations.json', import.meta.url), 'utf8'));
+  const freshness = locationIndexFreshness(index, Date.now());
+  assert.notEqual(freshness.status, 'expired', `job-locations.json is ${freshness.ageDays} days old; refresh it before shipping`);
+  assert.notEqual(freshness.status, 'invalid');
 });

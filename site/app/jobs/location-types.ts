@@ -1,3 +1,14 @@
+export type JobPayRange = {
+  min: number;
+  max: number;
+  currency: string;
+  period: "year" | "month" | "week" | "day" | "hour" | string;
+  /** Location or tier title the employer gave this range (e.g. "US Zone 1"); null when unstated. */
+  location: string | null;
+  /** e.g. "$135K–$300K USD" or "€110.5K–€181.5K". */
+  label: string;
+};
+
 export type JobSalary = {
   min: number;
   max: number;
@@ -5,7 +16,10 @@ export type JobSalary = {
   annualMax: number;
   currency: string;
   period: "year" | "month" | "hour" | string;
+  /** Full span in the first listed currency, e.g. "$135K–$300K USD". */
   label: string;
+  /** Every employer-stated range, in source order (older snapshots may omit it). */
+  ranges?: JobPayRange[];
   isEstimated: boolean;
   source: "employer" | "market-benchmark" | string;
 };

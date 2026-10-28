@@ -5,7 +5,7 @@ import {
   formatClosedDate,
   formatReviewedDate,
   locationLabel,
-  postedDate,
+  employerPostedAt,
   employerSalary,
 } from "../../lib/live-jobs.mjs";
 import { buildApplyCliCommand, shortenUrlForDisplay } from "../../lib/job-apply-copy.mjs";
@@ -100,8 +100,9 @@ export function JobDetail({
   const closed = job.livenessStatus === "closed";
   const family = classifyRoleFamily(job.role);
   const place = locationLabel(job);
-  // Employer-stated pay only; "Not listed" stays for roles whose source states none.
+  // Employer-stated facts only: unknown pay reads "Pay not listed"; other unknown facts are omitted.
   const pay = employerSalary(job)?.label ?? "";
+  const posted = employerPostedAt(job);
   const employment = job.location?.employmentType
     ? job.location.employmentType.replace(/-/g, " ").replace(/\b\w/g, (c) => c.toUpperCase())
     : "";
@@ -157,21 +158,27 @@ export function JobDetail({
                 </p>
               </div>
               <div className={styles.facts}>
-                <div>
-                  <strong>Location</strong>
-                  {place || "Not listed"}
-                </div>
-                <div>
-                  <strong>Type</strong>
-                  {employment || "Not listed"}
-                </div>
-                <div>
-                  <strong>Posted</strong>
-                  {formatClosedDate(postedDate(job))}
-                </div>
+                {place ? (
+                  <div>
+                    <strong>Location</strong>
+                    {place}
+                  </div>
+                ) : null}
+                {employment ? (
+                  <div>
+                    <strong>Type</strong>
+                    {employment}
+                  </div>
+                ) : null}
+                {posted ? (
+                  <div>
+                    <strong>Posted</strong>
+                    {formatClosedDate(posted)}
+                  </div>
+                ) : null}
                 <div>
                   <strong>Pay</strong>
-                  {pay || "Not listed"}
+                  {pay || "Pay not listed"}
                 </div>
               </div>
               <div className={styles.summary}>

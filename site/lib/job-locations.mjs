@@ -146,14 +146,45 @@ export function parseSalaryDetails(text) {
   return null;
 }
 
-const CURRENCY_SYMBOLS = { USD: '$', EUR: '€', GBP: '£', CAD: 'CA$', AUD: 'A$', INR: '₹', SGD: 'S$' };
+const CURRENCY_SYMBOLS = { USD: '$', EUR: '€', GBP: '£', CAD: 'CA$', AUD: 'A$', INR: '₹', SGD: 'S$', JPY: '¥' };
+const PERIOD_SUFFIX = { year: '', month: ' /mo', week: ' /wk', day: ' /day', hour: ' /hr' };
+const PERIOD_MULTIPLIER = { year: 1, month: 12, week: 52, day: 260, hour: 2080 };
 
-function formatSalary(min, max, currency, period, isEstimated, source) {
-  const sym = CURRENCY_SYMBOLS[currency] ?? `${currency} `;
-  const periodLabel = period === 'year' ? '/yr' : period === 'month' ? '/mo' : '/hr';
-  const formatVal = v => v >= 1000 ? (v % 1000 === 0 ? `${v / 1000}k` : `${(v / 1000).toFixed(v % 100 === 0 ? 1 : 0)}k`) : `${v}`;
-  const label = (isEstimated ? 'Est. ' : '') + (min === max ? `${sym}${formatVal(min)} ${periodLabel}` : `${sym}${formatVal(min)} – ${sym}${formatVal(max)} ${periodLabel}`);
-  const multiplier = period === 'year' ? 1 : period === 'month' ? 12 : 2080;
+function compactAmount(value) {
+  if (value >= 1000) {
+    const k = Math.round(value / 100) / 10;
+    return `${Number.isInteger(k) ? k : k.toFixed(1)}K`;
+  }
+  return Number.isInteger(value) ? `${value}` : value.toFixed(2);
+}
+
+/**
+ * Display label for one pay range, e.g. `$135K–$300K USD`, `€110.5K–€181.5K`, `$45–$60 USD /hr`.
+ * `$` alone is ambiguous, so USD also carries its code; currencies without a symbol show the code only.
+ */
+export function formatPayLabel(min, max, currency, period) {
+  const sym = CURRENCY_SYMBOLS[currency];
+  const amount = (value) => (sym ? `${sym}${compactAmount(value)}` : compactAmount(value));
+  const span = min === max ? amount(min) : `${amount(min)}–${amount(max)}`;
+  const code = !sym ? ` ${currency}` : currency === 'USD' ? ' USD' : '';
+  return `${span}${code}${PERIOD_SUFFIX[period] ?? ''}`;
+}
+
+function payRange(min, max, currency, period, location = null) {
+  return { min, max, currency, period, location: typeof location === 'string' && location.trim() ? location.trim() : null, label: formatPayLabel(min, max, currency, period) };
+}
+
+/**
+ * Employer pay: `min`/`max`/`label` are the full span (first currency listed), `ranges` keeps every
+ * stated range with its location/title so the detail page can list each one.
+ */
+function salaryFromRanges(ranges, isEstimated, source) {
+  if (!ranges.length) return null;
+  const { currency, period } = ranges[0];
+  const same = ranges.filter((range) => range.currency === currency && range.period === period);
+  const min = Math.min(...same.map((range) => range.min));
+  const max = Math.max(...same.map((range) => range.max));
+  const multiplier = PERIOD_MULTIPLIER[period] ?? 1;
   return {
     min,
     max,
@@ -161,10 +192,15 @@ function formatSalary(min, max, currency, period, isEstimated, source) {
     annualMax: Math.round(max * multiplier),
     currency,
     period,
-    label,
+    label: (isEstimated ? 'Est. ' : '') + formatPayLabel(min, max, currency, period),
+    ranges,
     isEstimated,
     source
   };
+}
+
+function formatSalary(min, max, currency, period, isEstimated, source) {
+  return salaryFromRanges([payRange(min, max, currency, period)], isEstimated, source);
 }
 
 /**
@@ -323,38 +359,46 @@ function uniquePlaces(places) {
 
 const PERIODS = { '1 YEAR': 'year', '1 MONTH': 'month', '1 HOUR': 'hour', 'per-year-salary': 'year', 'per-month-salary': 'month', 'per-hour-wage': 'hour', year: 'year', month: 'month', hour: 'hour' };
 
-function structuredSalary(min, max, currency, period) {
+function validRange(min, max, currency, period, location) {
   if (!Number.isFinite(min) || !Number.isFinite(max) || min <= 0 || max < min || max >= 10_000_000) return null;
   if (typeof currency !== 'string' || !/^[A-Z]{3}$/.test(currency) || !period) return null;
-  return { ...formatSalary(min, max, currency, period, false, 'employer'), basis: 'ats' };
+  return payRange(min, max, currency, period, location);
 }
 
-/** Ashby `?includeCompensation=true`: first employer-published base salary component. */
+function structuredSalary(ranges) {
+  const valid = ranges.filter(Boolean);
+  return valid.length ? { ...salaryFromRanges(valid, false, 'employer'), basis: 'ats' } : null;
+}
+
+const ashbyRange = (item, location) => item?.compensationType === 'Salary' && Number.isFinite(item?.minValue)
+  ? validRange(item.minValue, Number.isFinite(item.maxValue) ? item.maxValue : item.minValue, item.currencyCode, PERIODS[item.interval], location)
+  : null;
+
+/** Ashby `?includeCompensation=true`: every employer-published base salary tier (title kept as its location). */
 export function ashbySalary(entry) {
   const comp = entry?.compensation;
   if (!comp || entry?.shouldDisplayCompensationOnJobPostings === false) return null;
+  const tiers = Array.isArray(comp.compensationTiers) ? comp.compensationTiers : [];
+  const fromTiers = tiers.flatMap((tier) => (Array.isArray(tier?.components) ? tier.components : []).map((item) => ashbyRange(item, tier?.title)));
+  if (fromTiers.some(Boolean)) return structuredSalary(fromTiers);
   const components = Array.isArray(comp.summaryComponents) ? comp.summaryComponents : [];
-  const salary = components.find((item) => item?.compensationType === 'Salary' && Number.isFinite(item?.minValue));
-  if (!salary) return null;
-  return structuredSalary(salary.minValue, Number.isFinite(salary.maxValue) ? salary.maxValue : salary.minValue, salary.currencyCode, PERIODS[salary.interval]);
+  return structuredSalary([components.map((item) => ashbyRange(item, null)).find(Boolean)]);
 }
 
-/** Greenhouse `?pay_transparency=true`: span of the employer's pay ranges in the first currency. */
+/** Greenhouse `?pay_transparency=true`: each pay range with its title (e.g. "US Zone 1"); span in the first currency. */
 export function greenhouseSalary(entry) {
   const ranges = Array.isArray(entry?.pay_input_ranges) ? entry.pay_input_ranges.filter((range) => Number.isFinite(range?.min_cents) && Number.isFinite(range?.max_cents) && typeof range?.currency_type === 'string') : [];
-  if (!ranges.length) return null;
-  const currency = ranges[0].currency_type;
-  const same = ranges.filter((range) => range.currency_type === currency);
-  const min = Math.min(...same.map((range) => range.min_cents)) / 100;
-  const max = Math.max(...same.map((range) => range.max_cents)) / 100;
   // Greenhouse does not publish an interval: sub-1,000 amounts are hourly wages.
-  return structuredSalary(min, max, currency, max < 1000 ? 'hour' : 'year');
+  return structuredSalary(ranges.map((range) => {
+    const min = range.min_cents / 100, max = range.max_cents / 100;
+    return validRange(min, max, range.currency_type.toUpperCase(), max < 1000 ? 'hour' : 'year', range.title);
+  }));
 }
 
 function leverSalary(entry) {
   const range = entry?.salaryRange;
   if (!range) return null;
-  return structuredSalary(range.min, range.max, typeof range.currency === 'string' ? range.currency.toUpperCase() : null, PERIODS[range.interval]);
+  return structuredSalary([validRange(range.min, range.max, typeof range.currency === 'string' ? range.currency.toUpperCase() : null, PERIODS[range.interval])]);
 }
 
 function textSalary(text) {

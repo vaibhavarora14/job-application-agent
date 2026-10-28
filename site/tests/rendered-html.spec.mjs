@@ -397,6 +397,9 @@ test("publishes an indexable jobs board with shared site chrome", async () => {
     assert.match(openHtml, /application\/ld\+json/);
     assert.match(openHtml, /validThrough/);
     assert.match(openHtml, /TELECOMMUTE|applicantLocationRequirements/);
+    // Unknown pay reads "Pay not listed"; other unknown facts are omitted, never "Not listed".
+    assert.match(openHtml, /Pay not listed|<strong>Pay<\/strong>[^<]*\d/);
+    assert.doesNotMatch(openHtml, /Not listed/);
     assert.doesNotMatch(openHtml, /\$49|Reserve for \$49|Reserve founding|Founding reservation|FOUNDING RESERVATION/i);
   } finally {
     if (previous === undefined) delete process.env.USE_JOBS_BOARD_FIXTURES;

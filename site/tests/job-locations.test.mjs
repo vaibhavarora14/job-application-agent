@@ -76,11 +76,11 @@ test('parses employer salaries across different currencies and periods', () => {
 });
 
 test('salary is only attached when stated by the employer in the application', () => {
-  const withSalary = { ...job, label: 'London', cities: ['London'], countries: ['GB'], workplace: 'hybrid', salary: { min: 100000, max: 120000, annualMin: 100000, annualMax: 120000, currency: 'GBP', period: 'year', label: '£100k – £120k /yr', isEstimated: false, source: 'employer' }, checkedAt: '2026-09-07T00:00:00.000Z' };
+  const withSalary = { ...job, label: 'London', cities: ['London'], countries: ['GB'], workplace: 'hybrid', salary: { min: 100000, max: 120000, annualMin: 100000, annualMax: 120000, currency: 'GBP', period: 'year', label: '£100K–£120K', isEstimated: false, source: 'employer' }, checkedAt: '2026-09-07T00:00:00.000Z' };
   const withoutSalary = { ...job, jobId: 'job-without-salary', role: 'Staff Software Engineer', label: 'London', cities: ['London'], countries: ['GB'], workplace: 'hybrid', salary: null, checkedAt: '2026-09-07T00:00:00.000Z' };
   const index = { records: [withSalary, withoutSalary] };
   const attached = attachLocations([withSalary, withoutSalary], index, Date.parse('2026-09-08T00:00:00.000Z'));
-  assert.equal(attached[0].location.salary.label, '£100k – £120k /yr');
+  assert.equal(attached[0].location.salary.label, '£100K–£120K');
   assert.equal(attached[1].location.salary, null);
 });
 

@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "collectedAt": "2026-10-28T10:11:09.358Z",
+  "collectedAt": "2026-10-28T10:17:06.401Z",
   "snapshotCount": 1626,
   "unresolved": [
     {
@@ -984,13 +984,6 @@
       "reason": "Needs page inspection / unsupported ATS"
     },
     {
-      "jobId": "community-job-22d810961f13127f",
-      "url": "https://jobs.lever.co/neuron7/3c8a38fe-00bf-43cd-9622-1b9e4824775f",
-      "company": "Neuron7.ai",
-      "role": "Senior Forward Deployment Engineer (FDE)",
-      "reason": "fetch failed"
-    },
-    {
       "jobId": "community-job-23c7f047c0881f37",
       "url": "https://reddit.com/careers/8157274",
       "company": "Reddit",
@@ -1052,13 +1045,6 @@
       "company": "AlphaSense",
       "role": "Staff Software Engineer, Full Stack",
       "reason": "HTTP 404"
-    },
-    {
-      "jobId": "community-job-2679cdf9fb1adf33",
-      "url": "https://jobs.lever.co/airalo/853093bf-9cc6-4f15-aced-255145f4a064",
-      "company": "Airalo",
-      "role": "Senior Director, Brand",
-      "reason": "The operation was aborted due to timeout"
     },
     {
       "jobId": "community-job-2683ecee4502980a",
@@ -1415,7 +1401,7 @@
       "url": "https://jobs.lever.co/jobandtalent/1ac9295f-fd5c-42eb-bb17-f483a7cf800c",
       "company": "Job&Talent",
       "role": "GRC Senior Analyst",
-      "reason": "HTTP 404"
+      "reason": "The operation was aborted due to timeout"
     },
     {
       "jobId": "community-job-33952ee74c72c18e",
@@ -2517,13 +2503,6 @@
       "reason": "Needs page inspection / unsupported ATS"
     },
     {
-      "jobId": "community-job-562347842736a36f",
-      "url": "https://jobs.lever.co/sambatv/c6b47ece-76da-4d9c-8e79-7c94cf6ed282",
-      "company": "Samba TV",
-      "role": "Senior Software Engineer - Identity",
-      "reason": "The operation was aborted due to timeout"
-    },
-    {
       "jobId": "community-job-562c22558b220675",
       "url": "https://careers.mt.com/en_US/careers/JobDetail/1/23004",
       "company": "Mettler Toledo",
@@ -2787,7 +2766,7 @@
       "url": "https://jobs.lever.co/coinmarketcap/3badc309-fe0c-41f6-8e78-5236dc331b8c",
       "company": "CoinMarketCap",
       "role": "Global VP Marketing/CMO",
-      "reason": "The operation was aborted due to timeout"
+      "reason": "HTTP 404"
     },
     {
       "jobId": "community-job-5e7c58632b74d4b2",
@@ -4090,13 +4069,6 @@
       "company": "Reddit",
       "role": "Senior SWE Media Experience",
       "reason": "Needs page inspection / unsupported ATS"
-    },
-    {
-      "jobId": "community-job-87190c8f6a08ed3d",
-      "url": "https://jobs.lever.co/futureof-life/759df9eb-5611-4a42-b92d-aa199c6f2a7d",
-      "company": "Future of Life Organizations / CARMA",
-      "role": "Research Engineer - Novel AI Platforms for Multiscale Alignment",
-      "reason": "The operation was aborted due to timeout"
     },
     {
       "jobId": "community-job-872615faa7ea397a",
