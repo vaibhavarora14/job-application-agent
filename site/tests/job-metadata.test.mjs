@@ -372,10 +372,13 @@ test('pay bands: OTE in caps after the currency; total comp spelled out, never T
 
 test('pay bands: CSS keeps the name muted and the range bold and unsplittable', async () => {
   const css = await readFile(new URL('../app/jobs/jobs.module.css', import.meta.url), 'utf8');
+  const globals = await readFile(new URL('../app/globals.css', import.meta.url), 'utf8');
   const rule = (name) => css.match(new RegExp(`\\.${name}\\s*\\{([^}]*)\\}`))?.[1] ?? '';
-  // Direction B tokens: muted #5B6B80, ink #0F172A.
-  assert.match(css, /--j-muted:\s*#5b6b80/i);
-  assert.match(css, /--j-ink:\s*#0f172a/i);
+  // Direction B tokens live site-wide in globals.css :root (muted #5B6B80, ink #0F172A); /jobs aliases them.
+  assert.match(globals, /--muted:\s*#5b6b80/i);
+  assert.match(globals, /--ink:\s*#0f172a/i);
+  assert.match(css, /--j-muted:\s*var\(--muted\)/i);
+  assert.match(css, /--j-ink:\s*var\(--ink\)/i);
   assert.match(rule('payBandName'), /color:\s*var\(--j-muted\)/);
   assert.match(rule('payBandRange'), /font-weight:\s*600/);
   assert.match(rule('payBandRange'), /white-space:\s*nowrap/);

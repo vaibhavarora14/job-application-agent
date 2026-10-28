@@ -16,7 +16,7 @@ test("server-renders the focused cloud offer and honest community proof", async 
   assert.equal(response.headers.get("x-content-type-options"), "nosniff");
   assert.equal(response.headers.get("x-frame-options"), "DENY");
   const html = await response.text();
-  assert.match(html, /Set the goal/);
+  assert.match(html, /Find the role\./);
   assert.match(html, /id="launch-countdown-title">Cloud access</);
   assert.match(html, /Founding reservation · \$49/);
   assert.match(html, /Founding reservation open/);
@@ -167,10 +167,10 @@ test("product SiteHeader nav works from non-home pages", async () => {
     fs.readFile(new URL("../app/components/SiteChrome.tsx", import.meta.url), "utf8"),
   );
   assert.match(source, /href=\{community \? "https:\/\/jobappagent\.com" : "\/#top"\}/);
-  assert.match(source, /href="\/#process"/);
-  assert.match(source, /href="\/#boundaries"/);
-  assert.match(source, /<Link href="\/#process">How it works<\/Link>/);
-  assert.match(source, /<Link href="\/#boundaries">Boundaries<\/Link>/);
+  // Revamp (theme B): nav follows the three pillars; anchors resolve from any page.
+  assert.match(source, /<Link href="\/jobs">Job board<\/Link>/);
+  assert.match(source, /<Link href="\/#agent">Open source<\/Link>/);
+  assert.match(source, /<Link href="\/#cloud">Cloud<\/Link>/);
   assert.match(source, /foundingCta = true/);
   assert.match(source, /foundingCta \? <FoundingCheckout compact \/> : null/);
 });
@@ -369,8 +369,9 @@ test("publishes an indexable jobs board with shared site chrome", async () => {
     assert.doesNotMatch(html, /name="robots" content="noindex/);
     // Shared SiteHeader nav without founding CTA on /jobs* (+ phone Menu toggle).
     assert.match(html, /stats\.jobappagent\.com/);
-    assert.match(html, /How it works/);
-    assert.match(html, /Boundaries/);
+    assert.match(html, />Job board</);
+    assert.match(html, />Open source</);
+    assert.match(html, />Cloud</);
     assert.match(html, /site-nav-jobs/);
     assert.match(html, /site-mobile-menu/);
     assert.match(html, /<summary>Menu<\/summary>/);
@@ -482,4 +483,23 @@ test("reports storage healthy only when the database probe responds", async () =
   const unhealthyDb = { prepare: () => ({ first: async () => { throw new Error("unavailable"); } }) };
   assert.equal(await isStorageHealthy(healthyDb), true);
   assert.equal(await isStorageHealthy(unhealthyDb), false);
+});
+
+test("homepage revamp: free path first, Cloud reservation next, no dates or waitlist", async () => {
+  const response = await render("/");
+  assert.equal(response.status, 200);
+  const html = await response.text();
+  for (const id of ["free", "agent", "jobs", "process", "boundaries", "cloud", "founding"]) {
+    assert.match(html, new RegExp(`id="${id}"`));
+  }
+  assert.ok(html.indexOf('id="agent"') < html.indexOf('id="cloud"'));
+  assert.match(html, /href="\/jobs"/);
+  assert.match(html, /npx job-application-agent@latest install/);
+  assert.match(html, /Available now/);
+  assert.match(html, /Coming with Cloud/);
+  assert.match(html, /Try the free agent first/);
+  assert.match(html, /Reserve for \$49/);
+  assert.match(html, /COMING SOON/);
+  assert.doesNotMatch(html, /type="email"|waitlist|countdown timer|lifetime access|spots left/i);
+  assert.doesNotMatch(html, /interview/i);
 });

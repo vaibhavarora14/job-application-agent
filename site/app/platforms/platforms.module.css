@@ -1,14 +1,15 @@
 .guide { overflow-wrap: anywhere; }
 .guide h1 { line-height: 1.08; }
-.guide a { color: var(--green); text-underline-offset: .2em; }
-.guide a:global(.button) { color: var(--ink); text-decoration: none; }
+.guide a { color: var(--accent-text); text-underline-offset: .2em; }
+.guide a:global(.button) { color: #fff; text-decoration: none; }
+.guide a:global(.button-secondary) { color: var(--ink); }
 .platforms { margin-block: 2rem; border-top: 1px solid var(--line); }
 .platforms section { padding-block: 1rem; border-bottom: 1px solid var(--line); }
 .platforms h2 { margin-top: 0; }
-.status { margin: .35rem 0 0; font: .75rem var(--font-mono), monospace; }
+.status { margin: .35rem 0 0; color: var(--muted); font: 600 .8125rem/1.4 var(--font-body), sans-serif; }
 .templateCta { display: grid; gap: .55rem; justify-items: start; margin-block: 1.25rem; }
 .templateNote { margin: 0; color: var(--text); }
-.code { padding: 1rem; border: 1px solid var(--line); background: var(--surface); white-space: pre-wrap; overflow-wrap: anywhere; font-size: .875rem; line-height: 1.6; }
+.code { padding: 1rem; border: 1px solid var(--line); border-radius: .5rem; background: var(--panel); white-space: pre-wrap; overflow-wrap: anywhere; font-size: .875rem; line-height: 1.6; }
 .promptLabel { display: block; margin-bottom: .5rem; font-weight: 700; }
 .prompt { box-sizing: border-box; width: 100%; padding: 1rem; resize: vertical; border: 1px solid var(--line); border-radius: .5rem; background: var(--surface); color: var(--ink); font: .875rem/1.6 var(--font-body), sans-serif; }
-.prompt:focus-visible { outline: 2px solid var(--green); outline-offset: 3px; }
+.prompt:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }

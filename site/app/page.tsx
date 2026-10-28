@@ -1,5 +1,7 @@
 import type { Metadata } from "next";
+import Link from "next/link";
 import { CommunityProof } from "./components/CommunityProof";
+import { CopyCode } from "./components/CopyCode";
 import { FoundingCheckout } from "./components/FoundingCheckout";
 import { LaunchCountdown } from "./components/LaunchCountdown";
 import { SiteFooter, SiteHeader } from "./components/SiteChrome";
@@ -10,11 +12,55 @@ export const metadata: Metadata = {
   alternates: { canonical: "https://jobappagent.com" },
 };
 
+const REPO = "https://github.com/vaibhavarora14/job-application-agent";
+const INSTALL = "npx job-application-agent@latest install";
+
+/*
+ * Information architecture: one path, free first, paid next.
+ *   Hero      — the three-step path: 1 run the free open-source agent → 2 browse /jobs → 3 reserve Cloud.
+ *   Proof     — lifetime community counters (real telemetry only).
+ *   #free     — Available now: #agent (npm/GitHub install) and #jobs (job board).
+ *   #process / #boundaries — how the agent behaves (applies to both the free agent and Cloud).
+ *   #cloud    — the paid $49 founding reservation IS the Cloud interest capture (no free waitlist):
+ *               offer, available-now vs coming-with-Cloud, launch status, dateless progress, founder note.
+ *   FAQ.
+ * Each block is data-driven below so copy and order can change without touching layout.
+ */
+const path = [
+  { id: "agent", step: "1", name: "Run the open-source agent", tag: "Free · MIT", body: "Install it into Cursor, Claude Code, Codex or another coding agent on your computer.", href: "/#agent", cta: "Install the agent" },
+  { id: "jobs", step: "2", name: "Browse the job board", tag: "Free", body: "Reviewed open roles, checked daily. Copy a role’s prompt and your agent applies.", href: "/jobs", cta: "Browse open roles" },
+  { id: "cloud", step: "3", name: "Reserve Cloud", tag: "Coming soon", body: "A hosted agent that runs for you. Founding reservation: $49.", href: "/#cloud", cta: "Reserve founding access" },
+] as const;
+
+const boardSteps = [
+  ["Browse", "Filter by role, workplace, location, seniority, pay and posted date."],
+  ["Copy the prompt", "Every role has a ready-made prompt for your agent."],
+  ["Your agent applies", "It uses your verified facts and stops for anything only you can answer."],
+] as const;
+
 const steps = [
   ["01", "Set the boundaries", "Choose roles, locations, compensation, work mode, and the decisions that always come back to you."],
   ["02", "Let the agent run", "It discovers direct roles, removes weak fits, checks duplicates, and applies with verified facts only."],
   ["03", "Review the record", "Every decision, application, pause, and outcome stays visible so the search improves instead of becoming noise."],
 ] as const;
+
+/* Only capabilities already described in site copy (offer panel, terms). */
+const availableNow = ["Open-source agent (npm and GitHub)", "The job board at /jobs", "Founding price locked at $49", "Email confirmation of your reservation"] as const;
+const comingWithCloud = ["Scheduled job discovery", "Persistent, resumable runs", "Decision notifications", "Hosted state and continuity"] as const;
+
+/* Dateless build checklist. Facts from the repo only (README, ATTENTION.md, /platforms); no dates. */
+const progress = [
+  ["done", "Open-source agent released on npm and GitHub"],
+  ["done", "Job board live at /jobs"],
+  ["done", "Founding reservation checkout with Dodo Payments"],
+  ["done", "Optional private cloud state to keep one person’s application history together"],
+  ["progress", "Hosted review flow: answer an employer’s question from a secure link"],
+  ["progress", "Hosted start, queue and done screens (designed, not live)"],
+  ["next", "Scheduled job discovery"],
+  ["next", "Persistent, resumable runs"],
+  ["next", "Decision notifications"],
+] as const;
+const progressLabel = { done: "Done", progress: "In progress", next: "Next" } as const;
 
 export default function Home() {
   return <>
@@ -22,16 +68,45 @@ export default function Home() {
     <main id="top">
       <header className="hero page-width">
         <div className="hero-copy">
-          <p className="eyebrow">Founding reservation · $49</p>
-          <h1>Set the goal.<span>Keep the search moving.</span></h1>
-          <p className="hero-summary">Job Application Agent finds direct roles, filters weak fits, submits truthful applications, pauses for real decisions, and keeps learning from outcomes—even while you are away.</p>
-          <div className="hero-actions"><FoundingCheckout /><a className="button button-secondary" href="https://stats.jobappagent.com">See community momentum</a></div>
+          <h1>Find the role.<span>Let your agent apply.</span></h1>
+          <p className="hero-summary">Start free: run the open-source agent and browse reviewed open roles. When you want it running for you, reserve Cloud.</p>
+          <div className="hero-actions"><Link className="button" href="/#agent">Run the agent free</Link><Link className="button button-secondary" href="/jobs">Browse open roles</Link></div>
           <ul className="hero-proof"><li>Verified facts only</li><li>You set the boundaries</li><li>Every action recorded</li></ul>
         </div>
-        <LaunchCountdown />
+        <ol className="pillar-list" aria-label="Three steps">
+          {path.map(item => <li key={item.id} className={`pillar pillar-${item.id}`}>
+            <span className="pillar-step" aria-hidden="true">{item.step}</span>
+            <div>
+              <div className="pillar-head"><h2>{item.name}</h2><span className="pillar-tag">{item.tag}</span></div>
+              <p>{item.body}</p>
+              <Link className="text-link" href={item.href}>{item.cta} <span aria-hidden="true">→</span></Link>
+            </div>
+          </li>)}
+        </ol>
       </header>
 
       <section className="community-section page-width" aria-label="Community momentum"><CommunityProof /></section>
+
+      <section className="section page-width" id="free" aria-labelledby="free-title">
+        <div className="section-heading"><p className="eyebrow">Available now · free</p><h2 id="free-title">Start with the free tools.</h2></div>
+        <div className="free-grid">
+          <article className="free-card" id="agent" aria-labelledby="agent-title">
+            <p className="eyebrow">Open-source agent · MIT</p>
+            <h3 id="agent-title">Run the agent on your own computer.</h3>
+            <p>It finds direct roles, filters weak fits, submits truthful applications, pauses for real decisions, and keeps learning from outcomes.</p>
+            <CopyCode code={INSTALL} />
+            <p className="free-note">Needs Node.js 20 or newer and a coding agent that can drive a browser: Cursor, Claude Code, Codex, Copilot or Gemini. Guides for Hermes, Grok Bot and OpenClaw too.</p>
+            <p className="install-links"><a href={REPO}>View on GitHub</a><Link href="/platforms">Setup guides</Link><Link href="/open-source">About the project</Link></p>
+          </article>
+          <article className="free-card" id="jobs" aria-labelledby="jobs-title">
+            <p className="eyebrow">Job board</p>
+            <h3 id="jobs-title">Open roles, reviewed and checked daily.</h3>
+            <p>Maintainer-reviewed roles from the community registry. No account needed to browse.</p>
+            <ol className="step-list">{boardSteps.map(([title, body], index) => <li key={title}><span>{index + 1}</span><div><h4>{title}</h4><p>{body}</p></div></li>)}</ol>
+            <Link className="button" href="/jobs">Browse open roles</Link>
+          </article>
+        </div>
+      </section>
 
       <section className="section page-width" id="process">
         <div className="section-heading"><p className="eyebrow">How it works</p><h2>One clear loop. No application theatre.</h2><p>The agent handles repetition without turning your career into a volume game.</p></div>
@@ -46,15 +121,39 @@ export default function Home() {
         </div>
       </div></section>
 
-      <section className="section page-width" id="founding">
-        <div className="founding-card">
-          <div><p className="eyebrow">Founding reservation</p><h2>Reserve founding access</h2><p>Pay $49 to lock founding reservation pricing. After payment we email a confirmation, not an instant dashboard. Cloud access remains coming soon; no launch date promised.</p><p className="founding-limits">You stay in the loop. Some applications pause for a CAPTCHA or an employer question, and the agent waits for a quick step from you before it carries on.</p></div>
-          <div className="offer-panel"><div><span>FOUNDING RESERVATION</span><strong>$49</strong><small>Founding reservation · $49</small></div><ul><li>Scheduled job discovery</li><li>Persistent, resumable runs</li><li>Decision notifications</li><li>Secure checkout by Dodo Payments</li></ul><FoundingCheckout /></div>
+      <section className="section page-width cloud-section" id="cloud" aria-label="Cloud founding reservation">
+        <div className="founding-card" id="founding">
+          <div><p className="eyebrow">Next step · Cloud</p><h2>Reserve founding access</h2><p>Pay $49 to lock founding reservation pricing. After payment we email a confirmation, not an instant dashboard. Cloud access remains coming soon; no launch date promised.</p><p className="founding-limits">You stay in the loop. Some applications pause for a CAPTCHA or an employer question, and the agent waits for a quick step from you before it carries on.</p></div>
+          <div className="offer-panel"><div><span>FOUNDING RESERVATION</span><strong>$49</strong><small>Founding reservation · $49</small></div><ul><li>Scheduled job discovery</li><li>Persistent, resumable runs</li><li>Decision notifications</li><li>Secure checkout by Dodo Payments</li></ul><FoundingCheckout /><p className="offer-terms">Reserves founding pricing for cloud access when it launches — not instant access. Not sure yet? <Link href="/#agent">Try the free agent first</Link>.</p></div>
+        </div>
+        <div className="cloud-grid">
+          <div className="cloud-card cloud-split">
+            <div><h3>Available now</h3><ul className="check-list">{availableNow.map(item => <li key={item}>{item}</li>)}</ul></div>
+            <div><h3>Coming with Cloud</h3><ul className="check-list check-list-soon">{comingWithCloud.map(item => <li key={item}>{item}</li>)}</ul></div>
+          </div>
+          <LaunchCountdown />
+        </div>
+        <div className="cloud-grid">
+          <div className="cloud-card">
+            <h3>Cloud progress</h3>
+            <ul className="progress-list">{progress.map(([state, label]) => <li key={label} className={`progress-${state}`}><span className="progress-state">{progressLabel[state]}</span><span>{label}</span></li>)}</ul>
+          </div>
+          {/* DRAFT copy for Vaibhav to approve or rewrite before this ships. */}
+          <figure className="cloud-card founder-note">
+            <h3>Why I’m taking money before Cloud exists</h3>
+            <blockquote>
+              <p>The open-source agent and the job board are free to use today. Cloud is different: a hosted agent costs money to run for every person on it.</p>
+              <p>A $49 reservation is the clearest sign that you want it, and it helps pay for building it. If you’re not sure, run the free agent first and reserve when it earns it.</p>
+            </blockquote>
+            <figcaption>Vaibhav Arora, maker of JobAppAgent</figcaption>
+          </figure>
         </div>
       </section>
 
       <section className="section faq page-width">
-        <div className="section-heading"><p className="eyebrow">Straight answers</p><h2>Before you reserve.</h2></div>
+        <div className="section-heading"><p className="eyebrow">Straight answers</p><h2>Before you start.</h2></div>
+        <details><summary>Is the job board free?</summary><p>Yes. Browsing roles and copying a role’s prompt costs nothing and needs no account.</p></details>
+        <details><summary>Do I need Cloud to use the agent?</summary><p>No. The open-source agent runs on your computer today under the MIT licence. Your coding agent’s subscription or model usage may cost extra.</p></details>
         <details><summary>When does Job Application Agent launch?</summary><p>Cloud access is coming soon. $49 reserves founding pricing; we email when access opens.</p></details>
         <details><summary>Is it fully hands-off?</summary><p>Not completely. Some applications stop at a CAPTCHA or a question only you can answer. The agent pauses there until you take a quick step, then keeps going.</p></details>
         <details><summary>Is this a mass-application bot?</summary><p>No. It filters aggressively and applies only inside rules you set. Unclear or sensitive decisions pause for you.</p></details>

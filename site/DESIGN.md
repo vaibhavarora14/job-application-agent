@@ -2,21 +2,26 @@
 
 JobAppAgent should feel calm, inspectable, and quietly capable—not like a gamified job board or a hustle product. The experience reduces cognitive load while keeping agency and evidence visible.
 
-## Brand foundations
+## Brand foundations (theme B, site-wide)
 
-- **Libre Baskerville** carries the wordmark, hero, and editorial headings. Use regular and italic cuts with restrained tracking.
-- **DM Sans** carries body copy, navigation, controls, and product language.
-- **IBM Plex Mono** is reserved for telemetry, prices, run states, labels, and evidence.
-- Forest `#173F35` is the primary trust color. Eucalyptus `#63B995` signals progress. Parchment `#F2E9D8` is the default canvas. Warm white `#FFFAF0` is the main surface.
-- Supporting text uses `#486159`; muted text uses `#73867F`; borders use `#D8CCB7`.
-- Coral is reserved for pauses, errors, and human-only decisions.
+- One palette for every public route, defined once in `app/globals.css` `:root` (`/jobs` reads the same tokens).
+- White base `#FFFFFF`, panels `#F8FAFC`, hairlines `#E2E8F0`, control borders `#8492A6`.
+- Ink `#0F172A` for headings, body `#334155`, muted `#5B6B80`.
+- Electric blue `#2563EB` for primary actions and focus rings (hover `#1D4ED8`, links `#1D4ED8`, soft `#EFF5FF`).
+- Green `#065F46` on `#ECFDF5` only for "free", "done" and verified states. Coral `#B42318` is reserved for pauses, errors, and human-only decisions.
+- **Libre Baskerville** carries H1/H2 headings. **DM Sans** carries body copy, navigation, labels, and controls. **IBM Plex Mono** is only for CLI commands, prompts, and code.
 
 ## Composition
 
-- Use an editorial hierarchy with generous breathing room, warm flat surfaces, and deliberate asymmetry.
-- Keep corners soft but not bubbly. Avoid decorative shadows, gradients, dashboard gloss, robots, sparkles, and stock job-board imagery.
-- Use one clear primary action per section and prefer plain sentences over slogans.
-- Motion is subtle and always respects reduced-motion preferences.
+- White pages with flat panel cards (12px radius, 1px hairline), pill buttons (48px primary, 44px small), one primary action per section.
+- The founding offer is the only ink (dark) block on the homepage.
+- Avoid decorative shadows, gradients, dashboard gloss, robots, sparkles, and stock job-board imagery.
+- Motion is subtle and always respects reduced-motion preferences. Focus: 3px blue outline, 2px offset.
+- Layouts hold at 375, 768, and 1440 wide.
+
+## Homepage structure
+
+Free first, paid next: hero with the three-step path (open-source agent → job board → Cloud), lifetime community counters, "Available now" (agent install + job board), how it works and boundaries, then the Cloud founding reservation (offer, available now vs coming with Cloud, launch status, dateless progress, founder note), then FAQ. The paid $49 reservation is the Cloud interest capture; there is no free waitlist.
 
 ## Mark
 
@@ -29,6 +34,7 @@ The boundary-run mark is intentionally limited to three shapes: a parchment tile
 - Lead cloud conversion with verified aggregate community proof. Label installations as installations, never as people.
 - Keep the public journey focused on the hosted product; open-source provenance may remain in supporting copy without competing calls to action.
 - Use this same system across `jobappagent.com` and `stats.jobappagent.com`.
+- Lead with what is free and available now; Cloud is the next step, never a date.
 
 ## Locked hosted buyer flow
 
