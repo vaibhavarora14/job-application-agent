@@ -1,10 +1,16 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { JobDetail } from "../JobDetail";
+import type { BoardJob } from "../JobsBoard";
 import { loadJobPageBySlug } from "../../../lib/job-page-data.mjs";
 import { jobPostingJsonLd, TRUST_LINE } from "../../../lib/live-jobs.mjs";
 
 type Props = { params: Promise<{ slug: string }> };
+type JobPageData = {
+  job: BoardJob & { closedAt?: string | null };
+  similar: BoardJob[];
+  now: number;
+};
 
 export const dynamic = "force-dynamic";
 
@@ -16,7 +22,7 @@ export async function headers() {
 
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const { slug } = await params;
-  const page = await loadJobPageBySlug(slug);
+  const page = (await loadJobPageBySlug(slug)) as JobPageData | null;
   // Missing / stale-open → notFound(); leave robots to app/not-found.tsx to avoid duplicate metas.
   if (!page) return { title: "Role not found" };
 
@@ -54,7 +60,7 @@ export function generateStaticParams() {
 
 export default async function JobPage({ params }: Props) {
   const { slug } = await params;
-  const page = await loadJobPageBySlug(slug);
+  const page = (await loadJobPageBySlug(slug)) as JobPageData | null;
   if (!page) notFound();
 
   const { job, similar } = page;
