@@ -269,8 +269,9 @@ export function filterBoardJobs(jobs, { role = '', location = '', postedDays = 0
       if (!location.toLowerCase().split(/\s+/).filter(Boolean).every((term) => hay.includes(term))) return false;
     }
     if (days > 0) {
-      const seen = Date.parse(job.firstSeenAt);
-      if (!Number.isFinite(seen) || now - seen > days * 86400000) return false;
+      // Same date the detail page shows: the employer's publish date, else when the registry first saw it.
+      const posted = Date.parse(postedDate(job, now));
+      if (!Number.isFinite(posted) || now - posted > days * 86400000) return false;
     }
     return true;
   });

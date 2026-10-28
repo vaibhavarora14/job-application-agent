@@ -31,6 +31,10 @@ jobs:
       status: ${{ steps.check.outputs.status }}
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          # Always main, even for a manual dispatch from another branch: the refresh branch
+          # and its PR must only ever contain main + refreshed data.
+          ref: main
       - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
         with:
           node-version: 24
@@ -53,6 +57,10 @@ jobs:
       pull-requests: write
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          # Always main, even for a manual dispatch from another branch: the refresh branch
+          # and its PR must only ever contain main + refreshed data.
+          ref: main
       - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
         with:
           node-version: 24
@@ -70,6 +78,10 @@ jobs:
         run: |
           set -euo pipefail
           branch=automation/job-locations-refresh
+          if [ "$(git rev-parse --abbrev-ref HEAD)" != "main" ]; then
+            echo "::error::Refusing to push: checkout is not main."
+            exit 1
+          fi
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git checkout -B "$branch"

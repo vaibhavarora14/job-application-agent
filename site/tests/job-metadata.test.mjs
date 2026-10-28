@@ -13,7 +13,7 @@ import {
   parseSalaryDetails,
   LOCATION_RECORD_MAX_AGE_MS,
 } from '../lib/job-locations.mjs';
-import { jobPostingJsonLd, postedDate, employerSalary, payLines } from '../lib/live-jobs.mjs';
+import { jobPostingJsonLd, postedDate, employerSalary, payLines, filterBoardJobs } from '../lib/live-jobs.mjs';
 import { extractEmploymentType } from '../lib/job-locations.mjs';
 import { locationIndexFreshness, locationSnapshotShrinkCheck } from '../lib/job-locations-freshness.mjs';
 
@@ -301,4 +301,41 @@ test('review fix: the detail page lists each employer pay band with its name', (
   const single = greenhouseSalary({ pay_input_ranges: [{ min_cents: 16600000, max_cents: 19500000, currency_type: 'USD', title: 'US' }] });
   assert.deepEqual(payLines({ ...liveJob, location: { ...liveJob.location, salary: single } }), ['$166K–$195K USD']);
   assert.deepEqual(payLines(liveJob), []);
+});
+
+test('review fix: a posting with only employer-stated employment metadata is retained', () => {
+  const job = { ...base, url: 'https://job-boards.greenhouse.io/acme/jobs/77' };
+  const record = extractLocation(job, { id: 77, title: 'Software Engineer', absolute_url: job.url, metadata: [{ name: 'Employment Type', value: 'Contract' }] }, now);
+  assert.ok(record);
+  assert.equal(record.employmentType, 'contract');
+  assert.equal(extractLocation(job, { id: 77, title: 'Software Engineer', absolute_url: job.url }, now), null);
+});
+
+test('review fix: the Posted filter uses the employer date, with the first-seen fallback', () => {
+  const nowMs = Date.parse('2026-10-28T00:00:00.000Z');
+  const open = { ...base, livenessStatus: 'open', lastCheckedAt: '2026-10-27T00:00:00.000Z', firstSeenAt: '2026-10-25T00:00:00.000Z', lastSeenAt: '2026-10-27T00:00:00.000Z' };
+  const oldEmployer = { ...open, jobId: 'community-job-00000000000000a1', location: { ...liveJob.location, postedAt: '2026-05-23T00:00:00.000Z' } };
+  const newEmployer = { ...open, jobId: 'community-job-00000000000000a2', firstSeenAt: '2026-08-01T00:00:00.000Z', location: { ...liveJob.location, postedAt: '2026-10-20T00:00:00.000Z' } };
+  const noEmployer = { ...open, jobId: 'community-job-00000000000000a3', location: { ...liveJob.location, postedAt: null } };
+  const ids = filterBoardJobs([oldEmployer, newEmployer, noEmployer], { postedDays: 14, now: nowMs }).map((job) => job.jobId);
+  assert.deepEqual(ids, ['community-job-00000000000000a2', 'community-job-00000000000000a3']);
+});
+
+test('review fix: explicit weekly and daily pay units are kept', () => {
+  const weekly = parseSalaryDetails('£1,500–£2,000 per week');
+  assert.equal(weekly.period, 'week');
+  assert.equal(weekly.label, '£1.5K–£2K /wk');
+  assert.equal(weekly.annualMin, 78000);
+  const daily = parseSalaryDetails('Day rate: €500 - €650 per day');
+  assert.equal(daily.period, 'day');
+  assert.equal(daily.label, '€500–€650 /day');
+  const ld = jobPostingJsonLd({ ...liveJob, location: { ...liveJob.location, salary: weekly } });
+  assert.equal(ld.baseSalary.value.unitText, 'WEEK');
+});
+
+test('review fix: the refresh workflow only ever pushes a checkout of main', async () => {
+  const workflow = await readFile(new URL('../../.github/workflows/job-locations-refresh.yml', import.meta.url), 'utf8');
+  const refresh = workflow.slice(workflow.indexOf('\n  refresh:'), workflow.indexOf('\n  alert:'));
+  assert.match(refresh, /actions\/checkout@[^\n]+\n\s+with:\n(?:\s+#[^\n]*\n)*\s+ref: main/);
+  assert.match(refresh, /git rev-parse --abbrev-ref HEAD\)" != "main"/);
 });

@@ -103,14 +103,24 @@ export function compensationKind(text) {
   return 'base';
 }
 
+/** Pay unit the text states ("per week" → week); explicit units always beat amount-based guessing. */
+function statedPeriod(word) {
+  const unit = String(word).toLowerCase();
+  if (unit.startsWith('mo')) return 'month';
+  if (unit.startsWith('w')) return 'week';
+  if (unit.startsWith('d')) return 'day';
+  if (unit.startsWith('h')) return 'hour';
+  return 'year';
+}
+
 export function parseSalaryDetails(text) {
   if (!text || typeof text !== 'string') return null;
   const clean = text
     .replace(/&(?:amp|lt|gt|quot|#39|nbsp|mdash|ndash);/g, match => HTML_ENTITIES[match] || match)
     .replace(/<[^>]+>/g, ' ');
 
-  const rangeRegex = /(?:([$€£]|CAD\s*\$|USD\s*\$)\s*)?([\d,]+(?:\.\d+)?)\s*([kK])?\s*(?:[-–—]|to)\s*([$€£]|CAD\s*\$|USD\s*\$)?\s*([\d,]+(?:\.\d+)?)\s*([kK])?\s*(USD|EUR|GBP|CAD)?(?:\s*(?:\/|\bper\b)\s*(year|yr|annum|annual|month|mo|hour|hr))?/i;
-  const singleRegex = /(?:([$€£]|CAD\s*\$|USD\s*\$)\s*)?([\d,]+(?:\.\d+)?)\s*([kK])?\s*(USD|EUR|GBP|CAD)?(?:\s*(?:\/|\bper\b)\s*(year|yr|annum|annual|month|mo|hour|hr))?/i;
+  const rangeRegex = /(?:([$€£]|CAD\s*\$|USD\s*\$)\s*)?([\d,]+(?:\.\d+)?)\s*([kK])?\s*(?:[-–—]|to)\s*([$€£]|CAD\s*\$|USD\s*\$)?\s*([\d,]+(?:\.\d+)?)\s*([kK])?\s*(USD|EUR|GBP|CAD)?(?:\s*(?:\/|\bper\b)\s*(year|yr|annum|annual|month|mo|week|wk|day|daily|hour|hr))?/i;
+  const singleRegex = /(?:([$€£]|CAD\s*\$|USD\s*\$)\s*)?([\d,]+(?:\.\d+)?)\s*([kK])?\s*(USD|EUR|GBP|CAD)?(?:\s*(?:\/|\bper\b)\s*(year|yr|annum|annual|month|mo|week|wk|day|daily|hour|hr))?/i;
 
   const keywords = /(?:salary|compensation|pay\s+range|pay\s+rate|remuneration|wage|ote|base\s+pay)[^.\n;]{0,120}/gi;
   let candidates = [];
@@ -120,7 +130,7 @@ export function parseSalaryDetails(text) {
   }
   if (candidates.length === 0) {
     // If no keyword sentence, check for prominent explicit range patterns
-    const m = clean.match(/[$€£]\s*[\d,]+\s*(?:k|K)?\s*[-–—]\s*[$€£]?\s*[\d,]+\s*(?:k|K)?/);
+    const m = clean.match(/[$€£]\s*[\d,]+\s*(?:k|K)?\s*[-–—]\s*[$€£]?\s*[\d,]+\s*(?:k|K)?(?:\s*(?:USD|EUR|GBP|CAD))?(?:\s*(?:\/|\bper\b)\s*(?:year|yr|annum|annual|month|mo|week|wk|day|daily|hour|hr)\b)?/i);
     if (m) candidates.push(m[0]);
   }
 
@@ -136,7 +146,7 @@ export function parseSalaryDetails(text) {
       if (min < 1000 && max < 1000 && (rm[0].includes('k') || rm[0].includes('K'))) {
         min *= 1000; max *= 1000;
       }
-      const period = rm[8] ? (rm[8].startsWith('m') ? 'month' : rm[8].startsWith('h') ? 'hour' : 'year') : (min > 30000 ? 'year' : min > 3000 ? 'month' : 'hour');
+      const period = rm[8] ? statedPeriod(rm[8]) : (min > 30000 ? 'year' : min > 3000 ? 'month' : 'hour');
       if (min > 0 && max >= min && max < 2000000) {
         return formatSalary(min, max, currency, period, false, 'employer', compensationKind(cand));
       }
@@ -148,7 +158,7 @@ export function parseSalaryDetails(text) {
       const currency = sm[4] || (currSymbol.includes('€') ? 'EUR' : currSymbol.includes('£') ? 'GBP' : currSymbol.includes('CAD') ? 'CAD' : 'USD');
       let val = parseFloat(sm[2].replace(/,/g, ''));
       if (sm[3] || (val < 1000 && (sm[0].includes('k') || sm[0].includes('K')))) val *= 1000;
-      const period = sm[5] ? (sm[5].startsWith('m') ? 'month' : sm[5].startsWith('h') ? 'hour' : 'year') : (val > 30000 ? 'year' : val > 3000 ? 'month' : 'hour');
+      const period = sm[5] ? statedPeriod(sm[5]) : (val > 30000 ? 'year' : val > 3000 ? 'month' : 'hour');
       if (val >= 15 && val < 2000000) {
         return formatSalary(val, val, currency, period, false, 'employer', compensationKind(cand));
       }
@@ -603,7 +613,7 @@ export function extractLocation(job, data, now = Date.now()) {
     postedAt,
   };
 
-  if (!result.label && !result.cities.length && !result.countries.length && workplace === 'unknown' && !result.salary && !department && !postedAt) return null;
+  if (!result.label && !result.cities.length && !result.countries.length && workplace === 'unknown' && !result.salary && !department && !postedAt && !result.employmentType && !result.experienceLevel) return null;
   return result;
 }
 
