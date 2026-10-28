@@ -6,7 +6,7 @@ import {
   formatReviewedDate,
   locationLabel,
   employerPostedAt,
-  payLines,
+  payRows,
 } from "../../lib/live-jobs.mjs";
 import { buildApplyCliCommand, shortenUrlForDisplay } from "../../lib/job-apply-copy.mjs";
 import { CopyButton } from "./CopyButton";
@@ -101,8 +101,8 @@ export function JobDetail({
   const family = classifyRoleFamily(job.role);
   const place = locationLabel(job);
   // Employer-stated facts only: unknown pay reads "Pay not listed"; other unknown facts are omitted.
-  // Several employer bands (zones, levels, currencies) are listed each with its name, not just the envelope.
-  const pay: string[] = payLines(job);
+  // Several employer bands (zones, levels, currencies) are listed each with its name (max 4, then "+N more bands").
+  const pay = payRows(job);
   const posted = employerPostedAt(job);
   const employment = job.location?.employmentType
     ? job.location.employmentType.replace(/-/g, " ").replace(/\b\w/g, (c) => c.toUpperCase())
@@ -179,14 +179,26 @@ export function JobDetail({
                 ) : null}
                 <div>
                   <strong>Pay</strong>
-                  {pay.length
-                    ? pay.map((line, index) => (
-                        <span key={`${index}-${line}`}>
-                          {index > 0 ? <br /> : null}
-                          {line}
+                  {!pay ? (
+                    "Pay not listed"
+                  ) : pay.single ? (
+                    pay.single
+                  ) : (
+                    <span className={styles.payBands}>
+                      {pay.bands.map((band, index) => (
+                        <span key={`${index}-${band.name ?? ""}-${band.range}`} className={styles.payBand}>
+                          {band.name ? <span className={styles.payBandName}>{`${band.name}:`}</span> : null}
+                          {band.name ? " " : null}
+                          <span className={styles.payBandRange}>{band.range}</span>
                         </span>
-                      ))
-                    : "Pay not listed"}
+                      ))}
+                      {pay.more > 0 ? (
+                        <a className={styles.payBandMore} href={job.url} rel="nofollow noopener noreferrer" target="_blank">
+                          {`+${pay.more} more ${pay.more === 1 ? "band" : "bands"}`}
+                        </a>
+                      ) : null}
+                    </span>
+                  )}
                 </div>
               </div>
               <div className={styles.summary}>

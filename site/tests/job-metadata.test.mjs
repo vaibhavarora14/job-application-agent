@@ -13,7 +13,7 @@ import {
   parseSalaryDetails,
   LOCATION_RECORD_MAX_AGE_MS,
 } from '../lib/job-locations.mjs';
-import { jobPostingJsonLd, postedDate, employerSalary, payLines, filterBoardJobs } from '../lib/live-jobs.mjs';
+import { jobPostingJsonLd, postedDate, employerSalary, payLines, payRows, MAX_PAY_BANDS, filterBoardJobs } from '../lib/live-jobs.mjs';
 import { extractEmploymentType } from '../lib/job-locations.mjs';
 import { locationIndexFreshness, locationSnapshotShrinkCheck } from '../lib/job-locations-freshness.mjs';
 
@@ -338,4 +338,45 @@ test('review fix: the refresh workflow only ever pushes a checkout of main', asy
   const refresh = workflow.slice(workflow.indexOf('\n  refresh:'), workflow.indexOf('\n  alert:'));
   assert.match(refresh, /actions\/checkout@[^\n]+\n\s+with:\n(?:\s+#[^\n]*\n)*\s+ref: main/);
   assert.match(refresh, /git rev-parse --abbrev-ref HEAD\)" != "main"/);
+});
+
+// Design-approved pay-band rows (PR #183): name + colon, range never split, OTE / total comp wording, max 4 bands.
+const bandSalary = (count) => greenhouseSalary({ pay_input_ranges: Array.from({ length: count }, (_, i) => ({ title: `Engineer ${i + 1}`, min_cents: (150000 + i * 10000) * 100, max_cents: (180000 + i * 10000) * 100, currency_type: 'USD' })) });
+
+test('pay bands: each row is a band name and a range with its currency', () => {
+  const rows = payRows({ ...liveJob, location: { ...liveJob.location, salary: bandSalary(3) } });
+  assert.equal(rows.single, null);
+  assert.deepEqual(rows.bands[0], { name: 'Engineer 1', range: '$150K–$180K USD' });
+  assert.equal(rows.more, 0);
+  // A single range is not a band list; unknown pay is null ("Pay not listed").
+  assert.deepEqual(payRows({ ...liveJob, location: { ...liveJob.location, salary: bandSalary(1) } }), { single: '$150K–$180K USD', bands: [], more: 0 });
+  assert.equal(payRows(liveJob), null);
+});
+
+test('pay bands: at most 4 rows, then a "+N more" count', () => {
+  assert.equal(MAX_PAY_BANDS, 4);
+  const rows = payRows({ ...liveJob, location: { ...liveJob.location, salary: bandSalary(6) } });
+  assert.equal(rows.bands.length, 4);
+  assert.equal(rows.more, 2);
+  assert.equal(payRows({ ...liveJob, location: { ...liveJob.location, salary: bandSalary(4) } }).more, 0);
+});
+
+test('pay bands: OTE in caps after the currency; total comp spelled out, never TC', () => {
+  assert.equal(formatPayLabel(150000, 250000, 'USD', 'year', 'ote'), '$150K–$250K USD OTE');
+  assert.equal(formatPayLabel(110500, 181500, 'EUR', 'year', 'total'), '€110.5K–€181.5K total comp');
+  const tc = greenhouseSalary({ pay_input_ranges: [{ title: 'US (TC)', min_cents: 20000000, max_cents: 30000000, currency_type: 'USD' }] });
+  assert.equal(tc.kind, 'total');
+  assert.equal(tc.label, '$200K–$300K USD total comp');
+  assert.doesNotMatch(tc.label, /\bTC\b/);
+});
+
+test('pay bands: CSS keeps the name muted and the range bold and unsplittable', async () => {
+  const css = await readFile(new URL('../app/jobs/jobs.module.css', import.meta.url), 'utf8');
+  const rule = (name) => css.match(new RegExp(`\\.${name}\\s*\\{([^}]*)\\}`))?.[1] ?? '';
+  assert.match(rule('payBandName'), /color:\s*#526b63/i);
+  assert.match(rule('payBandRange'), /font-weight:\s*600/);
+  assert.match(rule('payBandRange'), /white-space:\s*nowrap/);
+  assert.match(rule('payBandRange'), /color:\s*var\(--text\)/);
+  assert.match(rule('payBandMore'), /color:\s*#526b63/i);
+  assert.doesNotMatch(rule('payBand'), /nowrap/);
 });

@@ -314,17 +314,30 @@ export function employerSalary(job) {
   return salary;
 }
 
+/** Most pay bands listed on the detail page before a "+N more bands" link to the posting. */
+export const MAX_PAY_BANDS = 4;
+
 /**
- * Pay lines for the detail page: one per employer band ("US Zone 1: $166K–$195K USD") when there are
- * several (zones, levels, currencies), otherwise the single label; empty when pay is unknown.
- * @returns {string[]}
+ * Pay rows for the detail page. Several employer bands (zones, levels, currencies) become
+ * `{ name, range }` rows (name null when the employer gave none), capped at MAX_PAY_BANDS with
+ * `more` counting the rest; a single band is `single` (its label). Unknown pay → null.
+ * @returns {{ single: string | null, bands: { name: string | null, range: string }[], more: number } | null}
  */
-export function payLines(job) {
+export function payRows(job, max = MAX_PAY_BANDS) {
   const salary = employerSalary(job);
-  if (!salary) return [];
+  if (!salary) return null;
   const ranges = Array.isArray(salary.ranges) ? salary.ranges.filter((range) => range && typeof range.label === 'string') : [];
-  if (ranges.length > 1) return ranges.map((range) => (range.location ? `${range.location}: ${range.label}` : range.label));
-  return [salary.label];
+  if (ranges.length <= 1) return { single: salary.label, bands: [], more: 0 };
+  const bands = ranges.map((range) => ({ name: typeof range.location === 'string' && range.location.trim() ? range.location.trim() : null, range: range.label }));
+  return { single: null, bands: bands.slice(0, max), more: Math.max(0, bands.length - max) };
+}
+
+/** Plain-text pay lines (one per band, "Name: range"); used for tests and non-HTML output. */
+export function payLines(job) {
+  const rows = payRows(job, Infinity);
+  if (!rows) return [];
+  if (rows.single) return [rows.single];
+  return rows.bands.map((band) => (band.name ? `${band.name}: ${band.range}` : band.range));
 }
 
 export function jobPostingJsonLd(job, { siteUrl = 'https://jobappagent.com' } = {}) {

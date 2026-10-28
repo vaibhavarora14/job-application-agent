@@ -304,6 +304,33 @@
   margin-bottom: 0.15rem;
 }
 
+/* Employer pay bands (Design-approved): muted name + colon, range never split. */
+.payBands {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+
+.payBand {
+  display: block;
+  overflow-wrap: normal;
+}
+
+.payBandName {
+  color: #526b63;
+}
+
+.payBandRange {
+  color: var(--text);
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.payBandMore {
+  color: #526b63;
+  font-size: 0.85rem;
+}
+
 .summary {
   color: var(--text);
   font-size: 0.98rem;
