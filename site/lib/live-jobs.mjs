@@ -280,16 +280,50 @@ export function attachBoardLocations(jobs, locationIndex, now = Date.now()) {
   return attachLocations(jobs, locationIndex, now);
 }
 
+const ISO_COUNTRY_ALIASES = { USA: 'US', 'UNITED STATES': 'US', 'UNITED STATES OF AMERICA': 'US', UK: 'GB', 'UNITED KINGDOM': 'GB' };
+
+/** ISO alpha-2 from a stored code (or the few aliases older snapshots used); anything else → null. */
+function isoCountry(value) {
+  if (typeof value !== 'string') return null;
+  const upper = value.trim().toUpperCase();
+  if (ISO_COUNTRY_ALIASES[upper]) return ISO_COUNTRY_ALIASES[upper];
+  return /^[A-Z]{2}$/.test(upper) ? upper : null;
+}
+
+/** Employer publish date (ISO) when the source stated one; otherwise null. */
+export function employerPostedAt(job, now = Date.now()) {
+  const value = job?.location?.postedAt;
+  if (typeof value !== 'string') return null;
+  const ms = Date.parse(value);
+  return Number.isFinite(ms) && ms <= now + 86400000 ? value : null;
+}
+
+/** Date shown as "Posted": the employer's publish date when known, else when the registry first saw it. */
+export function postedDate(job, now = Date.now()) {
+  return employerPostedAt(job, now) ?? job.firstSeenAt;
+}
+
+const SALARY_UNITS = { year: 'YEAR', month: 'MONTH', week: 'WEEK', day: 'DAY', hour: 'HOUR' };
+
+/** Employer-stated pay only (never an estimate); the same label is visible on the detail page. */
+export function employerSalary(job) {
+  const salary = job?.location?.salary;
+  if (!salary || salary.isEstimated || salary.source !== 'employer') return null;
+  if (!Number.isFinite(salary.min) || !Number.isFinite(salary.max) || !/^[A-Z]{3}$/.test(String(salary.currency ?? '')) || !SALARY_UNITS[salary.period]) return null;
+  return salary;
+}
+
 export function jobPostingJsonLd(job, { siteUrl = 'https://jobappagent.com' } = {}) {
   const url = `${siteUrl}/jobs/${job.slug}`;
   const closed = job.livenessStatus === 'closed';
-  const remote = job.location?.workplace === 'remote';
+  const location = job.location ?? null;
+  const remote = location?.workplace === 'remote';
   const posting = {
     '@context': 'https://schema.org',
     '@type': 'JobPosting',
     title: job.role,
     description: jobPostingDescription(job),
-    datePosted: job.firstSeenAt.slice(0, 10),
+    datePosted: postedDate(job).slice(0, 10),
     hiringOrganization: {
       '@type': 'Organization',
       name: job.company,
@@ -313,37 +347,46 @@ export function jobPostingJsonLd(job, { siteUrl = 'https://jobappagent.com' } = 
     }
   }
 
-  const place = locationLabel(job);
-  const countries = Array.isArray(job.location?.countries) ? job.location.countries.filter(Boolean) : [];
-  if (remote) {
+  // Only places with an explicit country from the source; no guessed or "Worldwide" values.
+  const places = (Array.isArray(location?.places) ? location.places : [])
+    .map((place) => ({ ...place, country: isoCountry(place?.country) }))
+    .filter((place) => place.country);
+  const codes = [...new Set([
+    ...(Array.isArray(location?.countryCodes) ? location.countryCodes : []),
+    ...(Array.isArray(location?.countryCodes) ? [] : (Array.isArray(location?.countries) ? location.countries : [])),
+    ...places.map((place) => place.country),
+  ].map(isoCountry).filter(Boolean))];
+
+  if (remote && codes.length > 0) {
+    // Google: TELECOMMUTE needs at least one eligible country; without one we emit neither.
     posting.jobLocationType = 'TELECOMMUTE';
-    const requirements = countries.length > 0
-      ? countries.map((code) => ({
-        '@type': 'Country',
-        name: countryLabel(code),
-        ...(/^[A-Za-z]{2}$/.test(code) ? { identifier: code.toUpperCase() } : {}),
-      }))
-      : [{ '@type': 'Country', name: place && place !== 'Remote' ? place.replace(/^Remote(?:\s*[·|,]\s*)?/i, '').trim() || 'Worldwide' : 'Worldwide' }];
+    const requirements = codes.map((code) => ({ '@type': 'Country', name: countryLabel(code) }));
     posting.applicantLocationRequirements = requirements.length === 1 ? requirements[0] : requirements;
+  } else if (!remote) {
+    const physical = places.length > 0 ? places : codes.map((country) => ({ country }));
+    const jobLocations = physical.slice(0, 10).map((place) => {
+      const address = { '@type': 'PostalAddress', addressCountry: place.country };
+      if (typeof place.locality === 'string' && place.locality) address.addressLocality = place.locality;
+      if (typeof place.region === 'string' && place.region) address.addressRegion = place.region;
+      return { '@type': 'Place', address };
+    });
+    if (jobLocations.length) posting.jobLocation = jobLocations.length === 1 ? jobLocations[0] : jobLocations;
   }
-  if (place || countries.length > 0) {
-    const address = { '@type': 'PostalAddress' };
-    if (place) address.addressLocality = place;
-    if (countries.length === 1 && /^[A-Za-z]{2}$/.test(countries[0])) {
-      address.addressCountry = countries[0].toUpperCase();
-    } else if (countries.length === 1) {
-      address.addressCountry = countryLabel(countries[0]);
-    }
-    posting.jobLocation = { '@type': 'Place', address };
-  }
-  if (job.location?.employmentType) {
-    const map = {
-      'full-time': 'FULL_TIME',
-      'part-time': 'PART_TIME',
-      contract: 'CONTRACTOR',
-      internship: 'INTERN',
+
+  const salary = employerSalary(job);
+  if (salary) {
+    posting.baseSalary = {
+      '@type': 'MonetaryAmount',
+      currency: salary.currency,
+      value: salary.min === salary.max
+        ? { '@type': 'QuantitativeValue', value: salary.min, unitText: SALARY_UNITS[salary.period] }
+        : { '@type': 'QuantitativeValue', minValue: salary.min, maxValue: salary.max, unitText: SALARY_UNITS[salary.period] },
     };
-    posting.employmentType = map[job.location.employmentType] ?? job.location.employmentType.toUpperCase();
+  }
+
+  const employmentTypes = { 'full-time': 'FULL_TIME', 'part-time': 'PART_TIME', contract: 'CONTRACTOR', internship: 'INTERN' };
+  if (location?.employmentType && employmentTypes[location.employmentType]) {
+    posting.employmentType = employmentTypes[location.employmentType];
   }
   return posting;
 }

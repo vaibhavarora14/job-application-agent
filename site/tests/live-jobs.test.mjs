@@ -163,9 +163,9 @@ test('open remote JobPosting JSON-LD has validThrough, TELECOMMUTE, and country 
   assert.ok(jsonLd.validThrough);
   assert.match(jsonLd.description, new RegExp(remote.role));
   assert.match(jsonLd.description, new RegExp(remote.company));
-  if (remote.location?.countries?.[0]) {
-    assert.equal(jsonLd.jobLocation?.address?.addressCountry, remote.location.countries[0].toUpperCase());
-  }
+  // Remote roles state eligibility via applicantLocationRequirements, never a fake office address.
+  assert.equal(jsonLd.jobLocation, undefined);
+  assert.equal(JSON.stringify(jsonLd).includes('Worldwide'), false);
 });
 
 test('validateLiveJobs accepts optional meta.newestLastCheckedAt', () => {

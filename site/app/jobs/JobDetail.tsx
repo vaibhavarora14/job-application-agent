@@ -5,6 +5,8 @@ import {
   formatClosedDate,
   formatReviewedDate,
   locationLabel,
+  postedDate,
+  employerSalary,
 } from "../../lib/live-jobs.mjs";
 import { buildApplyCliCommand, shortenUrlForDisplay } from "../../lib/job-apply-copy.mjs";
 import { CopyButton } from "./CopyButton";
@@ -98,6 +100,8 @@ export function JobDetail({
   const closed = job.livenessStatus === "closed";
   const family = classifyRoleFamily(job.role);
   const place = locationLabel(job);
+  // Employer-stated pay only; "Not listed" stays for roles whose source states none.
+  const pay = employerSalary(job)?.label ?? "";
   const employment = job.location?.employmentType
     ? job.location.employmentType.replace(/-/g, " ").replace(/\b\w/g, (c) => c.toUpperCase())
     : "";
@@ -163,11 +167,11 @@ export function JobDetail({
                 </div>
                 <div>
                   <strong>Posted</strong>
-                  {formatClosedDate(job.firstSeenAt)}
+                  {formatClosedDate(postedDate(job))}
                 </div>
                 <div>
                   <strong>Pay</strong>
-                  Not listed
+                  {pay || "Not listed"}
                 </div>
               </div>
               <div className={styles.summary}>

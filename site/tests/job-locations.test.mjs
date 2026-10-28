@@ -14,7 +14,7 @@ import { searchJobs } from '../lib/jobs-search.mjs';
 const job = { jobId: 'community-job-0000000000000001', url: 'https://jobs.ashbyhq.com/acme/123', company: 'Acme', role: 'Engineer' };
 
 test('only constructs requests to known ATS APIs from safe job URLs', () => {
-  assert.equal(atsTarget(job.url).url, 'https://api.ashbyhq.com/posting-api/job-board/acme');
+  assert.equal(atsTarget(job.url).url, 'https://api.ashbyhq.com/posting-api/job-board/acme?includeCompensation=true');
   for (const url of ['https://localhost/jobs', 'https://jobs.ashbyhq.com.evil.com/acme/123', 'https://jobs.ashbyhq.com/acme%2F..%2Fother/123']) assert.equal(atsTarget(url), null);
   // Synthetic URL userinfo, never a real credential or a network request.
   const credentialUrl = new URL(job.url);
@@ -25,17 +25,17 @@ test('only constructs requests to known ATS APIs from safe job URLs', () => {
 
 test('supports Ashby URLs with /application suffix and dots in board name', () => {
   const appUrl = 'https://jobs.ashbyhq.com/primeintellect/c074bdd9-bee2-4ee9-ae03-aa8f7537682c/application';
-  assert.equal(atsTarget(appUrl)?.url, 'https://api.ashbyhq.com/posting-api/job-board/primeintellect');
+  assert.equal(atsTarget(appUrl)?.url, 'https://api.ashbyhq.com/posting-api/job-board/primeintellect?includeCompensation=true');
   assert.equal(atsTarget(appUrl)?.id, 'c074bdd9-bee2-4ee9-ae03-aa8f7537682c');
 
   const dotUrl = 'https://jobs.ashbyhq.com/kraken.com/d62250a9-363c-43b0-b3de-958e3cc9f97b';
-  assert.equal(atsTarget(dotUrl)?.url, 'https://api.ashbyhq.com/posting-api/job-board/kraken.com');
+  assert.equal(atsTarget(dotUrl)?.url, 'https://api.ashbyhq.com/posting-api/job-board/kraken.com?includeCompensation=true');
   assert.equal(atsTarget(dotUrl)?.id, 'd62250a9-363c-43b0-b3de-958e3cc9f97b');
 });
 
 test('supports Greenhouse EU and Workable ATS targets', () => {
   const ghEu = 'https://job-boards.eu.greenhouse.io/acme/jobs/42';
-  assert.equal(atsTarget(ghEu)?.url, 'https://boards-api.greenhouse.io/v1/boards/acme/jobs/42');
+  assert.equal(atsTarget(ghEu)?.url, 'https://boards-api.greenhouse.io/v1/boards/acme/jobs/42?pay_transparency=true');
 
   const workable = 'https://apply.workable.com/atria-health/j/F987324A8F';
   assert.equal(atsTarget(workable)?.url, 'https://apply.workable.com/api/v2/accounts/atria-health/jobs/F987324A8F');
@@ -93,7 +93,9 @@ test('extracts seniority level and employment type correctly', () => {
 
   assert.equal(extractEmploymentType('Software Engineering Intern'), 'internship');
   assert.equal(extractEmploymentType('Contract Backend Engineer'), 'contract');
-  assert.equal(extractEmploymentType('Full Stack Engineer'), 'full-time');
+  assert.equal(extractEmploymentType('Full Stack Engineer'), null);
+  assert.equal(extractEmploymentType('Full Stack Engineer', 'FullTime'), 'full-time');
+  assert.equal(extractExperienceLevel('Software Engineer'), null);
 });
 
 test('extracts exact matching Ashby job with multiple locations, never assumes remote means worldwide', () => {

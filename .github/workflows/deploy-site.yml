@@ -26,6 +26,10 @@ jobs:
           node-version: 24
       - name: Install dependencies
         run: npm ci && npm --prefix site ci
+      - name: Fail if job location metadata is past the 30-day cutoff
+        # Past the cutoff the site silently drops location, workplace and pay for every
+        # job (LOCATION_RECORD_MAX_AGE_MS). Refresh: node site/scripts/collect-job-locations.mjs
+        run: node site/scripts/check-job-locations-freshness.mjs --max-days=30
       - name: Run site tests
         # site/package.json "test" runs `vinext build` first; dist/ is gitignored
         # and must never be taken from the checkout.

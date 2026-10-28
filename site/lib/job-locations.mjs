@@ -52,14 +52,14 @@ export function atsTarget(value) {
   if (url.hostname === 'jobs.ashbyhq.com') {
     const [board, id] = parts;
     if (/^[\w.-]+$/.test(board) && /^[\w-]+$/.test(id)) {
-      return { kind: 'ashby', id, url: `https://api.ashbyhq.com/posting-api/job-board/${board}` };
+      return { kind: 'ashby', id, url: `https://api.ashbyhq.com/posting-api/job-board/${board}?includeCompensation=true` };
     }
   }
 
   if (['boards.greenhouse.io', 'job-boards.greenhouse.io', 'job-boards.eu.greenhouse.io'].includes(url.hostname)) {
     const [board, segment, id] = parts;
     if (segment === 'jobs' && /^\d+$/.test(id) && /^[\w-]+$/.test(board)) {
-      return { kind: 'greenhouse', id, url: `https://boards-api.greenhouse.io/v1/boards/${board}/jobs/${id}` };
+      return { kind: 'greenhouse', id, url: `https://boards-api.greenhouse.io/v1/boards/${board}/jobs/${id}?pay_transparency=true` };
     }
   }
 
@@ -146,8 +146,10 @@ export function parseSalaryDetails(text) {
   return null;
 }
 
+const CURRENCY_SYMBOLS = { USD: '$', EUR: '€', GBP: '£', CAD: 'CA$', AUD: 'A$', INR: '₹', SGD: 'S$' };
+
 function formatSalary(min, max, currency, period, isEstimated, source) {
-  const sym = currency === 'EUR' ? '€' : currency === 'GBP' ? '£' : currency === 'CAD' ? 'CA$' : '$';
+  const sym = CURRENCY_SYMBOLS[currency] ?? `${currency} `;
   const periodLabel = period === 'year' ? '/yr' : period === 'month' ? '/mo' : '/hr';
   const formatVal = v => v >= 1000 ? (v % 1000 === 0 ? `${v / 1000}k` : `${(v / 1000).toFixed(v % 100 === 0 ? 1 : 0)}k`) : `${v}`;
   const label = (isEstimated ? 'Est. ' : '') + (min === max ? `${sym}${formatVal(min)} ${periodLabel}` : `${sym}${formatVal(min)} – ${sym}${formatVal(max)} ${periodLabel}`);
@@ -165,37 +167,219 @@ function formatSalary(min, max, currency, period, isEstimated, source) {
   };
 }
 
-export function extractExperienceLevel(role) {
-  const r = role.toLowerCase();
+/**
+ * Seniority only when the title (or an ATS level field) states it. Unstated → null;
+ * never a default such as `mid`.
+ * @param {string} role
+ * @param {unknown} [atsLevel] free-text level from the ATS (e.g. Greenhouse metadata "Level")
+ * @returns {'intern' | 'entry' | 'mid' | 'senior' | 'staff' | 'executive' | null}
+ */
+export function extractExperienceLevel(role, atsLevel) {
+  const r = String(role ?? '').toLowerCase();
   if (/\b(intern|internship|co-op)\b/.test(r)) return 'intern';
   if (/\b(junior|jr\b|graduate|associate|entry)\b/.test(r)) return 'entry';
   if (/\b(staff|principal|distinguished|fellow|architect)\b/.test(r)) return 'staff';
   if (/\b(director|vp\b|head\s+of|chief)\b/.test(r)) return 'executive';
-  if (/\b(senior|sr\b|lead|specialist)\b/.test(r)) return 'senior';
-  return 'mid';
+  if (/\b(senior|sr\b|lead)\b/.test(r)) return 'senior';
+  if (typeof atsLevel === 'string') {
+    const level = atsLevel.toLowerCase();
+    if (/\bintern/.test(level)) return 'intern';
+    if (/\b(entry|junior|new grad|graduate)\b/.test(level)) return 'entry';
+    if (/\b(staff|principal)\b/.test(level)) return 'staff';
+    if (/\b(director|vp|head|executive)\b/.test(level)) return 'executive';
+    if (/\bsenior\b/.test(level)) return 'senior';
+    if (/\bmid\b/.test(level)) return 'mid';
+  }
+  return null;
 }
 
+/**
+ * Employment type only when the ATS field or the title states it. Unstated → null;
+ * never a default such as `full-time`.
+ * @param {string} role
+ * @param {unknown} [atsType]
+ * @returns {'full-time' | 'part-time' | 'contract' | 'internship' | null}
+ */
 export function extractEmploymentType(role, atsType) {
   if (typeof atsType === 'string') {
     const norm = atsType.toLowerCase();
-    if (norm.includes('contract') || norm.includes('freelance')) return 'contract';
+    if (norm.includes('contract') || norm.includes('freelance') || norm.includes('temporary')) return 'contract';
     if (norm.includes('intern')) return 'internship';
     if (norm.includes('part')) return 'part-time';
-    if (norm.includes('full')) return 'full-time';
+    if (norm.includes('full') || /\bfte\b|\bpermanent\b/.test(norm)) return 'full-time';
   }
-  const r = role.toLowerCase();
+  const r = String(role ?? '').toLowerCase();
   if (/\b(intern|internship|co-op)\b/.test(r)) return 'internship';
   if (/\b(contract|contractor|freelance|temp\b)\b/.test(r)) return 'contract';
   if (/\b(part-time|part time)\b/.test(r)) return 'part-time';
-  return 'full-time';
+  return null;
 }
 
+const COUNTRY_ALIASES = {
+  usa: 'US', us: 'US', 'u.s.': 'US', 'u.s.a.': 'US', 'united states': 'US', 'united states of america': 'US', america: 'US',
+  uk: 'GB', 'u.k.': 'GB', 'united kingdom': 'GB', 'great britain': 'GB', england: 'GB', scotland: 'GB', wales: 'GB',
+  'czech republic': 'CZ', 'south korea': 'KR', korea: 'KR', uae: 'AE', 'the netherlands': 'NL', holland: 'NL', 'hong kong': 'HK',
+};
+const US_STATES = new Set('AL AK AZ AR CA CO CT DE FL GA HI ID IL IN IA KS KY LA ME MD MA MI MN MS MO MT NE NV NH NJ NM NY NC ND OH OK OR PA RI SC SD TN TX UT VT VA WA WV WI WY DC'.split(' '));
+// Region-level or private-use codes Intl knows that are not countries (e.g. "European Union" → EU).
+const NON_COUNTRY_CODES = new Set(['EU', 'EZ', 'UN', 'QO', 'XA', 'XB', 'ZZ', 'AA', 'XX']);
+let countryNameIndex = null;
 
-export function extractLocation(job, data) {
+/** English country name → ISO 3166-1 alpha-2 (built lazily; collection-time only). */
+function countryNameMap() {
+  if (countryNameIndex) return countryNameIndex;
+  countryNameIndex = new Map();
+  const names = new Intl.DisplayNames(['en'], { type: 'region' });
+  for (let a = 65; a <= 90; a++) {
+    for (let b = 65; b <= 90; b++) {
+      const code = String.fromCharCode(a, b);
+      let name;
+      try { name = names.of(code); } catch { continue; }
+      if (name && name !== code && !NON_COUNTRY_CODES.has(code)) countryNameIndex.set(name.toLowerCase(), code);
+    }
+  }
+  return countryNameIndex;
+}
+
+/**
+ * ISO alpha-2 for an explicit country value (code, alias, or English name). Regions
+ * such as "EMEA", "NAMER" or "European Union" are not countries → null.
+ * @param {unknown} value
+ */
+export function countryCodeOf(value) {
+  if (typeof value !== 'string') return null;
+  const clean = value.trim().replace(/\.$/, '');
+  if (!clean) return null;
+  const lower = clean.toLowerCase();
+  if (COUNTRY_ALIASES[lower]) return COUNTRY_ALIASES[lower];
+  if (/^[A-Za-z]{2}$/.test(clean)) {
+    const code = clean.toUpperCase();
+    return countryNameMap().has(countryLabel(code).toLowerCase()) ? code : null;
+  }
+  return countryNameMap().get(lower) ?? null;
+}
+
+const WORKPLACE_WORDS = /\b(remote|hybrid|on-?site|in-?office|distributed|anywhere|worldwide)\b/gi;
+
+/**
+ * Parse an ATS free-text location label ("Bangalore, India", "San Francisco, CA",
+ * "Remote - US", "London / Berlin") into places with an explicit country. Parts
+ * without a recognisable country are dropped, never guessed.
+ * @param {string} text
+ * @returns {{ locality?: string, region?: string, country: string }[]}
+ */
+export function placesFromLabel(text) {
+  const places = [];
+  for (const raw of String(text ?? '').split(/\s*(?:;|\||\/|\bor\b|·)\s*/i)) {
+    const part = raw.replace(/\([^)]*\)/g, ' ').replace(WORKPLACE_WORDS, ' ').replace(/^[\s,:–—-]+|[\s,:–—-]+$/g, '').replace(/\s+/g, ' ').trim();
+    if (!part) continue;
+    const segments = part.split(',').map((segment) => segment.trim()).filter(Boolean);
+    if (segments.length >= 2) {
+      const last = segments[segments.length - 1];
+      if (US_STATES.has(last.toUpperCase()) && last.length === 2) {
+        places.push({ locality: segments[0], region: last.toUpperCase(), country: 'US' });
+        continue;
+      }
+      const country = countryCodeOf(last);
+      if (country) {
+        const place = { locality: segments[0], country };
+        if (segments.length >= 3) place.region = segments[segments.length - 2];
+        places.push(place);
+      }
+      continue;
+    }
+    const country = countryCodeOf(part);
+    if (country) places.push({ country });
+  }
+  return places;
+}
+
+function addressPlace(postalAddress, fallbackLabel) {
+  const country = countryCodeOf(postalAddress?.addressCountry);
+  if (!country) return placesFromLabel(fallbackLabel);
+  const place = { country };
+  const locality = label(postalAddress?.addressLocality);
+  const region = label(postalAddress?.addressRegion);
+  if (locality) place.locality = locality;
+  if (region) place.region = region;
+  return [place];
+}
+
+function uniquePlaces(places) {
+  const seen = new Set();
+  const out = [];
+  // A bare-country place adds nothing when a more specific place in that country exists.
+  const specific = new Set(places.filter((place) => place?.country && (place.locality || place.region)).map((place) => place.country));
+  for (const place of places) {
+    if (!place?.country) continue;
+    if (!place.locality && !place.region && specific.has(place.country)) continue;
+    const key = `${place.locality ?? ''}|${place.region ?? ''}|${place.country}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(place);
+  }
+  return out;
+}
+
+const PERIODS = { '1 YEAR': 'year', '1 MONTH': 'month', '1 HOUR': 'hour', 'per-year-salary': 'year', 'per-month-salary': 'month', 'per-hour-wage': 'hour', year: 'year', month: 'month', hour: 'hour' };
+
+function structuredSalary(min, max, currency, period) {
+  if (!Number.isFinite(min) || !Number.isFinite(max) || min <= 0 || max < min || max >= 10_000_000) return null;
+  if (typeof currency !== 'string' || !/^[A-Z]{3}$/.test(currency) || !period) return null;
+  return { ...formatSalary(min, max, currency, period, false, 'employer'), basis: 'ats' };
+}
+
+/** Ashby `?includeCompensation=true`: first employer-published base salary component. */
+export function ashbySalary(entry) {
+  const comp = entry?.compensation;
+  if (!comp || entry?.shouldDisplayCompensationOnJobPostings === false) return null;
+  const components = Array.isArray(comp.summaryComponents) ? comp.summaryComponents : [];
+  const salary = components.find((item) => item?.compensationType === 'Salary' && Number.isFinite(item?.minValue));
+  if (!salary) return null;
+  return structuredSalary(salary.minValue, Number.isFinite(salary.maxValue) ? salary.maxValue : salary.minValue, salary.currencyCode, PERIODS[salary.interval]);
+}
+
+/** Greenhouse `?pay_transparency=true`: span of the employer's pay ranges in the first currency. */
+export function greenhouseSalary(entry) {
+  const ranges = Array.isArray(entry?.pay_input_ranges) ? entry.pay_input_ranges.filter((range) => Number.isFinite(range?.min_cents) && Number.isFinite(range?.max_cents) && typeof range?.currency_type === 'string') : [];
+  if (!ranges.length) return null;
+  const currency = ranges[0].currency_type;
+  const same = ranges.filter((range) => range.currency_type === currency);
+  const min = Math.min(...same.map((range) => range.min_cents)) / 100;
+  const max = Math.max(...same.map((range) => range.max_cents)) / 100;
+  // Greenhouse does not publish an interval: sub-1,000 amounts are hourly wages.
+  return structuredSalary(min, max, currency, max < 1000 ? 'hour' : 'year');
+}
+
+function leverSalary(entry) {
+  const range = entry?.salaryRange;
+  if (!range) return null;
+  return structuredSalary(range.min, range.max, typeof range.currency === 'string' ? range.currency.toUpperCase() : null, PERIODS[range.interval]);
+}
+
+function textSalary(text) {
+  const salary = parseSalaryDetails(text);
+  return salary ? { ...salary, basis: 'text' } : null;
+}
+
+/** Employer publish date as ISO, or null when missing, invalid or in the future. */
+export function postedAtOf(value, now = Date.now()) {
+  if (value == null || value === '') return null;
+  const ms = typeof value === 'number' ? value : Date.parse(value);
+  if (!Number.isFinite(ms) || ms > now + 86400000 || ms < Date.parse('2000-01-01T00:00:00Z')) return null;
+  return new Date(ms).toISOString();
+}
+
+function greenhouseMetadata(entry, pattern) {
+  const item = Array.isArray(entry?.metadata) ? entry.metadata.find((meta) => pattern.test(String(meta?.name ?? '')) && typeof meta?.value === 'string') : null;
+  return item ? item.value : null;
+}
+
+export function extractLocation(job, data, now = Date.now()) {
   const target = atsTarget(job.url);
   if (!target || !data || typeof data !== 'object') return null;
-  let entry, names = [], cities = [], countries = [], workplace = 'unknown';
-  let salary = null, atsEmploymentType = null;
+  let entry, names = [], cities = [], countries = [], places = [], workplace = 'unknown';
+  let salary = null, atsEmploymentType = null, atsLevel = null, department = null, team = null, postedAt = null;
 
   if (target.kind === 'ashby') {
     entry = Array.isArray(data.jobs) ? data.jobs.find(item => item?.id === target.id) : null;
@@ -204,9 +388,13 @@ export function extractLocation(job, data) {
     names = locations.map(item => label(item?.location));
     cities = locations.map(item => label(item?.address?.postalAddress?.addressLocality));
     countries = locations.map(item => label(item?.address?.postalAddress?.addressCountry));
+    places = locations.flatMap(item => addressPlace(item?.address?.postalAddress, label(item?.location)));
     workplace = ({ Remote: 'remote', Hybrid: 'hybrid', OnSite: 'onsite' })[entry.workplaceType] ?? (entry.isRemote === true ? 'remote' : 'unknown');
     atsEmploymentType = entry.employmentType;
-    salary = parseSalaryDetails(entry.descriptionPlain || entry.descriptionHtml);
+    salary = ashbySalary(entry) || textSalary(entry.descriptionPlain || entry.descriptionHtml);
+    department = label(entry.department) || null;
+    team = label(entry.team) || null;
+    postedAt = postedAtOf(entry.publishedAt, now);
   } else if (target.kind === 'greenhouse') {
     entry = data;
     if (String(entry.id) !== target.id || !titlesMatch(entry.title, job.role)) return null;
@@ -237,15 +425,31 @@ export function extractLocation(job, data) {
     } else if (combinedLabels.toLowerCase().includes('hybrid')) {
       workplace = 'hybrid';
     }
-    salary = parseSalaryDetails(entry.content);
+    places = names.flatMap(placesFromLabel);
+    salary = greenhouseSalary(entry) || textSalary(entry.content);
+    atsEmploymentType = greenhouseMetadata(entry, /employment type|job type|commitment/i);
+    atsLevel = greenhouseMetadata(entry, /^(level|seniority|job level|career level)$/i);
+    department = label(Array.isArray(entry.departments) ? entry.departments[0]?.name : '') || null;
+    postedAt = postedAtOf(entry.first_published, now);
   } else if (target.kind === 'lever') {
     entry = data;
     if (entry.id !== target.id || !titlesMatch(entry.text, job.role) || canonical(entry.hostedUrl) !== canonical(job.url)) return null;
     names = Array.isArray(entry.categories?.allLocations) ? entry.categories.allLocations.map(label) : [label(entry.categories?.location)];
     countries = [label(entry.country)];
-    workplace = ['remote', 'hybrid', 'on-site'].includes(entry.workplaceType) ? entry.workplaceType.replace('on-site', 'onsite') : 'unknown';
+    // Lever's postings API spells the value `onsite`; accept the hyphenated form too.
+    workplace = ({ remote: 'remote', hybrid: 'hybrid', onsite: 'onsite', 'on-site': 'onsite' })[String(entry.workplaceType ?? '').toLowerCase()] ?? 'unknown';
+    const leverCountry = countryCodeOf(entry.country);
+    places = names.flatMap(placesFromLabel);
+    if (!places.length && leverCountry) {
+      const only = names.filter(Boolean);
+      const locality = only.length === 1 && !countryCodeOf(only[0]) && !only[0].match(WORKPLACE_WORDS) ? only[0] : '';
+      places = [locality ? { locality, country: leverCountry } : { country: leverCountry }];
+    }
     atsEmploymentType = entry.categories?.commitment;
-    salary = parseSalaryDetails(entry.additionalPlain || entry.additional || entry.descriptionPlain);
+    salary = leverSalary(entry) || textSalary(entry.additionalPlain || entry.additional || entry.descriptionPlain);
+    department = label(entry.categories?.department) || null;
+    team = label(entry.categories?.team) || null;
+    postedAt = postedAtOf(entry.createdAt, now);
   } else if (target.kind === 'workable') {
     entry = data;
     if (!titlesMatch(entry.title, job.role)) return null;
@@ -254,29 +458,52 @@ export function extractLocation(job, data) {
       if (entry.location.country) countries.push(label(entry.location.country));
       if (entry.location.region) names.push(label(entry.location.region));
       if (entry.location.country) names.push(label(entry.location.country));
+      const country = countryCodeOf(entry.location.countryCode) || countryCodeOf(entry.location.country);
+      if (country) {
+        const place = { country };
+        if (label(entry.location.city)) place.locality = label(entry.location.city);
+        if (label(entry.location.region)) place.region = label(entry.location.region);
+        places.push(place);
+      }
     }
     if (entry.workplace) {
       workplace = entry.workplace === 'on_site' ? 'onsite' : entry.workplace;
     } else if (entry.remote) {
       workplace = 'remote';
     }
-    atsEmploymentType = entry.employment_type;
-    salary = parseSalaryDetails(entry.salary || entry.description);
+    atsEmploymentType = entry.employment_type ?? entry.type;
+    salary = textSalary(entry.salary || entry.description);
+    const dept = Array.isArray(entry.department) ? entry.department[0] : entry.department;
+    department = label(dept) || null;
+    postedAt = postedAtOf(entry.published, now);
   }
 
+  const uniqPlaces = uniquePlaces(places);
   const result = {
     label: unique(names).join(' · '),
     cities: unique(cities),
     countries: unique(countries),
+    countryCodes: unique(uniqPlaces.map((place) => place.country)),
+    places: uniqPlaces.slice(0, 12),
     workplace,
     salary: salary || null,
     employmentType: extractEmploymentType(job.role, atsEmploymentType),
-    experienceLevel: extractExperienceLevel(job.role)
+    experienceLevel: extractExperienceLevel(job.role, atsLevel),
+    department,
+    team,
+    postedAt,
   };
 
-  if (!result.label && !result.cities.length && !result.countries.length && workplace === 'unknown') return null;
+  if (!result.label && !result.cities.length && !result.countries.length && workplace === 'unknown' && !result.salary && !department && !postedAt) return null;
   return result;
 }
+
+/**
+ * Records older than this are ignored at join time (stale evidence is worse than none).
+ * The committed snapshot must be refreshed well inside this window; see
+ * `site/scripts/check-job-locations-freshness.mjs` and `.github/workflows/job-locations-refresh.yml`.
+ */
+export const LOCATION_RECORD_MAX_AGE_MS = 30 * 86400000;
 
 /** One Map per records array so slug pages never re-scan the location index. */
 const recordsByJobIdCache = new WeakMap();
@@ -308,13 +535,14 @@ export function locationRecordsByJobId(index) {
 export function attachLocationToJob(job, index, now = Date.now()) {
   const record = locationRecordsByJobId(index).get(job.jobId);
   const age = now - Date.parse(record?.checkedAt);
-  const valid = record && record.url === job.url && record.role === job.role && record.company === job.company && age >= 0 && age <= 30 * 86400000;
+  const valid = record && record.url === job.url && record.role === job.role && record.company === job.company && age >= 0 && age <= LOCATION_RECORD_MAX_AGE_MS;
   if (!valid) return { ...job, location: null };
 
   const countries = unique((record.countries || []).map(countryLabel));
-  const salary = (record.salary && !record.salary.isEstimated) ? record.salary : null;
-  const employmentType = record.employmentType || extractEmploymentType(job.role);
-  const experienceLevel = record.experienceLevel || extractExperienceLevel(job.role);
+  const salary = (record.salary && !record.salary.isEstimated && record.salary.source === 'employer') ? record.salary : null;
+  // Only values the source stated: the title-keyword helpers return null when unstated.
+  const employmentType = record.employmentType ?? extractEmploymentType(job.role);
+  const experienceLevel = record.experienceLevel ?? extractExperienceLevel(job.role);
 
   return {
     ...job,

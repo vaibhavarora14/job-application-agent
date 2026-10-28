@@ -18,10 +18,15 @@ export type JobLocation = {
   label: string;
   cities: string[];
   countries: string[];
+  countryCodes?: string[];
+  places?: { locality?: string; region?: string; country: string }[];
   workplace: string;
-  salary?: JobSalary | null;
-  employmentType?: string;
-  experienceLevel?: string;
+  salary?: (JobSalary & { basis?: "ats" | "text" }) | null;
+  employmentType?: string | null;
+  experienceLevel?: string | null;
+  department?: string | null;
+  team?: string | null;
+  postedAt?: string | null;
   sourceUrl: string;
   checkedAt: string;
 };
