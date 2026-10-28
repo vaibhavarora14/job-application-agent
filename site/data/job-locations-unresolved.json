@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "collectedAt": "2026-10-28T10:44:21.314Z",
+  "collectedAt": "2026-10-28T10:57:09.801Z",
   "snapshotCount": 1626,
   "unresolved": [
     {
@@ -4754,7 +4754,7 @@
       "url": "https://jobs.lever.co/ppro/935d9b14-80a4-45ac-b44a-6207546111b3",
       "company": "PPRO",
       "role": "Senior Software Engineer - Cash Flow (Java, Spring, AWS)",
-      "reason": "HTTP 404"
+      "reason": "The operation was aborted due to timeout"
     },
     {
       "jobId": "community-job-a1207aa1349685e0",
@@ -7023,6 +7023,13 @@
       "company": "PT MLP Indonesia Trading",
       "role": "Full Stack Developer (Vue.js, Tailwind, Ali Cloud Server, Supabase, Laravel)",
       "reason": "Needs page inspection / unsupported ATS"
+    },
+    {
+      "jobId": "community-job-f710ca17c0680524",
+      "url": "https://jobs.lever.co/saga-xyz/6f4e2b80-c18f-4f62-b61b-da67d257b828",
+      "company": "Saga",
+      "role": "Senior AI Engineer",
+      "reason": "The operation was aborted due to timeout"
     },
     {
       "jobId": "community-job-f7d8564da1653c0f",

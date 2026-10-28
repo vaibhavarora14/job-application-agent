@@ -15,7 +15,7 @@ The collector snapshots all published IDs first, then uses read-only public ATS 
 The site ignores records older than 30 days, so a stale snapshot silently blanks location, workplace and pay for every job. Guards:
 
 - `node site/scripts/check-job-locations-freshness.mjs [--max-days=N]` exits non-zero when the snapshot is older than N days (default 21).
-- `.github/workflows/job-locations-refresh.yml` runs daily: when the snapshot is older than 7 days it re-runs the collector and pushes `automation/job-locations-refresh` (opening a PR when Actions may create PRs); when main's snapshot is older than 21 days the run fails so the owner is notified. It never deploys.
+- `.github/workflows/job-locations-refresh.yml` runs daily: when the snapshot is older than 7 days it re-runs the collector and pushes `automation/job-locations-refresh` (opening a PR when Actions may create PRs); when main's snapshot is older than 21 days the run fails so the owner is notified. It never deploys, and always checks out and pushes from `main`, even for a manual run dispatched from another branch.
 - The collector refuses to write when the feed returns 0 jobs, the refresh has 0 records, or it keeps fewer than 50% of the committed records (`--allow-shrink` overrides after review); the refresh workflow re-checks the same rule with `check-job-locations-freshness.mjs --previous=`.
 - `site/tests/job-metadata.test.mjs` fails the site test suite (CI) once the committed snapshot passes the 30-day cutoff.
 - `deploy-site.yml` refuses to deploy a snapshot past the 30-day cutoff.
