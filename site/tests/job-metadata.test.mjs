@@ -348,7 +348,7 @@ test('pay bands: each row is a band name and a range with its currency', () => {
   assert.equal(rows.single, null);
   assert.deepEqual(rows.bands[0], { name: 'Engineer 1', range: '$150K–$180K USD' });
   assert.equal(rows.more, 0);
-  // A single range is not a band list; unknown pay is null ("Pay not listed").
+  // A single range is not a band list; unknown pay is null (no pay chip or row is shown).
   assert.deepEqual(payRows({ ...liveJob, location: { ...liveJob.location, salary: bandSalary(1) } }), { single: '$150K–$180K USD', bands: [], more: 0 });
   assert.equal(payRows(liveJob), null);
 });
@@ -373,10 +373,13 @@ test('pay bands: OTE in caps after the currency; total comp spelled out, never T
 test('pay bands: CSS keeps the name muted and the range bold and unsplittable', async () => {
   const css = await readFile(new URL('../app/jobs/jobs.module.css', import.meta.url), 'utf8');
   const rule = (name) => css.match(new RegExp(`\\.${name}\\s*\\{([^}]*)\\}`))?.[1] ?? '';
-  assert.match(rule('payBandName'), /color:\s*#526b63/i);
+  // Direction B tokens: muted #5B6B80, ink #0F172A.
+  assert.match(css, /--j-muted:\s*#5b6b80/i);
+  assert.match(css, /--j-ink:\s*#0f172a/i);
+  assert.match(rule('payBandName'), /color:\s*var\(--j-muted\)/);
   assert.match(rule('payBandRange'), /font-weight:\s*600/);
   assert.match(rule('payBandRange'), /white-space:\s*nowrap/);
-  assert.match(rule('payBandRange'), /color:\s*var\(--text\)/);
-  assert.match(rule('payBandMore'), /color:\s*#526b63/i);
+  assert.match(rule('payBandRange'), /color:\s*var\(--j-ink\)/);
+  assert.match(rule('payBandMore'), /color:\s*var\(--j-muted\)/);
   assert.doesNotMatch(rule('payBand'), /nowrap/);
 });

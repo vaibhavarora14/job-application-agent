@@ -27,6 +27,8 @@
  *   previous build's HTML.
  */
 
+import { boardQueryString, parseBoardQuery } from "./jobs-board-query.mjs";
+
 /** Document / page fresh + SWR window (~1h). */
 export const EDGE_CACHE_TTL_SECONDS = 3600;
 export const EDGE_CACHE_SWR_SECONDS = 3600;
@@ -79,7 +81,21 @@ const ROUTER_REQUEST_HEADERS = [
 const PUBLIC_API_PATHS = new Set([
   "/api/community-stats",
   "/api/community-jobs",
+  // Filter-sheet match count; computed in-app from the memoised board.
+  "/api/jobs/count",
 ]);
+
+/**
+ * Paths whose query is the /jobs filter state. Only the canonical form of a valid
+ * filter query is cached (one entry per filter combination); anything else bypasses.
+ */
+const BOARD_QUERY_PATHS = new Set(["/jobs", "/api/jobs/count"]);
+
+function sortedParams(params) {
+  const copy = new URLSearchParams(params);
+  copy.sort();
+  return copy;
+}
 
 /** Paths that must never touch caches.default (always x-cache: BYPASS). */
 const EDGE_CACHE_NEVER_PATHS = new Set([
@@ -124,6 +140,15 @@ export function edgeCacheSwrSeconds(pathname, status = 200) {
  * @returns {URLSearchParams | null}
  */
 export function normalizeEdgeCacheSearch(pathname, searchParams) {
+  if (BOARD_QUERY_PATHS.has(pathname)) {
+    const kept = new URLSearchParams();
+    for (const [key, value] of searchParams.entries()) {
+      if (!TRACKING_QUERY_PARAM.test(key)) kept.append(key, value);
+    }
+    const raw = sortedParams(kept);
+    const canonical = sortedParams(boardQueryString(parseBoardQuery(kept), { keepShow: true, keepDesign: true }));
+    return raw.toString() === canonical.toString() ? canonical : null;
+  }
   if (PUBLIC_API_PATHS.has(pathname)) {
     const kept = new URLSearchParams();
     const entries = [...searchParams.entries()].sort(([a], [b]) => a.localeCompare(b) || 0);
