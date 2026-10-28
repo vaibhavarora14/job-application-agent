@@ -13,7 +13,8 @@ import {
   parseSalaryDetails,
   LOCATION_RECORD_MAX_AGE_MS,
 } from '../lib/job-locations.mjs';
-import { jobPostingJsonLd, postedDate, employerSalary } from '../lib/live-jobs.mjs';
+import { jobPostingJsonLd, postedDate, employerSalary, payLines } from '../lib/live-jobs.mjs';
+import { extractEmploymentType } from '../lib/job-locations.mjs';
 import { locationIndexFreshness, locationSnapshotShrinkCheck } from '../lib/job-locations-freshness.mjs';
 
 const now = Date.parse('2026-10-28T10:00:00.000Z');
@@ -280,4 +281,24 @@ test('review fix: a trailing country code wins over a matching US state only wit
   assert.deepEqual(placesFromLabel('Boston, MA'), [{ locality: 'Boston', region: 'MA', country: 'US' }]);
   assert.deepEqual(placesFromLabel('San Francisco, CA'), [{ locality: 'San Francisco', region: 'CA', country: 'US' }]);
   assert.deepEqual(placesFromLabel('Indianapolis, IN'), [{ locality: 'Indianapolis', region: 'IN', country: 'US' }]);
+});
+
+test('review fix: a title that states Full-Time is recorded as full-time', () => {
+  assert.equal(extractEmploymentType('Software Engineer (Full-Time)'), 'full-time');
+  assert.equal(extractEmploymentType('Account Executive - Full Time'), 'full-time');
+  assert.equal(extractEmploymentType('Full Stack Engineer'), null);
+  assert.equal(extractEmploymentType('Software Engineer'), null);
+});
+
+test('review fix: the detail page lists each employer pay band with its name', () => {
+  const salary = greenhouseSalary({ pay_input_ranges: [
+    { min_cents: 16600000, max_cents: 19500000, currency_type: 'USD', title: 'US Zone 1' },
+    { min_cents: 13000000, max_cents: 15200000, currency_type: 'USD', title: 'US Zone 3' },
+    { min_cents: 11000000, max_cents: 13000000, currency_type: 'CAD', title: 'Canada' },
+  ] });
+  const withBands = { ...liveJob, location: { ...liveJob.location, salary } };
+  assert.deepEqual(payLines(withBands), ['US Zone 1: $166K–$195K USD', 'US Zone 3: $130K–$152K USD', 'Canada: CA$110K–CA$130K']);
+  const single = greenhouseSalary({ pay_input_ranges: [{ min_cents: 16600000, max_cents: 19500000, currency_type: 'USD', title: 'US' }] });
+  assert.deepEqual(payLines({ ...liveJob, location: { ...liveJob.location, salary: single } }), ['$166K–$195K USD']);
+  assert.deepEqual(payLines(liveJob), []);
 });

@@ -313,6 +313,19 @@ export function employerSalary(job) {
   return salary;
 }
 
+/**
+ * Pay lines for the detail page: one per employer band ("US Zone 1: $166K–$195K USD") when there are
+ * several (zones, levels, currencies), otherwise the single label; empty when pay is unknown.
+ * @returns {string[]}
+ */
+export function payLines(job) {
+  const salary = employerSalary(job);
+  if (!salary) return [];
+  const ranges = Array.isArray(salary.ranges) ? salary.ranges.filter((range) => range && typeof range.label === 'string') : [];
+  if (ranges.length > 1) return ranges.map((range) => (range.location ? `${range.location}: ${range.label}` : range.label));
+  return [salary.label];
+}
+
 export function jobPostingJsonLd(job, { siteUrl = 'https://jobappagent.com' } = {}) {
   const url = `${siteUrl}/jobs/${job.slug}`;
   const closed = job.livenessStatus === 'closed';

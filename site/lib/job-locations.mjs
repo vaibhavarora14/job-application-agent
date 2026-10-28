@@ -263,6 +263,7 @@ export function extractEmploymentType(role, atsType) {
   if (/\b(intern|internship|co-op)\b/.test(r)) return 'internship';
   if (/\b(contract|contractor|freelance|temp\b)\b/.test(r)) return 'contract';
   if (/\b(part-time|part time)\b/.test(r)) return 'part-time';
+  if (/\b(full-time|full time|fulltime)\b/.test(r)) return 'full-time';
   return null;
 }
 

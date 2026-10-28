@@ -6,7 +6,7 @@ import {
   formatReviewedDate,
   locationLabel,
   employerPostedAt,
-  employerSalary,
+  payLines,
 } from "../../lib/live-jobs.mjs";
 import { buildApplyCliCommand, shortenUrlForDisplay } from "../../lib/job-apply-copy.mjs";
 import { CopyButton } from "./CopyButton";
@@ -101,7 +101,8 @@ export function JobDetail({
   const family = classifyRoleFamily(job.role);
   const place = locationLabel(job);
   // Employer-stated facts only: unknown pay reads "Pay not listed"; other unknown facts are omitted.
-  const pay = employerSalary(job)?.label ?? "";
+  // Several employer bands (zones, levels, currencies) are listed each with its name, not just the envelope.
+  const pay: string[] = payLines(job);
   const posted = employerPostedAt(job);
   const employment = job.location?.employmentType
     ? job.location.employmentType.replace(/-/g, " ").replace(/\b\w/g, (c) => c.toUpperCase())
@@ -178,7 +179,14 @@ export function JobDetail({
                 ) : null}
                 <div>
                   <strong>Pay</strong>
-                  {pay || "Pay not listed"}
+                  {pay.length
+                    ? pay.map((line, index) => (
+                        <span key={`${index}-${line}`}>
+                          {index > 0 ? <br /> : null}
+                          {line}
+                        </span>
+                      ))
+                    : "Pay not listed"}
                 </div>
               </div>
               <div className={styles.summary}>
