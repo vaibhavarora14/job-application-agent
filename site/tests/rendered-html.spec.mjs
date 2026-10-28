@@ -24,7 +24,7 @@ test("server-renders the focused cloud offer and honest community proof", async 
   assert.match(html, /Founding reservation open/);
   assert.match(html, /COMING SOON/);
   assert.match(html, /FOUNDING RESERVATION/);
-  assert.match(html, /Smarter agent on cloud\./);
+  assert.match(html, /Smarter agent on cloud: it runs the search for you\./);
   assert.match(html, /Cloud access is coming soon\. \$49 reserves founding pricing/);
   // Design review: no status card, no duplicate price line, no unapproved founder note.
   assert.doesNotMatch(html, /launch-countdown-title|<small>Founding reservation · \$49<\/small>/);

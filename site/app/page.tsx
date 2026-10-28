@@ -28,7 +28,7 @@ const INSTALL = "npx job-application-agent@latest install";
 const path = [
   { id: "agent", step: "1", name: "Run the open-source agent", tag: "Free · MIT", body: "Install it into Cursor, Claude Code, Codex or another coding agent on your computer.", href: "/#agent", cta: "Install the agent" },
   { id: "jobs", step: "2", name: "Browse the job board", tag: "Free", body: "Reviewed open roles, checked daily. Copy a role’s prompt and your agent applies.", href: "/jobs", cta: "Browse open roles" },
-  { id: "cloud", step: "3", name: "Reserve Cloud", tag: "Founding reservation · $49", body: "Smarter agent on cloud. It runs the search for you.", href: "/#cloud", cta: "Reserve founding access" },
+  { id: "cloud", step: "3", name: "Reserve Cloud", tag: "Founding reservation · $49", body: "Smarter agent on cloud: it runs the search for you.", href: "/#cloud", cta: "Reserve founding access" },
 ] as const;
 
 const steps = [
