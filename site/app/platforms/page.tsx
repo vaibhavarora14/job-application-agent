@@ -21,7 +21,6 @@ export default function Platforms() {
     <SiteHeader foundingCta={false} />
     <main className={`legal page-width ${styles.guide}`}>
     <JsonLd data={breadcrumbs} />
-    <Link className="legal-back" href="/">← Back to the product</Link>
     <p className="eyebrow">Open-source agent · setup guides</p>
     <h1>Your job search.<br />Your choice of agent.</h1>
     <p>One verified résumé, clear preferences, and a record of confirmed applications. Bring the workflow into the agent you already use.</p>

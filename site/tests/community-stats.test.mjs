@@ -96,7 +96,10 @@ test("stats outcome coverage card leads with the live rate, never an outcome cou
   // Rate and sentence render only with real counters; otherwise the existing waiting state.
   assert.match(card, /<strong className="outcome-number">\{`\$\{outcomeCoverage\}%`\}/);
   assert.match(card, /of \{fullNumber\.format\(data\.metrics\.applicationsSubmitted\)\} verified applications have a reported outcome/);
-  assert.match(card, /Waiting for verified activity\./);
+  // The card itself is hidden without real counters; the page carries one waiting line.
+  assert.match(dashboard, /\{counted \? <article className="dashboard-panel outcome-panel">/);
+  assert.equal((dashboard.match(/>Waiting for verified activity\.</g) ?? []).length, 1);
+  assert.doesNotMatch(dashboard, /Waiting for enough privacy-safe data/);
   assert.doesNotMatch(card, /"—"/);
   // No visible known-outcome count (it would include interviews) and no duplicate rate pill.
   assert.doesNotMatch(card, /format\(outcomesReported\)|known outcomes|% reported|className="tag"/);

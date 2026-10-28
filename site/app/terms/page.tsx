@@ -1,5 +1,4 @@
 import type { Metadata } from "next";
-import Link from "next/link";
 import { SiteFooter, SiteHeader } from "../components/SiteChrome";
 
 export const metadata: Metadata = {
@@ -11,7 +10,6 @@ export default function Terms() {
   return <div className="site-shell">
     <SiteHeader foundingCta={false} />
     <main className="legal page-width">
-    <Link className="legal-back" href="/">← Back to the product</Link>
     <h1>Founding-access terms.</h1><p>Last updated 13 October 2026.</p>
     <h2>The founding offer</h2><p>The founding offer is a one-time $49 payment for founding cloud access. Checkout is handled by Dodo Payments. Your purchase is confirmed only after a signed payment notification is verified by our server.</p>
     <h2>Access timing</h2><p>Payment reserves founding pricing for cloud access when it launches. It does not start an access window or grant instant access. Cloud access remains coming soon. We confirm your reservation by email after payment is verified.</p>

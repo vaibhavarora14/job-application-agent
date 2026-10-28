@@ -6,7 +6,7 @@ import { FoundingCheckout } from "./components/FoundingCheckout";
 import { SiteFooter, SiteHeader } from "./components/SiteChrome";
 
 export const metadata: Metadata = {
-  title: { absolute: "JobAppAgent — open-source AI job application agent" },
+  title: { absolute: "JobAppAgent: open-source AI job application agent" },
   description: "JobAppAgent is an open-source AI job application agent that discovers, qualifies, applies, pauses for judgment, and keeps a verified record while you are away.",
   alternates: { canonical: "https://jobappagent.com" },
 };
@@ -17,8 +17,8 @@ const INSTALL = "npx job-application-agent@latest install";
 /*
  * Information architecture: one path, free first, paid next.
  *   Hero      — the three-step path: 1 run the free open-source agent → 2 browse /jobs → 3 reserve Cloud.
- *   Proof     — lifetime community counters (real telemetry only).
  *   #free     — Available now: #agent (npm/GitHub install) and #jobs (job board).
+ *   Proof     — lifetime community counters (real telemetry only), below the first screen.
  *   #process  — How it works: the loop plus agent-handles / you-handle (#boundaries).
  *   #cloud    — the paid $49 founding reservation IS the Cloud interest capture (no free waitlist):
  *               the dark offer card + a dateless progress checklist (founder note behind a flag, off).
@@ -80,7 +80,6 @@ export default function Home() {
       </header>
 
       {/* Renders nothing until every lifetime counter is available (no placeholder counts). */}
-      <CommunityProof className="community-section page-width" />
 
       <section className="section page-width" id="free" aria-labelledby="free-title">
         <div className="section-heading"><p className="eyebrow">Available now · free</p><h2 id="free-title">Start with the free tools.</h2></div>
@@ -102,6 +101,9 @@ export default function Home() {
           </article>
         </div>
       </section>
+
+      {/* Client-only lifetime counters, placed below "Available now" so a late insert never shifts the first screen. */}
+      <CommunityProof className="community-section page-width" />
 
       <section className="section page-width" id="process" aria-labelledby="process-title">
         <div className="section-heading"><h2 id="process-title">How it works</h2></div>

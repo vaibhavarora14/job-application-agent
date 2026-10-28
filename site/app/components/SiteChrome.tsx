@@ -11,7 +11,7 @@ function primaryNavLinks(community: boolean): ReactNode {
   }
   return <>
     <Link href="/jobs">Job board</Link>
-    <Link href="/#agent">Open source</Link>
+    <Link href="/open-source">Open source</Link>
     <Link href="/#cloud">Cloud</Link>
     <a href="https://stats.jobappagent.com">Community</a>
   </>;

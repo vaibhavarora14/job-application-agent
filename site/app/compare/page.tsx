@@ -125,7 +125,6 @@ export default function Compare() {
     <SiteHeader foundingCta={false} />
     <main className={`legal page-width ${styles.page} ${styles.wide}`}>
     <JsonLd data={breadcrumbs} />
-    <Link className="legal-back" href="/">← Back to the product</Link>
     <h1>How JobAppAgent compares to other <span className={styles.nb}>open‑source</span> job agents</h1>
     <p>JobAppAgent is an open-source job application agent, and it isn&apos;t the only one. Several open-source projects now find roles, fill in forms and track applications. They differ in how much they do without asking, which job systems they handle, and where your data ends up. The table below compares them on those points, using only what each project says in its own README or docs. Where a project doesn&apos;t say, the cell says &quot;not stated&quot;.</p>
     <p className={styles.smallPrint}><em>Last checked 22 Oct 2026. Projects change quickly, so check the linked source before you rely on a cell.</em></p>

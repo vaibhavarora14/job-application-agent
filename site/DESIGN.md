@@ -22,7 +22,7 @@ JobAppAgent should feel calm, inspectable, and quietly capable—not like a gami
 
 ## Homepage structure
 
-Free first, paid next: hero with the three-step path (open-source agent → job board → Cloud), lifetime community counters (rendered only when every counter is real), "Available now" (agent install + job board), How it works (loop + agent handles / you handle), then Cloud: the dark founding offer card and a dateless progress checklist, then FAQ. The paid $49 reservation is the Cloud interest capture; there is no free waitlist.
+Free first, paid next: hero with the three-step path (open-source agent → job board → Cloud), "Available now" (agent install + job board), lifetime community counters (client-only, rendered only when every counter is real, kept below the first screen so a late load never shifts it), How it works (loop + agent handles / you handle), then Cloud: the dark founding offer card and a dateless progress checklist, then FAQ. The paid $49 reservation is the Cloud interest capture; there is no free waitlist.
 
 ## Mark
 

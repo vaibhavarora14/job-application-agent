@@ -174,7 +174,7 @@ test("product SiteHeader nav works from non-home pages", async () => {
   assert.match(source, /href=\{community \? "https:\/\/jobappagent\.com" : "\/#top"\}/);
   // Revamp (theme B): nav follows the three pillars; anchors resolve from any page.
   assert.match(source, /<Link href="\/jobs">Job board<\/Link>/);
-  assert.match(source, /<Link href="\/#agent">Open source<\/Link>/);
+  assert.match(source, /<Link href="\/open-source">Open source<\/Link>/);
   assert.match(source, /<Link href="\/#cloud">Cloud<\/Link>/);
   assert.match(source, /foundingCta = true/);
   assert.match(source, /foundingCta \? <FoundingCheckout compact \/> : null/);
@@ -225,14 +225,13 @@ test("server-renders the branded community dashboard", async () => {
   const html = await response.text();
   assert.match(html, /Aggregate product evidence/);
   assert.match(html, /See the work the agent is doing/);
-  assert.match(html, /Current adoption and verified execution/);
-  assert.match(html, /lifetime cumulative totals/i);
+  // Need-only (design review v2): with no stats in SSR, data sections and cards are absent.
+  assert.doesNotMatch(html, /Evidence at a glance|Current adoption and verified execution|lifetime cumulative totals/i);
   assert.doesNotMatch(html, /Live feed resting|is resting|of — verified/);
   assert.doesNotMatch(html, /Active installations · last 30 days|Active installation.*last 30 days/i);
-  assert.match(html, /Activity over time, with outcomes kept in context/);
-  assert.match(html, /Verified submissions by day/);
-  assert.match(html, /Where the work is concentrated/);
-  assert.match(html, /Role levels discovered/);
+  assert.doesNotMatch(html, /Activity over time, with outcomes kept in context|Verified submissions by day|Outcome coverage/);
+  assert.doesNotMatch(html, /Where the work is concentrated|Role levels discovered|Waiting for enough privacy-safe data/);
+  assert.ok((html.match(/Waiting for verified activity\./g) ?? []).length <= 1);
   assert.match(html, /How the evidence is counted/);
   assert.doesNotMatch(html, /Community job leads|Open job|maintainer-reviewed/i);
   assert.match(html, /Anonymous aggregate telemetry/);
@@ -323,7 +322,9 @@ test("product footer links the open-source and compare pages; platforms and priv
   assert.match(footer, /href="\/open-source"[^>]*>Open source</);
   assert.match(footer, /href="\/compare"[^>]*>Compare</);
   const navHtml = homeHtml.slice(homeHtml.indexOf('aria-label="Primary navigation"'), homeHtml.indexOf("</nav>"));
-  assert.doesNotMatch(navHtml, /open-source|\/compare/);
+  // Design review v2 (P2-F): nav "Open source" goes to /open-source; /compare stays footer-only.
+  assert.match(navHtml, /href="\/open-source"[^>]*>Open source</);
+  assert.doesNotMatch(navHtml, /\/compare/);
   for (const html of [await platforms.text(), await privacy.text()]) {
     assert.match(html, /href="\/open-source"[^>]*>About the project</);
     assert.match(html, /href="\/compare"[^>]*>See how it compares</);

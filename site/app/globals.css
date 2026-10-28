@@ -69,8 +69,11 @@ button, input { font: inherit; }
   font: 500 .9375rem/1.25 var(--font-body), sans-serif;
   color: var(--text);
   min-height: 2.75rem;
+  min-width: 2.75rem;
+  padding-inline: .5rem;
   display: inline-flex;
   align-items: center;
+  justify-content: center;
 }
 .site-mobile-menu > summary::-webkit-details-marker { display: none; }
 .site-mobile-menu-links {
@@ -128,11 +131,13 @@ button, input { font: inherit; }
 .pillar p { margin: .35rem 0 0; color: var(--text); font-size: .9375rem; line-height: 1.55; }
 .pillar-tag { flex: none; padding: .15rem .6rem; border: 1px solid var(--ok-line); border-radius: 999px; background: var(--ok-soft); color: var(--ok); font: 600 .75rem/1.4 var(--font-body), sans-serif; }
 .pillar-cloud .pillar-tag { border-color: var(--accent-line); background: var(--page); color: var(--accent-deep); }
-.free-grid { display: grid; grid-template-columns: 1fr 1fr; gap: .75rem; align-items: start; }
-.free-card { padding: 1.75rem; border: 1px solid var(--hair); border-radius: .75rem; background: var(--panel); scroll-margin-top: 6rem; }
+.free-grid { display: grid; grid-template-columns: 1fr 1fr; gap: .75rem; align-items: stretch; }
+.free-card { display: flex; flex-direction: column; align-items: flex-start; padding: 1.75rem; border: 1px solid var(--hair); border-radius: .75rem; background: var(--panel); scroll-margin-top: 6rem; }
 .free-card h3 { margin: .5rem 0 .6rem; color: var(--ink); font: 600 1.25rem/1.3 var(--font-body), sans-serif; letter-spacing: -.01em; }
 .free-card > p { margin: 0 0 1rem; color: var(--text); font-size: .9375rem; line-height: 1.6; }
 .free-card > p.free-note { margin-bottom: .5rem; color: var(--muted); font-size: .875rem; }
+.free-card > .button { margin-top: auto; }
+.free-card > :is(pre, .copy-code, div) { align-self: stretch; }
 .free-card pre { background: var(--page) !important; }
 .step-list { margin: 0 0 1.25rem; padding: 0; display: grid; gap: .5rem; list-style: none; }
 .step-list li { padding: .9rem 1rem; display: grid; grid-template-columns: 2rem 1fr; gap: .85rem; border: 1px solid var(--hair); border-radius: .65rem; background: var(--page); }
@@ -273,7 +278,6 @@ button, input { font: inherit; }
 .panel-heading p { margin: 0; color: var(--muted); font-size: .85rem; }
 .tag { flex: 0 0 auto; padding: .35rem .7rem; border: 1px solid var(--accent-line); border-radius: 999px; background: var(--accent-soft); color: var(--accent-deep); font: 600 .75rem/1.3 var(--font-body), sans-serif; }
 .activity-chart { height: 16rem; margin-top: 1.8rem; display: flex; align-items: stretch; gap: .6rem; border-bottom: 1px solid var(--line); }
-.activity-chart-empty { height: 10rem; }
 .activity-column { min-width: 0; flex: 1; display: grid; grid-template-rows: 1.5rem 1fr 2rem; align-items: end; justify-items: center; }
 .activity-column strong { font-size: .7rem; font-variant-numeric: tabular-nums; }
 .activity-bar { width: min(70%, 2.25rem); height: 100%; min-height: .2rem; overflow: hidden; border: 0; border-radius: .35rem .35rem 0 0; background: var(--hair); writing-mode: vertical-lr; direction: rtl; appearance: none; }
@@ -298,6 +302,11 @@ button, input { font: inherit; }
 .leaderboard-track::-moz-progress-bar { border-radius: 999px; background: var(--accent); }
 .leaderboard-row strong { font-size: .8rem; font-variant-numeric: tabular-nums; }
 .empty-data { color: var(--muted); font-size: .85rem; }
+.dashboard-waiting { margin: 0; padding: 2rem 0 1rem; font-size: .9375rem; }
+.dashboard-grid.dashboard-grid-single { grid-template-columns: 1fr; }
+/* Counters are client-only and sit below the first screen; fade in with opacity only (no layout animation). */
+.community-section { animation: proof-in .3s ease-out both; }
+@keyframes proof-in { from { opacity: 0; } to { opacity: 1; } }
 .methodology { margin-top: .8rem; padding: 3rem; border: 1px solid var(--hair); border-radius: .75rem; display: grid; grid-template-columns: .8fr 1.2fr; gap: 4rem; background: var(--panel); color: var(--ink); scroll-margin-top: 5rem; }
 .methodology p { color: var(--text); line-height: 1.7; }
 .methodology p:first-child { margin-top: 0; }
@@ -387,7 +396,7 @@ footer a:hover { color: var(--ink); }
 
 @media (max-width: 34rem) {
   .brand-lockup { display: none; }
-  .nav-links .button { max-width: none; padding-inline: .75rem; font-size: .72rem; white-space: nowrap; }
+  .nav-links .button { max-width: none; padding-inline: .75rem; font-size: .8125rem; white-space: nowrap; }
   .community-proof { padding: 1.2rem; }
   .hero h1 { font-size: clamp(2.3rem, 11vw, 3rem); }
   .boundary-columns article, .founding-card > div:first-child, .offer-panel { padding: 1.5rem; }
