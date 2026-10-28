@@ -152,6 +152,12 @@ export function validateLiveJobsBoard(input) {
 }
 
 /** Wire shape of a validated job (drops the derived `slug`) for re-caching. */
+/** Human name of the posting's source (ATS or channel), e.g. "Ashby"; null for email/other. */
+export function channelLabel(channel) {
+  if (channel === 'email' || channel === 'other') return null;
+  return CHANNEL_LABELS[channel] ?? null;
+}
+
 export function liveJobWireRecord(job) {
   const wire = { ...job };
   delete wire.slug;

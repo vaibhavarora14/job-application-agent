@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { JobsBoard } from "./JobsBoard";
 import { loadJobsBoard } from "../../lib/load-jobs-board.mjs";
 import { TRUST_LINE } from "../../lib/live-jobs.mjs";
+import { filterAndSortJobs, parseBoardQuery } from "../../lib/jobs-board-query.mjs";
 
 export const dynamic = "force-dynamic";
 
@@ -35,28 +36,12 @@ export async function headers() {
   };
 }
 
-function checkedLabel(iso: string | null) {
-  if (!iso) return "";
-  try {
-    const date = new Date(iso);
-    if (Number.isNaN(date.getTime())) return "";
-    const time = new Intl.DateTimeFormat("en-GB", {
-      hour: "2-digit",
-      minute: "2-digit",
-      hour12: false,
-      timeZone: "Asia/Kolkata",
-    }).format(date);
-    const sameDay = new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" })
-      === date.toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
-    if (sameDay) return `today ${time} IST`;
-    const day = new Intl.DateTimeFormat("en-GB", { day: "numeric", month: "short", timeZone: "Asia/Kolkata" }).format(date);
-    return `${day} ${time} IST`;
-  } catch {
-    return "";
-  }
-}
+type Props = { searchParams?: Promise<Record<string, string | string[] | undefined>> };
 
-export default async function JobsPage() {
+export default async function JobsPage({ searchParams }: Props) {
+  const query = parseBoardQuery(searchParams ? await searchParams : undefined);
   const board = await loadJobsBoard();
-  return <JobsBoard jobs={board.open} checkedAtLabel={checkedLabel(board.checkedAt)} />;
+  const now: number = board.now;
+  const matches = filterAndSortJobs(board.open, query, now);
+  return <JobsBoard query={query} allOpen={board.open} matches={matches} failed={Boolean(board.failed)} now={now} />;
 }

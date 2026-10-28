@@ -42,20 +42,29 @@ export async function loadJobsBoard(options = {}) {
   const now = options.now ?? Date.now();
   let raw = [];
   let memoisable = false;
+  let failed = false;
 
   if (await wantsFixtures(options)) {
     raw = fixtureLiveJobs(now);
   } else if (options.loadLive) {
-    raw = await options.loadLive();
-  } else {
     try {
-      const { loadLiveJobsSafe } = await import('./fetch-live-jobs.mjs');
-      raw = await loadLiveJobsSafe();
-      memoisable = options.now === undefined && Array.isArray(raw) && raw.length > 0;
+      raw = await options.loadLive();
     } catch {
       raw = [];
+      failed = true;
+    }
+  } else {
+    try {
+      const { loadLiveJobs } = await import('./fetch-live-jobs.mjs');
+      raw = await loadLiveJobs();
+      memoisable = options.now === undefined && Array.isArray(raw) && raw.length > 0;
+    } catch {
+      // Upstream down: the board shows its error state instead of "no open roles".
+      raw = [];
+      failed = true;
     }
   }
+  if (failed) return { ...buildBoard([], now), failed: true };
 
   if (memoisable) {
     const memo = derivedBoards.get(raw);
@@ -87,7 +96,7 @@ function buildBoard(raw, now) {
     if (job.lastCheckedAt && (!checkedAt || job.lastCheckedAt > checkedAt)) checkedAt = job.lastCheckedAt;
   }
 
-  return { all, open, checkedAt, now, locationIndex: locations };
+  return { all, open, checkedAt, now, locationIndex: locations, failed: false };
 }
 
 /** Slug and jobId lookups per board array (first match wins, like Array#find). */

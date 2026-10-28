@@ -1,90 +1,188 @@
 import Link from "next/link";
+import type { CSSProperties, ReactNode } from "react";
 import {
-  TRUST_LINE,
-  classifyRoleFamily,
+  channelLabel,
+  employerPostedAt,
   formatClosedDate,
   formatReviewedDate,
   locationLabel,
-  employerPostedAt,
   payRows,
 } from "../../lib/live-jobs.mjs";
-import { buildApplyCliCommand, shortenUrlForDisplay } from "../../lib/job-apply-copy.mjs";
+import { workplaceLabel } from "../../lib/jobs-board-query.mjs";
+import { buildApplyAgentPrompt, buildApplyCliCommand } from "../../lib/job-apply-copy.mjs";
 import { CopyButton } from "./CopyButton";
+import { JobRow } from "./JobRow";
 import { SiteFooter, SiteHeader } from "../components/SiteChrome";
 import styles from "./jobs.module.css";
 import type { BoardJob } from "./JobsBoard";
 
-function ApplyPanel({ job }: { job: BoardJob }) {
-  // `apply <url>` ships in npm 3.7.7+ (review-mode prompt printer).
-  const applyCmd = buildApplyCliCommand(job.url);
-  const applyDisplay = `npx job-application-agent@latest apply ${shortenUrlForDisplay(job.url)}`;
+const AGENTS_HINT = "For Cursor, Claude Code or Codex. You approve before anything is sent.";
+
+function BackIcon() {
   return (
-    <aside className={styles.panel} aria-label="Apply with your agent">
-      <h2>Apply with your agent</h2>
-      <p className={styles.panelLead}>
-        Run apply in review mode. You approve the draft before anything is submitted.
-      </p>
-      <div className={styles.step}>
-        <span className={styles.stepNum}>01</span>
-        <div className={styles.stepBody}>
-          <div className={styles.stepTitle}>Apply in review mode</div>
-          <div className={styles.codeRow}>
-            <div className={styles.codeScrollWrap}>
-              <div className={styles.codeScroll}>
-                <code title={applyCmd}>{applyDisplay}</code>
-              </div>
-            </div>
-            <CopyButton value={applyCmd} />
-          </div>
-        </div>
-      </div>
-      <a className={styles.original} href={job.url} target="_blank" rel="noopener noreferrer">
-        Open original posting ↗
-      </a>
-    </aside>
+    <svg viewBox="0 0 20 20" aria-hidden="true" className={styles.btnIcon}>
+      <path d="M12.5 4.5L7 10l5.5 5.5" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
   );
 }
 
-function SimilarList({ jobs }: { jobs: BoardJob[] }) {
-  if (jobs.length === 0) return null;
+function ExternalIcon() {
   return (
-    <section aria-labelledby="similar-heading">
-      <h2 id="similar-heading" className={styles.similarHeading}>Similar open roles</h2>
-      <div className={styles.list}>
-        {jobs.map((job) => (
-          <div key={job.jobId}>
-            <div className={styles.jobRow}>
-              <span className={styles.company}>{job.company}</span>
-              <span className={styles.title}>{job.role}</span>
-              <span className={styles.location}>{locationLabel(job) || "—"}</span>
-              <span className={styles.metaDate}>
-                Reviewed {formatReviewedDate(job.lastCheckedAt ?? job.lastSeenAt)}
-              </span>
-              <Link href={`/jobs/${job.slug}`} className={styles.applyBtn}>
-                Apply with your agent
-              </Link>
-            </div>
-            <div className={styles.mobileCard}>
-              <p className={styles.mobileTitle}>{job.role}</p>
-              <p className={styles.mobileMeta}>
-                {job.company}
-                {locationLabel(job) ? ` · ${locationLabel(job)}` : ""}
-                <br />
-                <span className={styles.metaDate}>
-                  Reviewed {formatReviewedDate(job.lastCheckedAt ?? job.lastSeenAt)}
-                </span>
-              </p>
-              <Link href={`/jobs/${job.slug}`} className={styles.applyBtn}>
-                Apply with your agent
-              </Link>
-            </div>
-          </div>
-        ))}
-      </div>
-      <p style={{ marginTop: "1.25rem" }}>
-        <Link href="/jobs" className="button button-secondary">See all open roles</Link>
+    <svg viewBox="0 0 20 20" aria-hidden="true" className={styles.btnIcon}>
+      <path d="M7 13l6.5-6.5M8 6.5h5.5V12" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
+function CopyIcon() {
+  return (
+    <svg viewBox="0 0 20 20" aria-hidden="true" className={styles.btnIcon}>
+      <rect x="7" y="7" width="9" height="9" rx="2" fill="none" stroke="currentColor" strokeWidth="1.7" />
+      <path d="M13 4.5H6A1.5 1.5 0 0 0 4.5 6v7" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+function ChevronIcon() {
+  return (
+    <svg viewBox="0 0 20 20" aria-hidden="true" className={`${styles.btnIcon} ${styles.chev}`}>
+      <path d="M5.5 8l4.5 4.5L14.5 8" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
+function employmentLabel(value: string | null | undefined) {
+  if (!value) return "";
+  return value.charAt(0).toUpperCase() + value.slice(1);
+}
+
+/** "Open posting on Ashby"; generic when the source is not a named ATS. */
+function postingLabel(job: BoardJob, verb: "Open posting" | "Read the full posting") {
+  const ats = channelLabel(job.applicationChannel);
+  return ats ? `${verb} on ${ats}` : verb;
+}
+
+function PayValue({ job }: { job: BoardJob }) {
+  const pay = payRows(job);
+  if (!pay) return null;
+  if (pay.single) return <>{pay.single}</>;
+  return (
+    <span className={styles.payBands}>
+      {pay.bands.map((band, index) => (
+        <span key={`${index}-${band.name ?? ""}-${band.range}`} className={styles.payBand}>
+          {band.name ? <span className={styles.payBandName}>{`${band.name}:`}</span> : null}
+          {band.name ? " " : null}
+          <span className={styles.payBandRange}>{band.range}</span>
+        </span>
+      ))}
+      {pay.more > 0 ? (
+        <a className={styles.payBandMore} href={job.url} rel="nofollow noopener noreferrer" target="_blank">
+          {`+${pay.more} more ${pay.more === 1 ? "band" : "bands"}`}
+        </a>
+      ) : null}
+    </span>
+  );
+}
+
+/** Employer-stated facts only. Unknown facts (pay included) are left out and the grid closes up. */
+function Facts({ job }: { job: BoardJob }) {
+  const pay = payRows(job);
+  const multiBand = Boolean(pay && !pay.single);
+  const cells: { key: string; label: string; value: ReactNode; wide?: boolean }[] = [];
+  if (pay) cells.push({ key: "pay", label: "Pay", value: <PayValue job={job} />, wide: multiBand });
+  const workplace = workplaceLabel(job);
+  if (workplace) cells.push({ key: "workplace", label: "Workplace", value: workplace });
+  const place = locationLabel(job);
+  // A long place list gets its own row instead of a tall narrow cell.
+  if (place && place !== workplace) cells.push({ key: "location", label: "Location", value: place, wide: place.length > 48 });
+  const type = employmentLabel(job.location?.employmentType);
+  if (type) cells.push({ key: "type", label: "Type", value: type });
+  if (cells.length === 0) return null;
+  const narrow = cells.filter((cell) => !cell.wide);
+  // Two columns on phones: an odd last cell spans the row so no empty slot shows.
+  const fill = narrow.length % 2 === 1 ? narrow[narrow.length - 1].key : null;
+  return (
+    <dl className={styles.facts} style={{ "--cols": Math.max(1, narrow.length) } as CSSProperties}>
+      {cells.map((cell) => (
+        <div
+          key={cell.key}
+          className={[
+            cell.key === "pay" ? styles.factPay : "",
+            cell.wide ? styles.factWide : "",
+            cell.key === fill ? styles.factFill : "",
+          ].filter(Boolean).join(" ") || undefined}
+        >
+          <dt>{cell.label}</dt>
+          <dd>{cell.value}</dd>
+        </div>
+      ))}
+    </dl>
+  );
+}
+
+function ApplyCard({ job }: { job: BoardJob }) {
+  const prompt = buildApplyAgentPrompt(job);
+  const cli = buildApplyCliCommand(job.url);
+  return (
+    <div className={styles.railCard}>
+      <h2 className={styles.railTitle}>Apply with your agent</h2>
+      <h2 className={styles.howTitle}>How applying works</h2>
+      <p className={styles.railLead}>
+        Copy a prompt for Cursor, Claude Code or Codex. Your agent fills the application on {job.company}&apos;s
+        posting and stops for your approval before anything is sent.
       </p>
-    </section>
+      <div className={styles.railActions}>
+        <CopyButton
+          value={prompt}
+          label="Copy prompt"
+          copiedLabel="Copied"
+          icon={<CopyIcon />}
+          className={`${styles.btn} ${styles.pri} ${styles.full}`}
+          copiedNote="Copied. Paste it into your agent."
+          noteClassName={styles.copiedNote}
+        />
+        <a className={`${styles.btn} ${styles.btn2} ${styles.full}`} href={job.url} target="_blank" rel="noopener noreferrer">
+          {postingLabel(job, "Open posting")}
+          <ExternalIcon />
+        </a>
+      </div>
+      <details className={styles.pv}>
+        <summary>
+          Preview the prompt
+          <ChevronIcon />
+        </summary>
+        <pre>{prompt}</pre>
+      </details>
+      <div className={styles.rule} />
+      <p className={styles.lab}>Prefer the terminal?</p>
+      <div className={styles.cmd}>
+        <code>{cli}</code>
+        <CopyButton value={cli} ariaLabel="Copy command" icon={<CopyIcon />} className={styles.iconBtn} />
+      </div>
+    </div>
+  );
+}
+
+function ApplyBar({ job }: { job: BoardJob }) {
+  return (
+    <div className={styles.abar}>
+      <p className={styles.abHint}>{AGENTS_HINT}</p>
+      <div className={styles.abRow}>
+        <CopyButton
+          value={buildApplyAgentPrompt(job)}
+          label="Copy prompt"
+          copiedLabel="Copied"
+          icon={<CopyIcon />}
+          className={`${styles.btn} ${styles.pri} ${styles.grow}`}
+          copiedNote="Copied. Paste it into your agent on your computer."
+          noteClassName={styles.abNote}
+        />
+        <a className={`${styles.btn} ${styles.btn2}`} href={job.url} target="_blank" rel="noopener noreferrer">
+          Open posting
+          <ExternalIcon />
+        </a>
+      </div>
+    </div>
   );
 }
 
@@ -92,134 +190,83 @@ export function JobDetail({
   job,
   similar,
   jsonLd,
+  now,
 }: {
   job: BoardJob & { closedAt?: string | null };
   similar: BoardJob[];
   jsonLd: Record<string, unknown>;
+  now: number;
 }) {
   const closed = job.livenessStatus === "closed";
-  const family = classifyRoleFamily(job.role);
-  const place = locationLabel(job);
-  // Employer-stated facts only: unknown pay reads "Pay not listed"; other unknown facts are omitted.
-  // Several employer bands (zones, levels, currencies) are listed each with its name (max 4, then "+N more bands").
-  const pay = payRows(job);
-  const posted = employerPostedAt(job);
-  const employment = job.location?.employmentType
-    ? job.location.employmentType.replace(/-/g, " ").replace(/\b\w/g, (c) => c.toUpperCase())
-    : "";
+  const posted = employerPostedAt(job, now);
+  const department = job.location?.department ?? "";
+  const meta = [posted ? `Posted ${formatReviewedDate(posted)}` : "", department].filter(Boolean).join(" · ");
+  const ats = channelLabel(job.applicationChannel);
+  const checked = formatReviewedDate(job.lastCheckedAt ?? job.lastSeenAt);
 
   return (
-    <div className={styles.container}>
+    <div className={`${styles.container}${closed ? "" : ` ${styles.hasBar}`}`}>
       <SiteHeader foundingCta={false} />
-      <main className={`page-width ${styles.page}`}>
+      <main className={`page-width ${styles.page} ${styles.detailPage}`}>
         <script
           type="application/ld+json"
           dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
         />
+        <Link href="/jobs" className={styles.back}>
+          <BackIcon />
+          All roles
+        </Link>
         {closed ? (
           <>
-            <p className={styles.crumb}>
-              <Link href="/jobs">Jobs</Link>
-              {" / "}
-              {family}
-            </p>
-            <div className={styles.detailHero}>
+            <section className={styles.dh}>
               <h1>{job.role}</h1>
-              <p className={styles.companyLine}>
-                {job.company}
-                {place ? ` · ${place}` : ""}
-              </p>
-            </div>
+              <p className={styles.co}>{job.company}</p>
+            </section>
             <div className={styles.closed} role="status">
-              <div className={styles.closedEyebrow}>CLOSED</div>
-              <p className={styles.closedTitle}>
+              <p className={styles.eT}>
                 This role closed on {formatClosedDate(job.closedAt ?? job.lastCheckedAt ?? job.lastSeenAt)}.
               </p>
-              <p className={styles.closedBody}>
-                Our daily check found the employer&apos;s posting had come down, so the role was removed from the board.
-                Summary and apply commands are hidden for closed roles.
+              <p className={styles.eB}>
+                Our daily check found the employer&apos;s posting had come down, so the role left the board.
               </p>
             </div>
-            <SimilarList jobs={similar} />
+            {similar.length > 0 ? (
+              <section className={styles.sim} aria-labelledby="similar-heading">
+                <h2 id="similar-heading">Similar open roles</h2>
+                <div className={styles.list}>
+                  {similar.map((role) => <JobRow key={role.jobId} job={role} now={now} />)}
+                </div>
+              </section>
+            ) : null}
+            <p className={styles.simMore}>
+              <Link href="/jobs" className={`${styles.btn} ${styles.btn2}`}>See all open roles</Link>
+            </p>
           </>
         ) : (
-          <div className={styles.detailLayout}>
-            <div className={styles.detailMain}>
-              <p className={styles.crumb}>
-                <Link href="/jobs">Jobs</Link>
-                {" / "}
-                {family}
-              </p>
-              <div className={styles.detailHero}>
+          <div className={styles.dd}>
+            <article className={styles.article}>
+              <section className={styles.dh}>
                 <h1>{job.role}</h1>
-                <p className={styles.companyLine}>{job.company}</p>
-                <p className={styles.trust}>
-                  <span className={styles.trustDot} aria-hidden="true" />
-                  {TRUST_LINE}
-                </p>
-              </div>
-              <div className={styles.facts}>
-                {place ? (
-                  <div>
-                    <strong>Location</strong>
-                    {place}
-                  </div>
-                ) : null}
-                {employment ? (
-                  <div>
-                    <strong>Type</strong>
-                    {employment}
-                  </div>
-                ) : null}
-                {posted ? (
-                  <div>
-                    <strong>Posted</strong>
-                    {formatClosedDate(posted)}
-                  </div>
-                ) : null}
-                <div>
-                  <strong>Pay</strong>
-                  {!pay ? (
-                    "Pay not listed"
-                  ) : pay.single ? (
-                    pay.single
-                  ) : (
-                    <span className={styles.payBands}>
-                      {pay.bands.map((band, index) => (
-                        <span key={`${index}-${band.name ?? ""}-${band.range}`} className={styles.payBand}>
-                          {band.name ? <span className={styles.payBandName}>{`${band.name}:`}</span> : null}
-                          {band.name ? " " : null}
-                          <span className={styles.payBandRange}>{band.range}</span>
-                        </span>
-                      ))}
-                      {pay.more > 0 ? (
-                        <a className={styles.payBandMore} href={job.url} rel="nofollow noopener noreferrer" target="_blank">
-                          {`+${pay.more} more ${pay.more === 1 ? "band" : "bands"}`}
-                        </a>
-                      ) : null}
-                    </span>
-                  )}
-                </div>
-              </div>
-              <div className={styles.summary}>
-                <p>
-                  Maintainer-reviewed opening at {job.company}. We show only facts from the community registry
-                  and the employer&apos;s public posting — nothing invented.
-                </p>
-                <h2>How applying works here</h2>
-                <p>
-                  Your agent fills the application on the employer&apos;s own site, using only facts from your profile.
-                  Anything it can&apos;t verify comes back to you. Nothing you share is stored on this board.
-                </p>
-                <p className={styles.metaDate}>
-                  Last checked {formatReviewedDate(job.lastCheckedAt ?? job.lastSeenAt)}
-                </p>
-              </div>
-            </div>
-            <ApplyPanel job={job} />
+                <p className={styles.co}>{job.company}</p>
+                {meta ? <p className={styles.meta}>{meta}</p> : null}
+              </section>
+              <Facts job={job} />
+              <p className={styles.prov}>
+                {ats && ats !== job.company ? `From ${job.company}'s ${ats} posting.` : `From ${job.company}'s posting.`}
+                {checked ? ` Checked ${checked}.` : ""}
+              </p>
+              <a className={styles.tl} href={job.url} target="_blank" rel="noopener noreferrer">
+                {postingLabel(job, "Read the full posting")}
+                <ExternalIcon />
+              </a>
+            </article>
+            <aside className={styles.rail} aria-label="Apply with your agent">
+              <ApplyCard job={job} />
+            </aside>
           </div>
         )}
       </main>
+      {closed ? null : <ApplyBar job={job} />}
       <SiteFooter />
     </div>
   );

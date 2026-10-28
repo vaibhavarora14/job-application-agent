@@ -63,8 +63,8 @@ export default async function JobPage({ params }: Props) {
   const page = (await loadJobPageBySlug(slug)) as JobPageData | null;
   if (!page) notFound();
 
-  const { job, similar } = page;
+  const { job, similar, now } = page;
   const jsonLd = jobPostingJsonLd(job);
 
-  return <JobDetail job={job} similar={similar} jsonLd={jsonLd} />;
+  return <JobDetail job={job} similar={similar} jsonLd={jsonLd} now={now} />;
 }
