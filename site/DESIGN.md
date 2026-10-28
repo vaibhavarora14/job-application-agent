@@ -17,11 +17,12 @@ JobAppAgent should feel calm, inspectable, and quietly capable—not like a gami
 - The founding offer is the only ink (dark) block on the homepage.
 - Avoid decorative shadows, gradients, dashboard gloss, robots, sparkles, and stock job-board imagery.
 - Motion is subtle and always respects reduced-motion preferences. Focus: 3px blue outline, 2px offset.
-- Layouts hold at 375, 768, and 1440 wide.
+- Layouts hold at 375, 768, and 1440 wide. Every page has the site header (Menu disclosure below 64rem) and footer.
+- Serif only for H1 and section H2; card titles are DM Sans 600.
 
 ## Homepage structure
 
-Free first, paid next: hero with the three-step path (open-source agent → job board → Cloud), lifetime community counters, "Available now" (agent install + job board), how it works and boundaries, then the Cloud founding reservation (offer, available now vs coming with Cloud, launch status, dateless progress, founder note), then FAQ. The paid $49 reservation is the Cloud interest capture; there is no free waitlist.
+Free first, paid next: hero with the three-step path (open-source agent → job board → Cloud), lifetime community counters (rendered only when every counter is real), "Available now" (agent install + job board), How it works (loop + agent handles / you handle), then Cloud: the dark founding offer card and a dateless progress checklist, then FAQ. The paid $49 reservation is the Cloud interest capture; there is no free waitlist.
 
 ## Mark
 
