@@ -44,7 +44,8 @@ test("server-renders the focused cloud offer and honest community proof", async 
   assert.match(html, /You stay in the loop\. Some applications pause for a CAPTCHA or an employer question, and the agent waits for a quick step from you before it carries on\./);
   assert.match(html, /After payment we email a confirmation, not an instant dashboard\./);
   assert.match(html, /<summary>Is it fully hands-off\?<\/summary>/);
-  assert.match(html, /Not completely\. Some applications stop at a CAPTCHA or a question only you can answer\. The agent pauses there and asks you to take a quick step, then keeps going\./);
+  assert.match(html, /Not completely\. Some applications stop at a CAPTCHA or a question only you can answer\. The agent pauses there until you take a quick step, then keeps going\./);
+  assert.doesNotMatch(html, /asks you to take a quick step/);
   assert.doesNotMatch(html, /41\.73/);
   assert.doesNotMatch(html, /60 days|automatically refund|money-back|money back/i);
   assert.doesNotMatch(html, /HOSTED OPEN|Founding hosted open|unlock activatable|When do my 90 days|starts when we activate|still verifying|when cloud opens|when cloud access is ready|hold the founding price/i);
