@@ -23,8 +23,18 @@
  *   keep their validated query in the key. `/api/community-jobs-live` is never
  *   edge-cached (always BYPASS) so liveness stays fresh.
  * - Only 200 responses (and 404 for /jobs/<slug>, short TTL) without Set-Cookie.
- * - Key includes forwarded host and deployed release so a deploy never serves the
- *   previous build's HTML.
+ * - Key includes forwarded host, document/RSC variant and deployed release so a
+ *   deploy never serves the previous build's HTML and stats.jobappagent.com `/` can
+ *   never share an entry with the apex `/`.
+ *
+ * Shared proxy cache (Vercel): the jobappagent.com domains reach this Worker
+ * through a Vercel external rewrite (`site-proxy/vercel.json`) that sends every host
+ * to the same workers.dev URL. Vercel keys cached external-rewrite responses on the
+ * destination URL, not the public host, and projects created after 2026-04-06 honour
+ * upstream `s-maxage` by default. Our `s-maxage` therefore let one host's `/` (stats
+ * vs apex) be served for the other per Vercel region. Every Worker response carries
+ * `Vercel-CDN-Cache-Control: private, no-store` (highest-priority Vercel directive) so
+ * Vercel never stores it; this Worker cache (host-keyed) does the caching instead.
  */
 
 import { boardQueryString, parseBoardQuery } from "./jobs-board-query.mjs";
@@ -38,6 +48,9 @@ export const EDGE_CACHE_API_SWR_SECONDS = 300;
 export const EDGE_CACHE_404_TTL_SECONDS = 60;
 /** Debug header: HIT | MISS | STALE | BYPASS */
 export const EDGE_CACHE_STATUS_HEADER = "x-cache";
+/** Vercel-only CDN directive; outranks CDN-Cache-Control and Cache-Control on Vercel. */
+export const SHARED_PROXY_CACHE_CONTROL_HEADER = "vercel-cdn-cache-control";
+export const SHARED_PROXY_CACHE_CONTROL = "private, no-store";
 const ORIGINAL_CACHE_CONTROL_HEADER = "x-jaa-edge-orig-cache-control";
 const ORIGINAL_VARY_HEADER = "x-jaa-edge-orig-vary";
 const FRESH_UNTIL_HEADER = "x-jaa-edge-fresh-until";
@@ -217,6 +230,9 @@ export function edgeCacheKey(request, release) {
   const url = new URL(request.url);
   const key = new URL(`/__jaa-edge-cache${url.pathname === "/" ? "/index" : url.pathname}`, url.origin);
   key.searchParams.set("host", requestHost(request, url));
+  // Router/RSC requests bypass this cache today; keep the variant in the key anyway so
+  // an RSC payload can never be stored under (or served for) the HTML document key.
+  key.searchParams.set("variant", request.headers.has("rsc") ? "rsc" : "document");
   key.searchParams.set("release", String(release || "dev").slice(0, 64));
   const normalized = normalizeEdgeCacheSearch(url.pathname, url.searchParams);
   if (normalized && [...normalized.keys()].length > 0) {
@@ -285,6 +301,18 @@ export function fromStoredResponse(cached, state = "HIT", options = {}) {
   headers.delete("expires");
   headers.set(EDGE_CACHE_STATUS_HEADER, state);
   return new Response(cached.body, { status: cached.status, statusText: cached.statusText, headers });
+}
+
+/**
+ * Forbid the Vercel proxy from storing a Worker response. Its external-rewrite cache
+ * key ignores the public host, so a stored `/` from stats.jobappagent.com would be
+ * served for jobappagent.com (and vice versa). Applied to every Worker response.
+ * @param {Response} response
+ */
+export function withSharedProxyNoStore(response) {
+  const headers = new Headers(response.headers);
+  headers.set(SHARED_PROXY_CACHE_CONTROL_HEADER, SHARED_PROXY_CACHE_CONTROL);
+  return new Response(response.body, { status: response.status, statusText: response.statusText, headers });
 }
 
 /** @param {Response} response @param {string} state */

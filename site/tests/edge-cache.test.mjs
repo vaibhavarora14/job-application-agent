@@ -17,6 +17,9 @@ import {
   normalizeEdgeCacheSearch,
   resetEdgeCacheInflight,
   serveWithEdgeCache,
+  SHARED_PROXY_CACHE_CONTROL,
+  SHARED_PROXY_CACHE_CONTROL_HEADER,
+  withSharedProxyNoStore,
 } from '../lib/edge-cache.mjs';
 
 const ORIGIN = 'https://job-application-agent-site.varora1406.workers.dev';
@@ -94,6 +97,75 @@ test('cache key separates hosts and releases', () => {
   assert.notEqual(apex, stats);
   assert.notEqual(apex, nextRelease);
   assert.ok(apex.startsWith(`${ORIGIN}/__jaa-edge-cache/index?`));
+});
+
+test('stats host / and apex / never share a key, even with host casing, ports or a Host-only request', () => {
+  const key = (headers) => new URL(edgeCacheKey(new Request(`${ORIGIN}/`, { headers }), 'abc').url);
+  const apex = key({ 'x-forwarded-host': 'jobappagent.com' });
+  const statsVariants = [
+    key({ 'x-forwarded-host': 'stats.jobappagent.com' }),
+    key({ 'x-forwarded-host': 'STATS.jobappagent.com:443' }),
+    key({ 'x-forwarded-host': 'stats.jobappagent.com, jobappagent.com' }),
+    key({ host: 'stats.jobappagent.com' }),
+  ];
+  for (const stats of statsVariants) {
+    assert.notEqual(stats.href, apex.href);
+    assert.equal(stats.searchParams.get('host'), 'stats.jobappagent.com');
+  }
+  assert.equal(apex.searchParams.get('host'), 'jobappagent.com');
+});
+
+test('cache key separates the HTML document from an RSC variant', () => {
+  const html = new URL(edgeCacheKey(page('/'), 'abc').url);
+  const rsc = new URL(edgeCacheKey(page('/', { headers: { rsc: '1' } }), 'abc').url);
+  assert.equal(html.searchParams.get('variant'), 'document');
+  assert.equal(rsc.searchParams.get('variant'), 'rsc');
+  assert.notEqual(html.href, rsc.href);
+});
+
+test('withSharedProxyNoStore forbids Vercel from storing the response, keeping status, body and headers', async () => {
+  const original = new Response('<title>Home</title>', {
+    status: 200,
+    headers: { 'cache-control': 'public, max-age=0, s-maxage=3600', vary: 'RSC', 'x-cache': 'HIT' },
+  });
+  const out = withSharedProxyNoStore(original);
+  assert.equal(SHARED_PROXY_CACHE_CONTROL_HEADER, 'vercel-cdn-cache-control');
+  assert.equal(out.headers.get('vercel-cdn-cache-control'), SHARED_PROXY_CACHE_CONTROL);
+  assert.match(SHARED_PROXY_CACHE_CONTROL, /no-store/);
+  assert.equal(out.status, 200);
+  assert.equal(out.headers.get('cache-control'), 'public, max-age=0, s-maxage=3600');
+  assert.equal(out.headers.get('vary'), 'RSC');
+  assert.equal(out.headers.get('x-cache'), 'HIT');
+  assert.equal(await out.text(), '<title>Home</title>');
+  const redirect = withSharedProxyNoStore(new Response(null, { status: 308, headers: { location: 'https://stats.jobappagent.com/' } }));
+  assert.equal(redirect.status, 308);
+  assert.equal(redirect.headers.get('location'), 'https://stats.jobappagent.com/');
+  assert.equal(redirect.headers.get('vercel-cdn-cache-control'), SHARED_PROXY_CACHE_CONTROL);
+});
+
+test('stats and apex / render and serve independently from one cache', async () => {
+  const cache = new MemoryCache();
+  const pending = [];
+  const render = async (req) => {
+    const host = req.headers.get('x-forwarded-host');
+    const title = host === 'stats.jobappagent.com' ? 'Community stats · JobAppAgent' : 'JobAppAgent: home';
+    return new Response(`<title>${title}</title>`, { status: 200, headers: { 'content-type': 'text/html' } });
+  };
+  const serve = (host) => serveWithEdgeCache(new Request(`${ORIGIN}/`, { headers: { 'x-forwarded-host': host } }), {
+    cache, release: 'r1', waitUntil: (p) => pending.push(p), render,
+  });
+  assert.match(await (await serve('stats.jobappagent.com')).text(), /Community stats/);
+  await Promise.all(pending);
+  const apex = await serve('jobappagent.com');
+  assert.equal(apex.headers.get('x-cache'), 'MISS');
+  assert.match(await apex.text(), /JobAppAgent: home/);
+  await Promise.all(pending);
+  const apexAgain = await serve('jobappagent.com');
+  assert.equal(apexAgain.headers.get('x-cache'), 'HIT');
+  assert.match(await apexAgain.text(), /JobAppAgent: home/);
+  const statsAgain = await serve('stats.jobappagent.com');
+  assert.equal(statsAgain.headers.get('x-cache'), 'HIT');
+  assert.match(await statsAgain.text(), /Community stats/);
 });
 
 test('set-cookie and non-200 responses are never stored; job 404s are', () => {
