@@ -18,6 +18,7 @@ import {
   runJobLivenessSweep,
 } from './job-liveness.mjs';
 import { clientVersionDecision, upgradeRequiredBody } from './client-version.mjs';
+import { maybeWriteSnapshot, pageSnapshot, readSnapshot } from './live-jobs-snapshot.mjs';
 
 const LIVE_JOBS_CACHE_SECONDS = 5 * 60;
 
@@ -446,10 +447,10 @@ function jobStore(env) {
         FROM community_jobs AS jobs
         WHERE jobs.publication_status = 'published'
           AND jobs.review_status = 'maintainer-reviewed'
-          AND (? IS NULL OR jobs.last_seen_at < ? OR (jobs.last_seen_at = ? AND jobs.job_id < ?))
+          ${cursor ? 'AND (jobs.last_seen_at, jobs.job_id) < (?, ?)' : ''}
         ORDER BY jobs.last_seen_at DESC, jobs.job_id DESC
         LIMIT ?
-      `).bind(cursor?.lastSeenAt ?? null, cursor?.lastSeenAt ?? null, cursor?.lastSeenAt ?? null, cursor?.jobId ?? null, limit + 1).all();
+      `).bind(...(cursor ? [cursor.lastSeenAt, cursor.jobId] : []), limit + 1).all();
       const jobs = (result.results ?? []).map((row) => mapLegacyJob(row));
       return { jobs: jobs.slice(0, limit), hasMore: jobs.length > limit };
     },
@@ -463,21 +464,32 @@ function jobStore(env) {
         FROM community_jobs AS jobs
         WHERE jobs.publication_status = 'published'
           AND jobs.review_status = 'maintainer-reviewed'
-          AND (? IS NULL OR jobs.liveness_status = ?)
-          AND (? IS NULL OR jobs.last_seen_at < ? OR (jobs.last_seen_at = ? AND jobs.job_id < ?))
+          ${status ? 'AND jobs.liveness_status = ?' : ''}
+          ${cursor ? 'AND (jobs.last_seen_at, jobs.job_id) < (?, ?)' : ''}
         ORDER BY jobs.last_seen_at DESC, jobs.job_id DESC
         LIMIT ?
       `).bind(
-        status,
-        status,
-        cursor?.lastSeenAt ?? null,
-        cursor?.lastSeenAt ?? null,
-        cursor?.lastSeenAt ?? null,
-        cursor?.jobId ?? null,
+        ...(status ? [status] : []),
+        ...(cursor ? [cursor.lastSeenAt, cursor.jobId] : []),
         limit + 1,
       ).all();
       const jobs = (result.results ?? []).map((row) => mapLiveJob(row));
       return { jobs: jobs.slice(0, limit), hasMore: jobs.length > limit };
+    },
+    /** Every published job in board order, for the KV snapshot (cron only). */
+    async listLiveSnapshotRows() {
+      const result = await database.prepare(`
+        SELECT jobs.job_id, jobs.canonical_url, jobs.company, jobs.role, jobs.application_channel,
+               jobs.discovery_source, jobs.provider_url, jobs.first_seen_at, jobs.last_seen_at,
+               jobs.liveness_status,
+               jobs.last_checked_at, jobs.closed_at,
+               jobs.contribution_count
+        FROM community_jobs AS jobs
+        WHERE jobs.publication_status = 'published'
+          AND jobs.review_status = 'maintainer-reviewed'
+        ORDER BY jobs.last_seen_at DESC, jobs.job_id DESC
+      `).all();
+      return result.results ?? [];
     },
     /** Oldest-checked (nulls first via ASC) published jobs for a bounded liveness batch. */
     async listDueForLivenessCheck({ limit }) {
@@ -651,20 +663,22 @@ async function listJobs(request, env) {
   return response({ version: 1, jobs: result.jobs, nextCursor: result.hasMore ? encodeJobCursor(result.jobs.at(-1)) : null }, 200, 'no-store');
 }
 
-async function listLiveJobs(request, env) {
-  if (!await allowed(env.SOURCE_READ_RATE_LIMITER, await publicReadKey(request, env.SIGNING_SECRET, 'jobs-live'))) return response({ error: 'rate_limited' }, 429);
+async function listLiveJobs(request, env, ctx) {
   let query;
   try { query = await parseLiveJobListQuery(request); } catch { return response({ error: 'invalid_job_query' }, 400); }
 
+  // Cache hit first: it costs no D1 read, no KV read and no rate-limit HMAC.
   const cache = globalThis.caches?.default;
   const cacheKey = new Request(request.url, { method: 'GET' });
   if (cache) {
     const cached = await cache.match(cacheKey);
     if (cached) return cached;
   }
+  if (!await allowed(env.SOURCE_READ_RATE_LIMITER, await publicReadKey(request, env.SIGNING_SECRET, 'jobs-live'))) return response({ error: 'rate_limited' }, 429);
 
   const store = jobStore(env);
-  const result = await store.listLive(query);
+  const snapshot = await readSnapshot(env.LIVE_JOBS_SNAPSHOT);
+  const result = snapshot ? pageSnapshot(snapshot, query) : await store.listLive(query);
   const newestLastCheckedAt = store.newestLastCheckedAt
     ? await store.newestLastCheckedAt()
     : result.jobs.reduce((newest, job) => {
@@ -682,7 +696,11 @@ async function listLiveJobs(request, env) {
     200,
     `public, max-age=60, s-maxage=${LIVE_JOBS_CACHE_SECONDS}, stale-while-revalidate=900`,
   );
-  if (cache) await cache.put(cacheKey, resultResponse.clone());
+  resultResponse.headers.set('x-live-jobs-source', snapshot ? 'snapshot' : 'd1');
+  if (cache) {
+    const put = cache.put(cacheKey, resultResponse.clone());
+    if (ctx?.waitUntil) ctx.waitUntil(put.catch(() => {})); else await put;
+  }
   return resultResponse;
 }
 
@@ -785,7 +803,7 @@ function logRequest(request, result, startedAt, env) {
   try { (env?.REQUEST_LOG ?? console.log)(JSON.stringify(requestLogRecord(request, result, startedAt))); } catch { /* never fail a request on logging */ }
 }
 
-export async function handleRequest(request, env) {
+export async function handleRequest(request, env, ctx) {
   const { pathname } = new URL(request.url);
   if (request.method === 'GET' && pathname === '/') return Response.redirect('https://stats.jobappagent.com/', 308);
   if (request.method === 'GET' && pathname === '/healthz') return response({ ok: true, schemaVersion: TELEMETRY_SCHEMA_VERSION });
@@ -797,7 +815,7 @@ export async function handleRequest(request, env) {
   if (request.method === 'POST' && pathname === '/v1/sources') return contributeSource(request, env);
   if (request.method === 'GET' && pathname === '/v1/sources') return listSources(request, env);
   if (request.method === 'POST' && pathname === '/v1/jobs') return contributeJob(request, env);
-  if (request.method === 'GET' && pathname === '/v1/jobs/live') return listLiveJobs(request, env);
+  if (request.method === 'GET' && pathname === '/v1/jobs/live') return listLiveJobs(request, env, ctx);
   if (request.method === 'GET' && pathname === '/v1/jobs') return listJobs(request, env);
   if ((request.method === 'POST' || request.method === 'GET') && pathname === '/v1/admin/jobs/liveness-sweep') {
     return adminLivenessSweep(request, env);
@@ -806,10 +824,10 @@ export async function handleRequest(request, env) {
 }
 
 export default {
-  async fetch(request, env) {
+  async fetch(request, env, ctx) {
     const startedAt = Date.now();
     let result;
-    try { result = await handleRequest(request, env); }
+    try { result = await handleRequest(request, env, ctx); }
     catch (error) { result = response({ error: error?.status === 413 ? 'payload_too_large' : 'bad_request' }, error?.status ?? 400); }
     logRequest(request, result, startedAt, env);
     return result;
@@ -819,12 +837,23 @@ export default {
     if (env.PUBLIC_STATS_DB?.prepare && env.PUBLIC_STATS_DB?.batch) {
       await applyPendingInstallCorrections(env.PUBLIC_STATS_DB, { log: env.CORRECTION_LOG ?? console.log });
     }
-    await runJobLivenessSweep(env, {
-      store: env.JOB_STORE ?? jobStore(env),
-      fetchImpl: env.LIVENESS_FETCH ?? fetch,
-      limit: CRON_LIVENESS_BATCH_SIZE,
-      log: silentLog,
-    });
+    // Live-jobs KV snapshot (every 2 h, or when missing). On a tick that writes the
+    // snapshot, skip the 5-job liveness batch so the tick stays inside the Free-plan
+    // cron CPU budget; the sweep resumes on the next tick.
+    let wroteSnapshot = false;
+    if (env.LIVE_JOBS_SNAPSHOT) {
+      try {
+        wroteSnapshot = await maybeWriteSnapshot(env, env.JOB_STORE ?? jobStore(env), { scheduledTime: controller?.scheduledTime });
+      } catch { wroteSnapshot = false; }
+    }
+    if (!wroteSnapshot) {
+      await runJobLivenessSweep(env, {
+        store: env.JOB_STORE ?? jobStore(env),
+        fetchImpl: env.LIVENESS_FETCH ?? fetch,
+        limit: CRON_LIVENESS_BATCH_SIZE,
+        log: silentLog,
+      });
+    }
     // The cron fires every 5 minutes for small liveness batches; keep the
     // 30-day active-installations refresh on its previous 15-minute cadence.
     if (env.PUBLIC_STATS_DB?.prepare && shouldRefreshActiveInstallations(controller?.scheduledTime)) {
