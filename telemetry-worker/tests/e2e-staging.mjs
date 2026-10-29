@@ -36,13 +36,16 @@ const fixtures = {
   application_paused: { jobHash: job.jobHash, ats: job.ats, stage: 'submission', reason: 'captcha' },
   application_skipped: { jobHash: job.jobHash, reason: 'closed', fitScore: 85, eligibility: 'eligible' },
   application_submitted: { ...job, durationBucket: '5-15m', fieldsFilled: 12, shortAnswerCount: 2, resumeUploaded: true, approvalMode: 'routine-auto', telemetrySupplied: true, thinSubmissionOverrideUsed: false },
+  // #177 / hosted#49: the optional profileOneClick Boolean must be live on the relay before a CLI sends it.
+  application_submitted_profile_one_click: { ...job, durationBucket: '5-15m', fieldsFilled: 12, shortAnswerCount: 2, resumeUploaded: true, approvalMode: 'review-each', telemetrySupplied: true, profileOneClick: true },
   round_completed: { requestedCount: 30, submittedCount: 22, assessedCount: 36, skippedCount: 8, pausedCount: 4, errorCount: 1, durationBucket: '15m-plus' },
   outcome_recorded: { ...job, outcome: 'interview', daysSinceSubmission: 7, interviewQuality: 'promising', failurePoint: 'process' },
   review_generated: { submissionCount: 10, interviewCount: 2, rejectionCount: 3, offerCount: 0, withdrawalCount: 0, reviewDue: true },
   skill_error: { errorCode: 'site_changed', stage: 'application', ats: job.ats, jobHash: job.jobHash, recoverable: true },
 };
 
-for (const [event, properties] of Object.entries(fixtures)) {
+for (const [fixture, properties] of Object.entries(fixtures)) {
+  const event = fixture === 'application_submitted_profile_one_click' ? 'application_submitted' : fixture;
   const response = await fetch(`${endpoint}/v1/events`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
@@ -55,10 +58,10 @@ for (const [event, properties] of Object.entries(fixtures)) {
       properties,
     }),
   });
-  assert.equal(response.status, 202, `${event} should be accepted by the live relay`);
+  assert.equal(response.status, 202, `${fixture} should be accepted by the live relay`);
 }
 
-const rejected = await fetch(`${endpoint}/v1/events`, {
+const sendCommandCompleted = (extra) => fetch(`${endpoint}/v1/events`, {
   method: 'POST',
   headers: { 'content-type': 'application/json' },
   body: JSON.stringify({
@@ -67,10 +70,26 @@ const rejected = await fetch(`${endpoint}/v1/events`, {
     installationId: identity.installationId,
     token: identity.token,
     event: 'command_completed',
-    properties: { command: 'telemetry', result: 'success', durationBucket: 'under-1s', email: 'must-be-rejected@example.com' },
+    properties: { command: 'telemetry', result: 'success', durationBucket: 'under-1s', ...extra },
   }),
 });
-assert.equal(rejected.status, 400);
+// Since #136 the relay strips PII keys (never forwarded) instead of rejecting, so older clients keep
+// their anonymous analytics; unknown non-PII keys are still rejected by the strict allowlist.
+assert.equal((await sendCommandCompleted({ email: 'must-be-stripped@example.com' })).status, 202);
+assert.equal((await sendCommandCompleted({ notInTheAllowlist: 'x' })).status, 400);
+const badProfileOneClick = await fetch(`${endpoint}/v1/events`, {
+  method: 'POST',
+  headers: { 'content-type': 'application/json' },
+  body: JSON.stringify({
+    schemaVersion: 1,
+    skillVersion: '1.1.0-staging',
+    installationId: identity.installationId,
+    token: identity.token,
+    event: 'application_submitted',
+    properties: { ...fixtures.application_submitted_profile_one_click, profileOneClick: 'true' },
+  }),
+});
+assert.equal(badProfileOneClick.status, 400);
 
 const stagingJobRunId = String(process.env.GITHUB_RUN_ID ?? 'local-contract')
   .replace(/\d/g, (digit) => String.fromCharCode('k'.charCodeAt(0) + Number(digit)));
