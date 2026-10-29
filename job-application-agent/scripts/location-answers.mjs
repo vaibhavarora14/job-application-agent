@@ -11,6 +11,7 @@ const CURRENT_LOCATION_PATTERNS = Object.freeze([
   /\bcurrent(?:ly)?\s+(?:home\s+)?(?:location|city|address|residence|country|state|place\s+of\s+residence)\b/i,
   /\bwhere\s+(?:are|do)\s+you\s+(?:currently\s+|now\s+)?(?:located|based|live|living|reside|residing)\b/i,
   /\b(?:city|country|state|place|location)\s+of\s+(?:current\s+)?residence\b/i,
+  /\b(?:what|which)\s+(?:city|town|country|state|location)\s+(?:are|do)\s+you\s+(?:currently\s+|now\s+)?(?:in|live|living|based|located|reside|residing)\b/i,
   /\b(?:home|residential)\s+(?:city|location|address)\b/i,
   // A bare "Location" / "City" / "Location (city, country)" field label.
   /^\s*(?:your\s+)?(?:location|city)(?:\s*\([^)]*\))?\s*[?:*]*\s*$/i,

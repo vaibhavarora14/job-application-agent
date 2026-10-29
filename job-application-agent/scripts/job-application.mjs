@@ -43,7 +43,7 @@ import {
   afterSubmissionCoverageMessage, communityFeedRequirementMessage, evaluateRoundCoverage, feedPulls, isPerJobApproval, latestAssessmentDecision, leadTimesBySource,
   resumePreflightRecord, roundGatesRecord, routineSubmitGateMessage,
 } from './routine-gates.mjs';
-import { LEGACY_GRANT_NOTICE, applicationMatcher, approveBatch, batchToken, batchView, closeBatch, consumeReview, listBatches, loadBatch, resumeDigest, stageBatch, verifyReview } from './review-batch.mjs';
+import { LEGACY_GRANT_NOTICE, applicationMatcher, approveBatch, batchSummary, batchToken, batchView, closeBatch, consumeReview, listBatches, loadBatch, resumeDigest, reviewListTelemetryResult, reviewTelemetryResult, stageBatch, verifyReview } from './review-batch.mjs';
 import { reviewPageInfoFile } from './review-page.mjs';
 import { emptyCurrentLocationAnswers, fillCurrentLocationAnswers } from './location-answers.mjs';
 
@@ -2007,6 +2007,24 @@ async function assertJobNotSkipped(dir, { url, company, role }) {
   throw new Error(`Skipped job refused: score decided "${skipped.decision}" (${skipped.reason}) for ${company || 'this job'} at ${skipped.at}. A skipped or excluded job is never staged, submitted or recorded, in any mode. Do not apply; tell the candidate.`);
 }
 
+// `command_completed.result` for a `review` command. Never `success` unless the batch has sent
+// something: a round that staged and polled batches without submitting showed as a run of
+// sub-second "batch success" events with no application_submitted.
+export async function reviewCommandTelemetryResult(action, value, result, { stateDirectory = null, now = new Date() } = {}) {
+  try {
+    if (result && result.staged === false) return 'paused';
+    // `review list` also returns old batches (a sent batch stays `approved` until it expires), so a
+    // listing is never a success on its own: `paused` while a live batch waits, else `skipped`.
+    if (action === 'list') return reviewListTelemetryResult(result?.batches ?? []);
+    const batchId = typeof result?.batchId === 'string' ? result.batchId : value;
+    const batch = await loadBatch(stateDirectory ?? await ensureStateDir(), batchId);
+    return reviewTelemetryResult([batchSummary(batch, now)]);
+  } catch {
+    // Unknown state: report a stall rather than a success.
+    return 'paused';
+  }
+}
+
 // The round an attention item belongs to when `review stage` was not given a roundId: the latest
 // started round that has not completed. Null when there is none.
 async function latestOpenRoundId(dir) {
@@ -2037,7 +2055,9 @@ async function prepareLocationAnswers(dir, input, { telemetry, session } = {}) {
   const held = [];
   for (const miss of missing) {
     const item = items[miss.index];
-    const existing = open.find((entry) => !entry.derived && entry.applicationId === item.applicationId && entry.blocker === 'unverifiable-claim' && entry.stage === 'questions');
+    // Reuse an open item only when it already asks every one of these location questions.
+    const existing = open.find((entry) => !entry.derived && entry.applicationId === item.applicationId && entry.blocker === 'unverifiable-claim' && entry.stage === 'questions'
+      && miss.answers.every((prompt) => Array.isArray(entry.questions) && entry.questions.some((question) => question?.prompt === prompt)));
     const attention = existing ?? await attentionAdd({
       roundId,
       applicationId: item.applicationId,
@@ -3350,7 +3370,8 @@ async function main(rawArgs) {
     await prepareCloudState(area, action);
     const result = await executeCommand(args, telemetry, session, community);
     if (!(area === 'sources' || (area === 'ledger' && action === 'add'))) await communityJobsSync(community).catch(() => null);
-    await telemetry.record({ event: 'command_completed', properties: { command, result: 'success', durationBucket: durationBucket(Date.now() - started) } }, session);
+    const completed = command === 'batch' ? await reviewCommandTelemetryResult(action, value, result) : 'success';
+    await telemetry.record({ event: 'command_completed', properties: { command, result: completed, durationBucket: durationBucket(Date.now() - started) } }, session);
     return print(result);
   } catch (error) {
     // Repeated guard refusals are not new information; report only the first one of each stop.

@@ -253,6 +253,41 @@ export function batchView(batch, now = new Date(), { includeContent = false, tok
   };
 }
 
+/** Status and send count for one batch, the shape `listBatches` returns per batch. */
+export function batchSummary(batch, now = new Date()) {
+  return { status: effectiveStatus(batch, now), used: Object.keys(batch?.uses ?? {}).length };
+}
+
+/**
+ * `command_completed` result for a `review` command (telemetry command `batch`).
+ * A review command is a success only when at least one approved item in the batch was actually
+ * sent (`ledger add`, `ledger retry`, a confirmed cloud intent or an outreach handoff used it).
+ * Staging, showing, approving or polling a batch that has sent nothing is not a success:
+ * - `paused`: a batch is waiting (pending approval, or approved and nothing sent yet), i.e. a stall;
+ * - `abandoned`: every batch expired, was rejected or revoked with nothing sent;
+ * - `skipped`: there is no batch at all.
+ * Reuses the existing `command_completed.result` values, so the relay schema is unchanged.
+ */
+export function reviewTelemetryResult(summaries) {
+  const list = Array.isArray(summaries) ? summaries.filter(Boolean) : [];
+  if (!list.length) return 'skipped';
+  if (list.some((entry) => Number(entry.used) > 0)) return 'success';
+  if (list.some((entry) => entry.status === 'pending' || entry.status === 'approved')) return 'paused';
+  return 'abandoned';
+}
+
+/**
+ * `command_completed` result for `review list`. A listing covers many batches, including old ones
+ * that stay `approved` after their items were sent, so it is never a success on its own:
+ * `paused` when a live batch still waits (pending, or approved with unsent items), else `skipped`.
+ */
+export function reviewListTelemetryResult(batches) {
+  const list = Array.isArray(batches) ? batches.filter(Boolean) : [];
+  const waiting = list.some((entry) => entry.status === 'pending'
+    || (entry.status === 'approved' && Number(entry.used ?? 0) < Number(entry.approved ?? entry.items ?? 0)));
+  return waiting ? 'paused' : 'skipped';
+}
+
 export async function stageBatch(stateDir, input, { now = new Date(), resume = null } = {}) {
   const { items, roundId } = validateStageInput(input);
   await ensureDir(stateDir);
