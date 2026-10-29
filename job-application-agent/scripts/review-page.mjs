@@ -91,6 +91,11 @@ button{font:600 15px/1 inherit;font-family:inherit;border-radius:10px;padding:13
 .rlink{color:var(--accent);font-weight:600}
 .dim{color:var(--muted)}
 dd.why{margin:0;padding:0 2px;background:none;font-size:13px;color:var(--amber);white-space:normal}
+.fit{grid-column:2;margin:6px 0 0;display:grid;gap:4px;font-size:14px}
+.fit div{display:grid;grid-template-columns:96px 1fr;gap:8px}
+.fit dt{font-size:13px;font-weight:600;color:var(--muted)}
+.fit dd{margin:0;padding:0;background:none;white-space:normal;color:var(--ink)}
+.fit ul{margin:0;padding:0 0 0 16px}
 .hdrs{grid-column:2;display:grid;gap:4px;margin-top:8px;font-size:14px}
 .hdrs div{display:grid;grid-template-columns:72px 1fr;gap:8px}
 .hdrs span{color:var(--muted)}
@@ -138,6 +143,14 @@ function lowerFirst(reason) {
   return /^[A-Z][a-z]/.test(sentence) ? sentence[0].toLowerCase() + sentence.slice(1) : sentence;
 }
 
+const FIT_REASON_LABELS = { matched: 'Matched', gaps: 'Gaps', rules: 'Your rules' };
+function fitReasonsBlock(item) {
+  const groups = ['matched', 'gaps', 'rules'].filter((group) => item.fitReasons?.[group]?.length);
+  if (!groups.length) return '';
+  const rows = groups.map((group) => `<div><dt>${FIT_REASON_LABELS[group]}</dt><dd><ul>${item.fitReasons[group].map((line) => `<li>${escapeHtml(line)}</li>`).join('')}</ul></dd></div>`).join('');
+  return `<dl class="fit" aria-label="Why fit ${escapeHtml(item.fitScore)}">${rows}</dl>`;
+}
+
 function itemCard(item, checked) {
   const id = `c-${escapeHtml(item.itemId)}`;
   const box = `<span class="check"><input type="checkbox" id="${id}" name="item" value="${escapeHtml(item.itemId)}"${checked ? ' checked' : ''}></span>`;
@@ -148,7 +161,7 @@ function itemCard(item, checked) {
   }
   const href = safeHref(item.url);
   const link = href ? `<a href="${escapeHtml(href)}" target="_blank" rel="noreferrer noopener">${escapeHtml(displayUrl(item.url))}</a>` : escapeHtml(item.url);
-  return `<li class="card" id="item-${escapeHtml(item.itemId)}">${box}<label class="title" for="${id}"><span class="num">${item.number}</span><span class="company">${escapeHtml(item.company)}</span><span class="role">${escapeHtml(item.role)}</span></label><div class="sub"><span class="pill">Fit ${item.fitScore}</span>${item.purpose === 'retry' ? '<span class="pill flag">Resend</span>' : ''}${item.ats ? `<span class="pill kind">${escapeHtml(item.ats)}</span>` : ''}${link}</div>${answersBlock(item)}</li>`;
+  return `<li class="card" id="item-${escapeHtml(item.itemId)}">${box}<label class="title" for="${id}"><span class="num">${item.number}</span><span class="company">${escapeHtml(item.company)}</span><span class="role">${escapeHtml(item.role)}</span></label><div class="sub"><span class="pill">Fit ${item.fitScore}</span>${item.purpose === 'retry' ? '<span class="pill flag">Resend</span>' : ''}${item.ats ? `<span class="pill kind">${escapeHtml(item.ats)}</span>` : ''}${link}</div>${fitReasonsBlock(item)}${answersBlock(item)}</li>`;
 }
 
 function resumeLine(batch, action) {

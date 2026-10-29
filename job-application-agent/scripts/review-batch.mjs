@@ -46,6 +46,27 @@ function normalizeAnswers(raw, label) {
   return answers;
 }
 
+// Why the agent picked a role (#192): up to three short evidence lines per group, taken from the
+// assessment (matched requirements, gaps) and the candidate's own rules. Shown to the candidate;
+// not part of what is sent, so it is not hashed into the approval.
+export const FIT_REASON_GROUPS = Object.freeze(['matched', 'gaps', 'rules']);
+const FIT_REASON_MAX_LINES = 3;
+const FIT_REASON_MAX_CHARS = 200;
+function normalizeFitReasons(raw, label) {
+  if (raw == null) return null;
+  if (typeof raw !== 'object' || Array.isArray(raw)) fail(`${label} must be { "matched": [...], "gaps": [...], "rules": [...] }.`);
+  keysOnly(raw, FIT_REASON_GROUPS, label);
+  const out = {};
+  for (const group of FIT_REASON_GROUPS) {
+    const lines = raw[group] ?? [];
+    if (!Array.isArray(lines)) fail(`${label}.${group} must be an array of short strings.`);
+    if (lines.length > FIT_REASON_MAX_LINES) fail(`${label}.${group} holds at most ${FIT_REASON_MAX_LINES} lines.`);
+    const cleaned = lines.map((line, i) => text(line, `${label}.${group}[${i}]`, FIT_REASON_MAX_CHARS));
+    if (cleaned.length) out[group] = cleaned;
+  }
+  return Object.keys(out).length ? out : null;
+}
+
 function normalizeItem(raw, index) {
   const label = `items[${index}]`;
   if (raw?.type === 'email') {
@@ -71,7 +92,7 @@ function normalizeItem(raw, index) {
     };
   }
   if (raw?.type !== 'application') fail(`${label}.type must be "application" or "email".`);
-  keysOnly(raw, ['type', 'purpose', 'applicationId', 'company', 'role', 'url', 'ats', 'fitScore', 'answers', 'flaggedAnswers'], label);
+  keysOnly(raw, ['type', 'purpose', 'applicationId', 'company', 'role', 'url', 'ats', 'fitScore', 'fitReasons', 'answers', 'flaggedAnswers'], label);
   const purpose = raw.purpose ?? 'submit';
   if (!PURPOSES.has(purpose)) fail(`${label}.purpose must be "submit" or "retry".`);
   if (!Number.isInteger(raw.fitScore) || raw.fitScore < 0 || raw.fitScore > 100) fail(`${label}.fitScore must be an integer from 0 to 100.`);
@@ -87,6 +108,7 @@ function normalizeItem(raw, index) {
   if (new Set(flags.map((f) => f.answer)).size !== flags.length) fail(`${label}.flaggedAnswers lists an answer twice.`);
   let url;
   try { url = canonicalUrl(raw.url); } catch { fail(`${label}.url must be a public HTTP(S) URL.`); }
+  const fitReasons = normalizeFitReasons(raw.fitReasons, `${label}.fitReasons`);
   return {
     type: 'application',
     purpose,
@@ -96,6 +118,7 @@ function normalizeItem(raw, index) {
     url,
     ats: optionalText(raw.ats, `${label}.ats`, 40)?.toLowerCase() ?? null,
     fitScore: raw.fitScore,
+    ...(fitReasons ? { fitReasons } : {}),
     answers,
     answersSha256: answersDigest(answers),
     flaggedAnswers: flags,
@@ -218,10 +241,17 @@ function resumeLabel(resume) {
   return `Canonical résumé (sha256 ${resume.sha256.slice(0, 12)}${kb})`;
 }
 
+const FIT_REASON_TABLE_LABELS = { matched: 'matched', gaps: 'gaps', rules: 'your rules' };
+function fitReasonsLine(fitReasons) {
+  if (!fitReasons) return '';
+  const parts = FIT_REASON_GROUPS.filter((group) => fitReasons[group]?.length).map((group) => `${FIT_REASON_TABLE_LABELS[group]}: ${fitReasons[group].join('; ')}`);
+  return parts.length ? `\n     why: ${parts.join(' | ')}` : '';
+}
+
 export function renderTable(batch) {
   const rows = batch.items.map((item) => (item.type === 'email'
     ? `${item.number}. EMAIL  ${item.company} to ${item.to}${item.subject ? ` | subject: ${item.subject}` : ''}${item.attachResume ? ' | résumé attached' : ''} (draft revision ${item.draftRevision}, ${item.text.length} characters)`
-    : `${item.number}. ${item.purpose === 'retry' ? 'RETRY' : 'APPLY'}  ${item.company} | ${item.role} | ${item.url} | fit ${item.fitScore}${item.ats ? ` | ${item.ats}` : ''} | ${Object.keys(item.answers).length} answers${item.flaggedAnswers.length ? ` (flagged: ${item.flaggedAnswers.map((f) => `${f.answer}: ${f.reason}`).join('; ')})` : ''}`));
+    : `${item.number}. ${item.purpose === 'retry' ? 'RETRY' : 'APPLY'}  ${item.company} | ${item.role} | ${item.url} | fit ${item.fitScore}${item.ats ? ` | ${item.ats}` : ''} | ${Object.keys(item.answers).length} answers${item.flaggedAnswers.length ? ` (flagged: ${item.flaggedAnswers.map((f) => `${f.answer}: ${f.reason}`).join('; ')})` : ''}${fitReasonsLine(item.fitReasons)}`));
   return [`Review batch ${batch.batchId} (${batch.items.length} item${batch.items.length === 1 ? '' : 's'})`, `Résumé: ${resumeLabel(batch.resume)}`, ...rows].join('\n');
 }
 
@@ -244,7 +274,7 @@ export function batchView(batch, now = new Date(), { includeContent = false, tok
       company: item.company,
       ...(item.type === 'email'
         ? { opportunityId: item.opportunityId, draftRevision: item.draftRevision, to: item.to, ...(item.subject ? { subject: item.subject } : {}), attachResume: item.attachResume, ...(item.recipient ? { recipient: item.recipient } : {}), ...(includeContent ? { text: item.text } : {}) }
-        : { purpose: item.purpose, applicationId: item.applicationId, role: item.role, url: item.url, ats: item.ats, fitScore: item.fitScore, answerCount: Object.keys(item.answers).length, flaggedAnswers: item.flaggedAnswers, ...(includeContent ? { answers: item.answers } : {}) }),
+        : { purpose: item.purpose, applicationId: item.applicationId, role: item.role, url: item.url, ats: item.ats, fitScore: item.fitScore, ...(item.fitReasons ? { fitReasons: item.fitReasons } : {}), answerCount: Object.keys(item.answers).length, flaggedAnswers: item.flaggedAnswers, ...(includeContent ? { answers: item.answers } : {}) }),
       ...(batch.approvedAt ? { approved: approved.has(item.itemId) } : {}),
       ...(batch.uses?.[item.itemId] ? { usedAt: batch.uses[item.itemId].usedAt } : {}),
     })),

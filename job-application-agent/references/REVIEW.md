@@ -36,6 +36,11 @@ The approval phrase and the review page show that a person reviewed the batch, a
       "url": "https://boards.greenhouse.io/acme/jobs/123",
       "ats": "greenhouse",
       "fitScore": 86,
+      "fitReasons": {
+        "matched": ["Role family: backend.", "Skills evidence: 80% of must-haves."],
+        "gaps": ["The posting lists Kubernetes; the résumé shows none."],
+        "rules": ["Remote only: the posting is remote."]
+      },
       "answers": { "Why Acme?": "exact text that will be sent" },
       "flaggedAnswers": [
         { "answer": "Why Acme?", "reason": "The posting asks for a specific project and this answer stays general." }
@@ -58,6 +63,7 @@ The approval phrase and the review page show that a person reviewed the batch, a
 
    - `applicationId` must be the `id` you will pass to `ledger add`.
    - `answers` must be exactly the `answers` object you will record. Profile fields such as name and email do not need to be listed.
+   - Optional `fitReasons` explains the fit score before the candidate approves or unticks: up to three short lines each for `matched` (requirements the verified résumé meets), `gaps` (requirements it does not show) and `rules` (the candidate's own rules the role touches). Take them from the `assess` result's `reasons` and `gaps` and from the profile rules. Use only facts from the posting and the verified résumé; never invent evidence. The page shows them under the score and the `table` adds a `why:` line. They are not sent, so they are not part of the approval.
    - Use `flaggedAnswers` for anything the candidate should look at closely. Each flag names the answer and the real reason you flagged it, written to follow "Flagged because": the page shows it under the answer.
    - For an email, `to` is the exact address or profile the draft goes to, `subject` the exact subject line, and `attachResume` whether the canonical résumé is attached. They are approved together with `text`, so changing any of them needs a new batch.
    - For a replacement transmission, add `"purpose": "retry"`.

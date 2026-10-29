@@ -362,3 +362,36 @@ test('times read like "Fri 23 Oct, 2:03 PM IST" in the local zone', () => {
   assert.match(formatTime('2026-07-23T08:33:00Z', 'Europe/Berlin'), /^Thu 23 Jul, 10:33 AM CEST$/);
   assert.match(formatTime('2026-10-23T08:33:00Z', 'America/Los_Angeles'), /^Fri 23 Oct, 1:33 AM PDT$/);
 });
+
+test('fit reasons are optional, validated, shown on the page and in the table, and not part of the approval', async (t) => {
+  const directory = await stateDir(t);
+  await assert.rejects(stageBatch(directory, { items: [item({ fitReasons: ['x'] })] }), /fitReasons must be/);
+  await assert.rejects(stageBatch(directory, { items: [item({ fitReasons: { why: ['x'] } })] }), /Unknown items\[0\]\.fitReasons property: why/);
+  await assert.rejects(stageBatch(directory, { items: [item({ fitReasons: { matched: ['a', 'b', 'c', 'd'] } })] }), /at most 3 lines/);
+  await assert.rejects(stageBatch(directory, { items: [item({ fitReasons: { gaps: [''] } })] }), /fitReasons\.gaps\[0\]/);
+  await assert.rejects(stageBatch(directory, { items: [item({ fitReasons: { gaps: ['x'.repeat(201)] } })] }), /fitReasons\.gaps\[0\]/);
+
+  const fitReasons = { matched: ['Role family: backend.', 'Skills evidence: 80% of must-haves.'], gaps: ['Kubernetes is listed; résumé shows none.'], rules: ['Remote only: the posting is remote.'] };
+  const batch = await stageBatch(directory, { items: [
+    item({ fitReasons: { ...fitReasons, rules: ['<b>Remote</b> only'] } }),
+    item({ applicationId: 'beta-1', company: 'Beta', url: 'https://jobs.lever.co/beta/1', fitReasons: { matched: [] } }),
+  ] });
+  assert.deepEqual(batch.items[0].fitReasons, { ...fitReasons, rules: ['<b>Remote</b> only'] });
+  assert.equal('fitReasons' in batch.items[1], false, 'empty groups are dropped');
+
+  const html = renderReviewPage(batch, { action: '/review/x' });
+  assert.match(html, /<dl class="fit" aria-label="Why fit 86"><div><dt>Matched<\/dt><dd><ul><li>Role family: backend\.<\/li><li>Skills evidence: 80% of must-haves\.<\/li><\/ul><\/dd><\/div><div><dt>Gaps<\/dt>/);
+  assert.match(html, /<dt>Your rules<\/dt><dd><ul><li>&lt;b&gt;Remote&lt;\/b&gt; only<\/li>/);
+  assert.equal(html.split('class="fit"').length - 1, 1, 'only the item with reasons gets the block');
+
+  const staged = cli(envFor(directory), ['review', 'stage', '--stdin'], { items: [item({ applicationId: 'gamma-1', company: 'Gamma', url: 'https://jobs.ashbyhq.com/gamma/1', fitReasons })] });
+  assert.equal(staged.status, 0, staged.stderr);
+  assert.match(staged.json.table, /fit 86 \| greenhouse \| 2 answers\n {5}why: matched: Role family: backend\.; Skills evidence: 80% of must-haves\. \| gaps: Kubernetes is listed; résumé shows none\. \| your rules: Remote only: the posting is remote\./);
+
+  // Reasons explain the pick; they are not sent, so approval still binds only the answers and résumé.
+  const { reviewBatchId, reviewToken } = await approved(directory, [item({ applicationId: 'delta-1', company: 'Delta', url: 'https://jobs.example.org/delta', fitReasons })]);
+  assert.equal(typeof reviewToken, 'string');
+  const loaded = await loadBatch(directory, reviewBatchId);
+  assert.deepEqual(loaded.items[0].fitReasons, fitReasons);
+  assert.equal(loaded.items[0].answersSha256.length, 64);
+});
