@@ -45,6 +45,7 @@ import {
 } from './routine-gates.mjs';
 import { LEGACY_GRANT_NOTICE, applicationMatcher, approveBatch, batchSummary, batchToken, batchView, closeBatch, consumeReview, listBatches, loadBatch, resumeDigest, reviewTelemetryResult, stageBatch, verifyReview } from './review-batch.mjs';
 import { reviewPageInfoFile } from './review-page.mjs';
+import { emptyCurrentLocationAnswers, fillCurrentLocationAnswers } from './location-answers.mjs';
 
 const SOURCES = new Set(['linkedin', 'greenhouse', 'lever', 'ashby', 'workable', 'comeet', 'workday', 'rippling', 'smartrecruiters', 'google-form', 'company', 'email', 'other']);
 /** Ledger applicationChannel values: ATS sources plus honest one-click profile applies (not a community job-board channel). */
@@ -2022,15 +2023,73 @@ export async function reviewCommandTelemetryResult(action, value, result, { stat
   }
 }
 
-async function reviewCommand(action, value) {
+// The round an attention item belongs to when `review stage` was not given a roundId: the latest
+// started round that has not completed. Null when there is none.
+async function latestOpenRoundId(dir) {
+  const events = await jsonLines(join(dir, 'rounds.ndjson')).catch(() => []);
+  const completed = new Set(events.filter((event) => event.type === 'completed').map((event) => event.roundId));
+  return events.filter((event) => event.type === 'started' && !completed.has(event.roundId)).at(-1)?.roundId ?? null;
+}
+
+const MISSING_LOCATION_NEXT_STEP = 'Ask the candidate for their current location (city and country), save it with `profile migrate --stdin` or `profile set --stdin` (field `location`), fill the answer, resolve the attention item, and stage the application again. Do not invent a location.';
+
+// Empty current-location answers ("What is your current location?") are filled from the profile's
+// location fields. When the profile has none, the item is held back from the batch and an
+// attention item asks the candidate, so the round shows why it stopped instead of failing the
+// whole batch on invalid input.
+async function prepareLocationAnswers(dir, input, { telemetry, session } = {}) {
+  const items = Array.isArray(input?.items) ? input.items : null;
+  if (!items || !items.some((item) => emptyCurrentLocationAnswers(item).length)) return { input, filled: [], held: [] };
+  let profile = null;
+  try { profile = storedProfileRaw(); } catch { profile = null; }
+  const { items: filledItems, filled, missing } = fillCurrentLocationAnswers(items, profile);
+  if (!missing.length) return { input: { ...input, items: filledItems }, filled, held: [] };
+  const roundId = typeof input.roundId === 'string' && input.roundId.trim() ? input.roundId.trim() : await latestOpenRoundId(dir);
+  if (!roundId) {
+    const first = missing[0];
+    throw new Error(`Application ${first.applicationId ?? `items[${first.index}]`} has an empty answer to "${first.answers[0]}" and the profile has no location to fill it from. ${MISSING_LOCATION_NEXT_STEP}`);
+  }
+  const open = (await attentionList(roundId)).items;
+  const held = [];
+  for (const miss of missing) {
+    const item = items[miss.index];
+    const existing = open.find((entry) => !entry.derived && entry.applicationId === item.applicationId && entry.blocker === 'unverifiable-claim' && entry.stage === 'questions');
+    const attention = existing ?? await attentionAdd({
+      roundId,
+      applicationId: item.applicationId,
+      url: item.url,
+      stage: 'questions',
+      blocker: 'unverifiable-claim',
+      requiredActions: ['verify-claim'],
+      questions: miss.answers.map((prompt) => ({ prompt, kind: 'other', required: true })),
+      createdAt: new Date().toISOString(),
+      ...(typeof item.company === 'string' ? { company: item.company } : {}),
+      ...(typeof item.role === 'string' ? { role: item.role } : {}),
+    });
+    if (!existing && telemetry) await emitDomainEvent(telemetry, session, await telemetryApplicationPaused(attention, { ats: item.ats }));
+    held.push({ applicationId: item.applicationId, company: item.company ?? null, url: item.url, answers: miss.answers, reason: 'profile-has-no-location', attentionId: attention.id, ...(existing ? { reusedAttention: true } : {}) });
+  }
+  const heldIndexes = new Set(missing.map((miss) => miss.index));
+  return { input: { ...input, items: filledItems.filter((_, index) => !heldIndexes.has(index)) }, filled, held };
+}
+
+async function reviewCommand(action, value, context = {}) {
   const dir = await ensureStateDir();
   if (action === 'stage' && value === '--stdin') {
-    const input = await jsonStdin();
-    for (const item of Array.isArray(input?.items) ? input.items : []) {
+    const raw = await jsonStdin();
+    for (const item of Array.isArray(raw?.items) ? raw.items : []) {
       if (item?.type === 'application' && (item.purpose ?? 'submit') === 'submit') await assertJobNotSkipped(dir, { url: item.url, company: item.company, role: item.role });
     }
+    const { input, filled, held } = await prepareLocationAnswers(dir, raw, context);
+    const notes = {
+      ...(filled.length ? { filledAnswers: filled.map(({ applicationId, answer, source }) => ({ applicationId, answer, source })) } : {}),
+      ...(held.length ? { heldForAttention: held } : {}),
+    };
+    if (held.length && !input.items.length) {
+      return { staged: false, batchId: null, ...notes, next: `Nothing was staged: every item needs the candidate's current location. ${MISSING_LOCATION_NEXT_STEP}` };
+    }
     const batch = await stageBatch(dir, input, { resume: await currentResumeDigest({ refresh: true }) });
-    return { ...batchView(batch), next: REVIEW_NEXT_STEP };
+    return { ...batchView(batch), ...notes, next: held.length ? `${REVIEW_NEXT_STEP} ${held.length} application(s) were held back because the profile has no current location: ${MISSING_LOCATION_NEXT_STEP}` : REVIEW_NEXT_STEP };
   }
   if (action === 'show' && typeof value === 'string') return batchView(await loadBatch(dir, value), new Date(), { includeContent: true });
   if (action === 'open' && typeof value === 'string') return openReviewPage(dir, value);
@@ -3235,7 +3294,7 @@ async function executeCommand([area, action, value], telemetry, session, communi
   else if (area === 'attention' && action === 'resolve' && value === '--stdin') result = await attentionResolve(await jsonStdin());
   else if (area === 'friction' && action === 'record' && value === '--stdin') result = await frictionRecord(await jsonStdin());
   else if (area === 'friction' && action === 'list' && value == null) result = await frictionList();
-  else if (area === 'review') result = await reviewCommand(action, value);
+  else if (area === 'review') result = await reviewCommand(action, value, { telemetry, session });
   else throw usageError([area, action, value]);
   return result;
 }
