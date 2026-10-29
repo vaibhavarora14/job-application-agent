@@ -253,8 +253,8 @@ function resumeLabel(resume) {
   return `Canonical résumé (sha256 ${resume.sha256.slice(0, 12)}${kb})`;
 }
 
-// Same glyph per group as the page: check for matched, dot for gaps, rule for your rules.
-const FIT_REASON_TABLE_LABELS = { matched: '✓ matched', gaps: '● gaps', rules: '— your rules' };
+// Same glyph per group as the page: check for matched, dot for gaps, small ring for your rules.
+const FIT_REASON_TABLE_LABELS = { matched: '✓ matched', gaps: '● gaps', rules: '◦ your rules' };
 export function shownFitReasons(lines, group) {
   if (group !== 'matched' || lines.length <= FIT_REASON_SHOWN) return { lines, more: 0 };
   return { lines: lines.slice(0, FIT_REASON_SHOWN), more: lines.length - FIT_REASON_SHOWN };

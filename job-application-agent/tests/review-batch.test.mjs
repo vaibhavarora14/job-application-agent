@@ -388,7 +388,7 @@ test('fit reasons are optional, validated, shown on the page and in the table, a
 
   const staged = cli(envFor(directory), ['review', 'stage', '--stdin'], { items: [item({ applicationId: 'gamma-1', company: 'Gamma', url: 'https://jobs.ashbyhq.com/gamma/1', fitReasons })] });
   assert.equal(staged.status, 0, staged.stderr);
-  assert.match(staged.json.table, /fit 86 \| greenhouse \| 2 answers\n {5}why: ✓ matched: Role family: backend; Skills evidence: 80% of must-haves \| ● gaps: Kubernetes is listed; résumé shows none \| — your rules: Remote only: the posting is remote$/m);
+  assert.match(staged.json.table, /fit 86 \| greenhouse \| 2 answers\n {5}why: ✓ matched: Role family: backend; Skills evidence: 80% of must-haves \| ● gaps: Kubernetes is listed; résumé shows none \| ◦ your rules: Remote only: the posting is remote$/m);
 
   // Reasons explain the pick; they are not sent, so approval still binds only the answers and résumé.
   const { reviewBatchId, reviewToken } = await approved(directory, [item({ applicationId: 'delta-1', company: 'Delta', url: 'https://jobs.example.org/delta', fitReasons })]);
@@ -426,9 +426,9 @@ test('fit reasons follow the Design pass: no missing-pay gap, 3 matched then +N 
   assert.doesNotMatch(html, /compensation|Salary range/);
   assert.match(html, /\.fit \.matched li::before\{content:"✓";color:var\(--check\)\}/);
   assert.match(html, /\.fit \.gaps li::before\{content:"●";color:var\(--gap\)/);
-  assert.match(html, /\.fit \.rules li::before\{content:"—";color:var\(--muted\)/);
+  assert.match(html, /\.fit \.rules li::before\{content:"◦";color:rgba\(23,63,53,\.45\)/);
   assert.match(html, /@media \(max-width:640px\)\{[^@]*?\.fit div\{grid-template-columns:1fr;gap:2px\}/, 'labels stack above their list on narrow screens');
 
   const table = renderTable(batch);
-  assert.match(table, /why: ✓ matched: Backend role; Go: 4 years; Postgres at scale; \+2 more \| ● gaps: Kubernetes is listed; résumé shows none \| — your rules: Min pay: not listed, can't check; Remote only: the posting is remote$/m);
+  assert.match(table, /why: ✓ matched: Backend role; Go: 4 years; Postgres at scale; \+2 more \| ● gaps: Kubernetes is listed; résumé shows none \| ◦ your rules: Min pay: not listed, can't check; Remote only: the posting is remote$/m);
 });
