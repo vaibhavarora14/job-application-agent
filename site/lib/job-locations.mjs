@@ -1,11 +1,24 @@
 const label = value => typeof value === 'string' && value.trim().length <= 240 && !/[<>]/.test(value) && ![...value].some(char => char.charCodeAt(0) < 32) ? value.trim() : '';
 const unique = values => [...new Set(values.filter(Boolean))];
 
+// Building an Intl.DisplayNames is the expensive part (ICU data load), and
+// countryLabel runs for every country of every board record on each board build.
+// One instance and a per-code result cache give identical names at a fraction of the CPU.
+let regionNames = null;
+const regionLabelCache = new Map();
+
 export function countryLabel(value) {
   if (['USA', 'United States of America'].includes(value)) return 'United States';
   if (value === 'UK') return 'United Kingdom';
   if (!/^[A-Za-z]{2}$/.test(value)) return value;
-  return new Intl.DisplayNames(['en'], { type: 'region' }).of(value.toUpperCase()) ?? value;
+  const code = value.toUpperCase();
+  let name = regionLabelCache.get(code);
+  if (name === undefined) {
+    regionNames ??= new Intl.DisplayNames(['en'], { type: 'region' });
+    name = regionNames.of(code) ?? null;
+    regionLabelCache.set(code, name);
+  }
+  return name ?? value;
 }
 
 export function locationText(location) {

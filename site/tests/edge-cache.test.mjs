@@ -4,6 +4,8 @@ import {
   EDGE_CACHE_404_TTL_SECONDS,
   EDGE_CACHE_API_SWR_SECONDS,
   EDGE_CACHE_API_TTL_SECONDS,
+  EDGE_CACHE_STATIC_SWR_SECONDS,
+  EDGE_CACHE_STATIC_TTL_SECONDS,
   EDGE_CACHE_SWR_SECONDS,
   EDGE_CACHE_STATUS_HEADER,
   EDGE_CACHE_TTL_SECONDS,
@@ -16,6 +18,7 @@ import {
   isEdgeStorableResponse,
   normalizeEdgeCacheSearch,
   resetEdgeCacheInflight,
+  serveFreshEdgeCacheHit,
   serveWithEdgeCache,
   SHARED_PROXY_CACHE_CONTROL,
   SHARED_PROXY_CACHE_CONTROL_HEADER,
@@ -470,18 +473,75 @@ test('community-stats and community-jobs use 300s fresh + 300s SWR', async () =>
   assert.match(stored.headers.get('cache-control') ?? '', /max-age=600/);
 });
 
-test('chosen TTLs: pages 3600+3600, APIs 300+300, job 404 60s', () => {
+test('chosen TTLs: data pages 3600+3600, release-static pages 1d+6d, APIs 300+300, job 404 60s', () => {
   assert.equal(EDGE_CACHE_TTL_SECONDS, 3600);
   assert.equal(EDGE_CACHE_SWR_SECONDS, 3600);
+  assert.equal(EDGE_CACHE_STATIC_TTL_SECONDS, 86400);
+  assert.equal(EDGE_CACHE_STATIC_SWR_SECONDS, 6 * 86400);
   assert.equal(EDGE_CACHE_API_TTL_SECONDS, 300);
   assert.equal(EDGE_CACHE_API_SWR_SECONDS, 300);
   assert.equal(EDGE_CACHE_404_TTL_SECONDS, 60);
-  for (const path of ['/', '/jobs', '/jobs/slug-a', '/platforms', '/platforms/greenhouse', '/privacy', '/terms', '/open-source', '/compare', '/sitemap.xml', '/robots.txt', '/manifest.webmanifest', '/community-view']) {
+  // Board-backed pages (job data, sitemap of job URLs) keep the 1 h window.
+  for (const path of ['/jobs', '/jobs/slug-a', '/sitemap.xml', '/stats-sitemap.xml']) {
     assert.equal(edgeCacheTtlSeconds(path), 3600, path);
     assert.equal(edgeCacheSwrSeconds(path), 3600, path);
   }
+  // Pages rendered only from the build (+ host); the key's release busts them on deploy.
+  for (const path of ['/', '/platforms', '/platforms/greenhouse', '/privacy', '/terms', '/open-source', '/compare', '/robots.txt', '/manifest.webmanifest', '/community-view']) {
+    assert.equal(edgeCacheTtlSeconds(path), 86400, path);
+    assert.equal(edgeCacheSwrSeconds(path), 6 * 86400, path);
+  }
+  assert.equal(edgeCacheTtlSeconds('/platforms/nope', 404), 3600);
   assert.equal(edgeCacheTtlSeconds('/jobs/slug', 404), 60);
   assert.equal(edgeCacheSwrSeconds('/jobs/slug', 404), 0);
   assert.equal(edgeCacheTtlSeconds('/api/community-stats'), 300);
   assert.equal(edgeCacheTtlSeconds('/api/community-jobs'), 300);
+});
+
+test('fresh-hit fast path returns the same HIT as serveWithEdgeCache, and null for stale, miss and bypass', async () => {
+  const cache = new MemoryCache();
+  const pending = [];
+  let clock = 5_000_000;
+  const render = async () => new Response('<html>board</html>', {
+    headers: { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store, must-revalidate', vary: 'RSC', 'x-frame-options': 'DENY', 'content-security-policy': "frame-ancestors 'none'" },
+  });
+  const options = { cache, release: 'r1', waitUntil: (p) => pending.push(p), render, now: () => clock };
+
+  assert.equal(await serveFreshEdgeCacheHit(page('/jobs'), options), null, 'miss: nothing stored yet');
+  await serveWithEdgeCache(page('/jobs'), options);
+  await Promise.all(pending.splice(0));
+
+  const slow = await serveWithEdgeCache(page('/jobs'), options);
+  const fast = await serveFreshEdgeCacheHit(page('/jobs'), options);
+  assert.ok(fast);
+  assert.equal(fast.status, slow.status);
+  assert.deepEqual([...fast.headers].sort(), [...slow.headers].sort());
+  assert.equal(await fast.text(), await slow.text());
+  assert.equal(fast.headers.get(EDGE_CACHE_STATUS_HEADER), 'HIT');
+
+  const head = await serveFreshEdgeCacheHit(page('/jobs', { method: 'HEAD' }), options);
+  assert.equal(head.headers.get(EDGE_CACHE_STATUS_HEADER), 'HIT');
+  assert.equal(head.body, null);
+
+  // Host and release stay in the key: another host or release is a miss.
+  assert.equal(await serveFreshEdgeCacheHit(page('/jobs', { headers: { 'x-forwarded-host': 'stats.jobappagent.com' } }), options), null);
+  assert.equal(await serveFreshEdgeCacheHit(page('/jobs'), { ...options, release: 'r2' }), null);
+  // Router/RSC, cookie, auth, content query and never-cached paths go to the full path.
+  for (const request of [
+    page('/jobs', { headers: { RSC: '1' } }),
+    page('/jobs', { headers: { cookie: 'founding_purchase=x' } }),
+    page('/jobs', { headers: { authorization: 'Bearer x' } }),
+    page('/jobs?foo=1'),
+    page('/api/community-jobs-live'),
+    page('/jobs', { method: 'POST' }),
+  ]) {
+    assert.equal(await serveFreshEdgeCacheHit(request, options), null, `${request.method} ${request.url}`);
+  }
+
+  // Past the fresh window the fast path declines so the SWR path can refresh.
+  clock += (EDGE_CACHE_TTL_SECONDS + 1) * 1000;
+  assert.equal(await serveFreshEdgeCacheHit(page('/jobs'), options), null);
+  assert.equal(await serveFreshEdgeCacheHit(page('/jobs'), { ...options, cache: undefined }), null);
+  const broken = { match: async () => { throw new Error('cache down'); } };
+  assert.equal(await serveFreshEdgeCacheHit(page('/jobs'), { ...options, cache: broken }), null);
 });
