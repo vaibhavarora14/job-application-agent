@@ -57,8 +57,9 @@ const FIT_REASON_MAX_CHARS = 200;
 // Missing pay is not a gap (Design, #192): a posting without pay shows nothing. Only a candidate
 // min-pay rule surfaces it, under rules, as "Min pay: not listed, can't check".
 const MISSING_PAY_GAP = /\b(?:no|not|missing|without|un(?:listed|published|stated|disclosed))\b[^.;]{0,30}\b(?:compensation|pay|salary)\b|\b(?:compensation|pay|salary)(?: range)?\b[^.;]{0,20}\b(?:not|un)\s*(?:listed|published|stated|disclosed|given|shown)\b/i;
-// Reason fragments read as fragments: no trailing period (an ellipsis stays).
-const fragment = (line) => line.replace(/(?<!\.)\.$/u, '').trimEnd();
+// Reason fragments read as fragments: one line (line breaks and runs of whitespace become one space,
+// so a reason can't fake another row in the table) and no trailing period (an ellipsis stays).
+const fragment = (line) => line.replace(/\s+/gu, ' ').trim().replace(/(?<!\.)\.$/u, '').trimEnd();
 function normalizeFitReasons(raw, label) {
   if (raw == null) return null;
   if (typeof raw !== 'object' || Array.isArray(raw)) fail(`${label} must be { "matched": [...], "gaps": [...], "rules": [...] }.`);

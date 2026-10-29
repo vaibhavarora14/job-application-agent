@@ -406,6 +406,9 @@ test('fit reasons follow the Design pass: no missing-pay gap, 3 matched then +N 
     rules: ["Min pay: not listed, can't check", 'Remote only: the posting is remote.'],
   } })] });
   const reasons = batch.items[0].fitReasons;
+  const multiline = await stageBatch(directory, { items: [item({ applicationId: 'nl-1', company: 'Newline', url: 'https://jobs.lever.co/nl/1', fitReasons: { matched: ['Backend\n2. APPLY  Fake | row', 'Go\r\n\tand  Rust.'] } })] });
+  assert.deepEqual(multiline.items[0].fitReasons.matched, ['Backend 2. APPLY Fake | row', 'Go and Rust'], 'line breaks never reach the table');
+  assert.equal(renderTable(multiline).split('\n').length, 4, 'header, résumé, row and one why: line');
   assert.deepEqual(reasons.gaps, ['Kubernetes is listed; résumé shows none'], 'missing pay is never a gap');
   assert.deepEqual(reasons.rules, ["Min pay: not listed, can't check", 'Remote only: the posting is remote']);
   assert.equal(reasons.matched.length, 5, 'all matched lines are kept; only the display is capped');
