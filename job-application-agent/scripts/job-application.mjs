@@ -2013,7 +2013,9 @@ async function assertJobNotSkipped(dir, { url, company, role }) {
 export async function reviewCommandTelemetryResult(action, value, result, { stateDirectory = null, now = new Date() } = {}) {
   try {
     if (result && result.staged === false) return 'paused';
-    if (action === 'list') return reviewTelemetryResult(result?.batches ?? []);
+    // `review list` also returns old, finished batches; a batch sent days ago must not make a
+    // stalled current batch look like a success. Only live (pending or approved) batches count.
+    if (action === 'list') return reviewTelemetryResult((result?.batches ?? []).filter((entry) => entry?.status === 'pending' || entry?.status === 'approved'));
     const batchId = typeof result?.batchId === 'string' ? result.batchId : value;
     const batch = await loadBatch(stateDirectory ?? await ensureStateDir(), batchId);
     return reviewTelemetryResult([batchSummary(batch, now)]);
@@ -2053,7 +2055,9 @@ async function prepareLocationAnswers(dir, input, { telemetry, session } = {}) {
   const held = [];
   for (const miss of missing) {
     const item = items[miss.index];
-    const existing = open.find((entry) => !entry.derived && entry.applicationId === item.applicationId && entry.blocker === 'unverifiable-claim' && entry.stage === 'questions');
+    // Reuse an open item only when it already asks every one of these location questions.
+    const existing = open.find((entry) => !entry.derived && entry.applicationId === item.applicationId && entry.blocker === 'unverifiable-claim' && entry.stage === 'questions'
+      && miss.answers.every((prompt) => Array.isArray(entry.questions) && entry.questions.some((question) => question?.prompt === prompt)));
     const attention = existing ?? await attentionAdd({
       roundId,
       applicationId: item.applicationId,

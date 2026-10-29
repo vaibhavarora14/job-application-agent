@@ -48,7 +48,10 @@ test('reviewCommandTelemetryResult follows the batch through stage, approve, sen
   const revoked = await closeBatch(directory, other.batchId, 'revoked');
   assert.equal(await reviewCommandTelemetryResult('revoke', other.batchId, { batchId: other.batchId }, opts), 'abandoned');
 
-  assert.equal(await reviewCommandTelemetryResult('list', undefined, { batches: [batchSummary(revoked)] }, opts), 'abandoned');
+  // `review list` only counts live batches: an old sent batch never turns a stalled one into a success.
+  assert.equal(await reviewCommandTelemetryResult('list', undefined, { batches: [batchSummary(revoked)] }, opts), 'skipped');
+  assert.equal(await reviewCommandTelemetryResult('list', undefined, { batches: [{ status: 'expired', used: 3 }, { status: 'pending', used: 0 }] }, opts), 'paused');
+  assert.equal(await reviewCommandTelemetryResult('list', undefined, { batches: [{ status: 'approved', used: 1 }, { status: 'pending', used: 0 }] }, opts), 'success');
   assert.equal(await reviewCommandTelemetryResult('list', undefined, { batches: [] }, opts), 'skipped');
   assert.equal(await reviewCommandTelemetryResult('stage', '--stdin', { staged: false, batchId: null }, opts), 'paused');
   assert.equal(await reviewCommandTelemetryResult('show', 'rb-20260101-deadbeef', {}, opts), 'paused', 'an unreadable batch is never reported as success');

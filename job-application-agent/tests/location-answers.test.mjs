@@ -13,7 +13,7 @@ const script = fileURLToPath(new URL('../scripts/job-application.mjs', import.me
 test('current-location questions are recognised; preference questions are not', () => {
   for (const label of [
     'What is your current location?', 'Current location', 'Current City', 'Where are you currently located?', 'Where do you live?',
-    'Where are you based?', 'City of residence', 'Country of current residence', 'Home address', 'Location', 'Location (city, country)', 'City*',
+    'Where are you based?', 'What city are you in?', 'Which city do you live in?', 'What country are you currently located in?', 'City of residence', 'Country of current residence', 'Home address', 'Location', 'Location (city, country)', 'City*',
   ]) assert.equal(isCurrentLocationQuestion(label), true, label);
   for (const label of [
     'Preferred location', 'Are you willing to relocate?', 'Which office location do you prefer?', 'Desired work location', 'Why this team?',
@@ -125,6 +125,13 @@ test('review stage holds an item with no location answer and opens an attention 
   assert.equal(again.json.heldForAttention[0].reusedAttention, true);
   const rows = (await readFile(join(directory, 'attention.ndjson'), 'utf8')).trim().split('\n');
   assert.equal(rows.length, 1);
+
+  // An open item for the same application that asks something else is not reused.
+  const other = cli(env, ['review', 'stage', '--stdin'], { items: [item({ 'Current city': '' })] });
+  assert.equal(other.status, 0, other.stderr);
+  assert.notEqual(other.json.heldForAttention[0].attentionId, held.attentionId);
+  assert.equal(other.json.heldForAttention[0].reusedAttention, undefined);
+  assert.equal((await readFile(join(directory, 'attention.ndjson'), 'utf8')).trim().split('\n').length, 2);
 });
 
 test('review stage without a round explains the missing location instead of a bare validation error', async (t) => {
