@@ -50,8 +50,15 @@ function normalizeAnswers(raw, label) {
 // assessment (matched requirements, gaps) and the candidate's own rules. Shown to the candidate;
 // not part of what is sent, so it is not hashed into the approval.
 export const FIT_REASON_GROUPS = Object.freeze(['matched', 'gaps', 'rules']);
-const FIT_REASON_MAX_LINES = 3;
+// Matched may list more; the page and table show the first FIT_REASON_SHOWN, then "+N more".
+const FIT_REASON_MAX_LINES = Object.freeze({ matched: 8, gaps: 3, rules: 3 });
+export const FIT_REASON_SHOWN = 3;
 const FIT_REASON_MAX_CHARS = 200;
+// Missing pay is not a gap (Design, #192): a posting without pay shows nothing. Only a candidate
+// min-pay rule surfaces it, under rules, as "Min pay: not listed, can't check".
+const MISSING_PAY_GAP = /\b(?:no|not|missing|without|un(?:listed|published|stated|disclosed))\b[^.;]{0,30}\b(?:compensation|pay|salary)\b|\b(?:compensation|pay|salary)(?: range)?\b[^.;]{0,20}\b(?:not|un)\s*(?:listed|published|stated|disclosed|given|shown)\b/i;
+// Reason fragments read as fragments: no trailing period (an ellipsis stays).
+const fragment = (line) => line.replace(/(?<!\.)\.$/u, '').trimEnd();
 function normalizeFitReasons(raw, label) {
   if (raw == null) return null;
   if (typeof raw !== 'object' || Array.isArray(raw)) fail(`${label} must be { "matched": [...], "gaps": [...], "rules": [...] }.`);
@@ -60,8 +67,10 @@ function normalizeFitReasons(raw, label) {
   for (const group of FIT_REASON_GROUPS) {
     const lines = raw[group] ?? [];
     if (!Array.isArray(lines)) fail(`${label}.${group} must be an array of short strings.`);
-    if (lines.length > FIT_REASON_MAX_LINES) fail(`${label}.${group} holds at most ${FIT_REASON_MAX_LINES} lines.`);
-    const cleaned = lines.map((line, i) => text(line, `${label}.${group}[${i}]`, FIT_REASON_MAX_CHARS));
+    if (lines.length > FIT_REASON_MAX_LINES[group]) fail(`${label}.${group} holds at most ${FIT_REASON_MAX_LINES[group]} lines.`);
+    const cleaned = lines
+      .map((line, i) => fragment(text(line, `${label}.${group}[${i}]`, FIT_REASON_MAX_CHARS)))
+      .filter((line) => line && !(group === 'gaps' && MISSING_PAY_GAP.test(line)));
     if (cleaned.length) out[group] = cleaned;
   }
   return Object.keys(out).length ? out : null;
@@ -241,10 +250,18 @@ function resumeLabel(resume) {
   return `Canonical résumé (sha256 ${resume.sha256.slice(0, 12)}${kb})`;
 }
 
-const FIT_REASON_TABLE_LABELS = { matched: 'matched', gaps: 'gaps', rules: 'your rules' };
+// Same glyph per group as the page: check for matched, dot for gaps, rule for your rules.
+const FIT_REASON_TABLE_LABELS = { matched: '✓ matched', gaps: '● gaps', rules: '— your rules' };
+export function shownFitReasons(lines, group) {
+  if (group !== 'matched' || lines.length <= FIT_REASON_SHOWN) return { lines, more: 0 };
+  return { lines: lines.slice(0, FIT_REASON_SHOWN), more: lines.length - FIT_REASON_SHOWN };
+}
 function fitReasonsLine(fitReasons) {
   if (!fitReasons) return '';
-  const parts = FIT_REASON_GROUPS.filter((group) => fitReasons[group]?.length).map((group) => `${FIT_REASON_TABLE_LABELS[group]}: ${fitReasons[group].join('; ')}`);
+  const parts = FIT_REASON_GROUPS.filter((group) => fitReasons[group]?.length).map((group) => {
+    const { lines, more } = shownFitReasons(fitReasons[group], group);
+    return `${FIT_REASON_TABLE_LABELS[group]}: ${lines.join('; ')}${more ? `; +${more} more` : ''}`;
+  });
   return parts.length ? `\n     why: ${parts.join(' | ')}` : '';
 }
 

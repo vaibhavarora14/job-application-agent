@@ -10,7 +10,7 @@ import { fileURLToPath } from 'node:url';
 import { commandCategory } from '../scripts/job-application.mjs';
 import { runOutreach } from '../scripts/outreach-cli.mjs';
 import {
-  REVIEW_BATCH_MAX_ITEMS, applicationMatcher, approvalPhrase, approveBatch, consumeReview, loadBatch, resumeDigest, stageBatch, verifyReview,
+  REVIEW_BATCH_MAX_ITEMS, applicationMatcher, approvalPhrase, approveBatch, consumeReview, loadBatch, renderTable, resumeDigest, stageBatch, verifyReview,
 } from '../scripts/review-batch.mjs';
 import { COUNT_SCRIPT, formatTime, renderReviewPage, startReviewPage } from '../scripts/review-page.mjs';
 
@@ -367,7 +367,8 @@ test('fit reasons are optional, validated, shown on the page and in the table, a
   const directory = await stateDir(t);
   await assert.rejects(stageBatch(directory, { items: [item({ fitReasons: ['x'] })] }), /fitReasons must be/);
   await assert.rejects(stageBatch(directory, { items: [item({ fitReasons: { why: ['x'] } })] }), /Unknown items\[0\]\.fitReasons property: why/);
-  await assert.rejects(stageBatch(directory, { items: [item({ fitReasons: { matched: ['a', 'b', 'c', 'd'] } })] }), /at most 3 lines/);
+  await assert.rejects(stageBatch(directory, { items: [item({ fitReasons: { matched: 'abcdefghi'.split('') } })] }), /matched holds at most 8 lines/);
+  await assert.rejects(stageBatch(directory, { items: [item({ fitReasons: { gaps: ['a', 'b', 'c', 'd'] } })] }), /gaps holds at most 3 lines/);
   await assert.rejects(stageBatch(directory, { items: [item({ fitReasons: { gaps: [''] } })] }), /fitReasons\.gaps\[0\]/);
   await assert.rejects(stageBatch(directory, { items: [item({ fitReasons: { gaps: ['x'.repeat(201)] } })] }), /fitReasons\.gaps\[0\]/);
 
@@ -376,22 +377,48 @@ test('fit reasons are optional, validated, shown on the page and in the table, a
     item({ fitReasons: { ...fitReasons, rules: ['<b>Remote</b> only'] } }),
     item({ applicationId: 'beta-1', company: 'Beta', url: 'https://jobs.lever.co/beta/1', fitReasons: { matched: [] } }),
   ] });
-  assert.deepEqual(batch.items[0].fitReasons, { ...fitReasons, rules: ['<b>Remote</b> only'] });
+  const plain = { matched: ['Role family: backend', 'Skills evidence: 80% of must-haves'], gaps: ['Kubernetes is listed; résumé shows none'], rules: ['Remote only: the posting is remote'] };
+  assert.deepEqual(batch.items[0].fitReasons, { ...plain, rules: ['<b>Remote</b> only'] }, 'trailing periods are dropped');
   assert.equal('fitReasons' in batch.items[1], false, 'empty groups are dropped');
 
   const html = renderReviewPage(batch, { action: '/review/x' });
-  assert.match(html, /<dl class="fit" aria-label="Why fit 86"><div><dt>Matched<\/dt><dd><ul><li>Role family: backend\.<\/li><li>Skills evidence: 80% of must-haves\.<\/li><\/ul><\/dd><\/div><div><dt>Gaps<\/dt>/);
-  assert.match(html, /<dt>Your rules<\/dt><dd><ul><li>&lt;b&gt;Remote&lt;\/b&gt; only<\/li>/);
+  assert.match(html, /<dl class="fit" aria-label="Why fit 86"><div class="matched"><dt>Matched<\/dt><dd><ul><li>Role family: backend<\/li><li>Skills evidence: 80% of must-haves<\/li><\/ul><\/dd><\/div><div class="gaps"><dt>Gaps<\/dt>/);
+  assert.match(html, /<div class="rules"><dt>Your rules<\/dt><dd><ul><li>&lt;b&gt;Remote&lt;\/b&gt; only<\/li>/);
   assert.equal(html.split('class="fit"').length - 1, 1, 'only the item with reasons gets the block');
 
   const staged = cli(envFor(directory), ['review', 'stage', '--stdin'], { items: [item({ applicationId: 'gamma-1', company: 'Gamma', url: 'https://jobs.ashbyhq.com/gamma/1', fitReasons })] });
   assert.equal(staged.status, 0, staged.stderr);
-  assert.match(staged.json.table, /fit 86 \| greenhouse \| 2 answers\n {5}why: matched: Role family: backend\.; Skills evidence: 80% of must-haves\. \| gaps: Kubernetes is listed; résumé shows none\. \| your rules: Remote only: the posting is remote\./);
+  assert.match(staged.json.table, /fit 86 \| greenhouse \| 2 answers\n {5}why: ✓ matched: Role family: backend; Skills evidence: 80% of must-haves \| ● gaps: Kubernetes is listed; résumé shows none \| — your rules: Remote only: the posting is remote$/m);
 
   // Reasons explain the pick; they are not sent, so approval still binds only the answers and résumé.
   const { reviewBatchId, reviewToken } = await approved(directory, [item({ applicationId: 'delta-1', company: 'Delta', url: 'https://jobs.example.org/delta', fitReasons })]);
   assert.equal(typeof reviewToken, 'string');
   const loaded = await loadBatch(directory, reviewBatchId);
-  assert.deepEqual(loaded.items[0].fitReasons, fitReasons);
+  assert.deepEqual(loaded.items[0].fitReasons, plain);
   assert.equal(loaded.items[0].answersSha256.length, 64);
+});
+
+test('fit reasons follow the Design pass: no missing-pay gap, 3 matched then +N more, one glyph per section', async (t) => {
+  const directory = await stateDir(t);
+  const batch = await stageBatch(directory, { items: [item({ fitReasons: {
+    matched: ['Backend role', 'Go: 4 years', 'Postgres at scale', 'On-call experience', 'Remote-first team'],
+    gaps: ['No published compensation.', 'Salary range not disclosed', 'Kubernetes is listed; résumé shows none.'],
+    rules: ["Min pay: not listed, can't check", 'Remote only: the posting is remote.'],
+  } })] });
+  const reasons = batch.items[0].fitReasons;
+  assert.deepEqual(reasons.gaps, ['Kubernetes is listed; résumé shows none'], 'missing pay is never a gap');
+  assert.deepEqual(reasons.rules, ["Min pay: not listed, can't check", 'Remote only: the posting is remote']);
+  assert.equal(reasons.matched.length, 5, 'all matched lines are kept; only the display is capped');
+
+  const html = renderReviewPage(batch, { action: '/review/x' });
+  assert.doesNotMatch(html, /On-call experience/, 'only the first 3 matched lines are shown');
+  assert.match(html, /<li>Postgres at scale<\/li><li class="more">\+2 more<\/li><\/ul>/);
+  assert.doesNotMatch(html, /compensation|Salary range/);
+  assert.match(html, /\.fit \.matched li::before\{content:"✓";color:var\(--check\)\}/);
+  assert.match(html, /\.fit \.gaps li::before\{content:"●";color:var\(--gap\)/);
+  assert.match(html, /\.fit \.rules li::before\{content:"—";color:var\(--muted\)/);
+  assert.match(html, /@media \(max-width:640px\)\{[^@]*?\.fit div\{grid-template-columns:1fr;gap:2px\}/, 'labels stack above their list on narrow screens');
+
+  const table = renderTable(batch);
+  assert.match(table, /why: ✓ matched: Backend role; Go: 4 years; Postgres at scale; \+2 more \| ● gaps: Kubernetes is listed; résumé shows none \| — your rules: Min pay: not listed, can't check; Remote only: the posting is remote$/m);
 });
