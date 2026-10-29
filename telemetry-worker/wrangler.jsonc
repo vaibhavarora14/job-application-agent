@@ -44,6 +44,11 @@
       "migrations_dir": "migrations-private"
     }
   ],
+  // Precomputed /v1/jobs/live snapshot written by the cron (src/live-jobs-snapshot.mjs).
+  // Free plan: ~24 writes/day. Staging has no binding and serves /v1/jobs/live from D1.
+  "kv_namespaces": [
+    { "binding": "LIVE_JOBS_SNAPSHOT", "id": "d69928c77a3641e08bb1a0201f685a82" }
+  ],
   "ratelimits": [
     {
       "name": "INSTALL_RATE_LIMITER",
