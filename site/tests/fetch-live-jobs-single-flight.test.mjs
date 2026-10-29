@@ -58,13 +58,15 @@ test('concurrent board loads in one isolate share a single relay pagination', as
   assert.equal(relay.calls, 2);
 });
 
-test('a follower retries on its own when the shared load fails', async () => {
+test('followers retry once, together, when the shared load fails', async () => {
   relay.calls = 0;
   relay.fail = true;
   const leader = loadLiveJobs({ status: 'closed' });
-  const follower = loadLiveJobs({ status: 'closed' });
+  const followers = [loadLiveJobs({ status: 'closed' }), loadLiveJobs({ status: 'closed' }), loadLiveJobs({ status: 'closed' })];
   await assert.rejects(leader);
   relay.fail = false;
-  const jobs = await follower;
-  assert.equal(jobs.length, 4);
+  const boards = await Promise.all(followers);
+  for (const jobs of boards) assert.equal(jobs.length, 4);
+  // 1 failed first page + one shared 2-page retry, not one retry per follower.
+  assert.equal(relay.calls, 3);
 });

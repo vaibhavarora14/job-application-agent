@@ -74,15 +74,21 @@ export async function loadLiveJobs(options = {}) {
     // crawler burst lands several requests on one isolate. Each used to page the
     // whole board through the relay on its own (12 relay calls per refresh instead
     // of 6). Concurrent callers now share one load.
-    // A follower whose shared load fails (e.g. the leading request was cancelled)
-    // retries on its own rather than rendering an empty board.
-    const pending = options.signal ? undefined : boardInflight.get(memoKey);
-    if (pending) return pending.catch(() => loadBoard({ base, status, cache, cacheKey, memoKey, useMemo, options }));
     if (options.signal) return loadBoard({ base, status, cache, cacheKey, memoKey, useMemo, options });
-    const load = loadBoard({ base, status, cache, cacheKey, memoKey, useMemo, options })
-      .finally(() => boardInflight.delete(memoKey));
-    boardInflight.set(memoKey, load);
-    return load;
+    const shared = () => {
+      const inflight = boardInflight.get(memoKey);
+      if (inflight) return inflight;
+      const load = loadBoard({ base, status, cache, cacheKey, memoKey, useMemo, options })
+        .finally(() => { if (boardInflight.get(memoKey) === load) boardInflight.delete(memoKey); });
+      boardInflight.set(memoKey, load);
+      return load;
+    };
+    // A follower whose shared load fails (e.g. the leading request was cancelled)
+    // retries once rather than rendering an empty board. The retry is itself
+    // shared, so a failed burst re-paginates once, not once per follower.
+    const pending = boardInflight.get(memoKey);
+    if (pending) return pending.catch(() => shared());
+    return shared();
   }
   return loadBoard({ base, status, cache, cacheKey, memoKey, useMemo, options });
 }
