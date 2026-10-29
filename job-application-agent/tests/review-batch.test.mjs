@@ -410,6 +410,13 @@ test('fit reasons follow the Design pass: no missing-pay gap, 3 matched then +N 
   assert.deepEqual(multiline.items[0].fitReasons.matched, ['Backend 2. APPLY Fake | row', 'Go and Rust'], 'line breaks never reach the table');
   assert.equal(renderTable(multiline).split('\n').length, 4, 'header, résumé, row and one why: line');
   assert.deepEqual(reasons.gaps, ['Kubernetes is listed; résumé shows none'], 'missing pay is never a gap');
+  const variants = await stageBatch(directory, { items: [item({ applicationId: 'pay-1', company: 'Pay', url: 'https://jobs.lever.co/pay/1', fitReasons: {
+    matched: ['Backend role'], gaps: ['Salary not provided', 'Compensation is not specified', "Pay range isn't posted"],
+  } }), item({ applicationId: 'pay-2', company: 'Pay2', url: 'https://jobs.lever.co/pay/2', fitReasons: {
+    matched: ['Backend role'], gaps: ['Unspecified salary', 'No Go experience', 'Pay below your 150k floor'],
+  } })] });
+  assert.equal(variants.items[0].fitReasons.gaps, undefined, 'all missing-pay wordings are dropped');
+  assert.deepEqual(variants.items[1].fitReasons.gaps, ['No Go experience', 'Pay below your 150k floor'], 'real gaps and stated pay stay');
   assert.deepEqual(reasons.rules, ["Min pay: not listed, can't check", 'Remote only: the posting is remote']);
   assert.equal(reasons.matched.length, 5, 'all matched lines are kept; only the display is capped');
 
