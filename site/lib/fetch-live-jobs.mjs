@@ -9,6 +9,8 @@ const BOARD_CACHE_ORIGIN = 'https://jobappagent.com';
 const BOARD_MEMO_MS = 60 * 1000;
 /** @type {Map<string, { at: number, jobs: unknown[] }>} */
 const boardMemo = new Map();
+/** @type {Map<string, Promise<unknown[]>>} */
+const boardInflight = new Map();
 
 /** @returns {Cache | undefined} */
 function workersDefaultCache() {
@@ -68,7 +70,33 @@ export async function loadLiveJobs(options = {}) {
   if (useMemo) {
     const memo = boardMemo.get(memoKey);
     if (memo && Date.now() - memo.at < BOARD_MEMO_MS) return memo.jobs;
+    // Single-flight: an SSR request renders metadata and page concurrently and a
+    // crawler burst lands several requests on one isolate. Each used to page the
+    // whole board through the relay on its own (12 relay calls per refresh instead
+    // of 6). Concurrent callers now share one load.
+    if (options.signal) return loadBoard({ base, status, cache, cacheKey, memoKey, useMemo, options });
+    const shared = () => {
+      const inflight = boardInflight.get(memoKey);
+      if (inflight) return inflight;
+      const load = loadBoard({ base, status, cache, cacheKey, memoKey, useMemo, options })
+        .finally(() => { if (boardInflight.get(memoKey) === load) boardInflight.delete(memoKey); });
+      boardInflight.set(memoKey, load);
+      return load;
+    };
+    // A follower whose shared load fails (e.g. the leading request was cancelled)
+    // retries once rather than rendering an empty board. The retry is itself
+    // shared, so a failed burst re-paginates once, not once per follower.
+    const pending = boardInflight.get(memoKey);
+    if (pending) return pending.catch(() => shared());
+    return shared();
   }
+  return loadBoard({ base, status, cache, cacheKey, memoKey, useMemo, options });
+}
+
+/**
+ * @param {{ base: string, status: 'open' | 'closed' | 'unknown' | null, cache: Cache | undefined, cacheKey: Request | null, memoKey: string, useMemo: boolean, options: { fetcher?: typeof fetch, signal?: AbortSignal } }} input
+ */
+async function loadBoard({ base, status, cache, cacheKey, memoKey, useMemo, options }) {
   if (cache && cacheKey) {
     const cached = await cache.match(cacheKey);
     if (cached) {
