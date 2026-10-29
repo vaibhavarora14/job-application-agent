@@ -413,10 +413,10 @@ test('fit reasons follow the Design pass: no missing-pay gap, 3 matched then +N 
   const variants = await stageBatch(directory, { items: [item({ applicationId: 'pay-1', company: 'Pay', url: 'https://jobs.lever.co/pay/1', fitReasons: {
     matched: ['Backend role'], gaps: ['Salary not provided', 'Compensation is not specified', "Pay range isn't posted"],
   } }), item({ applicationId: 'pay-2', company: 'Pay2', url: 'https://jobs.lever.co/pay/2', fitReasons: {
-    matched: ['Backend role'], gaps: ['Unspecified salary', 'No Go experience', 'Pay below your 150k floor'],
+    matched: ['Backend role'], gaps: ['Unspecified salary', 'No Go experience; salary is $120k', 'Pay below your 150k floor; no salary listed'],
   } })] });
   assert.equal(variants.items[0].fitReasons.gaps, undefined, 'all missing-pay wordings are dropped');
-  assert.deepEqual(variants.items[1].fitReasons.gaps, ['No Go experience', 'Pay below your 150k floor'], 'real gaps and stated pay stay');
+  assert.deepEqual(variants.items[1].fitReasons.gaps, ['No Go experience; salary is $120k', 'Pay below your 150k floor'], 'checked per clause: real gaps and stated pay stay, only the missing-pay clause goes');
   assert.deepEqual(reasons.rules, ["Min pay: not listed, can't check", 'Remote only: the posting is remote']);
   assert.equal(reasons.matched.length, 5, 'all matched lines are kept; only the display is capped');
 

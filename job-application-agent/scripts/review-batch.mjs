@@ -58,7 +58,9 @@ const FIT_REASON_MAX_CHARS = 200;
 // min-pay rule surfaces it, under rules, as "Min pay: not listed, can't check".
 const PAY_WORD = /\b(?:compensation|comp|pay|salary|salaries|wages?|remuneration|pay range|salary range|base pay)\b/i;
 const MISSING_WORD = /\b(?:no|not|none|missing|without|unknown|absent|n\/a|un(?:listed|published|stated|disclosed|specified|known|available))\b|n't\b/i;
-const isMissingPayGap = (line) => PAY_WORD.test(line) && MISSING_WORD.test(line);
+// Checked per clause, so "No Go experience; salary is $120k" stays and only a missing-pay clause goes.
+const isMissingPayClause = (clause) => PAY_WORD.test(clause) && MISSING_WORD.test(clause);
+const withoutMissingPay = (line) => line.split(/\s*;\s*/u).filter((clause) => clause && !isMissingPayClause(clause)).join('; ');
 // Reason fragments read as fragments: one line (line breaks and runs of whitespace become one space,
 // so a reason can't fake another row in the table) and no trailing period (an ellipsis stays).
 const fragment = (line) => line.replace(/\s+/gu, ' ').trim().replace(/(?<!\.)\.$/u, '').trimEnd();
@@ -73,7 +75,8 @@ function normalizeFitReasons(raw, label) {
     if (lines.length > FIT_REASON_MAX_LINES[group]) fail(`${label}.${group} holds at most ${FIT_REASON_MAX_LINES[group]} lines.`);
     const cleaned = lines
       .map((line, i) => fragment(text(line, `${label}.${group}[${i}]`, FIT_REASON_MAX_CHARS)))
-      .filter((line) => line && !(group === 'gaps' && isMissingPayGap(line)));
+      .map((line) => (group === 'gaps' ? withoutMissingPay(line) : line))
+      .filter(Boolean);
     if (cleaned.length) out[group] = cleaned;
   }
   return Object.keys(out).length ? out : null;
