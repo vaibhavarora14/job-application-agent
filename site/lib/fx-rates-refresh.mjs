@@ -14,7 +14,8 @@ const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
 export function fxTableAgeDays(asOf, now = new Date()) {
   if (typeof asOf !== 'string' || !ISO_DATE.test(asOf)) return null;
   const asOfMs = Date.parse(`${asOf}T00:00:00Z`);
-  if (!Number.isFinite(asOfMs)) return null;
+  // Date.parse rolls impossible dates over (2026-02-31 → 2026-03-03); reject them instead.
+  if (!Number.isFinite(asOfMs) || new Date(asOfMs).toISOString().slice(0, 10) !== asOf) return null;
   return Math.floor((now.getTime() - asOfMs) / DAY_MS);
 }
 
@@ -58,7 +59,7 @@ export function selectRates(currencies, rates) {
 
 /** Rewrite FX_AS_OF and the UNITS_PER_USD body in the fx-rates.mjs source, keeping everything else. */
 export function renderFxRatesSource(source, date, rates) {
-  if (!ISO_DATE.test(date)) throw new Error(`date must be YYYY-MM-DD, got ${date}`);
+  if (fxTableAgeDays(date) === null) throw new Error(`date must be a real YYYY-MM-DD date, got ${date}`);
   const asOf = /export const FX_AS_OF = '\d{4}-\d{2}-\d{2}';/;
   const table = /(export const UNITS_PER_USD = Object\.freeze\(\{\n)([\s\S]*?)(\n\}\);)/;
   if (!asOf.test(source) || !table.test(source)) throw new Error('fx-rates.mjs layout changed; update renderFxRatesSource');

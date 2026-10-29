@@ -26,6 +26,9 @@ test('fxTableAgeDays counts whole UTC days and rejects non-dates', () => {
   assert.equal(fxTableAgeDays('2026-10-01', new Date('2026-11-15T00:00:00Z')), 45);
   assert.equal(fxTableAgeDays('2026-10-01', new Date('2026-11-16T00:00:00Z')), 46);
   assert.equal(fxTableAgeDays('Oct 1', new Date()), null);
+  assert.equal(fxTableAgeDays('2026-02-31', new Date('2026-03-10T00:00:00Z')), null, 'impossible dates must not roll over');
+  assert.equal(fxTableAgeDays('2026-13-01', new Date()), null);
+  assert.equal(fxTableAgeDays('2028-02-29', new Date('2028-03-01T00:00:00Z')), 1, 'leap day is real');
   assert.equal(fxTableAgeDays(undefined, new Date()), null);
 });
 
@@ -67,6 +70,7 @@ test('rendering the current table back is byte-identical, and a refresh only cha
   assert.ok(next.includes('\n  EUR: 0.89823,\n'));
   assert.ok(next.includes('\n  INR: 95.22,\n'));
   assert.match(next, /export function toUsd\(amount, currency\)/);
+  assert.throws(() => renderFxRatesSource(source, '2026-02-31', refreshedRates), /real YYYY-MM-DD/);
   const changed = next.split('\n').filter((line, index) => line !== source.split('\n')[index]);
   assert.deepEqual(changed, ["export const FX_AS_OF = '2026-11-02';", '  EUR: 0.89823,', '  INR: 95.22,']);
   const refreshed = await import(`data:text/javascript,${encodeURIComponent(next)}`);
