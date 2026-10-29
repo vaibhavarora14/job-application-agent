@@ -2,7 +2,8 @@
  * Monthly reference rates for the /jobs salary filter only (cards always keep the
  * employer's currency). Units of each currency per 1 USD, ECB reference rates
  * published for the first business day of the month (via frankfurter.dev).
- * Refresh monthly; an unknown currency never matches a pay threshold.
+ * Refresh monthly with `npm --prefix site run fx:refresh` (a site test fails once FX_AS_OF is
+ * older than 45 days); an unknown currency never matches a pay threshold.
  */
 export const FX_AS_OF = '2026-10-01';
 
