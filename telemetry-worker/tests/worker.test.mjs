@@ -768,7 +768,7 @@ test('event endpoint revalidates schema and forwards a personless PostHog event'
   const token = await createToken(installationId, bindings.SIGNING_SECRET);
   const payload = {
     schemaVersion: 1,
-    skillVersion: '1.1.0',
+    skillVersion: '3.7.18',
     installationId,
     token,
     event: 'application_submitted',
@@ -811,13 +811,67 @@ test('event endpoint accepts application_submitted with or without resumeFieldPr
   assert.equal(bindings.captured.length, count);
 });
 
-test('event endpoint rejects identity fields, malformed payloads, and rate limits', async () => {
+test('event endpoint accepts application_submitted with or without entryOrigin and passes it through', async () => {
   const bindings = env();
   const installationId = '11111111-1111-4111-8111-111111111111';
   const token = await createToken(installationId, bindings.SIGNING_SECRET);
-  const base = { schemaVersion: 1, skillVersion: '1.1.0', installationId, token, event: 'command_completed', properties: { command: 'search', result: 'success', durationBucket: 'under-1s' } };
+  const properties = {
+    company: 'Example AI', title: 'Staff Engineer', jobHash: 'a'.repeat(64), domain: 'jobs.example.com', ats: 'greenhouse', durationBucket: 'unknown', fieldsFilled: 2,
+    shortAnswerCount: 2, resumeUploaded: false, approvalMode: 'routine-auto', telemetrySupplied: false, fillMetricsSource: 'answer_keys',
+  };
+  const send = (props, skillVersion = '3.7.19') => worker.fetch(new Request('https://relay.example.com/v1/events', {
+    method: 'POST', headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ schemaVersion: 1, skillVersion, installationId, token, event: 'application_submitted', properties: props }),
+  }), bindings);
+  // Older clients never send entryOrigin and must keep being accepted unchanged.
+  assert.equal((await send(properties, '3.7.18')).status, 202);
+  assert.equal('entryOrigin' in bindings.captured.at(-1).body.properties, false);
+  assert.equal((await send({ ...properties, entryOrigin: 'logged' })).status, 202);
+  assert.equal(bindings.captured.at(-1).body.properties.entryOrigin, 'logged');
+  assert.equal((await send({ ...properties, telemetrySupplied: true, fillMetricsSource: 'telemetry', entryOrigin: 'agent' })).status, 202);
+  assert.equal(bindings.captured.at(-1).body.properties.entryOrigin, 'agent');
+  const count = bindings.captured.length;
+  assert.equal((await send({ ...properties, entryOrigin: 'manual' })).status, 400);
+  assert.equal((await send({ ...properties, entryOrigin: true })).status, 400);
+  assert.equal(bindings.captured.length, count);
+});
+
+test('event endpoint accepts application_submitted with or without profileOneClick and rejects non-Boolean values', async () => {
+  const bindings = env();
+  const installationId = '11111111-1111-4111-8111-111111111111';
+  const token = await createToken(installationId, bindings.SIGNING_SECRET);
+  const properties = {
+    company: 'Example AI', title: 'Backend Engineer', jobHash: 'a'.repeat(64), domain: 'www.hirist.tech', ats: 'other', durationBucket: 'under-1s', fieldsFilled: 0,
+    shortAnswerCount: 0, resumeUploaded: false, approvalMode: 'review-each', telemetrySupplied: true, fillMetricsSource: 'telemetry',
+  };
+  const send = (props, skillVersion = '3.8.4') => worker.fetch(new Request('https://relay.example.com/v1/events', {
+    method: 'POST', headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ schemaVersion: 1, skillVersion, installationId, token, event: 'application_submitted', properties: props }),
+  }), bindings);
+  // Older clients never send profileOneClick and must keep being accepted unchanged.
+  assert.equal((await send(properties, '3.8.3')).status, 202);
+  assert.equal('profileOneClick' in bindings.captured.at(-1).body.properties, false);
+  assert.equal((await send({ ...properties, profileOneClick: true })).status, 202);
+  assert.equal(bindings.captured.at(-1).body.properties.profileOneClick, true);
+  assert.equal((await send({ ...properties, fieldsFilled: 5, shortAnswerCount: 4, resumeUploaded: true, ats: 'greenhouse', profileOneClick: false })).status, 202);
+  assert.equal(bindings.captured.at(-1).body.properties.profileOneClick, false);
+  const count = bindings.captured.length;
+  assert.equal((await send({ ...properties, profileOneClick: 'true' })).status, 400);
+  assert.equal((await send({ ...properties, profileOneClick: null })).status, 400);
+  assert.equal(bindings.captured.length, count);
+});
+
+test('event endpoint strips identity fields, rejects malformed payloads, and rate limits', async () => {
+  const bindings = env();
+  const installationId = '11111111-1111-4111-8111-111111111111';
+  const token = await createToken(installationId, bindings.SIGNING_SECRET);
+  const base = { schemaVersion: 1, skillVersion: '3.7.18', installationId, token, event: 'command_completed', properties: { command: 'search', result: 'success', durationBucket: 'under-1s' } };
   const identity = await worker.fetch(new Request('https://relay.example.com/v1/events', { method: 'POST', body: JSON.stringify({ ...base, properties: { ...base.properties, email: 'candidate@example.com' } }) }), bindings);
-  assert.equal(identity.status, 400);
+  assert.equal(identity.status, 202);
+  assert.equal(JSON.stringify(bindings.captured).includes('candidate@example.com'), false);
+  assert.equal('email' in bindings.captured.at(-1).body.properties, false);
+  const unknown = await worker.fetch(new Request('https://relay.example.com/v1/events', { method: 'POST', body: JSON.stringify({ ...base, properties: { ...base.properties, notInSchema: 'x' } }) }), bindings);
+  assert.equal(unknown.status, 400);
   const oversized = await worker.fetch(new Request('https://relay.example.com/v1/events', { method: 'POST', body: JSON.stringify({ ...base, padding: 'x'.repeat(5000) }) }), bindings);
   assert.equal(oversized.status, 413);
   bindings.EVENT_RATE_LIMITER = { limit: async () => ({ success: false }) };
@@ -825,24 +879,42 @@ test('event endpoint rejects identity fields, malformed payloads, and rate limit
   assert.equal(limited.status, 429);
 });
 
-test('identity envelopes are rejected and never forwarded as candidateName/email', async () => {
+test('legacy identity envelopes (3.7.2 and earlier) are accepted with identity stripped, never forwarded', async () => {
   const bindings = env();
   const stored = [];
   bindings.PUBLIC_STATS_DB = { prepare: (sql) => ({ bind: (...args) => ({ run: async () => { stored.push({ sql, args }); } }) }) };
   const installationId = '11111111-1111-4111-8111-111111111111';
   const token = await createToken(installationId, bindings.SIGNING_SECRET);
-  const base = { schemaVersion: 1, skillVersion: '3.7.5', installationId, token, event: 'installation_started', properties: { osFamily: 'macos', nodeMajor: 24, submissionMode: 'unconfigured' } };
+  const base = { schemaVersion: 1, skillVersion: '3.7.2', installationId, token, event: 'installation_started', properties: { osFamily: 'macos', nodeMajor: 24, submissionMode: 'unconfigured' } };
   const send = (body) => worker.fetch(new Request('https://relay.example.com/v1/events', { method: 'POST', body: JSON.stringify(body) }), bindings);
-  assert.equal((await send({ ...base, identity: { name: 'Test Candidate', email: 'candidate@example.com' } })).status, 400);
-  assert.equal(bindings.captured.length, 0);
-  assert.equal(stored.length, 0);
-  assert.equal((await send(base)).status, 202);
-  assert.equal(bindings.captured[0].body.distinct_id, installationId);
-  assert.equal(bindings.captured[0].body.properties.candidateName, undefined);
-  assert.equal(bindings.captured[0].body.properties.candidateEmail, undefined);
-  assert.equal(bindings.captured[0].body.properties.$process_person_profile, false);
-  assert.equal(JSON.stringify(bindings.captured).includes('Test Candidate'), false);
-  assert.equal(JSON.stringify(bindings.captured).includes('candidate@example.com'), false);
+  assert.equal((await send({ ...base, identity: { name: 'Test Candidate', email: 'candidate@example.com' } })).status, 202);
+  assert.equal((await send({ ...base, properties: { ...base.properties, candidateName: 'Test Candidate', candidateEmail: 'candidate@example.com', phone: '+1 555 0100', $set: { email: 'candidate@example.com' } } })).status, 202);
+  assert.equal(bindings.captured.length, 2);
+  for (const { body } of bindings.captured) {
+    assert.equal(body.distinct_id, installationId);
+    for (const key of ['candidateName', 'candidateEmail', 'phone', '$set', 'identity']) assert.equal(key in body.properties, false, key);
+    assert.equal('identity' in body, false);
+    assert.equal(body.properties.$process_person_profile, false);
+  }
+  const all = JSON.stringify({ captured: bindings.captured, stored });
+  assert.equal(all.includes('Test Candidate'), false);
+  assert.equal(all.includes('candidate@example.com'), false);
+  assert.equal(all.includes('555 0100'), false);
+});
+
+test('relay redacts home-directory paths in every forwarded string property', async () => {
+  const bindings = env();
+  const installationId = '11111111-1111-4111-8111-111111111111';
+  const token = await createToken(installationId, bindings.SIGNING_SECRET);
+  const message = "Cannot find module '/home/testuser/.agents/skills/x.mjs' or /Users/Jane.Doe/Library/x or C:\\Users\\bob smith\\AppData or /mnt/c/Users/wsluser/x";
+  const res = await worker.fetch(new Request('https://relay.example.com/v1/events', { method: 'POST', body: JSON.stringify({
+    schemaVersion: 1, skillVersion: '3.7.13', installationId, token, event: 'skill_error',
+    properties: { errorCode: 'invalid_input', stage: 'contact', recoverable: true, errorCategory: 'validation', sanitizedMessage: message.slice(0, 160) },
+  }) }), bindings);
+  assert.equal(res.status, 202);
+  const forwarded = bindings.captured.at(-1).body.properties.sanitizedMessage;
+  for (const leaked of ['testuser', 'Jane.Doe', 'bob smith', 'smith', 'wsluser', '/home/', '/Users/']) assert.equal(forwarded.includes(leaked), false, `${leaked} in ${forwarded}`);
+  assert.match(forwarded, /~\/\.agents\/skills\/x\.mjs/);
 });
 
 test('PostHog failures return a retryable relay error without leaking details', async () => {
@@ -850,7 +922,7 @@ test('PostHog failures return a retryable relay error without leaking details', 
   bindings.POSTHOG_FETCH = async () => { throw new Error('upstream secret detail'); };
   const installationId = '11111111-1111-4111-8111-111111111111';
   const token = await createToken(installationId, bindings.SIGNING_SECRET);
-  const payload = { schemaVersion: 1, skillVersion: '1.1.0', installationId, token, event: 'command_completed', properties: { command: 'search', result: 'success', durationBucket: 'under-1s' } };
+  const payload = { schemaVersion: 1, skillVersion: '3.7.18', installationId, token, event: 'command_completed', properties: { command: 'search', result: 'success', durationBucket: 'under-1s' } };
   const response = await worker.fetch(new Request('https://relay.example.com/v1/events', { method: 'POST', body: JSON.stringify(payload) }), bindings);
   assert.equal(response.status, 503);
   assert.deepEqual(await response.json(), { error: 'upstream_unavailable' });

@@ -4,6 +4,8 @@ import { mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
+import { withTestReview } from './support/review-approval.mjs';
+import { asLegacyRound } from './support/legacy-round.mjs';
 import { fileURLToPath } from 'node:url';
 
 import { communityJobsPending, communityJobsSync, sourcesList, sourcesSync, validateLedgerEntry } from '../scripts/job-application.mjs';
@@ -24,6 +26,7 @@ async function fixture(t, label) {
 }
 
 function cli(env, args, input) {
+  input = withTestReview(env, args, input);
   return JSON.parse(execFileSync(process.execPath, [script, ...args], {
     env,
     encoding: 'utf8',
@@ -32,6 +35,7 @@ function cli(env, args, input) {
 }
 
 function cliFailure(env, args, input) {
+  input = withTestReview(env, args, input);
   return spawnSync(process.execPath, [script, ...args], {
     env,
     encoding: 'utf8',
@@ -40,6 +44,7 @@ function cliFailure(env, args, input) {
 }
 
 function cliConcurrent(env, args, input) {
+  input = withTestReview(env, args, input);
   return new Promise((resolve) => {
     const child = spawn(process.execPath, [script, ...args], { env });
     let stdout = '';
@@ -83,8 +88,11 @@ test('persists a scoped autonomy grant and revokes future routine transmissions'
   const granted = cli(env, ['autonomy', 'grant', '--stdin'], { mode: 'routine-auto' });
   assert.equal(granted.enabled, true);
   assert.equal(granted.mode, 'routine-auto');
-  assert.ok(granted.scopes.includes('submit'));
-  assert.ok(granted.scopes.includes('send-recruiting-email'));
+  // Since batch review, a grant never covers a send on its own.
+  assert.ok(!granted.scopes.includes('submit'));
+  assert.ok(!granted.scopes.includes('send-recruiting-email'));
+  assert.ok(granted.scopes.includes('stage-review-batch'));
+  assert.equal(granted.submissionsRequireBatchReview, true);
   assert.ok(granted.hardStops.includes('captcha'));
 
   const status = cli(env, ['autonomy', 'status']);
@@ -93,7 +101,8 @@ test('persists a scoped autonomy grant and revokes future routine transmissions'
   if (process.platform !== 'win32') assert.equal((await stat(join(directory, 'autonomy.json'))).mode & 0o777, 0o600);
 
   const preview = cli(env, ['autonomy', 'preview']);
-  assert.equal(preview.maySubmitRoutineApplications, true);
+  assert.equal(preview.maySubmitRoutineApplications, false);
+  assert.equal(preview.maySendVerifiedRecruitingEmail, false);
   assert.equal(preview.mayBypassHostPermissionPrompts, false);
   assert.ok(preview.hardStops.includes('legal-attestation'));
 
@@ -106,6 +115,8 @@ test('counts only unique confirmed ledger submissions for an explicit round', as
   const { directory, env } = await fixture(t, 'round');
   const started = cli(env, ['round', 'start', '--stdin'], { requestedCount: 30 });
   assert.match(started.roundId, /^round-/);
+  // Submits before discovery records: only a round from a pre-gates CLI completes this way.
+  await asLegacyRound(directory, started.roundId);
 
   cli(env, ['attention', 'add', '--stdin'], {
     roundId: started.roundId,
@@ -145,8 +156,9 @@ test('counts only unique confirmed ledger submissions for an explicit round', as
 });
 
 test('round completion requires distinct source coverage and explains concentration without imposing submission quotas', async (t) => {
-  const { env } = await fixture(t, 'source-coverage');
+  const { directory, env } = await fixture(t, 'source-coverage');
   const { roundId } = cli(env, ['round', 'start', '--stdin'], { requestedCount: 2 });
+  await asLegacyRound(directory, roundId);
   for (const i of [1, 2]) cli(env, ['ledger', 'add', '--stdin'], submission(i, roundId, { discoverySourceId: 'linkedin-jobs-feed' }));
   assert.match(cliFailure(env, ['round', 'complete', '--stdin'], { roundId }).stderr, /3 distinct discovery sources/i);
   recordLeads(env,roundId,'linkedin-jobs-feed',[submission(1,roundId),submission(2,roundId)],8);
@@ -172,6 +184,7 @@ test('round completion requires distinct source coverage and explains concentrat
 test('discovery coverage rejects invalid reports and requires attribution without rewriting confirmed ledger rows', async (t) => {
   const { env, directory } = await fixture(t, 'source-validation');
   const { roundId } = cli(env, ['round', 'start', '--stdin'], { requestedCount: 1 });
+  await asLegacyRound(directory, roundId);
   cli(env, ['ledger', 'add', '--stdin'], submission(1, roundId));
   const before = await readFile(join(directory, 'applications.ndjson'), 'utf8');
   const check = { roundId, sourceId: 'linkedin-jobs-feed', status: 'searched', reviewedCount: 4, qualifiedCount: 1, evidence: 'Checked relevant listings against the candidate target.' };
@@ -191,6 +204,9 @@ test('discovery coverage rejects invalid reports and requires attribution withou
 test('source diversity is independent of ATS and concentration explanations are unnecessary for a balanced mix', async (t) => {
   const { env } = await fixture(t, 'balanced-discovery');
   const { roundId } = cli(env, ['round', 'start', '--stdin'], { requestedCount: 5 });
+  // The community feed is unreachable in tests (127.0.0.1:9), so record that failed pull as its blocker.
+  assert.equal(cli(env, ['sources', 'jobs']).communityFeedUnavailable, true);
+  cli(env, ['round', 'source', '--stdin'], { roundId, sourceId: 'community-jobs-feed', status: 'blocked', blocker: 'access-unavailable', evidence: 'sources jobs could not reach the community feed.' });
   const ids = ['linkedin-jobs-feed', 'indeed', 'hacker-news-who-is-hiring'];
   for (const sourceId of ids) {
     const entries=Array.from({length:5},(_,i)=>submission(i+1,roundId)).filter((_,i)=>ids[i%3]===sourceId);

@@ -19,7 +19,9 @@
       "location": {
         "label": "Remote · India",
         "cities": [],
-        "countries": ["IN"],
+        "countries": [
+          "IN"
+        ],
         "workplace": "remote",
         "employmentType": "full-time",
         "experienceLevel": "senior",
@@ -43,12 +45,57 @@
       "closedAt": null,
       "location": {
         "label": "Bengaluru · Hybrid",
-        "cities": ["Bengaluru"],
-        "countries": ["IN"],
+        "cities": [
+          "Bengaluru"
+        ],
+        "countries": [
+          "IN"
+        ],
         "workplace": "hybrid",
         "employmentType": "full-time",
         "experienceLevel": "mid",
-        "salary": null,
+        "salary": {
+          "min": 150000,
+          "max": 235000,
+          "annualMin": 150000,
+          "annualMax": 235000,
+          "currency": "USD",
+          "period": "year",
+          "kind": "base",
+          "label": "$150K–$235K USD",
+          "ranges": [
+            {
+              "min": 150000,
+              "max": 180000,
+              "currency": "USD",
+              "period": "year",
+              "kind": "base",
+              "location": "Engineer II",
+              "label": "$150K–$180K USD"
+            },
+            {
+              "min": 185000,
+              "max": 235000,
+              "currency": "USD",
+              "period": "year",
+              "kind": "base",
+              "location": "Senior Platform Engineer, Payments Infrastructure",
+              "label": "$185K–$235K USD"
+            },
+            {
+              "min": 150000,
+              "max": 250000,
+              "currency": "USD",
+              "period": "year",
+              "kind": "ote",
+              "location": "Sales Engineer",
+              "label": "$150K–$250K USD OTE"
+            }
+          ],
+          "isEstimated": false,
+          "source": "employer",
+          "basis": "ats"
+        },
         "checkedAt": "2026-10-13T06:00:00.000Z"
       }
     },
@@ -94,11 +141,81 @@
       "location": {
         "label": "Remote · India",
         "cities": [],
-        "countries": ["IN"],
+        "countries": [
+          "IN"
+        ],
         "workplace": "remote",
         "employmentType": "full-time",
         "experienceLevel": "mid",
-        "salary": null,
+        "salary": {
+          "min": 130000,
+          "max": 195000,
+          "annualMin": 130000,
+          "annualMax": 195000,
+          "currency": "USD",
+          "period": "year",
+          "kind": "base",
+          "label": "$130K–$195K USD",
+          "ranges": [
+            {
+              "min": 166000,
+              "max": 195000,
+              "currency": "USD",
+              "period": "year",
+              "kind": "base",
+              "location": "US Zone 1 (San Francisco, New York, Seattle)",
+              "label": "$166K–$195K USD"
+            },
+            {
+              "min": 149000,
+              "max": 175500,
+              "currency": "USD",
+              "period": "year",
+              "kind": "base",
+              "location": "US Zone 2",
+              "label": "$149K–$175.5K USD"
+            },
+            {
+              "min": 130000,
+              "max": 152000,
+              "currency": "USD",
+              "period": "year",
+              "kind": "base",
+              "location": "US Zone 3",
+              "label": "$130K–$152K USD"
+            },
+            {
+              "min": 110000,
+              "max": 130000,
+              "currency": "CAD",
+              "period": "year",
+              "kind": "base",
+              "location": "Canada",
+              "label": "CA$110K–CA$130K"
+            },
+            {
+              "min": 85000,
+              "max": 105000,
+              "currency": "GBP",
+              "period": "year",
+              "kind": "base",
+              "location": "United Kingdom",
+              "label": "£85K–£105K"
+            },
+            {
+              "min": 110500,
+              "max": 181500,
+              "currency": "EUR",
+              "period": "year",
+              "kind": "total",
+              "location": "Germany",
+              "label": "€110.5K–€181.5K total comp"
+            }
+          ],
+          "isEstimated": false,
+          "source": "employer",
+          "basis": "ats"
+        },
         "checkedAt": "2026-10-13T06:00:00.000Z"
       }
     },
@@ -143,8 +260,12 @@
       "closedAt": null,
       "location": {
         "label": "Bengaluru · Hybrid",
-        "cities": ["Bengaluru"],
-        "countries": ["IN"],
+        "cities": [
+          "Bengaluru"
+        ],
+        "countries": [
+          "IN"
+        ],
         "workplace": "hybrid",
         "employmentType": "full-time",
         "experienceLevel": "mid",

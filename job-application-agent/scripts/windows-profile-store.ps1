@@ -1,4 +1,71 @@
 $ErrorActionPreference = 'Stop'
+
+# Profile store helper for secret-store.mjs on Windows. It reads one JSON request
+# line ({op, service, account, path}) plus the plaintext from stdin.
+#
+# Requests are validated before any credential or file access:
+#   - op must be 'set' or 'get';
+#   - service must be the fixed job-application-agent service name, or a
+#     sub-name of it ('com.vaibhavarora.job-application-agent.<suffix>');
+#   - account is a short identifier;
+#   - path must resolve inside the state folder (JOB_APPLICATION_AGENT_STATE_DIR,
+#     otherwise %APPDATA%\job-application-agent), end in .dat, and not pass through
+#     a junction or symlink below that folder.
+#
+# Why Add-Type stays: the profile file itself is already sealed with the built-in
+# [System.Security.Cryptography.ProtectedData] (DPAPI, CurrentUser). The AES
+# wrapping key lives in Windows Credential Manager, and Windows PowerShell 5.1 has
+# no built-in cmdlet or .NET type for Credential Manager generic credentials, so
+# CredRead/CredWrite need this small P/Invoke declaration. Dropping it would mean
+# moving the key out of Credential Manager, a storage-format migration that still
+# needs CredRead to read existing keys.
+$SecretServicePrefix = 'com.vaibhavarora.job-application-agent'
+
+function Reject([string]$Reason) {
+  throw (New-Object System.InvalidOperationException ('rejected: ' + $Reason))
+}
+
+function Get-StateRoot {
+  $root = $env:JOB_APPLICATION_AGENT_STATE_DIR
+  if (-not $root) {
+    $appData = $env:APPDATA
+    if (-not $appData) { $appData = Join-Path ([Environment]::GetFolderPath('UserProfile')) 'AppData\Roaming' }
+    $root = Join-Path $appData 'job-application-agent'
+  }
+  if (-not [IO.Path]::IsPathRooted($root)) { Reject 'state folder is not an absolute path' }
+  return [IO.Path]::GetFullPath($root).TrimEnd([IO.Path]::DirectorySeparatorChar, [IO.Path]::AltDirectorySeparatorChar)
+}
+
+function Assert-Service([string]$Service) {
+  if (-not $Service -or $Service.Length -gt 200 -or $Service -notmatch '^[A-Za-z0-9._-]+$') { Reject 'service name is invalid' }
+  if (-not ($Service -ceq $SecretServicePrefix -or $Service.StartsWith($SecretServicePrefix + '.', [StringComparison]::Ordinal))) {
+    Reject 'service name lacks the job-application-agent prefix'
+  }
+}
+
+function Assert-Account([string]$Account) {
+  if (-not $Account -or $Account.Length -gt 64 -or $Account -notmatch '^[A-Za-z0-9._-]+$') { Reject 'account name is invalid' }
+}
+
+function Resolve-ProfilePath([string]$Path) {
+  if (-not $Path -or -not [IO.Path]::IsPathRooted($Path)) { Reject 'profile path is not absolute' }
+  $root = Get-StateRoot
+  $full = [IO.Path]::GetFullPath($Path)
+  $sep = [string][IO.Path]::DirectorySeparatorChar
+  if (-not $full.StartsWith($root + $sep, [StringComparison]::OrdinalIgnoreCase)) { Reject 'profile path is outside the state folder' }
+  if ([IO.Path]::GetExtension($full) -ne '.dat') { Reject 'profile path must be a .dat file' }
+  # No junctions or symlinks between the state folder and the file.
+  $current = $full
+  while ($current.Length -gt $root.Length) {
+    if (Test-Path -LiteralPath $current) {
+      $item = Get-Item -LiteralPath $current -Force
+      if ($item.Attributes -band [IO.FileAttributes]::ReparsePoint) { Reject 'profile path passes through a link' }
+    }
+    $current = [IO.Path]::GetDirectoryName($current)
+  }
+  return $full
+}
+
 Add-Type -AssemblyName System.Security
 
 Add-Type -TypeDefinition @"
@@ -120,10 +187,14 @@ function Unprotect-Profile([byte[]]$Key, [string]$Path) {
 try {
   $request = Read-Request
   $meta = $request.Meta
+  $op = [string]$meta.op
+  if ($op -cne 'set' -and $op -cne 'get') { Reject 'unsupported operation' }
   $target = [string]$meta.service
   $account = [string]$meta.account
-  $path = [string]$meta.path
-  if ($meta.op -eq 'set') {
+  Assert-Service $target
+  Assert-Account $account
+  $path = Resolve-ProfilePath ([string]$meta.path)
+  if ($op -eq 'set') {
     $key = Get-WrappingKey $target $account $true
     Protect-Profile $key $request.Plaintext $path
   } elseif ($meta.op -eq 'get') {
@@ -137,6 +208,11 @@ try {
     throw 'unsupported'
   }
 } catch {
-  [Console]::Error.WriteLine('Windows profile storage failed.')
+  $message = [string]$_.Exception.Message
+  if ($message.StartsWith('rejected: ')) {
+    [Console]::Error.WriteLine('Windows profile storage rejected the request: ' + $message.Substring(10) + '.')
+  } else {
+    [Console]::Error.WriteLine('Windows profile storage failed.')
+  }
   exit 1
 }

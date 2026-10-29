@@ -40,7 +40,7 @@ Contradictory or ambiguous evidence remains counted but enters derived attention
 
 ## Replacement attempts
 
-Recovery is allowed only when all attempts for the canonical application have verified failures and no conflicting evidence. Recheck employer eligibility and existing candidate authorization, then verify a published replacement channel within 24 hours before transmission. Preserve duplicate checks for every other application.
+Recovery is allowed only when all attempts for the canonical application have verified failures and no conflicting evidence. A replacement transmission is a new send: stage it as a review item with `"purpose": "retry"` and get the candidate's approval ([REVIEW.md](REVIEW.md)), then pass `reviewBatchId` and `reviewToken` to `cloud intent-prepare` and `ledger retry`. Recheck employer eligibility, then verify a published replacement channel within 24 hours before transmission. Preserve duplicate checks for every other application.
 
 In cloud mode, acquire the existing application lease and call `cloud intent-prepare --stdin` with the original `applicationId`, replacement `canonicalUrl`, `leaseId`, and `retry: true`. Use the returned intent ID as the new attempt ID. An uncertain transmission uses `cloud intent-sent` and must not be resent. A later confirmation can reconcile that same intent. Eligibility is checked when the intent is prepared; matching verified transmission evidence remains recordable if a later receipt or correction changes the original failure evidence. The confirming host still needs its active lease.
 
@@ -58,6 +58,8 @@ After a verified replacement send, call `ledger retry --stdin`:
   "approval": "STANDING AUTHORIZATION",
   "evidenceType": "browser-confirmation",
   "evidence": "Visible ATS success for the replacement application.",
+  "reviewBatchId": "rb-20260913-1a2b3c4d",
+  "reviewToken": "token from review status",
   "cloudIntentId": "returned-cloud-intent-id",
   "cloudLeaseId": "active-lease-id"
 }

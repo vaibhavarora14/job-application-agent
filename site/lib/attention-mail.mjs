@@ -4,6 +4,7 @@
  */
 
 import { normalizeAttentionQuestions } from "./attention-questions.mjs";
+import { redactLogDetail } from "./log-redaction.mjs";
 
 /** Buyer mail exists only for actual employer questions, never technical actions. */
 export function buildAttentionEmail(input) {
@@ -55,7 +56,7 @@ export async function sendAttentionEmail(input, config = {}) {
   const apiKey = typeof config.apiKey === "string" ? config.apiKey.trim() : "";
   const from = typeof config.from === "string" && config.from.trim()
     ? config.from.trim()
-    : "JobAppAgent <attention@jobappagent.com>";
+    : "JobAppAgent <attention@updates.jobappagent.com>";
   const to = typeof input?.to === "string" ? input.to.trim().toLowerCase() : "";
   const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -90,7 +91,7 @@ export async function sendAttentionEmail(input, config = {}) {
 
     if (!response.ok) {
       const detail = await response.text().catch(() => "");
-      logger.error?.(`[attention-mail] Resend rejected notify (${response.status}): ${detail.slice(0, 200)}`);
+      logger.error?.(`[attention-mail] Resend rejected notify (${response.status}): ${redactLogDetail(detail)}`);
       return { ok: false, error: "mailer_failed", status: response.status };
     }
 

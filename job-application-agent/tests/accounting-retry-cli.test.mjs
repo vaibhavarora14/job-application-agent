@@ -8,6 +8,7 @@ import { fileURLToPath } from 'node:url';
 import test from 'node:test';
 
 import { validateDelivery } from '../scripts/application-accounting.mjs';
+import { applicationItem, approveItems } from './support/review-approval.mjs';
 
 const script = fileURLToPath(new URL('../scripts/job-application.mjs', import.meta.url));
 
@@ -74,6 +75,7 @@ test('CLI records a transmitted cloud retry when late receipt evidence invalidat
   for (const [stream, rows] of Object.entries(streams)) {
     await writeFile(join(stateDir, `${stream}.ndjson`), `${rows.map(row => JSON.stringify(row)).join('\n')}\n`, { mode: 0o600 });
   }
+  const review = await approveItems(stateDir, [applicationItem(application, 'retry')]);
   const env = { ...process.env, ACCOUNTING_TEST_BACKEND_URL: backendUrl, JOB_APPLICATION_AGENT_STATE_DIR: stateDir, JOB_APPLICATION_AGENT_CLOUD_CONFIG: configPath, JOB_APPLICATION_AGENT_SOURCE_COMMUNITY_URL: 'http://127.0.0.1:9' };
   const result = await new Promise((resolve, reject) => {
     const child = spawn(process.execPath, ['--import', `data:text/javascript,${encodeURIComponent(preload)}`, script, 'ledger', 'retry', '--stdin'], { env, stdio: ['pipe', 'pipe', 'pipe'] });
@@ -83,7 +85,7 @@ test('CLI records a transmitted cloud retry when late receipt evidence invalidat
     child.stderr.on('data', chunk => { stderr += chunk; });
     child.on('error', reject);
     child.on('close', code => resolve({ code, stdout, stderr }));
-    child.stdin.end(JSON.stringify({ ...retry, cloudIntentId: intentId, cloudLeaseId: leaseId }));
+    child.stdin.end(JSON.stringify({ ...retry, cloudIntentId: intentId, cloudLeaseId: leaseId, ...review }));
   });
 
   assert.deepEqual(unexpected, []);

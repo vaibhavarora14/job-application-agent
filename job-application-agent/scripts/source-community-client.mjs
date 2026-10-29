@@ -3,7 +3,7 @@ import { chmod, mkdir, open, readFile, rename, stat, unlink, writeFile } from 'n
 import { join } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 
-import { SKILL_VERSION, TEST_RUNNER_TELEMETRY_ENDPOINT, defaultTelemetryEndpoint } from './telemetry-client.mjs';
+import { SKILL_VERSION, defaultTelemetryEndpoint } from './telemetry-client.mjs';
 import {
   createCommunityJobContributionEnvelope,
   createSourceContributionEnvelope,
@@ -13,12 +13,14 @@ import {
   validateCommunitySourceList,
 } from './source-community-schema.mjs';
 
-/** Same rule as telemetry: explicit URL wins; `node --test` and GitHub Actions never fall back to production. */
-export function defaultSourceCommunityEndpoint(env = process.env) {
+/**
+ * Same rule as telemetry: an explicit URL wins; test runs never fall back to production.
+ * The only environment values read are this endpoint override and the test-run markers;
+ * no credential or other environment data is ever sent.
+ */
+export function defaultSourceCommunityEndpoint(env = process.env, argv = process.argv) {
   if (env.JOB_APPLICATION_AGENT_SOURCE_COMMUNITY_URL) return env.JOB_APPLICATION_AGENT_SOURCE_COMMUNITY_URL;
-  if (env.JOB_APPLICATION_AGENT_TELEMETRY_URL) return env.JOB_APPLICATION_AGENT_TELEMETRY_URL;
-  if (env.NODE_TEST_CONTEXT) return TEST_RUNNER_TELEMETRY_ENDPOINT;
-  return defaultTelemetryEndpoint(env);
+  return defaultTelemetryEndpoint(env, argv);
 }
 
 export const DEFAULT_SOURCE_COMMUNITY_ENDPOINT = defaultSourceCommunityEndpoint();
@@ -329,6 +331,8 @@ export class SourceCommunityClient {
   }
 
   async listJobs({ limit = 50, cursor = null } = {}) {
+    // lastJobRead records whether this read actually reached the feed (used locally for round coverage).
+    this.lastJobRead = { ok: false };
     if (this.jobReadUnavailable) return { version: 1, jobs: [], nextCursor: null };
     if (!Number.isSafeInteger(limit) || limit < 1 || limit > 100) throw new Error('Community job limit must be between 1 and 100.');
     if (cursor !== null && (typeof cursor !== 'string' || !cursor || cursor.length > 1024)) throw new Error('Community job cursor is invalid.');
@@ -337,7 +341,9 @@ export class SourceCommunityClient {
       if (cursor !== null) query.set('cursor', cursor);
       const response = await this.fetch(`${this.endpoint}/v1/jobs?${query}`, { headers: { accept: 'application/json' }, signal: AbortSignal.timeout(this.timeoutMs) });
       if (!response.ok) return { version: 1, jobs: [], nextCursor: null };
-      return validateCommunityJobList(await response.json());
+      const list = validateCommunityJobList(await response.json());
+      this.lastJobRead = { ok: true };
+      return list;
     } catch {
       this.jobReadUnavailable = true;
       return { version: 1, jobs: [], nextCursor: null };

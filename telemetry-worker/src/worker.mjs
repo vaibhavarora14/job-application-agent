@@ -1,4 +1,6 @@
+import { applyPendingInstallCorrections } from './install-corrections.mjs';
 import { TELEMETRY_SCHEMA_VERSION, TELEMETRY_MAX_BYTES, validateTelemetryEnvelope } from '../../job-application-agent/scripts/telemetry-schema.mjs';
+import { isTelemetryPiiKey, redactHomePaths } from '../../job-application-agent/scripts/telemetry-redact.mjs';
 import {
   communityJobId,
   communitySourceId,
@@ -15,6 +17,7 @@ import {
   DEFAULT_LIVENESS_BATCH_SIZE,
   runJobLivenessSweep,
 } from './job-liveness.mjs';
+import { clientVersionDecision, upgradeRequiredBody } from './client-version.mjs';
 
 const LIVE_JOBS_CACHE_SECONDS = 5 * 60;
 
@@ -101,12 +104,34 @@ function checkAdminAuth(request, env) {
   return timingSafeEqualString(match[1], expected);
 }
 
+/**
+ * Refuses outdated clients before schema validation (see client-version.mjs for why the status is
+ * 426, or 202-and-drop for the 3.7.3–3.7.10 queue band). Nothing is forwarded or counted.
+ */
+function outdatedClientResponse(input, env) {
+  if (!input || Array.isArray(input) || typeof input !== 'object') return null;
+  const decision = clientVersionDecision(input.skillVersion, env);
+  if (decision.action === 'allow') return null;
+  return markGated(Response.json(upgradeRequiredBody(decision), {
+    status: decision.status,
+    headers: {
+      'cache-control': 'no-store',
+      'x-content-type-options': 'nosniff',
+      'referrer-policy': 'no-referrer',
+      'x-min-client-version': decision.minimum,
+    },
+  }));
+}
+
 async function readJson(request, maxBytes) {
   const length = Number(request.headers.get('content-length') ?? 0);
   if (length > maxBytes) throw Object.assign(new Error('Payload too large.'), { status: 413 });
   const text = await request.text();
   if (encoder.encode(text).length > maxBytes) throw Object.assign(new Error('Payload too large.'), { status: 413 });
-  try { return text ? JSON.parse(text) : {}; } catch { throw Object.assign(new Error('Invalid JSON.'), { status: 400 }); }
+  let parsed;
+  try { parsed = text ? JSON.parse(text) : {}; } catch { throw Object.assign(new Error('Invalid JSON.'), { status: 400 }); }
+  noteRequestSkillVersion(request, parsed);
+  return parsed;
 }
 
 async function allowed(rateLimiter, key) {
@@ -132,10 +157,40 @@ async function install(request, env) {
   return response({ installationId, token, expiresAt: new Date(now.getTime() + TOKEN_TTL_SECONDS * 1000).toISOString() }, 201);
 }
 
+// Clients up to 3.7.2 attached `identity: { name, email }` to analytics envelopes. Those fields are
+// stripped (never forwarded) rather than rejected: such clients keep no retry queue, so a 400 would
+// silently drop their anonymous analytics too, while stripping keeps the event and removes the PII.
+// Current clients never send these keys; anything else unknown is still rejected by the schema.
+export function stripLegacyIdentity(input) {
+  if (!input || Array.isArray(input) || typeof input !== 'object') return input;
+  const { identity: _identity, ...rest } = input;
+  for (const key of Object.keys(rest)) if (isTelemetryPiiKey(key)) delete rest[key];
+  if (rest.properties && typeof rest.properties === 'object' && !Array.isArray(rest.properties)) {
+    rest.properties = Object.fromEntries(Object.entries(rest.properties).filter(([key]) => !isTelemetryPiiKey(key)));
+  }
+  return rest;
+}
+
+// Defense in depth for every forwarded string (notably skill_error.sanitizedMessage): home-directory
+// paths carry the OS username and become `~` even if an older client did not redact them.
+export function redactForwardedProperties(properties) {
+  const out = {};
+  for (const [key, value] of Object.entries(properties ?? {})) {
+    if (isTelemetryPiiKey(key)) continue;
+    if (typeof value === 'string') out[key] = redactHomePaths(value);
+    else if (Array.isArray(value)) out[key] = value.map((item) => (typeof item === 'string' ? redactHomePaths(item) : item));
+    else out[key] = value;
+  }
+  return out;
+}
+
 async function events(request, env) {
   const input = await readJson(request, TELEMETRY_MAX_BYTES);
+  const outdated = outdatedClientResponse(input, env);
+  if (outdated) return outdated;
   let envelope;
-  try { envelope = validateTelemetryEnvelope(input); } catch { return response({ error: 'invalid_event' }, 400); }
+  try { envelope = validateTelemetryEnvelope(stripLegacyIdentity(input)); } catch { return response({ error: 'invalid_event' }, 400); }
+  envelope = { ...envelope, properties: redactForwardedProperties(envelope.properties) };
   let identity;
   try { identity = await verifyToken(envelope.token, env.SIGNING_SECRET); } catch (error) { return response({ error: /expired/i.test(error.message) ? 'token_expired' : 'invalid_token' }, 401); }
   if (identity.installationId !== envelope.installationId) return response({ error: 'invalid_token' }, 401);
@@ -196,6 +251,8 @@ async function upsertInstallContact(database, row) {
 
 async function contact(request, env) {
   const input = await readJson(request, CONTACT_MAX_BYTES);
+  const outdated = outdatedClientResponse(input, env);
+  if (outdated) return outdated;
   const allowedKeys = new Set(['installId', 'installationId', 'token', 'candidateName', 'candidateEmail', 'skillVersion', 'updatedAt']);
   for (const key of Object.keys(input)) if (!allowedKeys.has(key)) return response({ error: 'invalid_contact' }, 400);
 
@@ -514,6 +571,8 @@ async function publicReadKey(request, secret, scope) {
 
 async function contributeSource(request, env) {
   const input = await readJson(request, SOURCE_MAX_BYTES);
+  const outdated = outdatedClientResponse(input, env);
+  if (outdated) return outdated;
   let envelope;
   try { envelope = validateSourceContributionEnvelope(input); } catch { return response({ error: 'invalid_source' }, 400); }
   let identity;
@@ -536,6 +595,8 @@ async function listSources(_request, env) {
 
 async function contributeJob(request, env) {
   const input = await readJson(request, SOURCE_MAX_BYTES);
+  const outdated = outdatedClientResponse(input, env);
+  if (outdated) return outdated;
   let envelope;
   try { envelope = validateCommunityJobContributionEnvelope(input); } catch { return response({ error: 'invalid_job' }, 400); }
   let identity;
@@ -643,6 +704,7 @@ async function adminLivenessSweep(request, env) {
     store: env.JOB_STORE ?? jobStore(env),
     fetchImpl: env.LIVENESS_FETCH ?? fetch,
     limit,
+    log: silentLog,
   });
   return response({ ok: true, ...summary }, 200);
 }
@@ -651,6 +713,76 @@ export function shouldRefreshActiveInstallations(scheduledTime) {
   if (scheduledTime == null) return true;
   const minutes = new Date(scheduledTime).getUTCMinutes();
   return !Number.isFinite(minutes) || minutes % 15 === 0;
+}
+
+// ---------------------------------------------------------------------------------------------
+// Request logging (Workers Logs). Exactly one structured line per fetch, with ONLY:
+//   status, skillVersion (sanitized), path (known route or "other", never a query string),
+//   durationMs, gate ("min_version" when the minimum-client-version gate answered, else null).
+// Never logged: request/response bodies, tokens, headers, emails, names, install IDs, IPs, cf data.
+// Invocation logs are disabled in wrangler.jsonc because they carry request metadata (URL, headers,
+// cf/IP); this line is the only per-request log. Liveness sweep summaries are not logged either.
+// ---------------------------------------------------------------------------------------------
+const LOGGED_PATHS = new Set([
+  '/', '/healthz', '/api/public-stats', '/v1/install', '/v1/events', '/v1/contact', '/v1/sources',
+  '/v1/jobs', '/v1/jobs/live', '/v1/admin/jobs/liveness-sweep',
+]);
+const LOG_VERSION = /^(\d{1,6})\.(\d{1,6})\.(\d{1,6})(?:-([0-9A-Za-z.-]{1,64}))?(?:\+[0-9A-Za-z.-]{1,64})?$/;
+const requestSkillVersions = new WeakMap();
+const gatedResponses = new WeakSet();
+
+export function silentLog() {}
+
+function noteRequestSkillVersion(request, input) {
+  if (!request || typeof request !== 'object') return;
+  if (!input || typeof input !== 'object' || Array.isArray(input) || !('skillVersion' in input)) return;
+  requestSkillVersions.set(request, input.skillVersion);
+}
+
+function markGated(res) {
+  gatedResponses.add(res);
+  return res;
+}
+
+/**
+ * Reduces a client-reported skillVersion to a safe, bounded label: "major.minor.patch" plus a
+ * prerelease class from a fixed vocabulary (so free text in a prerelease tag can never be logged).
+ * Missing -> null; present but not a version -> "invalid".
+ */
+export function logSkillVersion(value) {
+  if (value === undefined || value === null) return null;
+  if (typeof value !== 'string' || value.length > 64) return 'invalid';
+  const match = LOG_VERSION.exec(value);
+  if (!match) return 'invalid';
+  const core = `${Number(match[1])}.${Number(match[2])}.${Number(match[3])}`;
+  const pre = match[4];
+  if (!pre) return core;
+  const lower = pre.toLowerCase();
+  let label = 'prerelease';
+  if (/(?:^|[.-])staging(?:[.-]|$)/.test(lower)) label = 'staging';
+  else if (/(?:^|[.-])probe(?:[.-]|$)/.test(lower)) label = 'probe';
+  else if (/^(?:rc|beta|alpha)(?:[.-]?\d{1,4})?$/.test(lower)) label = lower;
+  return `${core}-${label}`;
+}
+
+export function logPath(url) {
+  let pathname;
+  try { pathname = new URL(url).pathname; } catch { return 'other'; }
+  return LOGGED_PATHS.has(pathname) ? pathname : 'other';
+}
+
+export function requestLogRecord(request, result, startedAt, now = Date.now()) {
+  return {
+    status: Number(result?.status) || 0,
+    skillVersion: logSkillVersion(requestSkillVersions.get(request)),
+    path: logPath(request?.url),
+    durationMs: Math.max(0, Math.round(now - startedAt)),
+    gate: result && gatedResponses.has(result) ? 'min_version' : null,
+  };
+}
+
+function logRequest(request, result, startedAt, env) {
+  try { (env?.REQUEST_LOG ?? console.log)(JSON.stringify(requestLogRecord(request, result, startedAt))); } catch { /* never fail a request on logging */ }
 }
 
 export async function handleRequest(request, env) {
@@ -675,14 +807,23 @@ export async function handleRequest(request, env) {
 
 export default {
   async fetch(request, env) {
-    try { return await handleRequest(request, env); }
-    catch (error) { return response({ error: error?.status === 413 ? 'payload_too_large' : 'bad_request' }, error?.status ?? 400); }
+    const startedAt = Date.now();
+    let result;
+    try { result = await handleRequest(request, env); }
+    catch (error) { result = response({ error: error?.status === 413 ? 'payload_too_large' : 'bad_request' }, error?.status ?? 400); }
+    logRequest(request, result, startedAt, env);
+    return result;
   },
   async scheduled(controller, env) {
+    // One-off public install count corrections; a single indexed lookup once applied.
+    if (env.PUBLIC_STATS_DB?.prepare && env.PUBLIC_STATS_DB?.batch) {
+      await applyPendingInstallCorrections(env.PUBLIC_STATS_DB, { log: env.CORRECTION_LOG ?? console.log });
+    }
     await runJobLivenessSweep(env, {
       store: env.JOB_STORE ?? jobStore(env),
       fetchImpl: env.LIVENESS_FETCH ?? fetch,
       limit: CRON_LIVENESS_BATCH_SIZE,
+      log: silentLog,
     });
     // The cron fires every 5 minutes for small liveness batches; keep the
     // 30-day active-installations refresh on its previous 15-minute cadence.

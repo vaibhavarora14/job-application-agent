@@ -4,6 +4,8 @@ const DOMAIN = /^(?=.{1,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2
 const CURRENCY = /^[A-Z]{3}$/;
 const VERSION = /^\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?$/;
 
+import { redactHomePaths } from './telemetry-redact.mjs';
+
 export const TELEMETRY_SCHEMA_VERSION = 1;
 export const TELEMETRY_MAX_BYTES = 4096;
 
@@ -46,9 +48,30 @@ const enumValue = (set) => ({ kind: 'enum', set });
 const enumArray = (set, max = 12) => ({ kind: 'enum-array', set, max });
 
 /** Strip emails, phones, query-bearing URLs, and candidate-entered values from error text. */
-export function sanitizeTelemetryErrorMessage(value, { max = 160 } = {}) {
+function escapeRegExp(value) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+// Remove the local home directory and OS username wherever they appear. Callers on Node pass
+// os.homedir() / os.userInfo().username; the relay (Workers) relies on redactHomePaths alone.
+export function redactLocalIdentity(value, { homeDir, userName } = {}) {
+  if (typeof value !== 'string' || !value) return value;
+  let out = value;
+  if (typeof homeDir === 'string' && homeDir.length > 1) {
+    const forms = new Set([homeDir, homeDir.replace(/\\/g, '/'), homeDir.replace(/\//g, '\\')]);
+    for (const form of [...forms].sort((a, b) => b.length - a.length)) out = out.replace(new RegExp(escapeRegExp(form), 'gi'), '~');
+  }
+  out = redactHomePaths(out);
+  // Very short names (for example "a") would redact ordinary words; real usernames are longer.
+  if (typeof userName === 'string' && userName.trim().length >= 3) {
+    out = out.replace(new RegExp(`(?<![A-Za-z0-9])${escapeRegExp(userName.trim())}(?![A-Za-z0-9])`, 'gi'), '<user>');
+  }
+  return out;
+}
+
+export function sanitizeTelemetryErrorMessage(value, { max = 160, homeDir, userName } = {}) {
   if (typeof value !== 'string' || !value.trim()) return undefined;
-  let textValue = value
+  let textValue = redactLocalIdentity(value, { homeDir, userName })
     .replace(/[^\s@]+@[^\s@]+\.[^\s@]+/gi, '[redacted-email]')
     .replace(/(?:\+?\d[\d\s().-]{6,}\d)/g, '[redacted-phone]')
     .replace(/https?:\/\/[^\s]+/gi, '[redacted-url]')
@@ -103,6 +126,14 @@ export const EVENT_SCHEMAS = {
       // Optional (3.7.14): did the application form have a résumé/CV upload field?
       // Omitted when unknown, so pre-3.7.14 CLIs keep validating unchanged.
       resumeFieldPresent: boolean,
+      // Optional: 'logged' = recorded after the fact without fill telemetry (answer-key fallback),
+      // not agent-filled. Omitted for agent-filled submits, so older relays/clients are unaffected.
+      // Relays must deploy this key before a CLI that sends it is published.
+      entryOrigin: enumValue(values('agent', 'logged')),
+      // Optional Boolean: true = submitted via the honest profile one-click path
+      // (applicationChannel profile_one_click + telemetry.profileResumeOnFile). Older CLIs omit it.
+      // Relays must deploy this key before a CLI that sends it is published.
+      profileOneClick: boolean,
     },
   },
   round_completed: { required: { requestedCount: integer(1, 1000), submittedCount: integer(0, 1000), assessedCount: integer(0, 10000), skippedCount: integer(0, 10000), pausedCount: integer(0, 10000), errorCount: integer(0, 10000), durationBucket: enumValue(DURATIONS) }, optional: { attemptedSourceCount: integer(0, 10000), searchedSourceCount: integer(0, 10000), blockedSourceCount: integer(0, 10000), maxSourceSharePercent: integer(0, 100), concentrationReason: enumValue(CONCENTRATION_REASONS) } },

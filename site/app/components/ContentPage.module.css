@@ -1,0 +1,63 @@
+/* Shared styles for long-form content pages (/open-source, /compare). Reuses site tokens only. */
+.page { overflow-wrap: anywhere; }
+.page h1 { line-height: 1.08; }
+.page h3 { margin: 1.5rem 0 .4rem; font-size: 1.05rem; }
+.page a { color: var(--green); text-underline-offset: .2em; }
+.page code { font: .875em var(--font-mono), monospace; }
+.smallPrint { color: var(--muted); font-size: .85rem; }
+.code { margin: .75rem 0 1rem; padding: 1rem; border: 1px solid var(--line); border-radius: .5rem; background: var(--panel); white-space: pre-wrap; overflow-wrap: anywhere; font: .875rem/1.6 var(--font-mono), monospace; color: var(--ink); }
+.stats { margin-block: 2.5rem; }
+.stats :global(.metric-card) { min-height: 7.5rem; }
+.faq { margin-top: 1rem; }
+.tableWrap { margin-block: 1.25rem 2rem; overflow-x: auto; border: 1px solid var(--line); border-radius: .75rem; background: var(--surface); }
+.table { width: 100%; min-width: 68rem; border-collapse: collapse; font-size: .85rem; line-height: 1.55; overflow-wrap: normal; }
+.table th, .table td { padding: .85rem .9rem; border-bottom: 1px solid var(--line); text-align: left; vertical-align: top; color: var(--text); }
+.table thead th { color: var(--ink); font: 600 .8125rem/1.4 var(--font-body), sans-serif; background: var(--panel); }
+.table tbody th { color: var(--ink); font-weight: 400; min-width: 11rem; }
+.table tbody tr:last-child th, .table tbody tr:last-child td { border-bottom: 0; }
+.table sup { font: .7rem var(--font-mono), monospace; }
+.choose li { margin-bottom: .6rem; }
+.page.wide { max-width: 76rem; }
+.page p { margin: 0 0 1rem; }
+.page h2 { margin-bottom: .75rem; }
+.page ul, .page ol { margin: 0 0 1.25rem; padding-left: 1.25rem; }
+.page ul { list-style: disc; }
+.page ol { list-style: decimal; }
+.page li { margin-bottom: .35rem; }
+.page .faq details p { margin: .75rem 0 0; }
+
+/* Design review (#154) */
+main.page h1 { margin: .6rem 0 22px; font-size: clamp(32px, 8vw, 52px); line-height: 1.08; letter-spacing: -.03em; text-wrap: balance; }
+main.page p, main.page li { line-height: 1.7; }
+.nb { white-space: nowrap; }
+/* Code blocks with copy button */
+.codeBlock { position: relative; }
+.codeBlock .code { padding-right: 5.5rem; }
+.copy { position: absolute; top: .55rem; right: .55rem; min-height: 2.25rem; padding: .3rem .75rem; border: 1px solid var(--ctl); border-radius: 999px; background: var(--page); color: var(--ink); font: 600 .75rem var(--font-body), sans-serif; cursor: pointer; }
+.copy:hover { background: var(--row-hover); }
+.copy:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
+.crossLinks { margin-top: 2.5rem; padding-top: 1.5rem; border-top: 1px solid var(--line); }
+.crossLinks p { margin-bottom: .5rem; }
+/* /compare: cards replace the table under 720px */
+.cards { display: none; margin: 1rem 0 2rem; padding: 0; list-style: none; }
+.page ul.cards { padding-left: 0; list-style: none; }
+.card { margin-bottom: 12px; padding: 16px; border: 1px solid var(--line); border-radius: 12px; background: var(--page); }
+.card h3 { margin: 0; color: var(--ink); font: 700 17px/1.35 var(--font-body), sans-serif; }
+.repo { color: var(--muted); font: 12px var(--font-mono), monospace; overflow-wrap: anywhere; }
+.tag { display: inline-block; margin: 10px 0 4px; padding: 3px 10px; border-radius: 999px; font-size: 12px; font-weight: 600; line-height: 1.5; }
+.tagYes { background: var(--ok-soft); color: var(--ok); }
+.tagNo { background: var(--coral-soft); color: var(--coral); }
+.tagNeutral { background: var(--panel); color: var(--text); box-shadow: inset 0 0 0 1px var(--hair); }
+.card dl { display: grid; grid-template-columns: 96px 1fr; gap: 8px 12px; margin: 8px 0 0; font-size: 14px; line-height: 1.55; }
+.card dt { padding-top: 2px; color: var(--muted); font-size: 13px; font-weight: 600; }
+.card dd { margin: 0; color: var(--text); overflow-wrap: anywhere; }
+.card code { font-size: 12.5px; }
+@media (max-width: 719.98px) {
+  .tableWrap { display: none; }
+  .cards { display: block; }
+  .stats :global(.metric-grid) { grid-template-columns: repeat(3, 1fr); gap: .5rem; }
+  .stats :global(.metric-card) { min-height: 5.75rem; padding: .8rem .7rem; }
+  .stats :global(.metric-card) strong { font-size: 28px; }
+  .stats :global(.metric-card) span { font-size: .72rem; }
+}
+.card dl > div { display: contents; }

@@ -15,6 +15,7 @@ import {
   relayCompatibleEvent,
   TelemetryClient,
   TEST_RUNNER_TELEMETRY_ENDPOINT,
+  withoutProfileOneClick,
 } from '../scripts/telemetry-client.mjs';
 import { defaultSourceCommunityEndpoint } from '../scripts/source-community-client.mjs';
 
@@ -48,6 +49,9 @@ function eventBodies(relay) {
 function contactBodies(relay) {
   return relay.requests.filter((request) => String(request.url).endsWith('/v1/contact')).map((request) => request.body);
 }
+
+// A real CLI invocation (not a test file), for endpoint checks that model production use.
+const CLI_ARGV = ['node', '/usr/lib/node_modules/job-application-agent/job-application-agent/scripts/job-application.mjs'];
 
 test('new installations disclose and send the first event immediately', async (t) => {
   const directory = await mkdtemp(join(tmpdir(), 'telemetry-new-'));
@@ -406,6 +410,45 @@ test('legacy queued application_submitted with thinSubmissionOverrideUsed false 
   assert.equal('thinSubmissionOverrideUsed' in sent.body.properties, false);
 });
 
+test('application_submitted with profileOneClick is resent without it to a strict relay that predates the key', async (t) => {
+  const directory = await mkdtemp(join(tmpdir(), 'telemetry-profile-one-click-'));
+  t.after(() => rm(directory, { recursive: true, force: true }));
+  const requests = [];
+  let strict = true;
+  const fetch = async (url, options = {}) => {
+    const body = options.body ? JSON.parse(options.body) : null;
+    requests.push({ url, body });
+    if (url.endsWith('/v1/install')) return Response.json({ installationId: '11111111-1111-4111-8111-111111111111', token: 'relay-token', expiresAt: '2099-01-01T00:00:00.000Z' });
+    if (strict && body?.properties && 'profileOneClick' in body.properties) return Response.json({ error: 'invalid_event' }, { status: 400 });
+    return Response.json({ accepted: true, eventId: '22222222-2222-4222-8222-222222222222' }, { status: 202 });
+  };
+  const submitted = {
+    event: 'application_submitted',
+    properties: {
+      company: 'Example', title: 'Engineer', jobHash: 'a'.repeat(64), domain: 'jobs.example.com', ats: 'other',
+      durationBucket: 'under-1s', fieldsFilled: 0, shortAnswerCount: 0, resumeUploaded: false, approvalMode: 'review-each',
+      telemetrySupplied: true, fillMetricsSource: 'telemetry', profileOneClick: true,
+    },
+  };
+  const client = new TelemetryClient({ stateDir: directory, endpoint: 'https://relay.example.com', fetch, stderr: () => {}, timeoutMs: 50 });
+  const session = await client.beginCommand('apply');
+  assert.equal((await client.record(submitted, session)).sent, true);
+  const attempts = requests.filter((request) => request.body?.event === 'application_submitted');
+  assert.equal(attempts.length, 2);
+  assert.equal(attempts[0].body.properties.profileOneClick, true);
+  assert.equal('profileOneClick' in attempts[1].body.properties, false);
+  // An updated relay gets the key on the first try.
+  strict = false;
+  requests.length = 0;
+  const next = { ...submitted, properties: { ...submitted.properties, jobHash: 'b'.repeat(64), profileOneClick: false } };
+  assert.equal((await client.record(next, session)).sent, true);
+  const updated = requests.filter((request) => request.body?.event === 'application_submitted');
+  assert.equal(updated.length, 1);
+  assert.equal(updated[0].body.properties.profileOneClick, false);
+  assert.equal(withoutProfileOneClick({ event: 'application_paused', properties: { profileOneClick: true } }), null);
+  assert.equal(withoutProfileOneClick({ event: 'application_submitted', properties: { ats: 'lever' } }), null);
+});
+
 test('relayCompatibleEvent keeps a true thinSubmissionOverrideUsed and leaves other events untouched', () => {
   const used = { event: 'application_submitted', properties: { thinSubmissionOverrideUsed: true, ats: 'other' } };
   assert.deepEqual(relayCompatibleEvent(used), used);
@@ -606,10 +649,10 @@ test('quarantine is bounded', async (t) => {
 });
 
 test('relay endpoints never default to production under node --test', () => {
-  assert.equal(defaultTelemetryEndpoint({}), PRODUCTION_TELEMETRY_ENDPOINT);
+  assert.equal(defaultTelemetryEndpoint({}, CLI_ARGV), PRODUCTION_TELEMETRY_ENDPOINT);
   assert.equal(defaultTelemetryEndpoint({ NODE_TEST_CONTEXT: 'child-v8' }), TEST_RUNNER_TELEMETRY_ENDPOINT);
   assert.equal(defaultTelemetryEndpoint({ NODE_TEST_CONTEXT: 'child', JOB_APPLICATION_AGENT_TELEMETRY_URL: 'http://127.0.0.1:1234' }), 'http://127.0.0.1:1234');
-  assert.equal(defaultSourceCommunityEndpoint({}), PRODUCTION_TELEMETRY_ENDPOINT);
+  assert.equal(defaultSourceCommunityEndpoint({}, CLI_ARGV), PRODUCTION_TELEMETRY_ENDPOINT);
   assert.equal(defaultSourceCommunityEndpoint({ NODE_TEST_CONTEXT: 'child' }), TEST_RUNNER_TELEMETRY_ENDPOINT);
   assert.equal(defaultSourceCommunityEndpoint({ NODE_TEST_CONTEXT: 'child', JOB_APPLICATION_AGENT_SOURCE_COMMUNITY_URL: 'http://127.0.0.1:9' }), 'http://127.0.0.1:9');
   // This very process runs under the test runner, so the module-level default is already safe.
@@ -632,9 +675,9 @@ test('GitHub Actions never defaults to the production relay, even outside the te
 });
 
 test('generic CI=true alone keeps production telemetry (agent runtimes often export CI)', () => {
-  assert.equal(defaultTelemetryEndpoint({ CI: 'true' }), PRODUCTION_TELEMETRY_ENDPOINT);
-  assert.equal(defaultTelemetryEndpoint({ CI: '1' }), PRODUCTION_TELEMETRY_ENDPOINT);
-  assert.equal(defaultSourceCommunityEndpoint({ CI: 'true' }), PRODUCTION_TELEMETRY_ENDPOINT);
+  assert.equal(defaultTelemetryEndpoint({ CI: 'true' }, CLI_ARGV), PRODUCTION_TELEMETRY_ENDPOINT);
+  assert.equal(defaultTelemetryEndpoint({ CI: '1' }, CLI_ARGV), PRODUCTION_TELEMETRY_ENDPOINT);
+  assert.equal(defaultSourceCommunityEndpoint({ CI: 'true' }, CLI_ARGV), PRODUCTION_TELEMETRY_ENDPOINT);
 });
 
 test('a CLI process spawned without NODE_TEST_CONTEXT inside GitHub Actions resolves a dead local relay', () => {
@@ -649,7 +692,8 @@ const s = await import(${JSON.stringify(moduleUrl('source-community-client.mjs')
 process.stdout.write(JSON.stringify([t.DEFAULT_TELEMETRY_ENDPOINT, s.DEFAULT_SOURCE_COMMUNITY_ENDPOINT]));`;
   const run = (childEnv) => JSON.parse(execFileSync(process.execPath, ['--input-type=module', '-e', source], { env: childEnv, encoding: 'utf8' }));
   assert.deepEqual(run(env), [TEST_RUNNER_TELEMETRY_ENDPOINT, TEST_RUNNER_TELEMETRY_ENDPOINT]);
+  // Outside every test marker (a real `node -e` / CLI process), production is the default.
   const outsideCi = { ...env };
-  delete outsideCi.GITHUB_ACTIONS;
+  for (const key of ['GITHUB_ACTIONS', 'JAA_TEST', 'npm_lifecycle_event']) delete outsideCi[key];
   assert.deepEqual(run(outsideCi), [PRODUCTION_TELEMETRY_ENDPOINT, PRODUCTION_TELEMETRY_ENDPOINT]);
 });

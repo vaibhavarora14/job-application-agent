@@ -4,7 +4,7 @@
 
 If `cloud status` reports a Cloudflare D1 backend (`cloudflare-d1-r2` or the private `cloudflare-d1-kv` blob fallback), acquire one 15-minute application-run lease before any transmission and renew it every five minutes. Other clients may still read shared state and record independent outcomes. A cloud outage pauses new submissions, while cached research and drafting may continue.
 
-Immediately before sending an application, create an intent containing its application ID, canonical URL, round ID, and active lease ID. After visible confirmation, pass the intent and lease IDs to `ledger add`; the Worker records the submission and round progress together. If a send may have happened but confirmation is unavailable, mark the intent `sent-unverified`. Lease expiry never makes an unverified intent safe to retry.
+Before sending anything, stage the filled applications as a review batch and get the candidate's approval ([REVIEW.md](REVIEW.md)). Unattended and scheduled runs may discover, assess, fill and stage, then stop and wait for approval; they never send on their own. Immediately before sending an application, create an intent containing its application ID, canonical URL, round ID, active lease ID, `reviewBatchId` and `reviewToken`. After visible confirmation, pass the intent and lease IDs to `ledger add`; the Worker records the submission and round progress together. If a send may have happened but confirmation is unavailable, mark the intent `sent-unverified`. Lease expiry never makes an unverified intent safe to retry.
 
 ## Round lifecycle
 
@@ -39,6 +39,10 @@ Before submitting, search at least three relevant independent sources from `sour
 Legacy rounds also pass `"reviewedCount": 12, "qualifiedCount": 3`.
 
 `status` is `searched` or `blocked`. Empty search results count as a search with zero counts, with evidence explaining the query/filter and absence of suitable postings. `reviewedCount` and `qualifiedCount` are bounded at 10,000; qualified cannot exceed reviewed. A blocked report must have zero counts and a `blocker` of `login`, `mfa`, `captcha`, `site-error`, or `access-unavailable`. Evidence is required, at most 2,000 characters, and stays private. Record concrete observations, never invented evidence or raw page content, credentials, recruiter identities, or answers. Reports describe agent-observed work; the CLI cannot independently verify browser activity.
+
+Rounds started by this CLI version verify coverage locally (`round-evidence.ndjson` in the private state directory; never synced or sent anywhere). `round source` refuses `status: "searched"` for a board without `round lead` records for it in the round (record an empty search as one `no-relevant-opening` lead with the search URL), and refuses it when every lead was recorded after the round's latest submission. The community job feed uses `sourceId: "community-jobs-feed"`: `searched` needs a successful `sources jobs` pull since `round start`; `blocked` (blocker `access-unavailable` or `site-error`) is accepted only after a `sources jobs` call in the round failed (`communityFeedUnavailable: true`). `round complete` additionally requires one community feed pull (or that recorded failure) before the round's submissions and rejects sources whose only evidence was recorded after the last submission. `round status` shows this under `routineGates.coverage`. Rounds started by older versions keep the earlier rules.
+
+`round start` also runs a résumé upload preflight (the canonical résumé is imported, readable, non-empty and a PDF). A failure is recorded as a `resume-upload-unavailable` blocker, returned by `round start`, listed under `routineGates.blockers` in `round status`, and repeated in `round complete` `warnings`. It does not block the round; report it to the candidate instead of narrowing to one-click boards. In those rounds an `entryOrigin=logged` ledger entry counts toward the target only when it was approved in its own one-application review batch (`routineGates.uncountedLoggedApplicationIds` lists the others).
 
 The minimum is three distinct sources attempted and at least one successfully searched. Blockers count toward attempts, not searches; try accessible alternatives whenever available. Repeated checks do not increase diversity. The two YC catalog entries count as one network. Inbound recruiting messages and user-provided links may supply good leads but do not count toward the three discovery sources. `round status` returns source reports, search/blocker counts, submission distribution, and missing attribution. A later blocker does not erase a prior search.
 
@@ -108,16 +112,16 @@ Exit codes: `0` resume_requested · `10` skipped · `11` aborted · `20` timeout
 
 #### Resume → submit (after exit 0)
 
-**Submit if possible** once blockers are cleared — no extra in-app confirm. filled ≠ applied until visible ATS confirmation.
+**Submit if possible** once blockers are cleared and the application is an approved item in a review batch. The hosted Choose step does not issue batch tokens yet, so stage a batch of one and get approval if it is not already covered. filled ≠ applied until visible ATS confirmation.
 
 ```text
 node scripts/attention-resume-submit.mjs --checklist
 node scripts/attention-resume-submit.mjs --attention-id attention-… --stdin
 ```
 
-After `resume_requested` (exit 0): renew the lease; load session binding; inject approved `answers[]` from the poll payload into matching textareas when present; re-inspect the **same** filled ATS tab; if clear, **submit**; wait for visible confirmation; confirm the ledger intent. CAPTCHA vendor assist is Off by default (`CAPTCHA_VENDOR=off`). If unsure or still blocked, re-open attention. On skip: resolve attention, no submit, continue the round. On abort: release the lease and end the round. Full contract: `site/docs/ATTENTION.md`.
+After `resume_requested` (exit 0): renew the lease; load session binding; inject approved `answers[]` from the poll payload into matching textareas when present; re-inspect the **same** filled ATS tab; if clear and approved in a review batch, **submit**; wait for visible confirmation; confirm the ledger intent. CAPTCHA vendor assist is Off by default (`CAPTCHA_VENDOR=off`). If unsure or still blocked, re-open attention. On skip: resolve attention, no submit, continue the round. On abort: release the lease and end the round. Full contract: `site/docs/ATTENTION.md`.
 
-Prove / smoke / E2E apply runners enforce the owned-fixture allowlist (`fixtures/test-jobs.json`) whenever `CI=true`, `PROVE_APPLY=1`, or `APPLY_URL_GATE=1`. Non-allowlisted employer URLs require `LIVE_APPLY=1` (explicit, logged). Prefer `https://jobappagent.com/fixtures/{greenhouse,lever,ashby}/` (or the local fixture server). Ledger entries for those URLs store `applyKind: "fixture"` so metrics do not treat them as real employer applies. Details: [`fixtures/README.md`](../fixtures/README.md).
+Prove / smoke / E2E apply runners enforce the owned-fixture allowlist (`fixtures/test-jobs.json`) whenever `CI=true`, `PROVE_APPLY=1`, or `APPLY_URL_GATE=1`. Non-allowlisted employer URLs require `LIVE_APPLY=1` (explicit, logged). Prefer `https://jobappagent.com/fixtures/{greenhouse,lever,ashby}/` (or the local fixture server). Ledger entries for those URLs store `applyKind: "fixture"` so metrics do not treat them as real employer applies. Details: [`fixtures/README.md`](https://github.com/vaibhavarora14/job-application-agent/blob/main/job-application-agent/fixtures/README.md).
 
 ## Friction queue
 

@@ -180,7 +180,7 @@ export function decideResumeSubmit(input) {
       adapterId: adapter.id,
       binding,
       next: [
-        "cloud intent-confirm --stdin (with cloudIntentId + leaseId) OR ledger add with cloudIntentId + cloudLeaseId",
+        "cloud intent-confirm --stdin (with cloudIntentId + leaseId) OR ledger add with cloudIntentId + cloudLeaseId, plus reviewBatchId + reviewToken from the approved review batch",
         "attention resolve --stdin",
         "Continue round or release lease per policy",
       ],

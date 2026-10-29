@@ -37,7 +37,7 @@ try {
   const skill = await readFile(path.join(agentHome, 'skills', 'job-application-agent', 'SKILL.md'), 'utf8');
   const config = JSON.parse(await readFile(path.join(agentHome, 'job-application-agent', 'install.json'), 'utf8'));
   if (!skill.includes('# Job Application Agent')) throw new Error('Packed skill did not install correctly.');
-  if (config.installedVersion !== packageManifest.version || config.automaticUpdates !== true) throw new Error('Packed installer state is incorrect.');
+  if (config.installedVersion !== packageManifest.version || config.automaticUpdates !== false) throw new Error('Packed installer state is incorrect (new installs must be notify-only).');
   if (process.platform !== 'win32' && ((await stat(path.join(agentHome, 'job-application-agent', 'install.json'))).mode & 0o777) !== 0o600) throw new Error('Install configuration permissions are not private.');
 
   // Exercise the installed npm artifact with synthetic state, never the user's profile.
@@ -58,16 +58,25 @@ try {
       JOB_APPLICATION_AGENT_SOURCE_COMMUNITY_URL: 'http://127.0.0.1:9',
     },
   }));
+  // The packed skill ships the notify-only update check; the env opt-out keeps the smoke offline.
+  process.env.JOB_APPLICATION_AGENT_NO_UPDATE_CHECK = '1';
+  const updateCheck = run(['updates', 'check']);
+  assert.equal(updateCheck.checked, false);
+  assert.equal(updateCheck.reason, 'disabled');
+  assert.equal(updateCheck.automaticUpdates, false);
+  delete process.env.JOB_APPLICATION_AGENT_NO_UPDATE_CHECK;
   const round = run(['round', 'start', '--stdin'], { requestedCount: 1 });
   assert.equal(round.discoveryPolicy.minSources, 3);
   assert.equal(round.discoveryPolicy.concentrationThresholdPercent, 60);
   assert.equal(run(['round', 'status', round.roundId]).discovery.coverageSatisfied, false);
-  for (const sourceId of ['linkedin-jobs-feed', 'indeed', 'hacker-news-who-is-hiring']) {
-    run(['round', 'source', '--stdin'], { roundId: round.roundId, sourceId, status: 'searched', reviewedCount: 0, qualifiedCount: 0, evidence: 'Synthetic package verification: no matching results.' });
+  // Verified coverage: the community feed pull (offline here, so recorded as its blocker) and a
+  // recorded lead per searched board, all before the round's submission.
+  assert.equal(run(['sources', 'jobs']).communityFeedUnavailable, true);
+  run(['round', 'source', '--stdin'], { roundId: round.roundId, sourceId: 'community-jobs-feed', status: 'blocked', blocker: 'access-unavailable', evidence: 'Synthetic package verification: community feed unreachable offline.' });
+  for (const sourceId of ['linkedin-jobs-feed', 'hacker-news-who-is-hiring']) {
+    run(['round', 'lead', '--stdin'], { roundId: round.roundId, sourceId, url: `https://package.fixture.example/search/${sourceId}`, company: `${sourceId} search`, disposition: 'no-relevant-opening', evidence: 'Synthetic package verification: no matching results.' });
+    run(['round', 'source', '--stdin'], { roundId: round.roundId, sourceId, status: 'searched', evidence: 'Synthetic package verification: no matching results.' });
   }
-  const coverage = run(['round', 'status', round.roundId]).discovery;
-  assert.equal(coverage.coverageSatisfied, true);
-  assert.equal(coverage.searchedSourceCount, 3);
   const app = {
     id: 'smoke-app', company: 'Package Fixture', role: 'Senior Engineer', url: 'https://package.fixture.example/jobs/1',
     source: 'email', discoverySourceId: 'indeed', roundId: round.roundId, score: 90, status: 'submitted',
@@ -76,7 +85,19 @@ try {
   };
   run(['round','lead','--stdin'], { id: 'smoke-lead', roundId: round.roundId, sourceId: 'indeed', url: app.url, company: app.company, role: app.role, applicationId: app.id, disposition: 'qualified', observedAt: app.submittedAt, evidence: 'Synthetic package lead meets the target.' });
   assert.equal(run(['round','leads',round.roundId]).qualifiedCount, 1);
-  run(['ledger','add','--stdin'], app);
+  run(['round', 'source', '--stdin'], { roundId: round.roundId, sourceId: 'indeed', status: 'searched', evidence: 'Synthetic package verification: one qualifying lead.' });
+  const coverage = run(['round', 'status', round.roundId]).discovery;
+  assert.equal(coverage.coverageSatisfied, true);
+  assert.equal(coverage.searchedSourceCount, 3);
+  // Batch review: a live submission needs the candidate's approval token.
+  const approve = (items) => {
+    const staged = run(['review', 'stage', '--stdin'], { items });
+    assert.equal(staged.status, 'pending');
+    const approved = run(['review', 'approve', '--stdin'], { batchId: staged.batchId, phrase: staged.approvalPhrase });
+    assert.equal(approved.status, 'approved');
+    return { reviewBatchId: staged.batchId, reviewToken: approved.reviewToken };
+  };
+  run(['ledger','add','--stdin'], { ...app, ...approve([{ type: 'application', applicationId: app.id, company: app.company, role: app.role, url: app.url, fitScore: app.score, answers: {} }]) });
   assert.equal(run(['round','complete','--stdin'], {roundId: round.roundId, concentrationReason:'stronger-fit', concentrationEvidence:'Only this source had a qualifying synthetic lead.'}).completed, true);
   const bounce = {id:'smoke-bounce',applicationId:app.id,attemptId:`initial:${app.id}`,type:'delivery-failed',occurredAt:'2026-01-02T00:00:00Z',evidenceType:'final-delivery-failure',evidence:'Matched synthetic final delivery failure.'};
   run(['ledger','delivery','--stdin'], bounce);
@@ -86,7 +107,7 @@ try {
   assert.equal(failed.needsRecovery,true);
   assert.equal(failed.completed,true);
   assert.equal(run(['ledger','review']).failedDeliveryCount,1);
-  run(['ledger','retry','--stdin'],{id:'smoke-retry',applicationId:app.id,attemptId:'replacement-1',channel:'browser',url:app.url,channelVerifiedAt:'2026-01-03T00:00:00Z',occurredAt:'2026-01-03T00:10:00Z',approval:'STANDING AUTHORIZATION',evidenceType:'browser-confirmation',evidence:'Synthetic visible confirmation from the replacement channel.'});
+  run(['ledger','retry','--stdin'],{id:'smoke-retry',applicationId:app.id,attemptId:'replacement-1',channel:'browser',url:app.url,channelVerifiedAt:'2026-01-03T00:00:00Z',occurredAt:'2026-01-03T00:10:00Z',approval:'STANDING AUTHORIZATION',evidenceType:'browser-confirmation',evidence:'Synthetic visible confirmation from the replacement channel.',...approve([{ type: 'application', purpose: 'retry', applicationId: app.id, company: app.company, role: app.role, url: app.url, fitScore: app.score, answers: {} }])});
   assert.equal(run(['ledger','deliveries',app.id]).applications[0].attempts.length,2);
   assert.equal(run(['round','status',round.roundId]).confirmedCount,1);
   assert.equal(run(['ledger','review']).recordedSubmissionCount,1);

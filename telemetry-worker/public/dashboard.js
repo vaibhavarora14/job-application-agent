@@ -10,6 +10,13 @@ const percent = (numerator, denominator) => denominator ? Math.round((numerator 
 
 const total = (entries = []) => entries.reduce((sum, entry) => sum + number(entry.count), 0);
 
+// Collected and returned by the API, but intentionally not displayed publicly
+// (decision 2026-10-21: the reported-interviews count is too small to show).
+const HIDDEN_PUBLIC_OUTCOME_LABELS = ['interview', 'interviews'];
+
+export const publicOutcomeEntries = (entries = []) => entries
+  .filter((entry) => !HIDDEN_PUBLIC_OUTCOME_LABELS.includes(String(entry.label).trim().toLowerCase()));
+
 const countFor = (entries = [], labels = []) => entries
   .filter((entry) => labels.includes(String(entry.label).toLowerCase()))
   .reduce((sum, entry) => sum + number(entry.count), 0);
@@ -21,7 +28,6 @@ export function deriveCommunityStats(data) {
   const outcomes = data?.breakdowns?.outcomes ?? [];
   const submitted = number(metrics.applicationsSubmitted);
   const installations = number(metrics.installations);
-  const interviews = number(metrics.interviews);
   const outcomesReported = total(outcomes);
   const seniorRoles = countFor(seniority, ['senior', 'staff', 'principal', 'founding', 'manager']);
   const seniorityTotal = total(seniority);
@@ -43,7 +49,6 @@ export function deriveCommunityStats(data) {
     outcomesReported,
     outcomesUnknown: Math.max(0, submitted - outcomesReported),
     outcomeCoverage: percent(outcomesReported, submitted),
-    interviewProgression: percent(interviews, submitted),
     seniorTargeting: percent(seniorRoles, seniorityTotal),
   };
 }
@@ -68,11 +73,10 @@ function renderMetrics(metrics, community) {
   setText('[data-derived="weekly-submissions"]', compactFormat.format(community.lastSevenSubmissions), { title: community.lastSevenSubmissions });
   setText('[data-derived="peak-submissions"]', compactFormat.format(community.peakSubmissions), { title: community.peakSubmissions });
   setText('[data-derived="per-installation"]', fullFormat.format(community.applicationsPerInstallation));
-  setText('[data-derived="interview-rate"]', `${community.interviewProgression}%`);
   setText('[data-derived="active-days"]', `${community.activeDays} ${community.activeDays === 1 ? 'day' : 'days'}`);
   setText('[data-derived="senior-targeting"]', `${community.seniorTargeting}%`);
-  setText('[data-derived="outcome-coverage"]', `${community.outcomesReported}/${number(metrics.applicationsSubmitted)} outcomes reported`);
-  setText('[data-derived="outcome-detail"]', `${community.outcomesReported} known · ${community.outcomesUnknown} awaiting an update`);
+  setText('[data-derived="outcome-coverage"]', `${community.outcomeCoverage}% outcomes reported`);
+  setText('[data-derived="outcome-detail"]', `${fullFormat.format(community.outcomesUnknown)} awaiting an update`);
 }
 
 function renderVelocity(entries) {
@@ -139,12 +143,14 @@ function renderOutcomeBar(outcomes, submitted) {
   bar.replaceChildren();
   legend.replaceChildren();
   const known = total(outcomes);
-  const entries = [...outcomes, { label: 'awaiting update', count: Math.max(0, submitted - known) }];
+  const entries = [...publicOutcomeEntries(outcomes), { label: 'awaiting update', count: Math.max(0, submitted - known) }];
+  // Widths are relative to the displayed segments so hidden outcomes never leave a gap.
+  const displayed = total(entries);
   for (const entry of entries) {
     if (!entry.count) continue;
     const segment = document.createElement('span');
     segment.className = `outcome-segment outcome-${String(entry.label).replaceAll(' ', '-')}`;
-    segment.style.width = `${percent(number(entry.count), submitted)}%`;
+    segment.style.width = `${percent(number(entry.count), displayed)}%`;
     segment.title = `${entry.label}: ${fullFormat.format(number(entry.count))}`;
     bar.append(segment);
 

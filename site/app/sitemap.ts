@@ -33,6 +33,8 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     { url: siteUrl, changeFrequency: "weekly", priority: 1 },
     { url: `${siteUrl}/jobs`, changeFrequency: "daily", priority: 0.9 },
     ...jobs,
+    { url: `${siteUrl}/open-source`, changeFrequency: "monthly", priority: 0.8 },
+    { url: `${siteUrl}/compare`, changeFrequency: "monthly", priority: 0.7 },
     { url: `${siteUrl}/platforms`, changeFrequency: "monthly", priority: 0.6 },
     ...catalog.platforms.map(platform => ({ url: `${siteUrl}/platforms/${platform.id}`, changeFrequency: "monthly" as const, priority: 0.5 })),
     { url: `${siteUrl}/privacy`, changeFrequency: "yearly", priority: 0.3 },

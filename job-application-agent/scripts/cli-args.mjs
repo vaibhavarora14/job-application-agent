@@ -6,14 +6,16 @@ export const COMMAND_USAGE = Object.freeze({
   cloud: 'cloud status | configure --stdin | reconcile [--dry-run] | export [path] | lease-acquire | lease-renew | lease-release | intent-prepare --stdin | intent-sent --stdin | intent-confirm --stdin',
   profile: 'profile set --stdin | migrate --stdin | check | field <name>',
   resume: 'resume import <google-doc-url-or-local-pdf> | path',
-  score: 'score --stdin',
+  score: 'score --stdin | guard | guard-reset',
   ledger: 'ledger check|add|outcome|review-ack|delivery|retry --stdin | review | deliveries [application-id]',
   autonomy: 'autonomy grant --stdin | status | preview | revoke',
+  review: 'review stage|approve --stdin | show|open|status|revoke <batch-id> | list',
   round: 'round start|lead|source|confirm|complete --stdin | status [round-id] | leads [round-id]',
   sources: 'sources list [--stdin] | jobs [--stdin] | suggest --stdin | pending | sync | sharing status|enable|disable|reset',
   attention: 'attention add|resolve --stdin | list',
   friction: 'friction record --stdin | list',
   telemetry: 'telemetry status|enable|disable|reset | preview|record --stdin | contact status|enable|disable | identity status|enable|disable',
+  updates: 'updates check',
   outreach: 'outreach policy status|enable --stdin|disable --stdin | assess|draft|handoff|record|suppress|clear --stdin | list | show <id> | review',
 });
 
@@ -25,6 +27,7 @@ const STDIN_ACTIONS = Object.freeze({
   profile: ['set', 'migrate'],
   ledger: ['check', 'add', 'outcome', 'review-ack', 'delivery', 'retry'],
   autonomy: ['grant'],
+  review: ['stage', 'approve'],
   round: ['start', 'lead', 'source', 'confirm', 'complete'],
   sources: ['suggest'],
   attention: ['add', 'resolve'],
@@ -86,16 +89,17 @@ export function normalizeCliArgs(input) {
   if (area === 'cloud' && (args[1] === 'lease' || args[1] === 'intent') && /^[a-z]+$/.test(args[2] ?? '')) {
     args = ['cloud', `${args[1]}-${args[2]}`, ...args.slice(3)];
   }
-  const alias = ACTION_ALIASES[area]?.[args[1]];
+  const aliases = Object.hasOwn(ACTION_ALIASES, area) ? ACTION_ALIASES[area] : undefined;
+  const alias = aliases && Object.hasOwn(aliases, args[1]) ? aliases[args[1]] : undefined;
   if (alias) args = [area, alias, ...args.slice(2)];
   // A stdin subcommand given its JSON inline is equivalent to `--stdin`.
-  if (inlineJson !== undefined && STDIN_ACTIONS[area]?.includes(args[1]) && args[2] === '--stdin') args = args.slice(0, 3);
+  if (inlineJson !== undefined && Object.hasOwn(STDIN_ACTIONS, area) && STDIN_ACTIONS[area].includes(args[1]) && args[2] === '--stdin') args = args.slice(0, 3);
   return { args, ...(inlineJson !== undefined ? { inlineJson } : {}) };
 }
 
 /** Usage text for `help` output: every area, or one area. */
 export function usageFor(area) {
-  if (area && COMMAND_USAGE[area]) return { usage: [COMMAND_USAGE[area]] };
+  if (area && Object.hasOwn(COMMAND_USAGE, area)) return { usage: [COMMAND_USAGE[area]] };
   return {
     usage: Object.values(COMMAND_USAGE),
     note: 'Run node scripts/job-application.mjs <area> help for one area. Commands marked --stdin read exactly one JSON object from standard input.',

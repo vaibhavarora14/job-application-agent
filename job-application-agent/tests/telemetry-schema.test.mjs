@@ -137,6 +137,20 @@ test('application_submitted accepts optional Boolean resumeFieldPresent and stay
   assert.throws(() => validateEvent({ event: 'application_started', properties: { jobHash: 'a'.repeat(64), ats: 'ashby', approvalMode: 'review-each', requiredFieldCount: 3, resumeRequired: true, coverLetterRequired: false, referralPresent: false, resumeFieldPresent: true } }), /resumeFieldPresent|unknown/i);
 });
 
+test('application_submitted accepts optional Boolean profileOneClick and stays valid without it', () => {
+  const baseJob = { company: 'Example AI', title: 'Staff Engineer', jobHash: 'a'.repeat(64), domain: 'jobs.example.com', ats: 'other' };
+  const submitted = { ...baseJob, durationBucket: 'under-1s', fieldsFilled: 0, shortAnswerCount: 0, resumeUploaded: false, approvalMode: 'review-each', telemetrySupplied: true, fillMetricsSource: 'telemetry' };
+  // Older CLIs never send the key: still valid.
+  assert.equal('profileOneClick' in validateEvent({ event: 'application_submitted', properties: submitted }).properties, false);
+  assert.equal(validateEvent({ event: 'application_submitted', properties: { ...submitted, profileOneClick: true } }).properties.profileOneClick, true);
+  assert.equal(validateEvent({ event: 'application_submitted', properties: { ...submitted, profileOneClick: false } }).properties.profileOneClick, false);
+  for (const bad of ['true', 1, null, 'https://www.hirist.tech/j/example', { channel: 'profile_one_click' }]) {
+    assert.throws(() => validateEvent({ event: 'application_submitted', properties: { ...submitted, profileOneClick: bad } }), /profileOneClick/);
+  }
+  // Only application_submitted gains the key.
+  assert.throws(() => validateEvent({ event: 'application_started', properties: { jobHash: 'a'.repeat(64), ats: 'ashby', approvalMode: 'review-each', requiredFieldCount: 3, resumeRequired: true, coverLetterRequired: false, referralPresent: false, profileOneClick: true } }), /profileOneClick|unknown/i);
+});
+
 test('keeps interview-learning telemetry bounded and rejects free-form notes', () => {
   const event = validateEvent({
     event: 'outcome_recorded',

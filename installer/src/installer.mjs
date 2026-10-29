@@ -178,7 +178,10 @@ export async function installSkill({
   const config = {
     installed: true,
     installedVersion: packageVersion,
-    automaticUpdates: prior.installed ? prior.automaticUpdates !== false : true,
+    // New installs are notify-only: automatic installation is an explicit opt-in
+    // (`updates enable`). Existing installs keep whatever they already had.
+    automaticUpdates: prior.installed ? prior.automaticUpdates === true : false,
+    ...(prior.autoUpdateNoticeShown ? { autoUpdateNoticeShown: true } : {}),
     installedAt: prior.installedAt || new Date().toISOString(),
     updatedAt: new Date().toISOString(),
     capabilities,
@@ -193,6 +196,26 @@ export async function installSkill({
 
 export const updateSkill = installSkill;
 
+export const AUTO_UPDATE_NOTICE = [
+  'Automatic updates are ON for this installation: a background job installs new versions of job-application-agent from npm at login and hourly.',
+  'New installs now default to update notifications only (nothing is installed without you asking).',
+  'To keep automatic updates, do nothing. To switch to notifications only, run: npx job-application-agent@latest updates disable',
+].join('\n');
+
+/**
+ * One-time notice for installs that still have automatic updates enabled.
+ * Returns the notice text the first time (and records that it was shown), otherwise null.
+ * Never changes automaticUpdates or the scheduled job.
+ */
+export async function consumeAutoUpdateNotice({ homeDir = os.homedir(), agentHome, codexHome } = {}) {
+  const home = agentHome || codexHome || resolveAgentHome(homeDir);
+  const paths = pathsFor(home);
+  const current = await readConfigFile(paths.configPath);
+  if (!current?.installed || current.automaticUpdates !== true || current.autoUpdateNoticeShown === true) return null;
+  await writeConfig(paths.configPath, { ...current, autoUpdateNoticeShown: true });
+  return AUTO_UPDATE_NOTICE;
+}
+
 export async function setAutomaticUpdates(enabled, {
   homeDir = os.homedir(),
   agentHome,
@@ -206,7 +229,7 @@ export async function setAutomaticUpdates(enabled, {
   const paths = pathsFor(home);
   const current = await readInstallStatus({ homeDir, agentHome: home });
   if (!current.installed) throw new Error('The skill is not installed.');
-  const next = { ...current, automaticUpdates: enabled, updatedAt: new Date().toISOString() };
+  const next = { ...current, automaticUpdates: enabled, autoUpdateNoticeShown: true, updatedAt: new Date().toISOString() };
   await writeConfig(paths.configPath, next);
   if (scheduler) {
     const updateCommand = command || defaultCommand(home, platform);

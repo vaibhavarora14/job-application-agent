@@ -22,7 +22,7 @@ Optional filter input:
 }
 ```
 
-`sources list` combines the packaged catalog with the live repeatable-source registry. Public v1 community entries are always maintainer-approved and have `registryStatus: "community-reviewed"`. Their `id` and `communitySourceId` are the same stable community ID and may be stored as `discoverySourceId`. `sources jobs` returns the newest maintainer-reviewed confirmed job links, 50 at a time by default, with an opaque `nextCursor` for pagination. Both are discovery leads, not endorsements or eligibility claims. Resolve every lead to the direct employer or ATS page and verify that posting immediately before assessment and submission.
+`sources list` combines the packaged catalog with the live repeatable-source registry. Public v1 community entries are always maintainer-approved and have `registryStatus: "community-reviewed"`. Their `id` and `communitySourceId` are the same stable community ID and may be stored as `discoverySourceId`. `sources jobs` returns the newest maintainer-reviewed confirmed job links, 50 at a time by default, with an opaque `nextCursor` for pagination. When the feed cannot be read, the output adds `communityFeedUnavailable: true`. Each `sources jobs` call is also noted locally (time, success, job count; no job data) so rounds can verify the feed was pulled; record its leads and coverage under `discoverySourceId` `community-jobs-feed`. Both are discovery leads, not endorsements or eligibility claims. Resolve every lead to the direct employer or ATS page and verify that posting immediately before assessment and submission.
 
 Store three independent attribution fields when available:
 

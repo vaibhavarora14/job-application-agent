@@ -9,7 +9,6 @@ export type CommunityStats = {
     activeInstallations30d: number;
     jobsAssessed: number;
     applicationsSubmitted: number;
-    interviews: number;
     offers: number;
   };
   timeline: Array<{ day: string; assessed: number; submitted: number }>;
@@ -45,3 +44,10 @@ export function useCommunityStats() {
 
 export const compactNumber = new Intl.NumberFormat("en", { notation: "compact", maximumFractionDigits: 1 });
 export const fullNumber = new Intl.NumberFormat("en");
+
+/** True only when every lifetime counter shown publicly is a real number. */
+export function hasLifetimeCounters(data: CommunityStats | null): data is CommunityStats {
+  if (!data) return false;
+  const { installations, jobsAssessed, applicationsSubmitted } = data.metrics ?? {};
+  return [installations, jobsAssessed, applicationsSubmitted].every((value) => typeof value === "number" && Number.isFinite(value));
+}

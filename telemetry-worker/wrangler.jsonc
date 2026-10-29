@@ -11,12 +11,21 @@
     "binding": "ASSETS",
     "run_worker_first": ["/", "/api/*", "/v1/*", "/healthz"]
   },
+  // Workers Logs: only the relay's own structured line per request (status, skillVersion, path,
+  // durationMs, gate). Invocation logs stay off because they carry request URL/headers/cf/IP.
+  // Cloudflare still attaches the request method/URL to each log line, so query strings are
+  // redacted from it (needs wrangler >= 4.151 in the deploy workflows).
   "observability": {
-    "enabled": false,
-    "logs": { "enabled": false, "invocation_logs": false }
+    "enabled": true,
+    "head_sampling_rate": 1,
+    "redact_query_string": true,
+    "logs": { "enabled": true, "invocation_logs": false, "head_sampling_rate": 1 },
+    "traces": { "enabled": false }
   },
   "vars": {
-    "POSTHOG_HOST": "https://us.i.posthog.com"
+    "POSTHOG_HOST": "https://us.i.posthog.com",
+    // Clients below this skillVersion get 426 + "Please upgrade: npx job-application-agent@latest".
+    "MIN_CLIENT_VERSION": "2.0.0"
   },
   "triggers": {
     "crons": ["*/5 * * * *"]
@@ -73,7 +82,7 @@
         "run_worker_first": ["/", "/api/*", "/v1/*", "/healthz"]
       },
       "observability": { "enabled": false, "logs": { "enabled": false, "invocation_logs": false } },
-      "vars": { "POSTHOG_HOST": "https://us.i.posthog.com" },
+      "vars": { "POSTHOG_HOST": "https://us.i.posthog.com", "MIN_CLIENT_VERSION": "2.0.0" },
       "triggers": {
         "crons": ["*/5 * * * *"]
       },

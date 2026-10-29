@@ -1,9 +1,17 @@
 #!/usr/bin/env node
 
+// child_process is used for exactly two local, shell-free spawns (argument arrays, no `shell: true`):
+//   1. `review open` starts this package's own review-page.mjs with the current Node binary
+//      (process.execPath) to serve the local approval page on 127.0.0.1.
+//   2. openBrowser() hands that local review URL to the OS opener (open / xdg-open /
+//      `cmd /c start`), only when a desktop is present; JOB_APPLICATION_AGENT_NO_BROWSER=1 turns it off.
+// Nothing user- or page-supplied is ever executed.
+import { spawn } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
 import { createHash, randomUUID } from 'node:crypto';
-import { readFileSync } from 'node:fs';
+import { existsSync, mkdirSync, openSync, closeSync, readFileSync, writeFileSync } from 'node:fs';
 import { appendFile, chmod, mkdir, open, readFile, rename, stat, unlink, writeFile } from 'node:fs/promises';
-import { platform } from 'node:os';
+import { homedir, platform, userInfo } from 'node:os';
 import { basename, join, resolve } from 'node:path';
 import { isEntrypoint } from './entrypoint.mjs';
 
@@ -29,6 +37,14 @@ import {
 } from './attention-questions.mjs';
 import { confirmOutreachTowardRound, loadOutreachRoundView, loadSentVerifiedOutreach, outreachConfirmationEvents, projectOutreachRoundCounts, resolveOutreachRoundId } from './outreach-round.mjs';
 import { isFixtureOrSandboxApply, resolveApplyKind } from './ats/apply-url-gate.mjs';
+import { ASSESSMENT_GUARD_FILE, assessmentJobKey, createAssessmentGuard, invalidJobMessage, isAssessmentGuardStop } from './assessment-guard.mjs';
+import {
+  ASSESSMENT_DECISIONS_FILE, COMMUNITY_FEED_BLOCKERS, COMMUNITY_FEED_SOURCE_ID, RESUME_UPLOAD_BLOCKER, ROUND_EVIDENCE_FILE, ROUND_GATES_VERSION,
+  afterSubmissionCoverageMessage, communityFeedRequirementMessage, evaluateRoundCoverage, feedPulls, isPerJobApproval, latestAssessmentDecision, leadTimesBySource,
+  resumePreflightRecord, roundGatesRecord, routineSubmitGateMessage,
+} from './routine-gates.mjs';
+import { LEGACY_GRANT_NOTICE, applicationMatcher, approveBatch, batchToken, batchView, closeBatch, consumeReview, listBatches, loadBatch, resumeDigest, stageBatch, verifyReview } from './review-batch.mjs';
+import { reviewPageInfoFile } from './review-page.mjs';
 
 const SOURCES = new Set(['linkedin', 'greenhouse', 'lever', 'ashby', 'workable', 'comeet', 'workday', 'rippling', 'smartrecruiters', 'google-form', 'company', 'email', 'other']);
 /** Ledger applicationChannel values: ATS sources plus honest one-click profile applies (not a community job-board channel). */
@@ -58,7 +74,16 @@ const SUBMISSION_TELEMETRY_PII_KEYS = new Set([
   'resumePath', 'resume', 'answers', 'answerText', 'fullName', 'firstName', 'lastName',
 ]);
 const FILL_METRICS_SOURCES = new Set(['telemetry', 'answer_keys', 'empty']);
-const AUTONOMY_SCOPES = Object.freeze(['discover', 'assess', 'fill', 'upload-resume', 'submit', 'send-recruiting-email', 'record-ledger', 'record-outcomes', 'cleanup-tabs', 'open-improvement-pr']);
+// entryOrigin marks how a submitted ledger entry was produced. 'logged' = recorded after the fact
+// without fill telemetry (answer-key fallback), so it is not an agent-filled submission.
+// 'agent' is reserved; current clients only ever write/emit 'logged' and omit the key otherwise.
+const ENTRY_ORIGINS = new Set(['agent', 'logged']);
+export const LOGGED_ENTRY_ORIGIN = 'logged';
+// Since 3.8.0 a grant never covers a send on its own: every submission, resend and outreach
+// handoff needs a batch approval token (see review-batch.mjs).
+const AUTONOMY_SCOPES = Object.freeze(['discover', 'assess', 'fill', 'upload-resume', 'stage-review-batch', 'record-ledger', 'record-outcomes', 'cleanup-tabs', 'open-improvement-pr']);
+const LEGACY_SEND_SCOPES = new Set(['submit', 'send-recruiting-email']);
+const AUTONOMY_NOTICE_FILE = 'autonomy-batch-review-notice.json';
 const AUTONOMY_HARD_STOPS = Object.freeze(['authentication', 'mfa', 'captcha', 'legal-attestation', 'demographic', 'government-id', 'unverifiable-claim', 'ambiguous-authorization', 'ambiguous-compensation']);
 const ATTENTION_STAGES = new Set(['discovery', 'assessment', 'application', 'contact', 'resume', 'questions', 'legal', 'demographic', 'review', 'submission', 'confirmation', 'outcome', 'answers', 'upload']);
 const ATTENTION_BLOCKERS = new Set(['authentication', 'mfa', 'captcha', 'legal-attestation', 'demographic', 'government-id', 'ambiguous-authorization', 'ambiguous-compensation', 'unverifiable-claim', 'judgment', 'video', 'upload', 'site-error', 'other']);
@@ -75,7 +100,7 @@ const SOURCE_BLOCKERS = new Set(['login', 'mfa', 'captcha', 'site-error', 'acces
 const CONCENTRATION_REASONS = new Set(['stronger-fit', 'alternatives-exhausted', 'access-blocked', 'candidate-directed']);
 const COMMUNITY_SOURCE_ID = /^community-[0-9a-f]{16}$/;
 const REQUIRED_PROFILE = ['name', 'email', 'phone', 'location', 'workAuthorization', 'roleFamilies', 'seniority', 'targetLocations', 'workModes', 'submissionMode', 'yearsExperience', 'autoSubmitMinScore', 'manualReviewMinScore', 'minMustHaveCoverage'];
-const STRING_PROFILE_FIELDS = new Set(['name', 'email', 'phone', 'location', 'workAuthorization', 'linkedin', 'github', 'portfolio', 'availability', 'currentCompensation', 'targetCompensation', 'submissionMode']);
+const STRING_PROFILE_FIELDS = new Set(['name', 'email', 'phone', 'location', 'workAuthorization', 'linkedin', 'github', 'portfolio', 'availability', 'currentCompensation', 'targetCompensation', 'submissionMode', 'submissionModeChosenAt']);
 const ARRAY_PROFILE_FIELDS = new Set(['roleFamilies', 'seniority', 'skills', 'targetLocations', 'excludedLocations', 'workModes', 'industries', 'excludedCompanies']);
 const NUMBER_PROFILE_FIELDS = new Set(['yearsExperience', 'autoSubmitMinScore', 'manualReviewMinScore', 'minMustHaveCoverage']);
 const OBJECT_PROFILE_FIELDS = new Set(['compensationFloor']);
@@ -87,7 +112,7 @@ const DEFAULT_TARGETING = {
   targetLocations: ['India', 'Remote', 'Worldwide'],
   workModes: ['remote'],
   industries: ['AI', 'developer tools'],
-  submissionMode: 'routine-auto',
+  submissionMode: 'review-each',
   yearsExperience: 10,
   autoSubmitMinScore: 80,
   manualReviewMinScore: 70,
@@ -98,12 +123,55 @@ function stateDir() {
   return resolveStateDir();
 }
 
+export const SUBMISSION_MODE_RESET_NOTICE = 'Notice: submissions now default to review-each (you approve every application). Your saved profile had routine-auto without a recorded choice, so it now uses review-each. To turn routine-auto back on, run `profile set --stdin` with "submissionMode": "routine-auto".\n';
+const SUBMISSION_MODE_NOTICE_FILE = 'submission-mode-notice.json';
+
+/**
+ * routine-auto counts only when the candidate chose it explicitly through `profile set`
+ * or `profile migrate`, which stamp `submissionModeChosenAt`. Before 3.7.22, migrations
+ * and defaults wrote routine-auto without a marker, so an unstamped routine-auto is
+ * indistinguishable from a default and is treated as review-each.
+ */
+export function normalizeSubmissionMode(profile) {
+  if (!profile || typeof profile !== 'object' || Array.isArray(profile)) return { profile, reset: false };
+  if (profile.submissionMode !== 'routine-auto' || chosenAtValid(profile.submissionModeChosenAt)) return { profile, reset: false };
+  const { submissionModeChosenAt: _ignored, ...rest } = profile;
+  return { profile: { ...rest, submissionMode: 'review-each' }, reset: true };
+}
+
+function chosenAtValid(value) {
+  return typeof value === 'string' && value.length <= 40 && Number.isFinite(Date.parse(value));
+}
+
+/** Prints the reset notice once per state directory (stderr only; never changes stdout JSON). */
+function noticeSubmissionModeReset() {
+  try {
+    const dir = stateDir();
+    const marker = join(dir, SUBMISSION_MODE_NOTICE_FILE);
+    if (existsSync(marker)) return;
+    process.stderr.write(SUBMISSION_MODE_RESET_NOTICE);
+    mkdirSync(dir, { recursive: true, mode: 0o700 });
+    writeFileSync(marker, JSON.stringify({ version: 1, noticedAt: new Date().toISOString() }), { mode: 0o600 });
+  } catch { /* A notice failure never blocks a command. */ }
+}
+
+function assessmentGuard() {
+  return createAssessmentGuard({ dir: stateDir, withLock: withStateLock });
+}
+
 const secretStore = createSecretStore({ stateDir });
-const cloudState = new CloudStateClient({ stateDir: stateDir(), configPath: process.env.JOB_APPLICATION_AGENT_CLOUD_CONFIG ?? defaultCloudConfigPath() });
+// Path of the optional cloud-sync config (written only by `cloud configure`). The env override
+// exists so tests and smoke runs point at a throwaway file; it never carries a credential itself.
+// The config is read locally and sent only to the cloud endpoint the candidate configured.
+function cloudConfigPath() {
+  return process.env.JOB_APPLICATION_AGENT_CLOUD_CONFIG ?? defaultCloudConfigPath();
+}
+
+const cloudState = new CloudStateClient({ stateDir: stateDir(), configPath: cloudConfigPath() });
 
 function cachedCloudProfileRaw() {
   try {
-    const config = JSON.parse(readFileSync(process.env.JOB_APPLICATION_AGENT_CLOUD_CONFIG ?? defaultCloudConfigPath(), 'utf8'));
+    const config = JSON.parse(readFileSync(cloudConfigPath(), 'utf8'));
     if (config.version !== 2) return null;
     return object(JSON.parse(readFileSync(join(stateDir(), 'cloud-profile-cache.json'), 'utf8')), 'profile');
   } catch {
@@ -142,10 +210,12 @@ export function commandCategory([area, action]) {
   if (area === 'attention') return 'attention';
   if (area === 'friction') return 'friction';
   if (area === 'cloud') return 'other';
+  if (area === 'review') return 'batch';
   return 'other';
 }
 
 function telemetryStage(command, error) {
+  if (isAssessmentGuardStop(error)) return 'assessment';
   const message = String(error?.message ?? '');
   if (/^Usage:/i.test(message)) return 'application';
   if (/cloud|lease|intent/i.test(message)) return 'application';
@@ -168,6 +238,7 @@ function telemetryStage(command, error) {
 }
 
 export function telemetryErrorCategory(error) {
+  if (typeof error?.telemetryErrorCategory === 'string') return error.telemetryErrorCategory;
   const message = String(error?.message ?? '');
   if (/^Usage:/i.test(message)) return 'usage';
   if (/keychain|keyring|secret service|secret-tool|credential manager|dpapi|authentication|login|lease/i.test(message)) return 'auth';
@@ -182,6 +253,7 @@ export function telemetryErrorCategory(error) {
 }
 
 export function telemetryErrorCode(error) {
+  if (typeof error?.telemetryErrorCode === 'string') return error.telemetryErrorCode;
   const message = String(error?.message ?? '');
   if (/^Usage:/i.test(message)) return 'invalid_input';
   if (/keychain|keyring|secret service|secret-tool|credential manager|dpapi|authentication|login/i.test(message)) return 'authentication_required';
@@ -201,6 +273,15 @@ export function telemetryErrorFieldLabel(error) {
   return sanitizeTelemetryFieldLabel(match?.[1]);
 }
 
+// Local home directory and OS username, removed from error text before it can reach analytics.
+export function localIdentityForRedaction() {
+  let userName;
+  try { userName = userInfo().username; } catch { userName = process.env.USER || process.env.USERNAME; }
+  let homeDir;
+  try { homeDir = homedir(); } catch { homeDir = process.env.HOME || process.env.USERPROFILE; }
+  return { homeDir, userName };
+}
+
 export function skillErrorProperties(error, command) {
   const properties = {
     errorCode: telemetryErrorCode(error),
@@ -208,7 +289,7 @@ export function skillErrorProperties(error, command) {
     recoverable: true,
     errorCategory: telemetryErrorCategory(error),
   };
-  const sanitizedMessage = sanitizeTelemetryErrorMessage(error?.message);
+  const sanitizedMessage = sanitizeTelemetryErrorMessage(error?.message, localIdentityForRedaction());
   if (sanitizedMessage) properties.sanitizedMessage = sanitizedMessage;
   const fieldLabel = telemetryErrorFieldLabel(error);
   if (fieldLabel) properties.fieldLabel = fieldLabel;
@@ -374,6 +455,19 @@ export async function assertAndRecordThinOverrideUse(candidateConfirmation, jobU
 }
 
 /**
+ * A submitted entry whose fill metrics fell back to answer keys (no fill telemetry) was logged after
+ * the fact, not filled by the agent. Returns 'logged' for that case and null otherwise.
+ */
+export function entryOriginForFillMetrics(fillMetricsSource) {
+  return fillMetricsSource === 'answer_keys' ? LOGGED_ENTRY_ORIGIN : null;
+}
+
+/** True when a submission (ledger row, fill metrics, or application_submitted properties) was logged, not agent-filled. */
+export function isLoggedNotAgentFilled(record) {
+  return record?.entryOrigin === LOGGED_ENTRY_ORIGIN;
+}
+
+/**
  * Resolve fill metrics for application_submitted without putting answer values in telemetry.
  * Prefer explicit entry.telemetry counts; fall back to answer *keys* only (labels, not content).
  */
@@ -395,6 +489,7 @@ export function resolveSubmissionFillMetrics(entry, details = {}) {
     : (answers.length > 0 ? 'answer_keys' : 'empty');
   // Boolean only: did the form have a résumé/CV upload field? null = unknown (left out of analytics).
   const resumeFieldPresent = typeof details.resumeFieldPresent === 'boolean' ? details.resumeFieldPresent : null;
+  const entryOrigin = entryOriginForFillMetrics(fillMetricsSource);
   return {
     ...(details.durationBucket ? { durationBucket: details.durationBucket } : {}),
     fieldsFilled,
@@ -403,6 +498,7 @@ export function resolveSubmissionFillMetrics(entry, details = {}) {
     fillMetricsSource,
     ...(details.profileResumeOnFile === true ? { profileResumeOnFile: true } : {}),
     ...(resumeFieldPresent != null ? { resumeFieldPresent } : {}),
+    ...(entryOrigin ? { entryOrigin } : {}),
   };
 }
 
@@ -423,6 +519,8 @@ export function normalizeJobApprovalMode(raw) {
 /** Same thresholds as assertSubmissionFillGuard: 0 fields and no résumé, outside the honest one-click path. */
 export function isThinSubmission(entry, metrics) {
   if (isFixtureOrSandboxApply(entry)) return false;
+  // Logged after the fact (no fill telemetry): not an agent fill, so never an agent thin submit.
+  if (isLoggedNotAgentFilled(metrics)) return false;
   if (metrics.fillMetricsSource === 'empty') return false;
   if (!(metrics.fieldsFilled === 0 && metrics.resumeUploaded !== true)) return false;
   return !(applicationChannelOf(entry) === PROFILE_ONE_CLICK_CHANNEL && metrics.profileResumeOnFile === true);
@@ -440,6 +538,19 @@ export function routineAutoProfileThinSubmitError() {
     + 'jobApprovalMode applies to this entry only; it does not change your global submissionMode, which stays "routine-auto". '
     + 'Do not run profile set to change it.',
   );
+}
+
+/**
+ * The honest profile one-click path that assertSubmissionFillGuard allows for an empty-looking
+ * submit: a non-fixture apply with fill telemetry, 0 fields filled and no résumé uploaded, recorded
+ * with applicationChannel profile_one_click and telemetry.profileResumeOnFile true.
+ * Sent as the Boolean `profileOneClick` on application_submitted (no URL, employer or résumé data).
+ */
+export function isProfileOneClickSubmission(entry, metrics) {
+  if (isFixtureOrSandboxApply(entry)) return false;
+  if (!metrics || metrics.fillMetricsSource === 'empty') return false;
+  if (!(metrics.fieldsFilled === 0 && metrics.resumeUploaded !== true)) return false;
+  return applicationChannelOf(entry) === PROFILE_ONE_CLICK_CHANNEL && metrics.profileResumeOnFile === true;
 }
 
 /**
@@ -465,8 +576,7 @@ export function assertSubmissionFillGuard(entry, metrics, thinOverride = null, o
     return { path: 'filled', thinSubmissionOverrideUsed: false };
   }
 
-  const channel = applicationChannelOf(entry);
-  if (channel === PROFILE_ONE_CLICK_CHANNEL && metrics.profileResumeOnFile === true) {
+  if (isProfileOneClickSubmission(entry, metrics)) {
     return { path: 'profile_one_click', thinSubmissionOverrideUsed: false };
   }
 
@@ -528,8 +638,96 @@ export function warnAnswerKeyFillMetricsFallback(fillMetricsSource) {
     'WARNING: ledger add used answer-key fallback fill metrics '
     + '(fillMetricsSource=answer_keys, telemetrySupplied=false). '
     + 'Resend entry.telemetry with fieldsFilled, resumeUploaded, and startedAt/endedAt or durationMs '
-    + 'so analytics duration and counts are accurate — do not omit the telemetry block.\n',
+    + 'so analytics duration and counts are accurate — do not omit the telemetry block. '
+    + 'Without it this entry is recorded as logged after the fact (entryOrigin=logged), not as an agent-filled submission. '
+    + 'That is expected only when you did not fill this application in this session; never invent or reuse telemetry for it.\n',
   );
+}
+
+// Local review-only check for rapid-fire ledger adds that reuse one fill-telemetry block.
+// It never blocks, drops or changes a ledger add and never changes what telemetry sends: it
+// only keeps a private local stream (never synced to cloud state or any relay) and flags
+// matches for the agent/candidate to review.
+const FILL_TELEMETRY_REVIEW_STREAM = 'fill-telemetry-review';
+export const FILL_TELEMETRY_REVIEW_WINDOW_MS = 120_000;
+export const FILL_TELEMETRY_REVIEW_REASON = 'identical-fill-telemetry-rapid-fire';
+
+/**
+ * Digest of the fill-telemetry block exactly as supplied (allowed keys only), or null when no
+ * fill telemetry was supplied. Two different live fills essentially never report byte-identical
+ * blocks, so the same digest a few seconds apart means one block was reused.
+ */
+export function fillTelemetryFingerprint(rawTelemetry) {
+  if (rawTelemetry == null || typeof rawTelemetry !== 'object' || Array.isArray(rawTelemetry)) return null;
+  const kept = Object.fromEntries(Object.entries(rawTelemetry)
+    .filter(([key, value]) => SUBMISSION_TELEMETRY_ALLOWED.has(key) && value != null));
+  if (!Object.keys(kept).length) return null;
+  return createHash('sha256').update(stableJson(kept)).digest('hex');
+}
+
+/**
+ * Pure decision: prior rows (from the local stream) that carry the same fingerprint and were
+ * recorded within the window before nowMs. Returns the matching application ids (may be empty).
+ */
+export function rapidFireFillTelemetryMatches(priorRows, { fingerprint, applicationId, nowMs, windowMs = FILL_TELEMETRY_REVIEW_WINDOW_MS }) {
+  if (!fingerprint) return [];
+  const ids = [];
+  for (const row of priorRows ?? []) {
+    if (row?.fingerprint !== fingerprint || !row.applicationId || row.applicationId === applicationId) continue;
+    const at = Date.parse(row.recordedAt);
+    if (!Number.isFinite(at) || nowMs - at > windowMs || at - nowMs > windowMs) continue;
+    if (!ids.includes(row.applicationId)) ids.push(row.applicationId);
+  }
+  return ids;
+}
+
+/**
+ * After a successful live `ledger add` with fill telemetry: record its fingerprint locally and
+ * return a review flag when another add in the window reused the identical block. Best-effort:
+ * any error is swallowed so the check can never break or alter a ledger add.
+ */
+export async function reviewRapidFireFillTelemetry(entry, rawTelemetry, { now = new Date() } = {}) {
+  try {
+    if (isFixtureOrSandboxApply(entry)) return null;
+    const fingerprint = fillTelemetryFingerprint(rawTelemetry);
+    if (!fingerprint) return null;
+    return await withStateLock(FILL_TELEMETRY_REVIEW_STREAM, async (dir) => {
+      const file = join(dir, `${FILL_TELEMETRY_REVIEW_STREAM}.ndjson`);
+      const prior = await jsonLines(file).catch(() => []);
+      const nowMs = now.getTime();
+      const matchingApplicationIds = rapidFireFillTelemetryMatches(prior, { fingerprint, applicationId: entry.id, nowMs });
+      const recordedAt = now.toISOString();
+      const flagged = matchingApplicationIds.length > 0;
+      const row = {
+        applicationId: entry.id,
+        recordedAt,
+        fingerprint,
+        ...(flagged ? { reviewFlag: FILL_TELEMETRY_REVIEW_REASON, matchingApplicationIds } : {}),
+      };
+      await appendFile(file, `${JSON.stringify(row)}\n`, { mode: 0o600 });
+      await chmod(file, 0o600);
+      if (!flagged) return null;
+      const message = `Flagged for review (not blocked): ledger add for ${entry.id} carried the same fill telemetry as `
+        + `${matchingApplicationIds.join(', ')} within ${FILL_TELEMETRY_REVIEW_WINDOW_MS / 1000}s. `
+        + 'Each live submit must report its own telemetry from its own fill (fieldsFilled, resumeUploaded, resumeFieldPresent, timing). '
+        + 'Never copy one submit\'s telemetry block to another. For entries logged after the fact, omit the telemetry block so they are recorded as entryOrigin=logged.';
+      process.stderr.write(`WARNING: ${message}\n`);
+      return { flagged: true, reason: FILL_TELEMETRY_REVIEW_REASON, windowSeconds: FILL_TELEMETRY_REVIEW_WINDOW_MS / 1000, matchingApplicationIds, recordedAt, message };
+    });
+  } catch {
+    return null;
+  }
+}
+
+/** Local review flags recorded by reviewRapidFireFillTelemetry (empty when none or unreadable). */
+async function fillTelemetryReviewFlags(dir) {
+  const rows = await jsonLines(join(dir, `${FILL_TELEMETRY_REVIEW_STREAM}.ndjson`)).catch(() => []);
+  return rows.filter((row) => row?.reviewFlag === FILL_TELEMETRY_REVIEW_REASON).map((row) => ({
+    applicationId: row.applicationId,
+    flaggedAt: row.recordedAt,
+    reason: row.reviewFlag,
+    matchingApplicationIds: Array.isArray(row.matchingApplicationIds) ? row.matchingApplicationIds : [],
+  }));
 }
 
 /**
@@ -542,6 +740,7 @@ export async function telemetryApplicationSubmitted(entry, details = {}) {
   const fillMetricsSource = details.fillMetricsSource ?? metrics.fillMetricsSource;
   const telemetrySupplied = details.telemetrySupplied === true;
   const omitCounts = fillMetricsSource === 'empty';
+  const entryOrigin = details.entryOrigin ?? entry.entryOrigin ?? entryOriginForFillMetrics(fillMetricsSource);
 
   let resolvedDuration = metrics.durationBucket ?? details.durationBucket ?? null;
   if (resolvedDuration == null) {
@@ -574,6 +773,14 @@ export async function telemetryApplicationSubmitted(entry, details = {}) {
       // Optional Boolean: true = the form had a résumé/CV upload field, false = it had none.
       // Omitted when unknown (older CLIs / agents that do not report it).
       ...(typeof metrics.resumeFieldPresent === 'boolean' ? { resumeFieldPresent: metrics.resumeFieldPresent } : {}),
+      // Optional: 'logged' when the entry was recorded after the fact without fill telemetry
+      // (answer-key fallback), i.e. not agent-filled. Omitted otherwise, so ordinary agent submits
+      // keep the pre-existing property set.
+      ...(ENTRY_ORIGINS.has(entryOrigin) ? { entryOrigin } : {}),
+      // Boolean only: true when the submit took the honest profile one-click path
+      // (profile_one_click channel + profileResumeOnFile, 0 fields, no résumé), the same rule
+      // assertSubmissionFillGuard allows. Optional in the schema: older CLIs omit it.
+      profileOneClick: isProfileOneClickSubmission(entry, metrics),
     },
   };
 }
@@ -702,7 +909,7 @@ function sourceId(value, label) {
 
 function knownDiscoverySourceId(value, label) {
   const id = sourceId(value, label);
-  if (!SOURCE_CATALOG_IDS.has(id) && !COMMUNITY_SOURCE_ID.test(id)) throw new Error(`${label} must match a packaged or community source ID.`);
+  if (!SOURCE_CATALOG_IDS.has(id) && !COMMUNITY_SOURCE_ID.test(id) && id !== COMMUNITY_FEED_SOURCE_ID) throw new Error(`${label} must match a packaged or community source ID.`);
   return id;
 }
 
@@ -746,12 +953,14 @@ export function validateProfile(input) {
     else string(profile[field], `profile.${field}`, 1000);
   }
   if (!MODES.has(profile.submissionMode)) throw new Error('profile.submissionMode must be review-each or routine-auto.');
+  if (profile.submissionModeChosenAt != null && !chosenAtValid(profile.submissionModeChosenAt)) throw new Error('profile.submissionModeChosenAt must be an ISO timestamp.');
   if (profile.manualReviewMinScore > profile.autoSubmitMinScore) throw new Error('profile.manualReviewMinScore must not exceed profile.autoSubmitMinScore.');
   for (const field of STRING_PROFILE_FIELDS) if (profile[field] != null) string(profile[field], `profile.${field}`, 2000);
   for (const field of ARRAY_PROFILE_FIELDS) if (profile[field] != null) stringArray(profile[field], `profile.${field}`);
   for (const field of NUMBER_PROFILE_FIELDS) if (profile[field] != null) integer(profile[field], `profile.${field}`, 0, field === 'yearsExperience' ? 80 : 100);
   const normalized = Object.fromEntries(Object.entries(profile).filter(([key]) => STRING_PROFILE_FIELDS.has(key) || ARRAY_PROFILE_FIELDS.has(key) || NUMBER_PROFILE_FIELDS.has(key) || OBJECT_PROFILE_FIELDS.has(key)));
   if (profile.compensationFloor != null) normalized.compensationFloor = compensationFloor(profile.compensationFloor);
+  if (normalized.submissionMode !== 'routine-auto') delete normalized.submissionModeChosenAt;
   return normalized;
 }
 
@@ -960,6 +1169,10 @@ export function validateLedgerEntry(input) {
     if (typeof entry.telemetrySupplied !== 'boolean') throw new Error('entry.telemetrySupplied must be a Boolean.');
     normalized.telemetrySupplied = entry.telemetrySupplied;
   }
+  if (entry.entryOrigin != null) {
+    if (!ENTRY_ORIGINS.has(entry.entryOrigin)) throw new Error('entry.entryOrigin is invalid.');
+    normalized.entryOrigin = entry.entryOrigin;
+  }
   if (!SOURCES.has(normalized.source)) throw new Error('entry.source is invalid.');
   if (normalized.discoverySource != null && !DISCOVERY_SOURCES.has(normalized.discoverySource)) throw new Error('entry.discoverySource is invalid.');
   if (normalized.applicationChannel != null && !APPLICATION_CHANNELS.has(normalized.applicationChannel)) {
@@ -997,6 +1210,20 @@ export function validateLedgerCheckCandidate(input) {
   };
 }
 
+export const RESUME_FIELD_UNKNOWN = 'unknown';
+
+/**
+ * `ledger add` with a telemetry block must say whether the form had a résumé/CV field. An explicit
+ * `resumeUploaded: true` already implies it. Only the CLI requires this; the relay schema is unchanged.
+ */
+export function assertResumeFieldPresentReported(rawTelemetry) {
+  if (rawTelemetry == null || typeof rawTelemetry !== 'object' || Array.isArray(rawTelemetry)) return;
+  if (Object.hasOwn(rawTelemetry, 'resumeFieldPresent') && rawTelemetry.resumeFieldPresent != null) return;
+  if (rawTelemetry.resumeUploaded === true) return;
+  throw new Error('ledger add refused: entry.telemetry.resumeFieldPresent is required. Report true if this form had a résumé/CV upload or selection field (even optional or unused), '
+    + 'false if it had none, or "unknown" only if you never saw the form. Check every step of multi-step and one-click flows such as LinkedIn Easy Apply. Nothing was recorded; add the key and retry.');
+}
+
 export function validateSubmissionTelemetry(input) {
   if (input == null) return {};
   const value = object(input, 'entry.telemetry');
@@ -1028,8 +1255,11 @@ export function validateSubmissionTelemetry(input) {
   if (cleaned.profileResumeOnFile != null && typeof cleaned.profileResumeOnFile !== 'boolean') {
     throw new Error('entry.telemetry.profileResumeOnFile must be a Boolean.');
   }
+  // "unknown" is an explicit answer for a form the agent never saw; it is never sent anywhere
+  // (application_submitted leaves the key out, exactly like older CLIs).
+  if (cleaned.resumeFieldPresent === RESUME_FIELD_UNKNOWN) delete cleaned.resumeFieldPresent;
   if (cleaned.resumeFieldPresent != null && typeof cleaned.resumeFieldPresent !== 'boolean') {
-    throw new Error('entry.telemetry.resumeFieldPresent must be a Boolean (true if the form had a résumé/CV upload field, false if it had none); omit it when unknown.');
+    throw new Error('entry.telemetry.resumeFieldPresent must be true (the form had a résumé/CV upload or selection field), false (it had none) or "unknown" (you never saw the form).');
   }
   if (cleaned.resumeFieldPresent === false && cleaned.resumeUploaded === true) {
     throw new Error('entry.telemetry.resumeFieldPresent cannot be false when resumeUploaded is true; a résumé upload means the form had a résumé/CV field.');
@@ -1202,6 +1432,12 @@ export function buildReview(entries, outcomeEntries = [], acknowledgements = [],
 }
 
 function storedProfileRaw() {
+  const { profile, reset } = normalizeSubmissionMode(storedProfileRawUnnormalized());
+  if (reset) noticeSubmissionModeReset();
+  return profile;
+}
+
+function storedProfileRawUnnormalized() {
   const cloudProfile = cachedCloudProfileRaw();
   if (cloudProfile) return cloudProfile;
   try { return object(JSON.parse(secretStore.readProfile()), 'profile'); } catch (error) {
@@ -1463,8 +1699,9 @@ function autonomyView(value) {
     mode: enabled ? 'routine-auto' : null,
     scopes: enabled ? [...AUTONOMY_SCOPES] : [],
     hardStops: [...AUTONOMY_HARD_STOPS],
-    maySubmitRoutineApplications: enabled,
-    maySendVerifiedRecruitingEmail: enabled,
+    maySubmitRoutineApplications: false,
+    maySendVerifiedRecruitingEmail: false,
+    submissionsRequireBatchReview: true,
     mayCreateImprovementPr: enabled,
     mayMergeReleaseOrPublish: false,
     mayBypassHostPermissionPrompts: false,
@@ -1474,8 +1711,16 @@ function autonomyView(value) {
 }
 
 async function autonomyStatus() {
-  const file = join(await ensureStateDir(), 'autonomy.json');
-  return autonomyView(await readPrivateJson(file, { version: 1, enabled: false }));
+  const dir = await ensureStateDir();
+  const stored = await readPrivateJson(join(dir, 'autonomy.json'), { version: 1, enabled: false });
+  if (stored?.enabled === true && Array.isArray(stored.scopes) && stored.scopes.some((scope) => LEGACY_SEND_SCOPES.has(scope))) {
+    const marker = join(dir, AUTONOMY_NOTICE_FILE);
+    if (!existsSync(marker)) {
+      process.stderr.write(LEGACY_GRANT_NOTICE);
+      await writePrivateJson(marker, { version: 1, shownAt: new Date().toISOString() });
+    }
+  }
+  return autonomyView(stored);
 }
 
 async function autonomyGrant(input) {
@@ -1499,8 +1744,14 @@ async function autonomyRevoke() {
   return autonomyView(revoked);
 }
 
+/** An explicit routine-auto written through `profile set` / `profile migrate` is recorded as a choice. */
+export function stampSubmissionModeChoice(profile, now = new Date()) {
+  if (profile.submissionMode !== 'routine-auto' || chosenAtValid(profile.submissionModeChosenAt)) return profile;
+  return { ...profile, submissionModeChosenAt: now.toISOString() };
+}
+
 async function storeProfile(profileInput) {
-  const profile = validateProfile(profileInput);
+  const profile = stampSubmissionModeChoice(validateProfile(profileInput));
   if (await cloudState.configured()) {
     const dir = await ensureStateDir();
     await cloudState.putDocumentCurrent('profile', profile);
@@ -1560,6 +1811,226 @@ async function importResume(source) {
     await cloudState.putFileCurrent('resume.json', Buffer.from(JSON.stringify(metadata)));
   }
   return { path: target, sha256: metadata.sha256, bytes: metadata.bytes };
+}
+
+/**
+ * Owned fixtures and vendor sandboxes (by URL allowlist, never by a caller-supplied applyKind)
+ * are not employer submissions, so they do not need a batch approval.
+ */
+function requiresBatchReview(url) {
+  try { return resolveApplyKind(url) === 'live'; } catch { return true; }
+}
+
+/** Staging refreshes the cloud résumé cache; verification hashes the local copy the browser uploads. */
+async function currentResumeDigest({ refresh = false } = {}) {
+  const dir = await ensureStateDir();
+  if (refresh) {
+    try { await canonicalResumePath(); } catch { /* not imported, or the cloud is unreachable: hash what is cached */ }
+  }
+  return resumeDigest(join(dir, 'resume.pdf'));
+}
+
+const REVIEW_NEXT_STEP = 'Show the candidate `table` exactly as printed. Then run `review open <batchId>` and give the candidate the URL so they can read every item and approve on the page; poll `review status <batchId>` for the reviewToken. Where the candidate has no browser on this machine, show them the items with `review show <batchId>` and ask them to type the approval phrase in chat, then pass their exact words to `review approve --stdin`. Never open, read the code from, or operate the review page yourself, and never type the phrase for the candidate.';
+
+function openBrowser(url) {
+  if (process.env.JOB_APPLICATION_AGENT_NO_BROWSER === '1') return false;
+  const os = platform();
+  let command; let args;
+  if (os === 'darwin') { command = 'open'; args = [url]; }
+  else if (os === 'win32') { command = 'cmd'; args = ['/c', 'start', '""', url]; }
+  else if (process.env.DISPLAY || process.env.WAYLAND_DISPLAY) { command = 'xdg-open'; args = [url]; }
+  else return false;
+  try {
+    const child = spawn(command, args, { detached: true, stdio: 'ignore' });
+    child.on('error', () => {});
+    child.unref();
+    return true;
+  } catch { return false; }
+}
+
+async function openReviewPage(dir, batchId) {
+  const batch = await loadBatch(dir, batchId);
+  const view = batchView(batch);
+  if (view.status !== 'pending') return { batchId, status: view.status, opened: false, message: `Review batch is ${view.status}; there is nothing to approve.` };
+  const infoFile = reviewPageInfoFile(dir, batchId);
+  const existing = await readPrivateJson(infoFile, null);
+  let alive = false;
+  if (existing?.pid) { try { process.kill(existing.pid, 0); alive = true; } catch { alive = false; } }
+  let info = alive ? existing : null;
+  if (!info) {
+    await unlink(infoFile).catch(() => {});
+    const logFd = openSync(join(dir, 'review-batches', `${batchId}.page.log`), 'a', 0o600);
+    const child = spawn(process.execPath, [fileURLToPath(new URL('./review-page.mjs', import.meta.url)), dir, batchId, infoFile], { detached: true, stdio: ['ignore', 'ignore', logFd], env: process.env });
+    child.unref();
+    closeSync(logFd);
+    for (let attempt = 0; attempt < 100 && !info; attempt += 1) {
+      await new Promise((resolveDelay) => setTimeout(resolveDelay, 50));
+      info = await readPrivateJson(infoFile, null);
+    }
+    if (!info) throw new Error('The review page did not start. Use the chat approval phrase instead (`review show`, then `review approve --stdin`).');
+  }
+  return {
+    batchId,
+    status: 'pending',
+    url: info.url,
+    browserOpened: alive ? false : openBrowser(info.url),
+    pageClosesAfter: '30 minutes, or once the candidate decides',
+    next: 'Give the candidate this URL (it only works on this machine). Do not open it in your own browser automation. Poll `review status <batchId>` until the status is approved, rejected or expired.',
+  };
+}
+
+// Local-only gate evidence (see routine-gates.mjs). Never appended to cloud state or telemetry.
+async function appendRoundEvidence(event) {
+  return withStateLock('round-evidence', async (dir) => {
+    const file = join(dir, ROUND_EVIDENCE_FILE);
+    await appendFile(file, `${JSON.stringify(event)}\n`, { mode: 0o600 });
+    await chmod(file, 0o600);
+    return event;
+  });
+}
+
+async function roundEvidence(dir) {
+  return jsonLines(join(dir, ROUND_EVIDENCE_FILE));
+}
+
+/** Can the browser upload the canonical résumé to an ATS form? Checks only; never uploads or sends anything. */
+export async function resumeUploadPreflight() {
+  const checkedAt = new Date().toISOString();
+  const blocked = (reason) => ({ ok: false, blocker: RESUME_UPLOAD_BLOCKER, reason, checkedAt });
+  let path;
+  try { ({ path } = await canonicalResumePath()); } catch (error) { return blocked(error.message); }
+  let handle;
+  try { handle = await open(path, 'r'); } catch (error) {
+    return blocked(`The canonical résumé is not readable (${error.code ?? 'read error'}). Fix its permissions or import it again with resume import.`);
+  }
+  try {
+    const details = await handle.stat();
+    if (!details.isFile() || details.size === 0) return blocked('The canonical résumé file is empty. Import the résumé again with resume import.');
+    const header = Buffer.alloc(5);
+    await handle.read(header, 0, 5, 0);
+    if (header.toString('latin1') !== '%PDF-') return blocked('The canonical résumé is not a PDF, the supported upload type. Import a PDF or Google Docs résumé again with resume import.');
+    return { ok: true, type: 'pdf', checkedAt };
+  } catch (error) {
+    return blocked(`The canonical résumé could not be read (${error.code ?? 'read error'}). Import it again with resume import.`);
+  } finally {
+    await handle.close();
+  }
+}
+
+function resumeBlockers(preflight) {
+  if (!preflight || preflight.ok) return [];
+  return [{
+    blocker: RESUME_UPLOAD_BLOCKER,
+    reason: preflight.reason,
+    checkedAt: preflight.checkedAt,
+    impact: 'ATS forms that need a résumé upload cannot be completed. Tell the candidate and fix the résumé; do not quietly narrow the round to one-click boards.',
+  }];
+}
+
+async function recordCommunityFeedPull(community, result) {
+  const ok = community.lastJobRead?.ok === true;
+  await appendRoundEvidence({ type: 'community-feed-pull', ok, jobCount: Array.isArray(result?.jobs) ? result.jobs.length : 0, at: new Date().toISOString() });
+  return ok;
+}
+
+// Latest score decision per job key (hash), kept so a routine-auto send can be checked against
+// what `score` actually decided. Job key hashes, decisions, scores and times only.
+async function recordAssessmentDecision(job, result) {
+  // Same key as the skip record: the URL when scored with one, else company + title.
+  const key = assessmentJobKey(job);
+  if (!key) return;
+  await withStateLock('assessment-decisions', async (dir) => {
+    const file = join(dir, ASSESSMENT_DECISIONS_FILE);
+    const state = await readPrivateJson(file, { version: 1, jobs: {} }).catch(() => ({ version: 1, jobs: {} }));
+    const jobs = state?.jobs && typeof state.jobs === 'object' && !Array.isArray(state.jobs) ? state.jobs : {};
+    const record = { decision: result.decision, autoEligible: result.autoEligible === true, score: result.score, at: new Date().toISOString() };
+    jobs[key] = record;
+    await writePrivateJson(file, { version: 1, jobs });
+  });
+}
+
+async function latestDecisionFor(dir, { url, company, role }) {
+  const keys = [assessmentJobKey({ url }), assessmentJobKey({ company, title: role })].filter(Boolean);
+  const decisions = await readPrivateJson(join(dir, ASSESSMENT_DECISIONS_FILE), null).catch(() => null);
+  const guard = await readPrivateJson(join(dir, ASSESSMENT_GUARD_FILE), null).catch(() => null);
+  return latestAssessmentDecision(keys, { decisions, guard });
+}
+
+async function isRoutineAutoSend(entry) {
+  if (entry.approval === 'STANDING AUTHORIZATION') return true;
+  const grant = await readPrivateJson(join(await ensureStateDir(), 'autonomy.json'), null).catch(() => null);
+  if (autonomyView(grant).enabled) return true;
+  return storedSubmissionModeOrNull() === 'routine-auto';
+}
+
+// Skip decisions are final. `score` records each skip/exclude (job key hash, decision, reason,
+// time; no job text) in a private local file that the assessment-guard reset does not touch, and
+// `review stage` and `ledger add` refuse that job. A later re-score never clears it, so changing
+// the job input cannot turn a skip into a send.
+const ASSESSMENT_SKIPS_FILE = 'assessment-skips.json';
+
+async function recordAssessmentSkip(job, result) {
+  const key = assessmentJobKey(job);
+  if (!key) return;
+  await withStateLock('assessment-skips', async (dir) => {
+    const file = join(dir, ASSESSMENT_SKIPS_FILE);
+    const state = await readPrivateJson(file, { version: 1, jobs: {} }).catch(() => ({ version: 1, jobs: {} }));
+    const jobs = state?.jobs && typeof state.jobs === 'object' && !Array.isArray(state.jobs) ? state.jobs : {};
+    if (jobs[key]) return;
+    jobs[key] = { decision: result.decision, reason: skipReasonFromAssessment(result), at: new Date().toISOString() };
+    await writePrivateJson(file, { version: 1, jobs });
+  });
+}
+
+async function recordAssessmentBlock(job) {
+  const key = assessmentJobKey(job);
+  if (!key) return;
+  await withStateLock('assessment-skips', async (dir) => {
+    const file = join(dir, ASSESSMENT_SKIPS_FILE);
+    const state = await readPrivateJson(file, { version: 1, jobs: {} }).catch(() => ({ version: 1, jobs: {} }));
+    const jobs = state?.jobs && typeof state.jobs === 'object' && !Array.isArray(state.jobs) ? state.jobs : {};
+    if (jobs[key]) return;
+    jobs[key] = { decision: 'blocked', reason: 'invalid-input-retries', at: new Date().toISOString() };
+    await writePrivateJson(file, { version: 1, jobs });
+  });
+}
+
+async function assertJobNotSkipped(dir, { url, company, role }) {
+  const state = await readPrivateJson(join(dir, ASSESSMENT_SKIPS_FILE), null).catch(() => null);
+  const jobs = state?.jobs;
+  if (!jobs || typeof jobs !== 'object') return;
+  // A job scored with a URL is keyed by that URL; one scored without a URL by company + title.
+  const keys = [assessmentJobKey({ url }), assessmentJobKey({ company, title: role })].filter(Boolean);
+  const skipped = keys.map((key) => jobs[key]).find((record) => record && typeof record === 'object');
+  if (!skipped) return;
+  throw new Error(`Skipped job refused: score decided "${skipped.decision}" (${skipped.reason}) for ${company || 'this job'} at ${skipped.at}. A skipped or excluded job is never staged, submitted or recorded, in any mode. Do not apply; tell the candidate.`);
+}
+
+async function reviewCommand(action, value) {
+  const dir = await ensureStateDir();
+  if (action === 'stage' && value === '--stdin') {
+    const input = await jsonStdin();
+    for (const item of Array.isArray(input?.items) ? input.items : []) {
+      if (item?.type === 'application' && (item.purpose ?? 'submit') === 'submit') await assertJobNotSkipped(dir, { url: item.url, company: item.company, role: item.role });
+    }
+    const batch = await stageBatch(dir, input, { resume: await currentResumeDigest({ refresh: true }) });
+    return { ...batchView(batch), next: REVIEW_NEXT_STEP };
+  }
+  if (action === 'show' && typeof value === 'string') return batchView(await loadBatch(dir, value), new Date(), { includeContent: true });
+  if (action === 'open' && typeof value === 'string') return openReviewPage(dir, value);
+  if (action === 'approve' && value === '--stdin') {
+    const input = object(await jsonStdin(), 'review approve');
+    for (const key of Object.keys(input)) if (!['batchId', 'phrase', 'exclude'].includes(key)) throw new Error(`Unknown review approve property: ${key}.`);
+    const { batch, token } = await approveBatch(dir, input.batchId, { channel: 'chat-phrase', phrase: input.phrase, excludeNumbers: input.exclude });
+    return batchView(batch, new Date(), { token });
+  }
+  if (action === 'status' && typeof value === 'string') {
+    const batch = await loadBatch(dir, value);
+    return batchView(batch, new Date(), { token: await batchToken(dir, batch) });
+  }
+  if (action === 'list' && value == null) return listBatches(dir);
+  if (action === 'revoke' && typeof value === 'string') return batchView(await closeBatch(dir, value, 'revoked'));
+  throw usageError(['review', action, value]);
 }
 
 async function canonicalResumePath() {
@@ -1656,12 +2127,13 @@ async function ledgerCheck(candidate) {
   return duplicateResult(entries, normalized, outcomes);
 }
 
-async function ledgerAdd(entryInput, duplicateOverride, companyReapplyOverride, cloudIntent = null) {
+async function ledgerAdd(entryInput, duplicateOverride, companyReapplyOverride, cloudIntent = null, review = null, { routineAuto = false } = {}) {
   const entry = validateLedgerEntry(entryInput);
   return withStateLock('applications', async (dir) => {
     const file = join(dir, 'applications.ndjson');
     const entries = await jsonLines(file);
     const outcomes = await jsonLines(join(dir, 'outcomes.ndjson'));
+    await assertJobNotSkipped(dir, entry);
     if (entry.roundId) {
       const roundEvents = await jsonLines(join(dir, 'rounds.ndjson'));
       if (!roundEvents.some((event) => event.type === 'started' && event.roundId === entry.roundId)) throw new Error('entry.roundId does not identify a started round.');
@@ -1676,9 +2148,28 @@ async function ledgerAdd(entryInput, duplicateOverride, companyReapplyOverride, 
     if (!duplicate.possibleDuplicate && duplicate.companyReapply.decision === 'follow-up-present' && companyReapplyOverride !== COMPANY_REAPPLY_OVERRIDE) {
       throw new Error(`Company reapplication blocked because the latest application has a recorded follow-up; use ${COMPANY_REAPPLY_OVERRIDE} only with explicit candidate approval.`);
     }
-    const storedEntry = ['cooldown-active', 'follow-up-present'].includes(duplicate.companyReapply.decision)
+    let reviewed = null;
+    if (review) {
+      reviewed = await verifyReview(dir, review.credentials, {
+        action: 'ledger add',
+        match: applicationMatcher({ applicationId: entry.id, url: entry.url, answers: entry.answers }),
+        checkResume: true,
+        resumeSha256: review.resumeSha256,
+      });
+    }
+    // A one-application batch is the candidate's approval of this job; a routine batch item also
+    // needs the latest score to be review + autoEligible.
+    const perJobApproval = Boolean(reviewed) && isPerJobApproval(reviewed.batch);
+    if (reviewed && routineAuto && !perJobApproval) {
+      const refusal = routineSubmitGateMessage(await latestDecisionFor(dir, entry), entry.company);
+      if (refusal) throw new Error(refusal);
+    }
+    const reapproved = ['cooldown-active', 'follow-up-present'].includes(duplicate.companyReapply.decision)
       ? { ...entry, reapplicationApproval: 'candidate-explicit' }
       : entry;
+    const storedEntry = reviewed
+      ? { ...reapproved, reviewBatchId: reviewed.batch.batchId, reviewApprovedAt: reviewed.batch.approvedAt, reviewApprovalChannel: reviewed.batch.approvalChannel }
+      : reapproved;
     await appendFile(file, `${JSON.stringify(storedEntry)}\n`, { mode: 0o600 });
     await chmod(file, 0o600);
     if (entry.roundId) {
@@ -1694,7 +2185,15 @@ async function ledgerAdd(entryInput, duplicateOverride, companyReapplyOverride, 
         if (entry.roundId) await cloudState.appendRecord('rounds', { type: 'submission-confirmed', roundId: entry.roundId, applicationId: entry.id, occurredAt: entry.submittedAt }, { recordKey: entry.roundId, idempotencyKey: `round-confirmation:${entry.roundId}:${entry.id}`, occurredAt: entry.submittedAt, queueOnFailure: true });
       }
     }
-    return { recorded: storedEntry.id, review: buildReview([...entries, storedEntry], outcomes, [], new Date(), await jsonLines(join(dir, 'delivery.ndjson'))), ...(cloudIntent ? { cloudIntent: cloudIntent.intentId } : {}) };
+    if (reviewed) await consumeReview(dir, reviewed.batch.batchId, reviewed.item.itemId, 'ledger-add');
+    let roundCount = null;
+    if (entry.roundId) {
+      await appendRoundEvidence({ type: 'submit-recorded', roundId: entry.roundId, applicationId: entry.id, at: new Date().toISOString() });
+      if (isLoggedNotAgentFilled(entry) && !perJobApproval && roundGatesRecord(await roundEvidence(dir), entry.roundId)) {
+        roundCount = { counted: false, reason: 'entryOrigin=logged entries count toward a round target only with a per-job approval (a one-application review batch). The entry is recorded in the ledger but not counted for this round.' };
+      }
+    }
+    return { recorded: storedEntry.id, ...(roundCount ? { roundCount } : {}), review: buildReview([...entries, storedEntry], outcomes, [], new Date(), await jsonLines(join(dir, 'delivery.ndjson'))), ...(cloudIntent ? { cloudIntent: cloudIntent.intentId } : {}) };
   });
 }
 
@@ -1733,7 +2232,7 @@ async function appendAccounting(stream, event, { cloudConfirmed = false } = {}) 
 }
 
 async function recordDelivery(input, retry = false) {
-  const { cloudIntentId, cloudLeaseId, ...raw } = object(input, 'delivery');
+  const { cloudIntentId, cloudLeaseId, reviewBatchId, reviewToken, ...raw } = object(input, 'delivery');
   const event = validateDelivery({ ...raw, ...(retry ? { type: 'retry-confirmed' } : {}) });
   if (!retry && event.type === 'retry-confirmed') throw new Error('Use ledger retry for replacement transmissions.');
   return withStateLock('applications', () => withStateLock('delivery', async dir => {
@@ -1744,12 +2243,23 @@ async function recordDelivery(input, retry = false) {
     // Cloud transmission eligibility was checked at intent preparation. The
     // Worker verifies that intent before we persist the observed transmission.
     validateDeliveryReferences(event, applications, events, { preparedRetry: cloudRetry });
+    // A replacement transmission is a new send: it needs its own approved batch item.
+    let reviewed = null;
+    if (retry && !events.some(e => e.id === event.id) && requiresBatchReview(event.url)) {
+      reviewed = await verifyReview(dir, { reviewBatchId, reviewToken }, {
+        action: 'ledger retry',
+        match: applicationMatcher({ applicationId: event.applicationId, url: event.url, purpose: 'retry' }),
+        checkResume: true,
+        resumeSha256: (await currentResumeDigest())?.sha256,
+      });
+    }
     let cloudConfirmed = false;
     if (cloudRetry && !events.some(e => e.id === event.id)) {
       await cloudState.confirmRetry(cloudIntentId, event, cloudLeaseId);
       cloudConfirmed = true;
     }
     const result = await appendAccounting('delivery', event, { cloudConfirmed });
+    if (reviewed && result.recorded) await consumeReview(dir, reviewed.batch.batchId, reviewed.item.itemId, 'ledger-retry');
     return { ...result, delivery: deliveryProjection(applications, [...events, event]) };
   }));
 }
@@ -1767,7 +2277,9 @@ async function recordLead(input) {
     const events = await jsonLines(join(dir, 'discovery.ndjson'));
     if (round.completed && !event.supersedes && !events.some(e => e.id === event.id)) throw new Error('Completed rounds accept only corrections to existing leads.');
     validateLeadReferences(event, events);
-    return appendAccounting('discovery', event);
+    const result = await appendAccounting('discovery', event);
+    if (result.recorded) await appendRoundEvidence({ type: 'lead-recorded', roundId: event.roundId, sourceId: event.sourceId, leadId: event.id, at: new Date().toISOString() });
+    return result;
   });
 }
 async function leadHistory(roundId) {
@@ -1789,7 +2301,17 @@ async function roundStart(input) {
     occurredAt: isoDate(value.startedAt, 'round.startedAt'),
   };
   await appendPrivateEvent('rounds', event);
-  return { roundId: event.roundId, requestedCount: event.requestedCount, startedAt: event.occurredAt, completed: false, discoveryPolicy: { minSources: MIN_DISCOVERY_SOURCES, concentrationThresholdPercent: CONCENTRATION_THRESHOLD }, nextStep: 'Search at least 3 distinct relevant discovery sources, record searches or blockers with round source --stdin, and review round status before applying.' };
+  await appendRoundEvidence({ type: 'round-gates', version: ROUND_GATES_VERSION, roundId: event.roundId, at: new Date().toISOString() });
+  const resumePreflight = await resumeUploadPreflight();
+  await appendRoundEvidence({ type: 'resume-preflight', roundId: event.roundId, ...resumePreflight });
+  const blockers = resumeBlockers(resumePreflight);
+  return {
+    roundId: event.roundId, requestedCount: event.requestedCount, startedAt: event.occurredAt, completed: false,
+    discoveryPolicy: { minSources: MIN_DISCOVERY_SOURCES, concentrationThresholdPercent: CONCENTRATION_THRESHOLD, communityFeedPullRequired: true, coverageMustPrecedeSubmissions: true },
+    resumePreflight,
+    blockers,
+    nextStep: `${blockers.length ? `Résumé upload is unavailable (${RESUME_UPLOAD_BLOCKER}): tell the candidate now; ATS forms that need a résumé will fail. ` : ''}Run sources jobs (the community job feed, required once per round), search at least 3 distinct relevant discovery sources, record each reviewed lead with round lead --stdin and each search or blocker with round source --stdin, and review round status before applying. Coverage recorded after the round's submissions does not count.`,
+  };
 }
 
 function discoveryGroup(id) {
@@ -1867,6 +2389,28 @@ async function roundSource(input) {
       throw new Error(`Source count assertions do not match recorded leads (recorded for this source: reviewed ${reviewedCount}, qualified ${qualifiedCount}). Record every reviewed lead with round lead --stdin before round source, or omit reviewedCount/qualifiedCount so they are derived.`);
     }
     if (status === 'blocked' && (!SOURCE_BLOCKERS.has(blocker) || reviewedCount !== 0 || qualifiedCount !== 0)) throw new Error('Blocked sources require a documented blocker and zero counts.');
+    const evidence = await roundEvidence(dir);
+    const gates = roundGatesRecord(evidence, round.roundId);
+    if (gates) {
+      const pulls = feedPulls(evidence, Date.parse(gates.at));
+      if (sourceId === COMMUNITY_FEED_SOURCE_ID && status === 'searched' && !pulls.some((pull) => pull.ok === true)) {
+        throw new Error(`Coverage refused: ${COMMUNITY_FEED_SOURCE_ID} is marked searched, but no successful \`sources jobs\` pull was recorded in this round. Run \`sources jobs\` and review its leads first. If that call failed, record the source as blocked with blocker access-unavailable (community feed unavailable).`);
+      }
+      if (sourceId === COMMUNITY_FEED_SOURCE_ID && status === 'blocked' && (!pulls.some((pull) => pull.ok !== true) || !COMMUNITY_FEED_BLOCKERS.includes(blocker))) {
+        throw new Error(`Coverage refused: ${COMMUNITY_FEED_SOURCE_ID} can be recorded as blocked (community feed unavailable) only after a \`sources jobs\` call in this round failed, with blocker access-unavailable or site-error. Run \`sources jobs\` first; if it returns leads, review them and record the source as searched.`);
+      }
+      if (sourceId !== COMMUNITY_FEED_SOURCE_ID && status === 'searched' && !['recruiter-inbound', 'user-supplied-leads'].includes(sourceId)) {
+        if (!leads.length) {
+          throw new Error(`Coverage refused: ${sourceId} is marked searched, but no leads were recorded for it in this round. Record every reviewed lead with round lead --stdin before round source (an empty search is one lead with disposition "no-relevant-opening" and the search URL); a source you could not search is "blocked" with its blocker.`);
+        }
+        // Leads recorded only after every submission so far are after-the-fact coverage.
+        const lastSubmissionAt = round.routineGates?.coverage?.lastSubmissionAt;
+        const earliest = leadTimesBySource(evidence, round.roundId, await jsonLines(join(dir, 'discovery.ndjson'))).get(sourceId)?.[0];
+        if (lastSubmissionAt && Number.isFinite(earliest) && earliest > Date.parse(lastSubmissionAt)) {
+          throw new Error(afterSubmissionCoverageMessage([sourceId], lastSubmissionAt));
+        }
+      }
+    }
     const applications = await jsonLines(join(dir, 'applications.ndjson'));
     for (const id of applicationIds) {
       const entry = applications.find((item) => item.id === id && item.roundId === round.roundId && item.status === 'submitted');
@@ -2098,9 +2642,21 @@ async function roundStatus(roundId = null) {
   if (!id) throw new Error('No application round has been started.');
   const started = starts.find((event) => event.roundId === id);
   if (!started) throw new Error('Application round was not found.');
-  const matching = (await jsonLines(join(dir, 'applications.ndjson')))
+  const evidence = await roundEvidence(dir);
+  const gates = roundGatesRecord(evidence, id);
+  const roundSubmitted = (await jsonLines(join(dir, 'applications.ndjson')))
     .filter((entry) => entry.roundId === id && entry.status === 'submitted')
     .filter((entry) => !isFixtureOrSandboxApply(entry));
+  // Gated rounds: an entry logged after the fact counts toward the target only with a per-job approval.
+  const uncountedLoggedApplicationIds = [];
+  const matching = [];
+  for (const entry of roundSubmitted) {
+    if (gates && isLoggedNotAgentFilled(entry)) {
+      const batch = entry.reviewBatchId ? await loadBatch(dir, entry.reviewBatchId).catch(() => null) : null;
+      if (!isPerJobApproval(batch)) { uncountedLoggedApplicationIds.push(entry.id); continue; }
+    }
+    matching.push(entry);
+  }
   const applications = [...new Map(matching.map((entry, index) => [canonicalApplicationKey(entry, String(index)), entry])).values()];
   const delivery = deliveryProjection(matching, await jsonLines(join(dir, 'delivery.ndjson')));
   const effectiveKeys = new Set(matching.filter((entry,i) => delivery.applications[i].counted).map(canonicalApplicationKey));
@@ -2118,6 +2674,23 @@ async function roundStatus(roundId = null) {
   const audit = started.discoveryPolicyVersion === 2 ? discoveryProjection(await jsonLines(join(dir, 'discovery.ndjson')), { roundId: id }) : null;
   const attention = await attentionList(id);
   const completion = events.find((event) => event.type === 'completed' && event.roundId === id);
+  const discovery = { ...discoverySummary(events.filter((event) => event.roundId === id), effectiveApplications, completion, audit),
+    ...(audit ? { reviewedCount: audit.reviewedCount, qualifiedCount: audit.qualifiedCount, uniqueLeadCount: audit.uniqueLeadCount, dispositionCounts: audit.dispositionCounts, conflicts: audit.conflicts,
+      missingLeadApplicationIds: effectiveApplications.filter(app => !audit.leads.some(lead => !lead.conflict && lead.disposition === 'qualified' && lead.applicationId === app.id && lead.sourceId === (app.discoverySourceId ?? events.filter(e => e.type === 'source-checked' && e.applicationIds?.includes(app.id)).at(-1)?.sourceId) && (normalizedText(lead.company) === normalizedText(app.company) && (lead.employerJobId && app.employerJobId ? lead.employerJobId.toLowerCase() === app.employerJobId.toLowerCase() : canonicalUrl(lead.url) === canonicalUrl(app.url))))).map(app => app.id) } : { accounting: 'legacy-unverified' }) };
+  let routineGates = null;
+  if (gates) {
+    const submitTimes = new Map(evidence.filter((item) => item.type === 'submit-recorded' && item.roundId === id).map((item) => [item.applicationId, item.at]));
+    const coverage = evaluateRoundCoverage({
+      gates, evidence, roundId: id,
+      sourceEvents: events.filter((event) => event.type === 'source-checked' && event.roundId === id),
+      leads: (await jsonLines(join(dir, 'discovery.ndjson'))).filter((event) => event.type === 'lead-reviewed' && event.roundId === id),
+      submissions: effectiveApplications.map((entry) => ({ id: entry.id, at: submitTimes.get(entry.id) ?? entry.submittedAt })),
+      group: discoveryGroup, minSources: MIN_DISCOVERY_SOURCES,
+    });
+    discovery.coverageSatisfied = discovery.coverageSatisfied && coverage.coverageSatisfied;
+    const resumePreflight = resumePreflightRecord(evidence, id);
+    routineGates = { enforced: true, resumePreflight, blockers: resumeBlockers(resumePreflight), uncountedLoggedApplicationIds, coverage };
+  }
   return {
     roundId: id,
     requestedCount: started.requestedCount,
@@ -2134,9 +2707,8 @@ async function roundStatus(roundId = null) {
     receiptUnknownEmailCount: delivery.receiptUnknownEmailCount,
     shortfallCount: Math.max(0, started.requestedCount - confirmedCount),
     needsRecovery: Boolean(completion) && confirmedCount < started.requestedCount,
-    discovery: { ...discoverySummary(events.filter((event) => event.roundId === id), effectiveApplications, completion, audit),
-      ...(audit ? { reviewedCount: audit.reviewedCount, qualifiedCount: audit.qualifiedCount, uniqueLeadCount: audit.uniqueLeadCount, dispositionCounts: audit.dispositionCounts, conflicts: audit.conflicts,
-        missingLeadApplicationIds: effectiveApplications.filter(app => !audit.leads.some(lead => !lead.conflict && lead.disposition === 'qualified' && lead.applicationId === app.id && lead.sourceId === (app.discoverySourceId ?? events.filter(e => e.type === 'source-checked' && e.applicationIds?.includes(app.id)).at(-1)?.sourceId) && (normalizedText(lead.company) === normalizedText(app.company) && (lead.employerJobId && app.employerJobId ? lead.employerJobId.toLowerCase() === app.employerJobId.toLowerCase() : canonicalUrl(lead.url) === canonicalUrl(app.url))))).map(app => app.id) } : { accounting: 'legacy-unverified' }) },
+    discovery,
+    ...(routineGates ? { routineGates } : {}),
     startedAt: started.occurredAt,
     ...(completion ? { completedAt: completion.occurredAt } : {}),
   };
@@ -2150,7 +2722,13 @@ async function roundComplete(input) {
   const result = await withStateLock('applications', () => withStateLock('rounds', async (dir) => {
     const status = await roundStatus(string(value.roundId, 'round.roundId', 180));
     if (status.completed) return { ...status, completionRecorded: false };
-    if (status.confirmedCount < status.requestedCount) throw new Error(`Round requires ${status.requestedCount} confirmed submissions before completion.`);
+    const uncounted = status.routineGates?.uncountedLoggedApplicationIds ?? [];
+    if (status.confirmedCount < status.requestedCount) throw new Error(`Round requires ${status.requestedCount} confirmed submissions before completion.${uncounted.length ? ` ${uncounted.length} entryOrigin=logged ${uncounted.length === 1 ? 'entry is' : 'entries are'} not counted without a per-job approval (a one-application review batch).` : ''}`);
+    if (status.routineGates?.enforced) {
+      const coverage = status.routineGates.coverage;
+      if (coverage.afterSubmissionSourceIds.length) throw new Error(afterSubmissionCoverageMessage(coverage.afterSubmissionSourceIds, coverage.lastSubmissionAt));
+      if (!coverage.communityFeed.satisfied) throw new Error(communityFeedRequirementMessage());
+    }
     if (!status.discovery.coverageSatisfied) throw new Error('Round requires attempts across at least 3 distinct discovery sources, including at least one searched source. Record coverage and blockers with round source --stdin.');
     if (status.discovery.unattributedCount) throw new Error('Round requires discovery source attribution for every confirmed submission. Supply missing attribution using round source applicationIds; do not rewrite the ledger.');
     if (status.discovery.conflicts?.length || status.discovery.missingLeadApplicationIds?.length) throw new Error('Round requires qualified lead records for every submission and resolution of conflicting assessments.');
@@ -2163,7 +2741,8 @@ async function roundComplete(input) {
     const file = join(dir, 'rounds.ndjson');
     await appendFile(file, `${JSON.stringify(event)}\n`, { mode: 0o600 });
     await chmod(file, 0o600);
-    return { ...status, discovery: { ...status.discovery, ...explanation }, completed: true, completionRecorded: true, completedAt: event.occurredAt };
+    const warnings = (status.routineGates?.blockers ?? []).map((item) => `${item.blocker}: ${item.reason} Report this blocker to the candidate with the round summary.`);
+    return { ...status, discovery: { ...status.discovery, ...explanation }, completed: true, completionRecorded: true, completedAt: event.occurredAt, ...(warnings.length ? { warnings } : {}) };
   }));
   if (result.completionRecorded) await appendCloudEvent('rounds', { type: 'completed', roundId: result.roundId, occurredAt: result.completedAt, ...(result.discovery.concentrationReason ? { concentrationReason: result.discovery.concentrationReason, concentrationEvidence: result.discovery.concentrationEvidence } : {}) });
   return result;
@@ -2297,7 +2876,11 @@ async function ledgerReview() {
   const applications = await jsonLines(join(dir, 'applications.ndjson'));
   const outcomes = await jsonLines(join(dir, 'outcomes.ndjson'));
   const acknowledgements = await jsonLines(join(dir, 'reviews.ndjson'));
-  return buildReview(applications, outcomes, acknowledgements, new Date(), await jsonLines(join(dir, 'delivery.ndjson')));
+  const review = buildReview(applications, outcomes, acknowledgements, new Date(), await jsonLines(join(dir, 'delivery.ndjson')));
+  // Local-only review markers; reviewTelemetry() never reads this key.
+  const fillTelemetryReview = await fillTelemetryReviewFlags(dir);
+  if (fillTelemetryReview.length) review.fillTelemetryReviewFlags = fillTelemetryReview;
+  return review;
 }
 
 async function ledgerReviewAcknowledge(input) {
@@ -2331,7 +2914,7 @@ async function prepareCloudState(area, action) {
 
 async function cloudCommand(action, value) {
   if (action === 'configure' && value === '--stdin') {
-    const configured = await saveCloudConfig(await jsonStdin(), { configPath: process.env.JOB_APPLICATION_AGENT_CLOUD_CONFIG ?? defaultCloudConfigPath() });
+    const configured = await saveCloudConfig(await jsonStdin(), { configPath: cloudConfigPath() });
     const updateGuard = await enableCloudUpdateGuard();
     return { configured: true, url: configured.url, clientId: configured.clientId ?? null, clientName: configured.clientName ?? null, token: configured.token, updateGuard };
   }
@@ -2359,14 +2942,39 @@ async function cloudCommand(action, value) {
     if (!lease?.leaseId) throw new Error('No local cloud lease is recorded.');
     return cloudState.releaseLease(lease.leaseId);
   }
-  if (action === 'intent-prepare' && value === '--stdin') return cloudState.createIntent(await jsonStdin());
+  if (action === 'intent-prepare' && value === '--stdin') {
+    const { reviewBatchId, reviewToken, ...body } = object(await jsonStdin(), 'intent');
+    if (requiresBatchReview(body.canonicalUrl)) {
+      await verifyReview(await ensureStateDir(), { reviewBatchId, reviewToken }, {
+        action: 'cloud intent-prepare',
+        match: applicationMatcher({ applicationId: body.applicationId, url: body.canonicalUrl, purpose: body.retry === true ? 'retry' : 'submit' }),
+        checkResume: true,
+        resumeSha256: (await currentResumeDigest())?.sha256,
+      });
+    }
+    return cloudState.createIntent(body);
+  }
   if (action === 'intent-sent' && value === '--stdin') {
     const input = await jsonStdin();
     return cloudState.markIntentSentUnverified(string(input.intentId, 'intentId', 200), string(input.leaseId, 'leaseId', 200));
   }
   if (action === 'intent-confirm' && value === '--stdin') {
-    const input = await jsonStdin();
-    return cloudState.confirmIntent(string(input.intentId, 'intentId', 200), object(input.application, 'application'), string(input.leaseId, 'leaseId', 200), input.idempotencyKey);
+    const { reviewBatchId, reviewToken, ...input } = object(await jsonStdin(), 'intent');
+    const application = object(input.application, 'application');
+    // Confirming an intent records the application, so it needs the same approval as ledger add.
+    let reviewed = null;
+    const dir = await ensureStateDir();
+    if (requiresBatchReview(application.url)) {
+      reviewed = await verifyReview(dir, { reviewBatchId, reviewToken }, {
+        action: 'cloud intent-confirm',
+        match: applicationMatcher({ applicationId: application.id, url: application.url, answers: application.answers ?? {} }),
+        checkResume: true,
+        resumeSha256: (await currentResumeDigest())?.sha256,
+      });
+    }
+    const confirmed = await cloudState.confirmIntent(string(input.intentId, 'intentId', 200), application, string(input.leaseId, 'leaseId', 200), input.idempotencyKey);
+    if (reviewed) await consumeReview(dir, reviewed.batch.batchId, reviewed.item.itemId, 'cloud-intent-confirm');
+    return confirmed;
   }
   throw usageError(['cloud', action, value]);
 }
@@ -2448,12 +3056,45 @@ async function executeCommand([area, action, value], telemetry, session, communi
     result = { [value]: storedProfile()[value] ?? null };
   } else if (area === 'resume' && action === 'import' && value) result = await importResume(value);
   else if (area === 'resume' && action === 'path' && value == null) result = await canonicalResumePath();
+  else if (area === 'score' && action === 'guard' && value == null) result = await assessmentGuard().status(writePrivateJson);
+  else if (area === 'score' && action === 'guard-reset' && value == null) result = await assessmentGuard().reset(writePrivateJson);
   else if (area === 'score' && action === '--stdin') {
-    const job = await jsonStdin();
-    const profile = job.target ?? storedProfile();
-    result = scoreJob(job, profile);
+    const guard = assessmentGuard();
+    let ticket = null;
+    let job;
+    let profile;
+    try {
+      job = await jsonStdin();
+      profile = job.target ?? storedProfile();
+      ticket = await guard.before(job, profile, writePrivateJson);
+      if (ticket.cached) {
+        // Identical input for a job already scored in this run: return the earlier result and
+        // emit no assessment telemetry, so a re-scoring loop cannot inflate analytics.
+        return {
+          ...ticket.cached,
+          repeatAssessment: true,
+          firstAssessedAt: ticket.firstAssessedAt,
+          notice: 'This job was already scored with the same input in this run; this is the earlier result. Do not score it again.',
+        };
+      }
+      result = scoreJob(job, profile);
+    } catch (error) {
+      if (isAssessmentGuardStop(error)) throw error;
+      const status = await guard.failure(ticket, error, { invalidInput: telemetryErrorCode(error) === 'invalid_input' }, writePrivateJson).catch(() => null);
+      if (status?.jobBlocked) {
+        await recordAssessmentBlock(job);
+        error.message = `${error.message} ${invalidJobMessage(status.jobBlocked.count, status.jobBlocked.lastMessage)}`;
+      }
+      if (status?.stopped && status.stopReason === 'invalid_input') {
+        error.message = `${error.message} Assessment guard: ${status.consecutiveInvalidInput} score calls in a row failed with invalid input; further score calls are refused until ${status.stoppedUntil}. STOP the run, fix the job JSON, and tell the user.`;
+      }
+      throw error;
+    }
+    result.assessmentGuard = await guard.success(ticket, result, writePrivateJson);
+    await recordAssessmentDecision(job, result);
     await emitDomainEvent(telemetry, session, await telemetryJobAssessed(job, result));
     if (result.decision === 'skip' || result.decision === 'exclude') {
+      await recordAssessmentSkip(job, result);
       await emitDomainEvent(telemetry, session, await telemetryApplicationSkipped(job, result));
     } else if (result.decision === 'review') {
       await emitDomainEvent(telemetry, session, await telemetryApplicationStarted(job, {
@@ -2478,18 +3119,30 @@ async function executeCommand([area, action, value], telemetry, session, communi
     // Read the stored profile only for thin submits so filled submits never depend on profile storage.
     const profileSubmissionMode = isThinSubmission(baseEntry, fillMetrics) ? storedSubmissionModeOrNull() : null;
     const fillGuard = assertSubmissionFillGuard(baseEntry, fillMetrics, input.thinSubmissionOverride, { profileSubmissionMode, jobApprovalMode });
+    // After the empty-submit guard (its refusal is the more basic one), before anything is recorded.
+    assertResumeFieldPresentReported(input.telemetry);
     if (fillGuard.thinSubmissionOverrideUsed) {
       await assertAndRecordThinOverrideUse(fillGuard.candidateConfirmation, baseEntry.url);
     }
     const telemetrySupplied = fillMetrics.fillMetricsSource === 'telemetry';
     warnAnswerKeyFillMetricsFallback(fillMetrics.fillMetricsSource);
+    // entryOrigin is derived here, never taken from the caller: only an answer-key fallback
+    // (no fill telemetry) marks the entry as logged after the fact / not agent-filled.
+    const { entryOrigin: _callerEntryOrigin, ...ledgerInput } = input;
     const entry = validateLedgerEntry({
-      ...input,
+      ...ledgerInput,
       fillMetricsSource: fillMetrics.fillMetricsSource,
       telemetrySupplied,
+      ...(fillMetrics.entryOrigin ? { entryOrigin: fillMetrics.entryOrigin } : {}),
     });
-    result = await ledgerAdd(entry, input.duplicateOverride, input.companyReapplyOverride, input.cloudIntentId && input.cloudLeaseId ? { intentId: input.cloudIntentId, leaseId: input.cloudLeaseId } : null);
+    const review = requiresBatchReview(entry.url)
+      ? { credentials: { reviewBatchId: input.reviewBatchId, reviewToken: input.reviewToken }, resumeSha256: (await currentResumeDigest())?.sha256 }
+      : null;
+    const routineAuto = review ? await isRoutineAutoSend(entry) : false;
+    result = await ledgerAdd(entry, input.duplicateOverride, input.companyReapplyOverride, input.cloudIntentId && input.cloudLeaseId ? { intentId: input.cloudIntentId, leaseId: input.cloudLeaseId } : null, review, { routineAuto });
     result.communityJob = await communityJobsSync(community, { limit: 1, applicationIds: [entry.id] });
+    const fillTelemetryReview = telemetrySupplied ? await reviewRapidFireFillTelemetry(entry, input.telemetry) : null;
+    if (fillTelemetryReview) result.fillTelemetryReview = fillTelemetryReview;
     if (!isFixtureOrSandboxApply(entry)) {
       const identity = await jobIdentity(entry.url);
       const lifecycleStartedAt = await telemetry.applicationStartedAt?.(identity.jobHash);
@@ -2542,8 +3195,11 @@ async function executeCommand([area, action, value], telemetry, session, communi
   else if (area === 'sources' && action === 'suggest' && value === '--stdin') result = await sourcesSuggest(await jsonStdin(), community);
   else if (area === 'sources' && action === 'pending' && value == null) result = await communityPendingStatus();
   else if (area === 'sources' && action === 'sync' && value == null) result = await syncAllCommunityData(community);
-  else if (area === 'sources' && action === 'jobs' && value == null) result = await community.listJobs();
-  else if (area === 'sources' && action === 'jobs' && value === '--stdin') result = await community.listJobs(await jsonStdin());
+  else if (area === 'sources' && action === 'jobs' && (value == null || value === '--stdin')) {
+    result = await community.listJobs(value === '--stdin' ? await jsonStdin() : undefined);
+    // Recorded locally so `round source`/`round complete` can verify the community feed was pulled.
+    if (!await recordCommunityFeedPull(community, result)) result = { ...result, communityFeedUnavailable: true };
+  }
   else if (area === 'sources' && action === 'sharing' && ['status', 'enable', 'disable', 'reset'].includes(value)) {
     result = await community.configure(value);
     if (value === 'enable') result.communityJobs = await communityJobsSync(community);
@@ -2563,6 +3219,7 @@ async function executeCommand([area, action, value], telemetry, session, communi
   else if (area === 'attention' && action === 'resolve' && value === '--stdin') result = await attentionResolve(await jsonStdin());
   else if (area === 'friction' && action === 'record' && value === '--stdin') result = await frictionRecord(await jsonStdin());
   else if (area === 'friction' && action === 'list' && value == null) result = await frictionList();
+  else if (area === 'review') result = await reviewCommand(action, value);
   else throw usageError([area, action, value]);
   return result;
 }
@@ -2593,6 +3250,15 @@ async function main(rawArgs) {
   if (area === 'outreach') {
     const { runOutreach } = await import('./outreach-cli.mjs');
     return print(await runOutreach(args.slice(1)));
+  }
+  // Notify-only update check: reads the public npm registry, never installs, and
+  // stays outside telemetry and community sync.
+  if (area === 'updates') {
+    if (action === 'check' && args.length === 2) {
+      const { checkForUpdate } = await import('./update-check.mjs');
+      return print(await checkForUpdate());
+    }
+    throw usageError(['updates', action]);
   }
   // Name/email go only to the private /v1/contact store — never to PostHog event payloads.
   const telemetry = new TelemetryClient({ stateDir: stateDir(), readIdentity: () => {
@@ -2628,6 +3294,8 @@ async function main(rawArgs) {
     await telemetry.record({ event: 'command_completed', properties: { command, result: 'success', durationBucket: durationBucket(Date.now() - started) } }, session);
     return print(result);
   } catch (error) {
+    // Repeated guard refusals are not new information; report only the first one of each stop.
+    if (error?.suppressTelemetry === true) throw error;
     await telemetry.record({ event: 'skill_error', properties: skillErrorProperties(error, command) }, session);
     await telemetry.record({ event: 'command_completed', properties: { command, result: 'error', durationBucket: durationBucket(Date.now() - started) } }, session);
     throw error;

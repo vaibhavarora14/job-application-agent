@@ -5,14 +5,16 @@ import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
+import { withTestReview } from './support/review-approval.mjs';
+import { asLegacyRound } from './support/legacy-round.mjs';
 const script = fileURLToPath(new URL('../scripts/job-application.mjs', import.meta.url));
 async function fixture(t) {
   const dir = await mkdtemp(join(tmpdir(), 'accounting-cli-'));
   t.after(() => rm(dir, { recursive: true, force: true }));
   await writeFile(join(dir, 'telemetry.json'), JSON.stringify({ enabled: false, disclosed: true }));
   const env = { ...process.env, JOB_APPLICATION_AGENT_STATE_DIR: dir, JOB_APPLICATION_AGENT_CLOUD_CONFIG: join(dir, 'absent.json'), JOB_APPLICATION_AGENT_SOURCE_COMMUNITY_URL: 'http://127.0.0.1:9' };
-  const run = (args, input) => JSON.parse(execFileSync(process.execPath, [script, ...args], { env, encoding: 'utf8', input: JSON.stringify(input) }));
-  const fail = (args, input) => spawnSync(process.execPath, [script, ...args], { env, encoding: 'utf8', input: JSON.stringify(input) });
+  const run = (args, input) => JSON.parse(execFileSync(process.execPath, [script, ...args], { env, encoding: 'utf8', input: JSON.stringify(withTestReview(env, args, input)) }));
+  const fail = (args, input) => spawnSync(process.execPath, [script, ...args], { env, encoding: 'utf8', input: JSON.stringify(withTestReview(env, args, input)) });
   return { dir, run, fail };
 }
 const application = (roundId) => ({
@@ -41,8 +43,9 @@ test('late delivery failure corrects completed round and review without rewritin
 });
 
 test('new rounds derive source totals and require qualified lead linkage', async (t) => {
-  const {run,fail} = await fixture(t);
+  const {dir,run,fail} = await fixture(t);
   const {roundId} = run(['round','start','--stdin'],{requestedCount:1});
+  await asLegacyRound(dir, roundId);
   assert.notEqual(fail(['round','source','--stdin'],{roundId,sourceId:'indeed',status:'searched',reviewedCount:20,qualifiedCount:1,evidence:'Unsupported summary'}).status,0);
   const lead = { id:'lead-1',roundId,sourceId:'indeed',company:'Example',role:'Senior Engineer',url:'https://example.test/jobs/1',disposition:'qualified',evidence:'Meets the evidenced target requirements.',applicationId:'app',observedAt:'2026-01-01T00:00:00Z' };
   run(['round','lead','--stdin'],lead);
@@ -69,6 +72,7 @@ for (const scenario of [
   test(`qualified lead attribution checks ${scenario.name}`, async (t) => {
     const { dir, run, fail } = await fixture(t);
     const { roundId } = run(['round', 'start', '--stdin'], { requestedCount: 1 });
+    await asLegacyRound(dir, roundId);
     const app = { ...application(roundId), ...scenario.application };
     await writeFile(join(dir, 'applications.ndjson'), JSON.stringify(app) + '\n');
     run(['round', 'lead', '--stdin'], {

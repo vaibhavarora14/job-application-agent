@@ -132,7 +132,7 @@ fixture supplies neither credentials nor access.
 | `ATTENTION_MAGIC_LINK_SECRET` | Judgment HMAC signing, at least 16 characters |
 | `PUBLIC_SITE_URL` | Origin for judgment links |
 | `RESEND_API_KEY` | Judgment mail delivery; fail closed when absent |
-| `RESEND_FROM_EMAIL` | Optional sender, defaults to `JobAppAgent <attention@jobappagent.com>` |
+| `RESEND_FROM_EMAIL` | Optional sender, defaults to `JobAppAgent <attention@updates.jobappagent.com>` |
 | `ATTENTION_DRAFT_API_KEY`, `ATTENTION_DRAFT_BASE_URL`, `ATTENTION_DRAFT_MODEL` | Optional private draft provider |
 | `ATTENTION_WAKE_URL`, `ATTENTION_WAKE_INSTRUCTIONS` | Optional internal wake webhook / manual ops instructions |
 | `ATTENTION_LIVE_SESSION_BASE_URL`, `ATTENTION_NOVNC_PASSWORD` | Existing noVNC compatibility configuration; never passed to buyer components |

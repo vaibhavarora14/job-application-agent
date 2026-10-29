@@ -8,7 +8,7 @@
       "status": "Setup guide · browser validation required",
       "docsUrl": "https://hermes-agent.nousresearch.com/docs/user-guide/features/skills#external-skill-directories",
       "steps": [
-        { "title": "Install the complete runtime", "text": "Run on the machine where Hermes executes terminal and browser tools. Requires Node.js 20+ and npm. The installer enables automatic updates by default; use updates disable to opt out.", "code": "npx job-application-agent@latest install" },
+        { "title": "Install the complete runtime", "text": "Run on the machine where Hermes executes terminal and browser tools. Requires Node.js 20+ and npm. New installs are notify-only: the agent tells you when an update exists. Opt in to automatic updates with updates enable.", "code": "npx job-application-agent@latest install" },
         { "title": "Connect the skill directory", "text": "Merge this into the active Hermes profile's config.yaml under its existing skills section; preserve other settings and existing external_dirs. The default profile is ~/.hermes. If JOB_APPLICATION_AGENT_HOME is set, use that directory's skills subfolder instead. A same-named local or project skill takes precedence: inspect it before changing or removing anything.", "code": "skills:\n  external_dirs:\n    - ~/.agents/skills" },
         { "title": "Check discovery", "text": "Start a fresh Hermes session. Confirm job-application-agent is listed, then paste the starter prompt below. Enable terminal and browser tools in the same execution environment. On Linux, local profile storage needs secret-tool and an unlocked Secret Service; alternatively configure your own private cloud state through the CLI.", "code": "hermes skills list" }
       ],

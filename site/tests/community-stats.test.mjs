@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { deriveCommunityStats, validateCommunityStats } from "../lib/community-stats.mjs";
+import { deriveCommunityStats, publicOutcomeEntries, validateCommunityStats } from "../lib/community-stats.mjs";
 
 const validStats = {
   generatedAt: "2026-08-18T21:09:13.709Z",
@@ -50,4 +50,61 @@ test("derives honest community proof without treating installations as people", 
     outcomesReported: 4,
     outcomeCoverage: 0.8,
   });
+});
+
+test("public outcome entries never surface the interviews count", () => {
+  const outcomes = [
+    { label: "rejected", count: 332 },
+    { label: "withdrawn", count: 26 },
+    { label: "interview", count: 20 },
+    { label: " Interviews ", count: 1 },
+  ];
+  assert.deepEqual(publicOutcomeEntries(outcomes), [
+    { label: "rejected", count: 332 },
+    { label: "withdrawn", count: 26 },
+  ]);
+  assert.deepEqual(publicOutcomeEntries(), []);
+  // The interviews count is never returned publicly, whether or not the relay still sends it.
+  const result = validateCommunityStats({ ...validStats, breakdowns: { ...validStats.breakdowns, outcomes } });
+  assert.equal(result.ok, true);
+  assert.equal("interviews" in result.data.metrics, false);
+  assert.deepEqual(result.data.breakdowns.outcomes, [
+    { label: "rejected", count: 332 },
+    { label: "withdrawn", count: 26 },
+  ]);
+  assert.doesNotMatch(JSON.stringify(result.data), /interview/i);
+  const metricsWithoutInterviews = { ...validStats.metrics };
+  delete metricsWithoutInterviews.interviews;
+  const newer = validateCommunityStats({ ...validStats, metrics: metricsWithoutInterviews });
+  assert.equal(newer.ok, true, "a relay that no longer sends interviews is accepted");
+  assert.equal(newer.data.metrics.installations, 195);
+});
+
+test("stats dashboard and homepage proof render outcomes through the public filter only", async () => {
+  const { readFile } = await import("node:fs/promises");
+  const dashboard = await readFile(new URL("../app/components/CommunityDashboard.tsx", import.meta.url), "utf8");
+  const proof = await readFile(new URL("../app/components/CommunityProof.tsx", import.meta.url), "utf8");
+  assert.match(dashboard, /publicOutcomeEntries\(data\?\.breakdowns\.outcomes/);
+  assert.doesNotMatch(dashboard, /breakdowns\.outcomes\.map/);
+  for (const source of [dashboard, proof]) assert.doesNotMatch(source, /metrics\.interviews|"interviews"|Interview/);
+});
+
+test("stats outcome coverage card leads with the live rate, never an outcome count", async () => {
+  const { readFile } = await import("node:fs/promises");
+  const dashboard = await readFile(new URL("../app/components/CommunityDashboard.tsx", import.meta.url), "utf8");
+  const card = dashboard.slice(dashboard.indexOf('className="dashboard-panel outcome-panel"'), dashboard.indexOf("</article>", dashboard.indexOf('className="dashboard-panel outcome-panel"')));
+  // Rate and sentence render only with real counters; otherwise the existing waiting state.
+  assert.match(card, /<strong className="outcome-number">\{`\$\{outcomeCoverage\}%`\}/);
+  assert.match(card, /of \{fullNumber\.format\(data\.metrics\.applicationsSubmitted\)\} verified applications have a reported outcome/);
+  // The card itself is hidden without real counters; the page carries one waiting line.
+  assert.match(dashboard, /\{counted \? <article className="dashboard-panel outcome-panel">/);
+  assert.equal((dashboard.match(/>Waiting for verified activity\.</g) ?? []).length, 1);
+  assert.doesNotMatch(dashboard, /Waiting for enough privacy-safe data/);
+  assert.doesNotMatch(card, /"—"/);
+  // No visible known-outcome count (it would include interviews) and no duplicate rate pill.
+  assert.doesNotMatch(card, /format\(outcomesReported\)|known outcomes|% reported|className="tag"/);
+  assert.match(card, /publicOutcomeEntries/);
+  assert.equal(deriveCommunityStats({ ...validStats, metrics: { ...validStats.metrics, applicationsSubmitted: 4377 }, breakdowns: { ...validStats.breakdowns, outcomes: [
+    { label: "rejected", count: 332 }, { label: "withdrawn", count: 26 }, { label: "interview", count: 20 },
+  ] } }).outcomeCoverage, 8.6);
 });

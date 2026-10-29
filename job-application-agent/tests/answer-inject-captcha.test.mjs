@@ -25,6 +25,11 @@ import {
   decideResumeSubmit,
 } from "../scripts/attention-resume-submit.mjs";
 
+// Obvious placeholders, not credentials: the CAPTCHA vendor calls in these tests are mocked.
+const FAKE_CAPSOLVER_CREDENTIAL = "placeholder-capsolver";
+const FAKE_2CAPTCHA_CREDENTIAL = "placeholder-2captcha";
+const FAKE_GENERIC_CREDENTIAL = "placeholder";
+
 const FAKE_SITEKEY = "6LeTestSitekeyAAAAAAAAAAAAAFakeKeyXX";
 const FAKE_TOKEN = "03AGdBq-FAKE-CAPTCHA-TOKEN-DO-NOT-LOG";
 
@@ -163,7 +168,7 @@ test("captcha vendor off → no network and fail closed", async () => {
   const unsupported = await tryCaptchaVendorAssist({
     env: {
       CAPTCHA_VENDOR: "capsolver",
-      CAPTCHA_VENDOR_API_KEY: "test-key",
+      CAPTCHA_VENDOR_API_KEY: FAKE_GENERIC_CREDENTIAL,
       CAPTCHA_BUYER_OPT_IN: "on",
     },
     fetchImpl,
@@ -205,7 +210,7 @@ test("CapSolver create+poll mocked success returns token and inject plan", async
   const fetchImpl = async (url, init) => {
     calls.push({ url: String(url), body: JSON.parse(String(init?.body ?? "{}")) });
     if (String(url).includes("createTask")) {
-      assert.equal(calls.at(-1).body.clientKey, "test-capsolver-key");
+      assert.equal(calls.at(-1).body.clientKey, FAKE_CAPSOLVER_CREDENTIAL);
       assert.equal(calls.at(-1).body.task.type, "ReCaptchaV2TaskProxyLess");
       assert.equal(calls.at(-1).body.task.websiteKey, FAKE_SITEKEY);
       assert.ok(!("cookies" in calls.at(-1).body.task));
@@ -228,7 +233,7 @@ test("CapSolver create+poll mocked success returns token and inject plan", async
   const result = await tryCaptchaVendorAssist({
     env: {
       CAPTCHA_VENDOR: "capsolver",
-      CAPTCHA_VENDOR_API_KEY: "test-capsolver-key",
+      CAPTCHA_VENDOR_API_KEY: FAKE_CAPSOLVER_CREDENTIAL,
       CAPTCHA_BUYER_OPT_IN: "on",
     },
     fetchImpl,
@@ -267,7 +272,7 @@ test("CapSolver poll timeout fails closed without token in messages", async () =
   const result = await tryCaptchaVendorAssist({
     env: {
       CAPTCHA_VENDOR: "capsolver",
-      CAPTCHA_VENDOR_API_KEY: "test-capsolver-key",
+      CAPTCHA_VENDOR_API_KEY: FAKE_CAPSOLVER_CREDENTIAL,
       CAPTCHA_BUYER_OPT_IN: "on",
     },
     fetchImpl,
@@ -296,7 +301,7 @@ test("2Captcha create+poll mocked success for turnstile", async () => {
     const body = JSON.parse(String(init?.body ?? "{}"));
     calls.push({ url: String(url), body });
     if (String(url).includes("api.2captcha.com/createTask")) {
-      assert.equal(body.clientKey, "test-2captcha-key");
+      assert.equal(body.clientKey, FAKE_2CAPTCHA_CREDENTIAL);
       assert.equal(body.task.type, "TurnstileTaskProxyless");
       return jsonResponse({ errorId: 0, taskId: 998877 });
     }
@@ -311,7 +316,7 @@ test("2Captcha create+poll mocked success for turnstile", async () => {
   const result = await tryCaptchaVendorAssist({
     env: {
       CAPTCHA_VENDOR: "2captcha",
-      CAPTCHA_VENDOR_API_KEY: "test-2captcha-key",
+      CAPTCHA_VENDOR_API_KEY: FAKE_2CAPTCHA_CREDENTIAL,
       CAPTCHA_ASSIST: "on",
     },
     fetchImpl,
@@ -342,7 +347,7 @@ test("2Captcha Ashby reCAPTCHA v2 create→poll→inject (Confluent-shaped)", as
     const body = JSON.parse(String(init?.body ?? "{}"));
     if (String(url) === "https://api.2captcha.com/createTask") {
       createCalls += 1;
-      assert.equal(body.clientKey, "test-2captcha-key");
+      assert.equal(body.clientKey, FAKE_2CAPTCHA_CREDENTIAL);
       assert.equal(body.task.type, "RecaptchaV2TaskProxyless");
       assert.equal(body.task.websiteURL, "https://jobs.ashbyhq.com/confluent/application");
       assert.equal(body.task.websiteKey, FAKE_SITEKEY);
@@ -354,7 +359,7 @@ test("2Captcha Ashby reCAPTCHA v2 create→poll→inject (Confluent-shaped)", as
     if (String(url) === "https://api.2captcha.com/getTaskResult") {
       pollCalls += 1;
       pollBodies.push(body);
-      assert.equal(body.clientKey, "test-2captcha-key");
+      assert.equal(body.clientKey, FAKE_2CAPTCHA_CREDENTIAL);
       assert.equal(body.taskId, 72345678901);
       assert.equal(typeof body.taskId, "number");
       if (pollCalls === 1) {
@@ -376,7 +381,7 @@ test("2Captcha Ashby reCAPTCHA v2 create→poll→inject (Confluent-shaped)", as
   const result = await tryCaptchaVendorAssist({
     env: {
       CAPTCHA_VENDOR: "2captcha",
-      CAPTCHA_VENDOR_API_KEY: "test-2captcha-key",
+      CAPTCHA_VENDOR_API_KEY: FAKE_2CAPTCHA_CREDENTIAL,
       CAPTCHA_BUYER_OPT_IN: "on",
     },
     fetchImpl,
@@ -422,7 +427,7 @@ test("2Captcha create failure (zero balance) fails closed", async () => {
   const result = await tryCaptchaVendorAssist({
     env: {
       CAPTCHA_VENDOR: "2captcha",
-      CAPTCHA_VENDOR_API_KEY: "test-2captcha-key",
+      CAPTCHA_VENDOR_API_KEY: FAKE_2CAPTCHA_CREDENTIAL,
       CAPTCHA_BUYER_OPT_IN: "on",
     },
     fetchImpl,
@@ -456,7 +461,7 @@ test("2Captcha poll unsolvable fails closed", async () => {
   const result = await tryCaptchaVendorAssist({
     env: {
       CAPTCHA_VENDOR: "2captcha",
-      CAPTCHA_VENDOR_API_KEY: "test-2captcha-key",
+      CAPTCHA_VENDOR_API_KEY: FAKE_2CAPTCHA_CREDENTIAL,
       CAPTCHA_BUYER_OPT_IN: "1",
     },
     fetchImpl,

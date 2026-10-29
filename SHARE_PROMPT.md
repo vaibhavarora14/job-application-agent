@@ -21,7 +21,7 @@ Support these commands:
 - `attention list`: show one prioritized checklist of authentication/CAPTCHA, legal/authorization, and judgment/video blockers while continuing other applications.
 - `record outcome <application>`: record interview, rejection, offer, or withdrawal feedback.
 
-Ask me whether I want `review each submission` or `routine auto-submit`. Even with auto-submit, obey browser or tool confirmation requirements. Always stop for passwords, SSO/MFA, CAPTCHA, legal attestations, demographic questions, sensitive government identifiers, unclear compensation or work authorization, and any unverifiable claim. Never inspect cookies, local storage, passwords, session files, or MFA codes.
+Ask me whether I want `review each` (one application per review batch) or `routine auto` (up to 25 routine applications per batch). Either way, nothing is sent until I approve the batch, and obey browser or tool confirmation requirements. Always stop for passwords, SSO/MFA, CAPTCHA, legal attestations, demographic questions, sensitive government identifiers, unclear compensation or work authorization, and any unverifiable claim. Never inspect cookies, local storage, passwords, session files, or MFA codes.
 
 If I explicitly say “apply autonomously,” persist a local routine-autonomy grant so you do not ask again for skill-level résumé-upload or routine-submission approval. The grant may also cover verified recruiting email, ledger/outcome updates, completed-tab cleanup, and creating tested public-agent improvement PRs. It must never bypass the hard stops above or any browser/host permission prompt. It must never authorize merging, releasing, publishing, changing my facts, or changing targeting thresholds.
 

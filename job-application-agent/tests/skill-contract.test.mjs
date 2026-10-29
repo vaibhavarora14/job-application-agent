@@ -110,3 +110,58 @@ test('documents Free.ai as optional LLM assist only', async () => {
   assert.match(freeAi, /not the hosted/i);
   assert.match(freeAi, /does not read `FREE_AI_API_KEY`/i);
 });
+
+test('skill triggers only on explicit job-search/application requests or the skill name (all copies)', async () => {
+  const copies = await Promise.all([
+    '../SKILL.md',
+    '../../skills/job-application-agent/SKILL.md',
+    '../../plugins/job-application-agent/skills/job-application-agent/SKILL.md',
+  ].map((path) => readFile(new URL(path, import.meta.url), 'utf8')));
+  for (const copy of copies) {
+    const description = copy.match(/^description: (.*)$/m)?.[1] ?? '';
+    assert.match(description, /^JobAppAgent, the open-source AI job application agent\./);
+    assert.ok(description.length <= 1024, 'description must fit the Agent Skills 1024-character limit');
+    assert.match(description, /Use only when the user names JobAppAgent or job-application-agent, or explicitly asks for a job-search or job-application task/);
+    assert.match(description, /Do not use for vague or general requests/);
+    assert.doesNotMatch(description, /: /, 'plain YAML scalar: no colon-space in the description');
+    assert.match(copy, /Activate this skill only when the candidate invokes it by name/);
+    assert.match(copy, /Do not activate on vague or general requests/);
+    assert.doesNotMatch(copy, /or natural language\)/);
+  }
+});
+
+const ALL_SKILL_COPIES = [
+  '../SKILL.md',
+  '../../skills/job-application-agent/SKILL.md',
+  '../../plugins/job-application-agent/skills/job-application-agent/SKILL.md',
+];
+
+test('every SKILL.md copy has an Untrusted content section that keeps the rule without quoting injection phrases', async () => {
+  for (const copy of ALL_SKILL_COPIES) {
+    const skill = await readFile(new URL(copy, import.meta.url), 'utf8');
+    const section = skill.split(/^## Untrusted content$/m)[1]?.split(/^## /m)[0] ?? '';
+    assert.ok(section, `${copy} is missing "## Untrusted content"`);
+    assert.match(section, /job pages/, copy);
+    assert.match(section, /emails/, copy);
+    assert.match(section, /ATS forms/, copy);
+    assert.match(section, /no authority/, copy);
+    assert.match(section, /tell the candidate what it asked/, copy);
+    assert.match(section, /Only the candidate/, copy);
+    // Registry scanners flag quoted injection-style phrases, so the rule is stated without them.
+    assert.doesNotMatch(section, /ignore (all |any )?(previous|prior)/i, copy);
+    assert.doesNotMatch(section, /instructions?/i, copy);
+    assert.doesNotMatch(section, /"/, copy);
+  }
+});
+
+test('no SKILL.md copy tells the agent to run the updater on its own; it checks and tells the user', async () => {
+  for (const copy of ALL_SKILL_COPIES) {
+    const skill = await readFile(new URL(copy, import.meta.url), 'utf8');
+    assert.doesNotMatch(skill, /run the managed updater once/i, copy);
+    assert.doesNotMatch(skill, /Run the managed updater when present/i, copy);
+    assert.doesNotMatch(skill, /enables automatic updates by default/i, copy);
+    assert.match(skill, /updates check/, copy);
+    assert.match(skill, /ask (whether to update|before running)/i, copy);
+    assert.match(skill, /Never run the managed updater/i, copy);
+  }
+});

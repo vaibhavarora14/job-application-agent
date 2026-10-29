@@ -1,8 +1,8 @@
 <div align="center">
 
-# 💼 Job Application Agent
+# JobAppAgent: open-source AI job application agent
 
-### Find better roles, apply with verified facts, and learn from outcomes.
+### Search roles, match them to one verified résumé, apply within your rules on Greenhouse, Ashby and Lever, and track confirmed submissions.
 
 [![Validate](https://github.com/vaibhavarora14/job-application-agent/actions/workflows/validate.yml/badge.svg)](https://github.com/vaibhavarora14/job-application-agent/actions/workflows/validate.yml)
 [![npm](https://img.shields.io/npm/v/job-application-agent?logo=npm&color=CB3837)](https://www.npmjs.com/package/job-application-agent)
@@ -23,9 +23,9 @@ npx skills add vaibhavarora14/job-application-agent
 
 ---
 
-Job Application Agent is an [Agent Skill](https://agentskills.io/specification) that helps a coding agent discover, evaluate, complete, and track your own job applications. It uses one verified résumé, checks eligibility and duplicates, and records only confirmed submissions.
+JobAppAgent (Job Application Agent) is an [Agent Skill](https://agentskills.io/specification) that helps a coding agent discover, evaluate, complete, and track your own job applications. It uses one verified résumé, checks eligibility and duplicates, and records only confirmed submissions.
 
-> **☁️ Cloud access, coming soon.** A hosted agent that runs this same loop for you, so the search keeps going without your laptop. It isn't live yet. A [founding reservation ($49)](https://jobappagent.com) locks the founding price, and we email you when access opens. This open-source skill stays free under the MIT License.
+<!-- demo-video: embed goes here after approval -->
 
 ## 🔒 Privacy in 30 seconds
 
@@ -111,10 +111,14 @@ and keeps outreach counts separate from applications. Cloud use requires the
 `outreach-tracking-v1` private-state migration; local use works with the managed
 npm installation on Node 20 or later.
 
-- **`review-each`** — review every completed application before submission.
-- **`routine-auto`** — allow routine submissions while keeping sensitive and judgment-heavy steps with you.
+You approve every send. The agent fills applications but never submits them. It stages them as a review batch, and you approve that batch on a local review page, which shows the company, role, URL, fit score, every drafted answer and the résumé. On hosts without a local browser, you approve by typing a short approval phrase in chat. You can untick anything you don't want sent. Approval covers exactly what you saw, once, for 24 hours.
 
-For durable autonomy across resumable or scheduled runs:
+- **`review-each`** (default): one application per review.
+- **`routine-auto`**: the agent batches up to 25 routine applications into one review. Sensitive and judgment-heavy steps still stop for you.
+
+**What this does and doesn't enforce.** The CLI refuses to prepare a transmission intent (`cloud intent-prepare`), record a submission (`ledger add`), record a resend (`ledger retry`) or hand over an outreach email (`outreach handoff`) without an approval token for that exact item. It cannot stop a click made directly in the browser. The skill forbids that, and a send made that way is never recorded, counted or shared. Details: [`REVIEW.md`](job-application-agent/references/REVIEW.md).
+
+For durable autonomy across resumable or scheduled runs (discovery, assessment, filling and staging batches; never sending):
 
 ```bash
 echo '{"mode":"routine-auto"}' | node ~/.agents/skills/job-application-agent/scripts/job-application.mjs autonomy grant --stdin
@@ -172,47 +176,22 @@ New rounds derive reviewed and qualified totals from private per-lead records, i
 
 Rounds require recorded attempts across at least three distinct discovery sources, including a successful search, and source attribution for confirmed submissions. If more than 60% of submissions come from one source, the agent must explain the concentration. Blockers and empty results are reported; fit requirements never change to meet a source quota. See [round coverage](job-application-agent/references/RUNS.md#discovery-coverage).
 
-## 🔐 Privacy
-
-| Data | Where it stays |
-|---|---|
-| Profile | OS credential store, or private D1 with an owner-only local cache |
-| Analytics name and email (unless opted out) | Private PostHog events after disclosure; local sharing preference in owner-only state |
-| Résumé and ledgers | Owner-only local state, or private D1 plus private blob storage when configured |
-| Browser login | Existing browser session |
-| Community-sharing preference and delivery receipts | Owner-only local state directory |
-| Skill code | Version-controlled installation directory |
-
-Candidate data, résumés, application history, credentials, and browser sessions are never committed to this repository.
-
-Private cloud state is opt-in and isolated from public analytics/community services. Client tokens remain in owner-only host configuration, only token hashes are stored server-side, and browser/Gmail credentials never enter the backend.
-
-Structured usage analytics and name/email sharing are enabled by default for support and product improvement. After a disclosure command with no identity transmission, subsequent commands include the name and email explicitly saved in the candidate profile in the maintainer's private PostHog analytics. No résumé content, other profile fields, prompts, answers, browser data, IP addresses, or raw errors are sent. `telemetry identity disable` stops identity sharing and rotates the analytics UUID so future usage is anonymous; `telemetry disable` stops all analytics. Previously collected events remain subject to the retention policy.
-
-Anonymous community sharing is also enabled by default, separately from analytics. Confirmed applications share only a canonical public job URL, company, role, application channel, optional coarse discovery source, and derived provider URL—never candidate identity, answers, résumé, score, referral parameters, or submission timestamp. Repeatable discovery surfaces share their bounded catalog metadata through a maintainer-review queue. The registry stores no raw installation IDs; record-scoped contributor hashes are used only for deduplication and counts, never as identity or publication authority.
-
-```bash
-node ~/.agents/skills/job-application-agent/scripts/job-application.mjs telemetry status
-node ~/.agents/skills/job-application-agent/scripts/job-application.mjs telemetry identity disable
-node ~/.agents/skills/job-application-agent/scripts/job-application.mjs telemetry disable
-node ~/.agents/skills/job-application-agent/scripts/job-application.mjs sources sharing status
-node ~/.agents/skills/job-application-agent/scripts/job-application.mjs sources sharing disable
-node ~/.agents/skills/job-application-agent/scripts/job-application.mjs sources jobs
-```
-
-See [`ANALYTICS.md`](job-application-agent/references/ANALYTICS.md) for the event contract and retention policy, or view the [public aggregate dashboard](https://job-application-agent-telemetry.varora1406.workers.dev/).
-
 <details>
 <summary><strong>Installation and update details</strong></summary>
 
-The installer places the skill at `~/.agents/skills/job-application-agent` and enables automatic updates by default. Compatible vendor skill directories are also supported when they already exist.
+The installer places the skill at `~/.agents/skills/job-application-agent`. Compatible vendor skill directories are also supported when they already exist.
+
+New installs are notify-only: at the start of a workflow the agent runs `updates check`, which only reads the latest version from npm, and tells you when a newer version exists. Nothing is installed until you ask. Automatic background updates (at login and hourly) are an explicit opt-in with `updates enable`. Installs that already had automatic updates on keep them and show a one-time notice explaining how to keep or turn them off.
 
 ```bash
 npx job-application-agent@latest status
-npx job-application-agent@latest update
-npx job-application-agent@latest updates disable
-npx job-application-agent@latest updates enable
+npx job-application-agent@latest update            # install the latest version now
+npx job-application-agent@latest updates enable    # opt in to automatic background updates
+npx job-application-agent@latest updates disable   # back to notify-only
+node ~/.agents/skills/job-application-agent/scripts/job-application.mjs updates check   # read-only version check
 ```
+
+Set `JOB_APPLICATION_AGENT_NO_UPDATE_CHECK=1` to skip the version check entirely.
 
 Updates are staged and validated before replacement. Private candidate state lives outside the replaceable skill directory.
 
@@ -231,7 +210,40 @@ Updates are staged and validated before replacement. Private candidate state liv
 - [awesome-agent-skills (Community Skills)](https://github.com/VoltAgent/awesome-agent-skills)
 - [SkillHub](https://www.skillhub.club/app/skills/b99cbef5-2445-47d0-94d0-e6d1fac81263) (may still be in review)
 - [ClawHub](https://clawhub.ai/vaibhavarora14/skills/job-application-agent)
-- [cursor.directory](https://cursor.directory/plugins/job-application-agent) (pending review)
+
+> **☁️ Cloud access, coming soon.** A hosted agent that runs this same loop for you, so the search keeps going without your laptop. It isn't live yet. A [founding reservation ($49)](https://jobappagent.com) locks the founding price, and we email you when access opens. This open-source skill stays free under the MIT License.
+
+## 🔐 Privacy
+
+| Data | Where it stays |
+|---|---|
+| Profile | OS credential store, or private D1 with an owner-only local cache |
+| Saved profile name and email (contact store, unless opted out) | Private maintainer contact database tied to the anonymous install ID, separate from analytics events (never in PostHog events since 3.7.3); local sharing preference in owner-only state |
+| Résumé and ledgers | Owner-only local state, or private D1 plus private blob storage when configured |
+| Browser login | Existing browser session |
+| Community-sharing preference and delivery receipts | Owner-only local state directory |
+| Skill code | Version-controlled installation directory |
+
+Candidate data, résumés, application history, credentials, and browser sessions are never committed to this repository.
+
+Private cloud state is opt-in and isolated from public analytics/community services. Client tokens remain in owner-only host configuration, only token hashes are stored server-side, and browser/Gmail credentials never enter the backend.
+
+Structured usage analytics are enabled by default for product improvement and are keyed to an anonymous install ID. Analytics events do not include your name, email, phone, résumé content, prompts, answers, browser data, or IP addresses. Error events carry only a short sanitized message with file paths, your home folder, OS username, and contact details redacted. `telemetry disable` stops all analytics; previously collected events remain subject to the 24-month retention policy.
+
+Separately from analytics, contact sharing is enabled by default: the name and email you explicitly saved in your candidate profile are stored privately in a maintainer contact database tied to your anonymous install ID, used only to support you and send product updates, and never written into PostHog events (since 3.7.3; the relay also strips such fields from older clients). It is not exposed on public community or job endpoints. `telemetry contact disable` stops future contact sharing (`telemetry identity disable` is an alias), and `telemetry disable` stops both analytics and contact sharing. Opting out does not automatically delete a stored contact; see the [privacy policy](https://jobappagent.com/privacy) for deletion requests.
+
+Anonymous community sharing is also enabled by default, separately from analytics. Confirmed applications share only a canonical public job URL, company, role, application channel, optional coarse discovery source, and derived provider URL—never candidate identity, answers, résumé, score, referral parameters, or submission timestamp. Repeatable discovery surfaces share their bounded catalog metadata through a maintainer-review queue. The registry stores no raw installation IDs; record-scoped contributor hashes are used only for deduplication and counts, never as identity or publication authority.
+
+```bash
+node ~/.agents/skills/job-application-agent/scripts/job-application.mjs telemetry status
+node ~/.agents/skills/job-application-agent/scripts/job-application.mjs telemetry contact disable
+node ~/.agents/skills/job-application-agent/scripts/job-application.mjs telemetry disable
+node ~/.agents/skills/job-application-agent/scripts/job-application.mjs sources sharing status
+node ~/.agents/skills/job-application-agent/scripts/job-application.mjs sources sharing disable
+node ~/.agents/skills/job-application-agent/scripts/job-application.mjs sources jobs
+```
+
+See [`ANALYTICS.md`](job-application-agent/references/ANALYTICS.md) for the event contract and retention policy, or view the [public aggregate dashboard](https://job-application-agent-telemetry.varora1406.workers.dev/).
 
 ## 🧰 Develop
 

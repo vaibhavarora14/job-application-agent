@@ -74,6 +74,9 @@ test('public stats returns aggregate metrics and suppresses small segments', asy
   ]);
   assert.equal(data.privacy.minimumSegmentCount, 3);
   assert.equal(JSON.stringify(data).includes('installation_hash'), false);
+  // Interviews are collected but never public: no metric, no outcome segment.
+  assert.equal('interviews' in data.metrics, false);
+  assert.doesNotMatch(JSON.stringify(data), /interview/i);
   for (const query of db.queries) {
     assert.doesNotMatch(query, /SELECT\s+\*/i);
     assert.doesNotMatch(query, /installation_hash\s+AS/i);
@@ -94,6 +97,18 @@ test('event aggregation stores only an HMAC installation hash and bounded dimens
   assert.equal(serialized.includes('ashby'), true);
   assert.ok(db.writes.length >= 3);
   assert.ok(db.writes.some((write) => /public_stats_lifetime/i.test(write.query)));
+});
+
+test('logged-after-the-fact submissions still count as submitted applications', async () => {
+  const db = writeDb();
+  await recordPublicAggregate(db, {
+    installationId: '11111111-1111-4111-8111-111111111111',
+    event: 'application_submitted',
+    properties: { ats: 'greenhouse', entryOrigin: 'logged', fillMetricsSource: 'answer_keys', telemetrySupplied: false },
+  }, 'test-signing-secret-with-sufficient-length', new Date('2026-08-14T00:00:00Z'));
+  const serialized = JSON.stringify(db.writes);
+  assert.equal(serialized.includes('applications_submitted'), true);
+  assert.equal(serialized.includes('greenhouse'), true);
 });
 
 test('public endpoint exposes only aggregate output and cache policy', async () => {

@@ -1,0 +1,113 @@
+name: Job locations refresh
+
+# Keeps site/data/job-locations.json from silently expiring. The site ignores
+# location records older than 30 days (LOCATION_RECORD_MAX_AGE_MS), which blanked
+# location, workplace and pay on every /jobs page when the snapshot went stale.
+#
+# Daily (cheap, ~1-2 min on a public repo, $0): check the committed snapshot's age.
+# - older than 7 days: re-run the read-only collector (public ATS GETs only) and push
+#   the result to the `automation/job-locations-refresh` branch, then try to open a PR.
+#   The refreshed data reaches production only after a maintainer merges that PR and
+#   the normal site deploy runs; this workflow never deploys.
+# - older than 21 days: fail, so the owner gets a failed-run notification well
+#   before the 30-day cutoff.
+on:
+  schedule:
+    - cron: "17 3 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: job-locations-refresh
+  cancel-in-progress: false
+
+jobs:
+  freshness:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      status: ${{ steps.check.outputs.status }}
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          # Always main, even for a manual dispatch from another branch: the refresh branch
+          # and its PR must only ever contain main + refreshed data.
+          ref: main
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
+        with:
+          node-version: 24
+      - name: Report snapshot age
+        id: check
+        shell: bash
+        run: |
+          set -uo pipefail
+          # 30 = the join cutoff; anything older means production shows no metadata.
+          node site/scripts/check-job-locations-freshness.mjs --max-days=30 | tee check.log || true
+          grep -o 'status=[a-z]*' check.log | tail -1 >> "$GITHUB_OUTPUT"
+
+  refresh:
+    needs: freshness
+    if: needs.freshness.outputs.status != 'fresh'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          # Always main, even for a manual dispatch from another branch: the refresh branch
+          # and its PR must only ever contain main + refreshed data.
+          ref: main
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
+        with:
+          node-version: 24
+      - name: Keep the committed snapshot for comparison
+        run: cp site/data/job-locations.json "$RUNNER_TEMP/committed-job-locations.json"
+      - name: Collect job locations (read-only public ATS APIs)
+        # Fails closed (no write) on an empty feed or a snapshot that keeps < 50% of the committed records.
+        run: node site/scripts/collect-job-locations.mjs
+      - name: Verify refreshed snapshot (fresh, non-empty, not sharply reduced)
+        run: node site/scripts/check-job-locations-freshness.mjs --max-days=1 --previous="$RUNNER_TEMP/committed-job-locations.json"
+      - name: Push refresh branch and open PR
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          branch=automation/job-locations-refresh
+          if [ "$(git rev-parse --abbrev-ref HEAD)" != "main" ]; then
+            echo "::error::Refusing to push: checkout is not main."
+            exit 1
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git checkout -B "$branch"
+          git add site/data/job-locations.json site/data/job-locations-unresolved.json
+          if git diff --cached --quiet; then
+            echo "No changes to commit."
+            exit 0
+          fi
+          git commit -m "chore(site): refresh job location metadata snapshot"
+          git push --force origin "$branch"
+          if [ -z "$(gh pr list --head "$branch" --state open --json number --jq '.[].number')" ]; then
+            gh pr create --head "$branch" --base main \
+              --title "chore(site): refresh job location metadata snapshot" \
+              --body "Automated read-only refresh of \`site/data/job-locations.json\` from public ATS APIs (job-locations-refresh workflow). Review the coverage line in the run log, then merge to deploy. CI does not start automatically on bot-created PRs: close and reopen this PR (or push a commit) to run Validate." \
+              || echo "::warning::Could not open a PR (Actions may not be allowed to create PRs in this repo). Open one from branch $branch manually."
+          fi
+
+  alert:
+    needs: [freshness, refresh]
+    if: always() && (needs.freshness.outputs.status == 'alert' || needs.freshness.outputs.status == 'expired' || needs.freshness.outputs.status == 'invalid' || needs.freshness.outputs.status == '')
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Fail when main's snapshot is near or past the 30-day cutoff
+        env:
+          STATUS: ${{ needs.freshness.outputs.status }}
+        run: |
+          echo "::error::site/data/job-locations.json on main is '${STATUS:-unknown}' (older than 21 days, past the 30-day cutoff, or invalid). Merge the automation/job-locations-refresh PR."
+          exit 1

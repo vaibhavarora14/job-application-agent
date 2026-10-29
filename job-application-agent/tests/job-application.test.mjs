@@ -4,18 +4,26 @@ import { mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
+import { withTestReview } from './support/review-approval.mjs';
 import { fileURLToPath } from 'node:url';
 import { createServer } from 'node:http';
 
 import {
   assertAndRecordThinOverrideUse,
   assertSubmissionFillGuard,
+  isProfileOneClickSubmission,
   buildReview,
   commandCategory,
   durationBucket,
+  entryOriginForFillMetrics,
+  isLoggedNotAgentFilled,
   isThinSubmission,
+  LOGGED_ENTRY_ORIGIN,
   JOB_APPROVAL_REVIEW_EACH,
   migrateProfile,
+  normalizeSubmissionMode,
+  stampSubmissionModeChoice,
+  SUBMISSION_MODE_RESET_NOTICE,
   normalizeJobApprovalMode,
   normalizeThinSubmissionOverride,
   PROFILE_ONE_CLICK_CHANNEL,
@@ -90,11 +98,12 @@ function isolatedCliEnv(directory) {
     JOB_APPLICATION_AGENT_CLOUD_CONFIG: join(directory, 'cloud-config.json'),
     JOB_APPLICATION_AGENT_SOURCE_COMMUNITY_URL: 'http://127.0.0.1:9',
     // Never read the host's real stored profile (the ledger guard consults submissionMode).
-    JOB_APPLICATION_AGENT_KEYCHAIN_SERVICE: `job-application-agent-test-${process.pid}-${Math.random().toString(36).slice(2)}`,
+    JOB_APPLICATION_AGENT_KEYCHAIN_SERVICE: `com.vaibhavarora.job-application-agent.test-${process.pid}-${Math.random().toString(36).slice(2)}`,
   };
 }
 
 function runCli(script, args, input, env, runtimeArgs = []) {
+  input = withTestReview(env, args, input);
   return new Promise((resolve) => {
     const child = spawn(process.execPath, [...runtimeArgs, script, ...args], { env, stdio: ['pipe', 'pipe', 'pipe'] });
     let stdout = '';
@@ -192,7 +201,7 @@ test('migrates a legacy profile without discarding identity or salary preference
   assert.equal(migrated.targetCompensation, legacy.salaryPreference);
   assert.deepEqual(migrated.roleFamilies, ['product-engineering', 'full-stack', 'ai-ml']);
   assert.deepEqual(migrated.seniority, ['senior', 'staff']);
-  assert.equal(migrated.submissionMode, 'routine-auto');
+  assert.equal(migrated.submissionMode, 'review-each');
   assert.equal(migrated.autoSubmitMinScore, 80);
   assert.equal(migrated.manualReviewMinScore, 70);
   assert.equal(migrated.minMustHaveCoverage, 70);
@@ -507,7 +516,7 @@ test('blocks ledger add for empty fill metrics without thin override', async (t)
     role: 'Empty Apply Engineer',
     approval: 'APPROVE SUBMIT',
     url: 'https://jobs.example.com/empty-submit-ack',
-    telemetry: { fieldsFilled: 0, resumeUploaded: false, durationBucket: 'under-1s' },
+    telemetry: { fieldsFilled: 0, resumeUploaded: false, resumeFieldPresent: false, durationBucket: 'under-1s' },
     thinSubmissionOverride: thinOverride('Candidate confirmed empty apply for Empty Ack Co Engineer in chat'),
   }, env);
   assert.equal(allowed.code, 0, allowed.stderr);
@@ -518,7 +527,7 @@ test('blocks ledger add for empty fill metrics without thin override', async (t)
     role: 'Reuse Engineer',
     approval: 'APPROVE SUBMIT',
     url: 'https://jobs.example.com/empty-submit-reuse',
-    telemetry: { fieldsFilled: 0, resumeUploaded: false, durationBucket: 'under-1s' },
+    telemetry: { fieldsFilled: 0, resumeUploaded: false, resumeFieldPresent: false, durationBucket: 'under-1s' },
     thinSubmissionOverride: thinOverride('Candidate confirmed empty apply for Empty Ack Co Engineer in chat'),
   }, env);
   assert.equal(reused.code, 1);
@@ -531,7 +540,7 @@ test('blocks ledger add for empty fill metrics without thin override', async (t)
     url: 'https://www.hirist.tech/j/example-role-1',
     source: 'other',
     applicationChannel: PROFILE_ONE_CLICK_CHANNEL,
-    telemetry: { fieldsFilled: 0, resumeUploaded: false, profileResumeOnFile: true, durationBucket: 'under-1s' },
+    telemetry: { fieldsFilled: 0, resumeUploaded: false, profileResumeOnFile: true, resumeFieldPresent: false, durationBucket: 'under-1s' },
   }, env);
   assert.equal(oneClick.code, 0, oneClick.stderr);
   const filled = await runCli(script, ['ledger', 'add', '--stdin'], {
@@ -589,14 +598,15 @@ test('validates optional resumeFieldPresent as a Boolean and infers it only from
   assert.equal(validateSubmissionTelemetry({ fieldsFilled: 6, resumeUploaded: false, resumeFieldPresent: false }).resumeFieldPresent, false);
   assert.equal(validateSubmissionTelemetry({ fieldsFilled: 6, resumeUploaded: false, resumeFieldPresent: true }).resumeFieldPresent, true);
   assert.equal(validateSubmissionTelemetry({ fieldsFilled: 6, resumeUploaded: true, resumeFieldPresent: true }).resumeFieldPresent, true);
-  // Unknown stays unknown: no key at all.
+  // Unknown stays unknown: no key at all, whether omitted (refused later by ledger add) or the explicit "unknown".
   assert.equal('resumeFieldPresent' in validateSubmissionTelemetry({ fieldsFilled: 6, resumeUploaded: false }), false);
+  assert.equal('resumeFieldPresent' in validateSubmissionTelemetry({ fieldsFilled: 6, resumeUploaded: false, resumeFieldPresent: 'unknown' }), false);
   assert.equal('resumeFieldPresent' in validateSubmissionTelemetry({ fieldsFilled: 6 }), false);
   assert.equal('resumeFieldPresent' in validateSubmissionTelemetry({ fieldsFilled: 6, resumeUploaded: false, resumeFieldPresent: null }), false);
   // Explicit upload implies a field.
   assert.equal(validateSubmissionTelemetry({ fieldsFilled: 6, resumeUploaded: true }).resumeFieldPresent, true);
   for (const bad of ['yes', 'true', 1, 0, {}, []]) {
-    assert.throws(() => validateSubmissionTelemetry({ fieldsFilled: 6, resumeUploaded: false, resumeFieldPresent: bad }), /resumeFieldPresent must be a Boolean/);
+    assert.throws(() => validateSubmissionTelemetry({ fieldsFilled: 6, resumeUploaded: false, resumeFieldPresent: bad }), /resumeFieldPresent must be true .*false .*or "unknown"/);
   }
   assert.throws(
     () => validateSubmissionTelemetry({ fieldsFilled: 6, resumeUploaded: true, resumeFieldPresent: false }),
@@ -627,6 +637,50 @@ test('application_submitted carries resumeFieldPresent only when known and still
   assert.equal(JSON.stringify(present).includes('resume.pdf'), false);
 });
 
+test('application_submitted carries Boolean profileOneClick from the same rule as the fill guard', async () => {
+  const live = {
+    company: 'Hirist Co', role: 'Backend Engineer', url: 'https://www.hirist.tech/j/example-role-1',
+    source: 'other', approval: 'APPROVE SUBMIT', answers: {},
+  };
+  const oneClickEntry = { ...live, applicationChannel: PROFILE_ONE_CLICK_CHANNEL };
+  const oneClickMetrics = resolveSubmissionFillMetrics(oneClickEntry, { fieldsFilled: 0, resumeUploaded: false, profileResumeOnFile: true });
+  const send = async (entry, metrics) => telemetryApplicationSubmitted(entry, { ...metrics, telemetrySupplied: true });
+
+  // True: the honest profile one-click path the guard allows (0 fields, no résumé, profile résumé on file).
+  assert.equal(assertSubmissionFillGuard(oneClickEntry, oneClickMetrics).path, 'profile_one_click');
+  assert.equal(isProfileOneClickSubmission(oneClickEntry, oneClickMetrics), true);
+  const yes = await send(oneClickEntry, oneClickMetrics);
+  assert.equal(yes.properties.profileOneClick, true);
+
+  // False: an ordinary filled submit, the one-click channel without profileResumeOnFile, a
+  // one-click channel that still filled fields, and an attended thin override.
+  const filledMetrics = resolveSubmissionFillMetrics(live, { fieldsFilled: 6, resumeUploaded: true });
+  const noProfileResume = resolveSubmissionFillMetrics(oneClickEntry, { fieldsFilled: 3, resumeUploaded: false });
+  const oneClickFilled = resolveSubmissionFillMetrics(oneClickEntry, { fieldsFilled: 2, resumeUploaded: false, profileResumeOnFile: true });
+  const thin = resolveSubmissionFillMetrics(live, { fieldsFilled: 0, resumeUploaded: false });
+  const no = [
+    await send(live, filledMetrics),
+    await send(oneClickEntry, noProfileResume),
+    await send(oneClickEntry, oneClickFilled),
+    await telemetryApplicationSubmitted(live, { ...thin, telemetrySupplied: true, thinSubmissionOverrideUsed: true }),
+    await telemetryApplicationSubmitted(oneClickEntry, { telemetrySupplied: false, fillMetricsSource: 'empty' }),
+  ];
+  for (const event of no) assert.equal(event.properties.profileOneClick, false);
+  assert.equal(assertSubmissionFillGuard(oneClickEntry, oneClickFilled).path, 'filled');
+  // Fixture / vendor-sandbox applies never count as the one-click path.
+  assert.equal(isProfileOneClickSubmission({ ...oneClickEntry, applyKind: 'fixture' }, oneClickMetrics), false);
+
+  // Boolean only, never the job URL or résumé details; every shape validates against the relay schema.
+  for (const event of [yes, ...no]) {
+    assert.equal(typeof event.properties.profileOneClick, 'boolean');
+    assert.deepEqual(validateEvent(event), event);
+    assert.equal(JSON.stringify(event).includes('hirist.tech/j/'), false);
+  }
+  // Omitted (older CLIs): still a valid application_submitted.
+  const { profileOneClick: _omit, ...legacy } = yes.properties;
+  assert.equal('profileOneClick' in validateEvent({ event: 'application_submitted', properties: legacy }).properties, false);
+});
+
 test('ledger add emits resumeFieldPresent to the relay and keeps it out of the ledger row', async (t) => {
   const directory = await mkdtemp(join(tmpdir(), 'job-agent-resume-field-'));
   t.after(() => rm(directory, { recursive: true, force: true }));
@@ -650,7 +704,7 @@ test('ledger add emits resumeFieldPresent to the relay and keeps it out of the l
   for (const [slug, telemetry] of [
     ['none', { durationBucket: '1-2m', fieldsFilled: 6, shortAnswerCount: 1, resumeUploaded: false, resumeFieldPresent: false }],
     ['present', { durationBucket: '2-5m', fieldsFilled: 8, shortAnswerCount: 1, resumeUploaded: true, resumeFieldPresent: true }],
-    ['unknown', { durationBucket: '2-5m', fieldsFilled: 6, shortAnswerCount: 1, resumeUploaded: false }],
+    ['unknown', { durationBucket: '2-5m', fieldsFilled: 6, shortAnswerCount: 1, resumeUploaded: false, resumeFieldPresent: 'unknown' }],
   ]) {
     const result = await runCli(script, ['ledger', 'add', '--stdin'], entry(slug, telemetry), env);
     assert.equal(result.code, 0, result.stderr);
@@ -680,7 +734,10 @@ test('ordinary application_submitted stays within the pre-3.7.9 relay property s
     telemetrySupplied: true, fillMetricsSource: 'telemetry', fieldsFilled: 9, shortAnswerCount: 1, resumeUploaded: true, durationBucket: '2-5m',
     thinSubmissionOverrideUsed: false,
   });
-  const unknown = Object.keys(event.properties).filter((key) => !PRE_379_RELAY_KEYS.has(key));
+  // profileOneClick (Boolean, always sent by newer CLIs) is the one addition: the client resends
+  // without it when a relay that predates the key answers invalid_event (see telemetry-client tests).
+  assert.equal(event.properties.profileOneClick, false);
+  const unknown = Object.keys(event.properties).filter((key) => !PRE_379_RELAY_KEYS.has(key) && key !== 'profileOneClick');
   assert.deepEqual(unknown, []);
 });
 
@@ -704,7 +761,7 @@ test('deduplicates ledger entries by normalized URL', async (t) => {
   };
   await writeFile(join(directory, 'telemetry.json'), JSON.stringify({ version: 1, enabled: false, disclosed: true, graceConsumed: true, installationEventPending: false }));
   const env = isolatedCliEnv(directory);
-  execFileSync(process.execPath, [script, 'ledger', 'add', '--stdin'], { input: JSON.stringify(entry), env, encoding: 'utf8' });
+  execFileSync(process.execPath, [script, 'ledger', 'add', '--stdin'], { input: JSON.stringify(withTestReview(env, ['ledger', 'add'], entry)), env, encoding: 'utf8' });
   const duplicate = JSON.parse(execFileSync(process.execPath, [script, 'ledger', 'check', '--stdin'], { input: JSON.stringify({ id: 'different', url: 'https://jobs.example.com/123?ref=friend' }), env, encoding: 'utf8' }));
   assert.equal(duplicate.duplicate, true);
   const relabelled = JSON.parse(execFileSync(process.execPath, [script, 'ledger', 'check', '--stdin'], {
@@ -1139,6 +1196,114 @@ test('marks answer-key fill metrics fallback on ledger and application_submitted
   assert.equal(event.properties.durationBucket, 'unknown');
 });
 
+test('answer-key fallback marks the entry as logged after the fact, not agent-filled', () => {
+  assert.equal(LOGGED_ENTRY_ORIGIN, 'logged');
+  assert.equal(entryOriginForFillMetrics('answer_keys'), 'logged');
+  assert.equal(entryOriginForFillMetrics('telemetry'), null);
+  assert.equal(entryOriginForFillMetrics('empty'), null);
+  assert.equal(entryOriginForFillMetrics(undefined), null);
+  const logged = resolveSubmissionFillMetrics({ answers: { 'Full name': 'filled', Email: 'filled' } }, {});
+  assert.equal(logged.fillMetricsSource, 'answer_keys');
+  assert.equal(logged.entryOrigin, 'logged');
+  assert.equal(isLoggedNotAgentFilled(logged), true);
+  const filled = resolveSubmissionFillMetrics({ answers: { 'Full name': 'filled' } }, { fieldsFilled: 1, resumeUploaded: false });
+  assert.equal('entryOrigin' in filled, false);
+  assert.equal(isLoggedNotAgentFilled(filled), false);
+  assert.equal('entryOrigin' in resolveSubmissionFillMetrics({ answers: {} }, {}), false);
+  assert.equal(isLoggedNotAgentFilled(null), false);
+  assert.equal(isLoggedNotAgentFilled({ entryOrigin: 'agent' }), false);
+});
+
+test('logged-after-the-fact submissions are never thin agent submits', () => {
+  const live = { applyKind: 'live', answers: {}, approval: 'STANDING AUTHORIZATION' };
+  const thinMetrics = { fieldsFilled: 0, resumeUploaded: false, fillMetricsSource: 'telemetry' };
+  assert.equal(isThinSubmission(live, thinMetrics), true);
+  assert.equal(isThinSubmission(live, { ...thinMetrics, entryOrigin: 'logged' }), false);
+  const sparse = { applyKind: 'live', answers: { Email: 'filled' }, approval: 'STANDING AUTHORIZATION' };
+  const metrics = resolveSubmissionFillMetrics(sparse, {});
+  assert.equal(isThinSubmission(sparse, metrics), false);
+  assert.equal(assertSubmissionFillGuard(sparse, metrics).path, 'filled');
+});
+
+test('validateLedgerEntry accepts known entryOrigin values and rejects others', () => {
+  const base = {
+    id: 'origin-role', company: 'Origin Co', role: 'Engineer', url: 'https://jobs.example.com/origin', source: 'lever',
+    score: 80, status: 'submitted', submittedAt: '2026-10-21T04:00:00Z', approval: 'STANDING AUTHORIZATION', answers: {},
+  };
+  assert.equal('entryOrigin' in validateLedgerEntry(base), false);
+  assert.equal(validateLedgerEntry({ ...base, entryOrigin: 'logged' }).entryOrigin, 'logged');
+  assert.equal(validateLedgerEntry({ ...base, entryOrigin: 'agent' }).entryOrigin, 'agent');
+  assert.throws(() => validateLedgerEntry({ ...base, entryOrigin: 'manual' }), /entry\.entryOrigin is invalid/);
+});
+
+test('application_submitted carries entryOrigin only for logged entries and still validates', async () => {
+  const entry = {
+    company: 'Origin Co', role: 'Engineer', url: 'https://jobs.example.com/origin-event',
+    source: 'greenhouse', approval: 'STANDING AUTHORIZATION', answers: { Email: 'filled', Phone: 'filled' },
+  };
+  const logged = await telemetryApplicationSubmitted(entry, { ...resolveSubmissionFillMetrics(entry, {}), telemetrySupplied: false });
+  assert.equal(logged.properties.entryOrigin, 'logged');
+  assert.equal(logged.properties.fillMetricsSource, 'answer_keys');
+  assert.deepEqual(validateEvent(logged), logged);
+  const fromRow = await telemetryApplicationSubmitted({ ...entry, entryOrigin: 'logged' }, {
+    telemetrySupplied: false, fillMetricsSource: 'answer_keys', fieldsFilled: 2, resumeUploaded: false,
+  });
+  assert.equal(fromRow.properties.entryOrigin, 'logged');
+  const agent = await telemetryApplicationSubmitted(entry, {
+    telemetrySupplied: true, fillMetricsSource: 'telemetry', fieldsFilled: 9, shortAnswerCount: 1, resumeUploaded: true, durationBucket: '2-5m',
+  });
+  assert.equal('entryOrigin' in agent.properties, false);
+  const empty = await telemetryApplicationSubmitted({ ...entry, answers: {} }, { telemetrySupplied: false, fillMetricsSource: 'empty' });
+  assert.equal('entryOrigin' in empty.properties, false);
+  assert.throws(() => validateEvent({ ...logged, properties: { ...logged.properties, entryOrigin: 'manual' } }));
+});
+
+test('ledger add stores and emits entryOrigin logged for answer-key fallback and ignores caller-supplied values', async (t) => {
+  const directory = await mkdtemp(join(tmpdir(), 'job-agent-entry-origin-'));
+  t.after(() => rm(directory, { recursive: true, force: true }));
+  const captured = [];
+  const server = createServer(async (request, response) => {
+    let raw = '';
+    for await (const chunk of request) raw += chunk;
+    captured.push(JSON.parse(raw));
+    response.setHeader('content-type', 'application/json');
+    response.end(JSON.stringify({ accepted: true }));
+  });
+  await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+  t.after(() => new Promise((resolve) => server.close(resolve)));
+  await writeFile(join(directory, 'telemetry.json'), JSON.stringify({ version: 1, enabled: true, disclosed: true, graceConsumed: true, installationEventPending: false, identityEnabled: false, installationId: crypto.randomUUID(), token: 'synthetic-token', tokenExpiresAt: '2099-01-01T00:00:00Z' }));
+  const env = { ...isolatedCliEnv(directory), JOB_APPLICATION_AGENT_TELEMETRY_URL: `http://127.0.0.1:${server.address().port}` };
+  const script = fileURLToPath(new URL('../scripts/job-application.mjs', import.meta.url));
+  const entry = (slug, extra) => ({
+    id: `entry-origin-${slug}`, company: `Origin ${slug}`, role: 'Engineer', url: `https://jobs.example.com/entry-origin-${slug}`,
+    source: 'greenhouse', score: 80, status: 'submitted', submittedAt: '2026-10-21T04:00:00Z', approval: 'STANDING AUTHORIZATION', ...extra,
+  });
+  const cases = [
+    // Logged after the fact: answers only, no fill telemetry. Accepted, not rejected.
+    ['logged', { answers: { Email: 'filled', Phone: 'filled' } }],
+    // Agent-filled with telemetry: a caller-supplied entryOrigin is ignored.
+    ['agent', { answers: { Email: 'filled' }, entryOrigin: 'logged', telemetry: { durationBucket: '2-5m', fieldsFilled: 9, shortAnswerCount: 1, resumeUploaded: true } }],
+  ];
+  for (const [slug, extra] of cases) {
+    const result = await runCli(script, ['ledger', 'add', '--stdin'], entry(slug, extra), env);
+    assert.equal(result.code, 0, result.stderr);
+    if (slug === 'logged') assert.match(result.stderr, /entryOrigin=logged/);
+  }
+  const stored = Object.fromEntries((await readFile(join(directory, 'applications.ndjson'), 'utf8')).trim().split('\n')
+    .map((line) => JSON.parse(line)).map((row) => [row.id, row]));
+  assert.equal(stored['entry-origin-logged'].entryOrigin, 'logged');
+  assert.equal(stored['entry-origin-logged'].status, 'submitted');
+  assert.equal(stored['entry-origin-logged'].fillMetricsSource, 'answer_keys');
+  assert.equal('entryOrigin' in stored['entry-origin-agent'], false);
+  assert.equal(stored['entry-origin-agent'].fillMetricsSource, 'telemetry');
+  const submitted = Object.fromEntries(captured
+    .filter((body) => body.event === 'application_submitted')
+    .map((body) => [body.properties.company, body.properties]));
+  assert.equal(submitted['Origin logged'].entryOrigin, 'logged');
+  assert.equal(submitted['Origin logged'].telemetrySupplied, false);
+  assert.equal('entryOrigin' in submitted['Origin agent'], false);
+});
+
 test('builds a structured assessment event without description or candidate profile data', async () => {
   const job = {
     title: 'Senior Product Engineer', company: 'Example AI', description: 'private long job description', source: 'greenhouse', eligibility: 'eligible',
@@ -1428,12 +1593,12 @@ const profileGuardBase = {
   company: 'Example', role: 'Engineer', source: 'lever', score: 80, status: 'submitted',
   submittedAt: '2026-10-19T05:00:00Z', answers: {},
 };
-const emptyTelemetry = { fieldsFilled: 0, resumeUploaded: false, durationBucket: 'under-1s' };
+const emptyTelemetry = { fieldsFilled: 0, resumeUploaded: false, resumeFieldPresent: false, durationBucket: 'under-1s' };
 
 test('ledger add under a routine-auto profile blocks empty applies and allows a per-job review-each override', {
   skip: process.platform === 'win32',
 }, async (t) => {
-  const profile = { ...target, submissionMode: 'routine-auto' };
+  const profile = { ...target, submissionMode: 'routine-auto', submissionModeChosenAt: '2026-10-01T00:00:00.000Z' };
   const cli = await profileBackedCli(t, profile);
   const before = await readFile(cli.profileFile, 'utf8');
 
@@ -1479,6 +1644,61 @@ test('ledger add under a routine-auto profile blocks empty applies and allows a 
   // The global profile setting is never touched.
   assert.equal(await readFile(cli.profileFile, 'utf8'), before);
   assert.equal(JSON.parse(before).submissionMode, 'routine-auto');
+});
+
+test('migration defaults submissionMode to review-each but keeps an explicit choice', () => {
+  const legacy = { name: 'Test Candidate', email: 'candidate@example.com', phone: '+1 555 0100', location: 'Bengaluru, India', workAuthorization: 'India' };
+  assert.equal(migrateProfile(legacy, {}).submissionMode, 'review-each');
+  assert.equal(migrateProfile({ ...legacy, submissionMode: 'review-each' }, {}).submissionMode, 'review-each');
+  const chosen = migrateProfile({ ...legacy, submissionMode: 'routine-auto', submissionModeChosenAt: '2026-10-01T00:00:00.000Z' }, {});
+  assert.equal(chosen.submissionMode, 'routine-auto');
+  assert.equal(chosen.submissionModeChosenAt, '2026-10-01T00:00:00.000Z');
+  const override = migrateProfile(legacy, { submissionMode: 'routine-auto' });
+  assert.equal(override.submissionMode, 'routine-auto');
+});
+
+test('unstamped routine-auto is normalized to review-each; stamped routine-auto is kept', () => {
+  const unstamped = normalizeSubmissionMode({ ...target, submissionMode: 'routine-auto' });
+  assert.equal(unstamped.reset, true);
+  assert.equal(unstamped.profile.submissionMode, 'review-each');
+  assert.equal('submissionModeChosenAt' in unstamped.profile, false);
+  const bogus = normalizeSubmissionMode({ ...target, submissionMode: 'routine-auto', submissionModeChosenAt: 'yes' });
+  assert.equal(bogus.profile.submissionMode, 'review-each');
+  const stamped = normalizeSubmissionMode({ ...target, submissionMode: 'routine-auto', submissionModeChosenAt: '2026-10-22T08:00:00Z' });
+  assert.equal(stamped.reset, false);
+  assert.equal(stamped.profile.submissionMode, 'routine-auto');
+  assert.equal(normalizeSubmissionMode({ ...target }).reset, false);
+});
+
+test('explicit routine-auto writes are stamped; review-each drops the stamp', () => {
+  const now = new Date('2026-10-22T08:00:00Z');
+  assert.equal(stampSubmissionModeChoice(validateProfile({ ...target, submissionMode: 'routine-auto' }), now).submissionModeChosenAt, now.toISOString());
+  const kept = stampSubmissionModeChoice(validateProfile({ ...target, submissionMode: 'routine-auto', submissionModeChosenAt: '2026-10-01T00:00:00.000Z' }), now);
+  assert.equal(kept.submissionModeChosenAt, '2026-10-01T00:00:00.000Z');
+  assert.equal('submissionModeChosenAt' in validateProfile({ ...target, submissionModeChosenAt: '2026-10-01T00:00:00.000Z' }), false);
+  assert.equal(stampSubmissionModeChoice(validateProfile(target), now).submissionModeChosenAt, undefined);
+  assert.throws(() => validateProfile({ ...target, submissionMode: 'routine-auto', submissionModeChosenAt: 'soon' }), /ISO timestamp/);
+});
+
+test('a stored unstamped routine-auto profile runs as review-each and prints the notice once', {
+  skip: process.platform === 'win32',
+}, async (t) => {
+  const cli = await profileBackedCli(t, { ...target, submissionMode: 'routine-auto' });
+  const before = await readFile(cli.profileFile, 'utf8');
+  const first = await cli.add({
+    ...profileGuardBase, id: 'reset-empty', company: 'Guard Co reset-empty', url: 'https://jobs.example.com/reset-empty', approval: 'APPROVE SUBMIT', telemetry: emptyTelemetry,
+    thinSubmissionOverride: thinOverride('Candidate confirmed in chat this empty apply for reset job is intended'),
+  });
+  // Under routine-auto this thin submit would be blocked; as review-each the attended override is allowed.
+  assert.equal(first.code, 0, first.stderr);
+  assert.equal(first.stderr.split(SUBMISSION_MODE_RESET_NOTICE.trim()).length - 1, 1, first.stderr);
+  const second = await cli.add({
+    ...profileGuardBase, id: 'reset-filled', company: 'Guard Co reset-filled', url: 'https://jobs.example.com/reset-filled', approval: 'APPROVE SUBMIT',
+    telemetry: { fieldsFilled: 9, shortAnswerCount: 1, resumeUploaded: true, durationBucket: '5-15m' },
+  });
+  assert.equal(second.code, 0, second.stderr);
+  assert.equal(second.stderr.includes(SUBMISSION_MODE_RESET_NOTICE.trim()), false);
+  assert.equal(await readFile(cli.profileFile, 'utf8'), before);
 });
 
 test('ledger add under a review-each profile keeps the existing thin-submit behavior', {

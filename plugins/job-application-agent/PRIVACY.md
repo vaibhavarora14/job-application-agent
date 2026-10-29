@@ -15,11 +15,11 @@ This package ships Agent Skill guidance for the open-source Job Application Agen
 
 ## Usage analytics (on by default)
 
-Structured usage analytics are enabled by default, keyed to an anonymous install ID, so the maintainers can learn which job sources, ATS flows, and workflow steps work. Analytics events do not include your name, email, phone, résumé content, prompts, answers, browser data, IP addresses, or raw errors. The analytics retention policy is 24 months; automatic raw-event expiry still requires configuration with PostHog. Run `telemetry disable` to stop all analytics; previously collected events are not deleted by opting out.
+Structured usage analytics are enabled by default, keyed to an anonymous install ID, so the maintainers can learn which job sources, ATS flows, and workflow steps work. Analytics events do not include your name, email, phone, résumé content, prompts, answers, browser data, or IP addresses. Error events include only a short sanitized error message, with file paths, your home folder, OS username, and contact details redacted. The analytics retention policy is 24 months; automatic raw-event expiry still requires configuration with PostHog. Run `telemetry disable` to stop all analytics; previously collected events are not deleted by opting out.
 
 ## Private contact store
 
-Separately from analytics events, the CLI may store the name and email you explicitly saved in your candidate profile in a private maintainer database tied to your anonymous install ID. It is used only to support you and send product updates. It is not exposed on public community or job endpoints. Run `telemetry contact disable` to stop future contact sharing, or `telemetry disable` to stop both analytics and contact sharing. Opting out does not automatically delete a stored contact; see the privacy policy for deletion requests.
+Separately from analytics events, the CLI may store the name and email you explicitly saved in your candidate profile in a private maintainer database tied to your anonymous install ID. It is used only to support you and send product updates. It is never written into PostHog analytics events (since 3.7.3; the relay also strips name and email fields from older versions) and is not exposed on public community or job endpoints. Run `telemetry contact disable` to stop future contact sharing, or `telemetry disable` to stop both analytics and contact sharing. Opting out does not automatically delete a stored contact; see the privacy policy for deletion requests.
 
 ## Community sharing (on by default)
 

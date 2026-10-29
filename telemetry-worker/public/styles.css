@@ -70,7 +70,7 @@ h1 { position: relative; max-width: 700px; margin-bottom: 1.3rem; font-size: cla
 .weekly-card strong { margin: auto 0 .65rem; font-size: clamp(4.5rem, 9vw, 7.3rem); line-height: .75; letter-spacing: -.07em; }
 .weekly-card span { max-width: 260px; color: #dfe7ff; font-size: .78rem; font-weight: 650; line-height: 1.45; }
 
-.signal-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 1rem; margin-top: 1rem; }
+.signal-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1rem; margin-top: 1rem; }
 .signal-card { min-height: 128px; padding: 1.2rem; background: var(--surface); }
 .signal-card p { margin-bottom: .65rem; color: var(--muted); font-size: .74rem; font-weight: 800; }
 .signal-card strong { display: block; margin-bottom: .35rem; font-size: clamp(2rem, 3vw, 2.65rem); line-height: 1; letter-spacing: -.055em; }
@@ -113,11 +113,10 @@ h2 { margin-bottom: .28rem; font-size: 1.05rem; letter-spacing: -.025em; }
 .velocity-column:nth-last-child(4n) .velocity-bar { background: var(--violet); }
 .velocity-column small { padding-top: .45rem; color: var(--muted); font-size: .58rem; text-transform: uppercase; }
 .outcome-bar { height: 14px; display: flex; overflow: hidden; margin: 2rem 0 1rem; border-radius: 999px; background: #e4e7ef; }
-.outcome-segment { display: block; height: 100%; min-width: 2px; }
-.outcome-interview { background: var(--blue); }
+.outcome-segment { display: block; flex-shrink: 0; height: 100%; min-width: 2px; }
 .outcome-offer { background: var(--green); }
 .outcome-rejected { background: var(--coral); }
-.outcome-withdrawal { background: var(--violet); }
+.outcome-withdrawn, .outcome-withdrawal { background: var(--violet); }
 .outcome-awaiting-update, .outcome-other { background: #d9dce5; }
 .outcome-legend { display: flex; flex-wrap: wrap; gap: .7rem 1rem; color: var(--muted); font-size: .67rem; }
 .outcome-legend span { display: flex; align-items: center; gap: .35rem; }

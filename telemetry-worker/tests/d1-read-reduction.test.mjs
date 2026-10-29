@@ -132,10 +132,11 @@ sqliteTest('public lifetime summary matches prior aggregate values and increment
 
   await refreshActiveInstallations30d(db, now);
   const stats = await buildPublicStats(db, now);
-  assert.equal(stats.metrics.installations, 2);
+  // Only the installation with real activity is counted; installation_started alone is not.
+  assert.equal(stats.metrics.installations, 1);
   assert.equal(stats.metrics.jobsAssessed, 1);
   assert.equal(stats.metrics.applicationsSubmitted, 1);
-  assert.equal(stats.metrics.interviews, 1);
+  assert.equal('interviews' in stats.metrics, false);
   assert.equal(stats.metrics.offers, 0);
   assert.equal(stats.metrics.activeInstallations30d, 1);
 
@@ -148,10 +149,11 @@ sqliteTest('public lifetime summary matches prior aggregate values and increment
   const dailyInterviews = db.database.prepare(
     `SELECT COALESCE(SUM(count), 0) AS total FROM public_daily_metrics WHERE metric = 'interviews'`,
   ).get().total;
-  const installCount = db.database.prepare('SELECT COUNT(*) AS total FROM public_installations').get().total;
+  const installCount = db.database.prepare('SELECT COUNT(*) AS total FROM public_installations WHERE uncounted = 0').get().total;
+  const lifetimeInterviews = db.database.prepare('SELECT interviews FROM public_stats_lifetime WHERE id = 1').get().interviews;
   assert.equal(stats.metrics.jobsAssessed, dailyJobs);
   assert.equal(stats.metrics.applicationsSubmitted, dailyApps);
-  assert.equal(stats.metrics.interviews, dailyInterviews);
+  assert.equal(lifetimeInterviews, dailyInterviews); // still collected internally, never public
   assert.equal(stats.metrics.installations, installCount);
 });
 

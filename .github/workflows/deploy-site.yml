@@ -26,6 +26,10 @@ jobs:
           node-version: 24
       - name: Install dependencies
         run: npm ci && npm --prefix site ci
+      - name: Fail if job location metadata is past the 30-day cutoff
+        # Past the cutoff the site silently drops location, workplace and pay for every
+        # job (LOCATION_RECORD_MAX_AGE_MS). Refresh: node site/scripts/collect-job-locations.mjs
+        run: node site/scripts/check-job-locations-freshness.mjs --max-days=30
       - name: Run site tests
         # site/package.json "test" runs `vinext build` first; dist/ is gitignored
         # and must never be taken from the checkout.
@@ -79,7 +83,7 @@ jobs:
           printf '%s' "$home_html" | grep -Fq 'Founding reservation open'
           printf '%s' "$home_html" | grep -Fq 'COMING SOON'
           printf '%s' "$home_html" | grep -Fq 'Cloud access'
-          printf '%s' "$home_html" | grep -Fq 'Smarter agent on cloud.'
+          printf '%s' "$home_html" | grep -Fq 'Smarter agent on cloud:'
           # Reject stale dual Hosted/Cloud peer framing and activate / 90-day / open-hosted copy.
           ! printf '%s' "$community_html$home_html" | grep -Eiq 'Activate founding access|Reserve 90-day access|WINDOW OPEN|HOSTED OPEN|VERIFYING|Hosted \+ cloud sequence|Hosted continuity'
         env:

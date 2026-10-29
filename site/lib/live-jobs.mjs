@@ -129,6 +129,41 @@ export function validateLiveJobs(input) {
   };
 }
 
+/** Upstream pages carry at most this many jobs; validateLiveJobs enforces it. */
+export const LIVE_JOBS_PAGE_SIZE = 100;
+
+/**
+ * Validate an aggregated board payload (all pages merged, e.g. the Cache API copy
+ * written by fetch-live-jobs) with the same per-job rules as validateLiveJobs.
+ * validateLiveJobs alone rejects more than one page of jobs, so the merged copy is
+ * checked in page-sized slices. Each job must use the upstream wire keys (no `slug`).
+ */
+export function validateLiveJobsBoard(input) {
+  if (!isRecord(input) || !Array.isArray(input.jobs)) return { ok: false, error: 'invalid_jobs' };
+  const jobs = [];
+  let first = null;
+  for (let start = 0; start === 0 || start < input.jobs.length; start += LIVE_JOBS_PAGE_SIZE) {
+    const page = validateLiveJobs({ ...input, jobs: input.jobs.slice(start, start + LIVE_JOBS_PAGE_SIZE) });
+    if (!page.ok) return page;
+    first ??= page;
+    for (const job of page.data.jobs) jobs.push(job);
+  }
+  return { ok: true, data: { ...first.data, jobs } };
+}
+
+/** Wire shape of a validated job (drops the derived `slug`) for re-caching. */
+/** Human name of the posting's source (ATS or channel), e.g. "Ashby"; null for email/other. */
+export function channelLabel(channel) {
+  if (channel === 'email' || channel === 'other') return null;
+  return CHANNEL_LABELS[channel] ?? null;
+}
+
+export function liveJobWireRecord(job) {
+  const wire = { ...job };
+  delete wire.slug;
+  return wire;
+}
+
 export function jobPostingDescription(job) {
   const place = locationLabel(job);
   const channel = CHANNEL_LABELS[job.applicationChannel] ?? job.applicationChannel;
@@ -240,8 +275,9 @@ export function filterBoardJobs(jobs, { role = '', location = '', postedDays = 0
       if (!location.toLowerCase().split(/\s+/).filter(Boolean).every((term) => hay.includes(term))) return false;
     }
     if (days > 0) {
-      const seen = Date.parse(job.firstSeenAt);
-      if (!Number.isFinite(seen) || now - seen > days * 86400000) return false;
+      // Same date the detail page shows: the employer's publish date, else when the registry first saw it.
+      const posted = Date.parse(postedDate(job, now));
+      if (!Number.isFinite(posted) || now - posted > days * 86400000) return false;
     }
     return true;
   });
@@ -251,16 +287,76 @@ export function attachBoardLocations(jobs, locationIndex, now = Date.now()) {
   return attachLocations(jobs, locationIndex, now);
 }
 
+const ISO_COUNTRY_ALIASES = { USA: 'US', 'UNITED STATES': 'US', 'UNITED STATES OF AMERICA': 'US', UK: 'GB', 'UNITED KINGDOM': 'GB' };
+
+/** ISO alpha-2 from a stored code (or the few aliases older snapshots used); anything else → null. */
+function isoCountry(value) {
+  if (typeof value !== 'string') return null;
+  const upper = value.trim().toUpperCase();
+  if (ISO_COUNTRY_ALIASES[upper]) return ISO_COUNTRY_ALIASES[upper];
+  return /^[A-Z]{2}$/.test(upper) ? upper : null;
+}
+
+/** Employer publish date (ISO) when the source stated one; otherwise null. */
+export function employerPostedAt(job, now = Date.now()) {
+  const value = job?.location?.postedAt;
+  if (typeof value !== 'string') return null;
+  const ms = Date.parse(value);
+  return Number.isFinite(ms) && ms <= now + 86400000 ? value : null;
+}
+
+/** Date shown as "Posted": the employer's publish date when known, else when the registry first saw it. */
+export function postedDate(job, now = Date.now()) {
+  return employerPostedAt(job, now) ?? job.firstSeenAt;
+}
+
+const SALARY_UNITS = { year: 'YEAR', month: 'MONTH', week: 'WEEK', day: 'DAY', hour: 'HOUR' };
+
+/** Employer-stated pay only (never an estimate); the same label is visible on the detail page. */
+export function employerSalary(job) {
+  const salary = job?.location?.salary;
+  if (!salary || salary.isEstimated || salary.source !== 'employer') return null;
+  if (!Number.isFinite(salary.min) || !Number.isFinite(salary.max) || !/^[A-Z]{3}$/.test(String(salary.currency ?? '')) || !SALARY_UNITS[salary.period]) return null;
+  return salary;
+}
+
+/** Most pay bands listed on the detail page before a "+N more bands" link to the posting. */
+export const MAX_PAY_BANDS = 4;
+
+/**
+ * Pay rows for the detail page. Several employer bands (zones, levels, currencies) become
+ * `{ name, range }` rows (name null when the employer gave none), capped at MAX_PAY_BANDS with
+ * `more` counting the rest; a single band is `single` (its label). Unknown pay → null.
+ * @returns {{ single: string | null, bands: { name: string | null, range: string }[], more: number } | null}
+ */
+export function payRows(job, max = MAX_PAY_BANDS) {
+  const salary = employerSalary(job);
+  if (!salary) return null;
+  const ranges = Array.isArray(salary.ranges) ? salary.ranges.filter((range) => range && typeof range.label === 'string') : [];
+  if (ranges.length <= 1) return { single: salary.label, bands: [], more: 0 };
+  const bands = ranges.map((range) => ({ name: typeof range.location === 'string' && range.location.trim() ? range.location.trim() : null, range: range.label }));
+  return { single: null, bands: bands.slice(0, max), more: Math.max(0, bands.length - max) };
+}
+
+/** Plain-text pay lines (one per band, "Name: range"); used for tests and non-HTML output. */
+export function payLines(job) {
+  const rows = payRows(job, Infinity);
+  if (!rows) return [];
+  if (rows.single) return [rows.single];
+  return rows.bands.map((band) => (band.name ? `${band.name}: ${band.range}` : band.range));
+}
+
 export function jobPostingJsonLd(job, { siteUrl = 'https://jobappagent.com' } = {}) {
   const url = `${siteUrl}/jobs/${job.slug}`;
   const closed = job.livenessStatus === 'closed';
-  const remote = job.location?.workplace === 'remote';
+  const location = job.location ?? null;
+  const remote = location?.workplace === 'remote';
   const posting = {
     '@context': 'https://schema.org',
     '@type': 'JobPosting',
     title: job.role,
     description: jobPostingDescription(job),
-    datePosted: job.firstSeenAt.slice(0, 10),
+    datePosted: postedDate(job).slice(0, 10),
     hiringOrganization: {
       '@type': 'Organization',
       name: job.company,
@@ -284,37 +380,47 @@ export function jobPostingJsonLd(job, { siteUrl = 'https://jobappagent.com' } = 
     }
   }
 
-  const place = locationLabel(job);
-  const countries = Array.isArray(job.location?.countries) ? job.location.countries.filter(Boolean) : [];
-  if (remote) {
+  // Only places with an explicit country from the source; no guessed or "Worldwide" values.
+  const places = (Array.isArray(location?.places) ? location.places : [])
+    .map((place) => ({ ...place, country: isoCountry(place?.country) }))
+    .filter((place) => place.country);
+  const codes = [...new Set([
+    ...(Array.isArray(location?.countryCodes) ? location.countryCodes : []),
+    ...(Array.isArray(location?.countryCodes) ? [] : (Array.isArray(location?.countries) ? location.countries : [])),
+    ...places.map((place) => place.country),
+  ].map(isoCountry).filter(Boolean))];
+
+  if (remote && codes.length > 0) {
+    // Google: TELECOMMUTE needs at least one eligible country; without one we emit neither.
     posting.jobLocationType = 'TELECOMMUTE';
-    const requirements = countries.length > 0
-      ? countries.map((code) => ({
-        '@type': 'Country',
-        name: countryLabel(code),
-        ...(/^[A-Za-z]{2}$/.test(code) ? { identifier: code.toUpperCase() } : {}),
-      }))
-      : [{ '@type': 'Country', name: place && place !== 'Remote' ? place.replace(/^Remote(?:\s*[·|,]\s*)?/i, '').trim() || 'Worldwide' : 'Worldwide' }];
+    const requirements = codes.map((code) => ({ '@type': 'Country', name: countryLabel(code) }));
     posting.applicantLocationRequirements = requirements.length === 1 ? requirements[0] : requirements;
+  } else if (!remote) {
+    const physical = places.length > 0 ? places : codes.map((country) => ({ country }));
+    const jobLocations = physical.slice(0, 10).map((place) => {
+      const address = { '@type': 'PostalAddress', addressCountry: place.country };
+      if (typeof place.locality === 'string' && place.locality) address.addressLocality = place.locality;
+      if (typeof place.region === 'string' && place.region) address.addressRegion = place.region;
+      return { '@type': 'Place', address };
+    });
+    if (jobLocations.length) posting.jobLocation = jobLocations.length === 1 ? jobLocations[0] : jobLocations;
   }
-  if (place || countries.length > 0) {
-    const address = { '@type': 'PostalAddress' };
-    if (place) address.addressLocality = place;
-    if (countries.length === 1 && /^[A-Za-z]{2}$/.test(countries[0])) {
-      address.addressCountry = countries[0].toUpperCase();
-    } else if (countries.length === 1) {
-      address.addressCountry = countryLabel(countries[0]);
-    }
-    posting.jobLocation = { '@type': 'Place', address };
-  }
-  if (job.location?.employmentType) {
-    const map = {
-      'full-time': 'FULL_TIME',
-      'part-time': 'PART_TIME',
-      contract: 'CONTRACTOR',
-      internship: 'INTERN',
+
+  const salary = employerSalary(job);
+  // baseSalary is base pay only: OTE / total-compensation figures stay on the page (labelled) but out of it.
+  if (salary && (salary.kind ?? 'base') === 'base') {
+    posting.baseSalary = {
+      '@type': 'MonetaryAmount',
+      currency: salary.currency,
+      value: salary.min === salary.max
+        ? { '@type': 'QuantitativeValue', value: salary.min, unitText: SALARY_UNITS[salary.period] }
+        : { '@type': 'QuantitativeValue', minValue: salary.min, maxValue: salary.max, unitText: SALARY_UNITS[salary.period] },
     };
-    posting.employmentType = map[job.location.employmentType] ?? job.location.employmentType.toUpperCase();
+  }
+
+  const employmentTypes = { 'full-time': 'FULL_TIME', 'part-time': 'PART_TIME', contract: 'CONTRACTOR', internship: 'INTERN' };
+  if (location?.employmentType && employmentTypes[location.employmentType]) {
+    posting.employmentType = employmentTypes[location.employmentType];
   }
   return posting;
 }

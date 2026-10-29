@@ -44,8 +44,10 @@ D1 for the backlog (below).
 
 ## Fulfillment checklist
 
-1. **Receive Support alert** (email or Worker log) with `purchaseId`, `buyerEmail`,
-   and `paymentId` when present.
+1. **Receive Support alert.** The Support email carries `purchaseId`, `buyerEmail`,
+   and `paymentId` when present. The Worker log line carries only `purchaseId`,
+   `paymentId`, and `buyerEmailPresent` (never the email); look the email up in
+   D1 `founding_purchases.customer_email` by `purchaseId` if the mail did not arrive.
 2. **Email the buyer** hosted access details to `buyerEmail` (within ~24h of pay).
 3. **Activate the seat** only after that access email is sent (steps below).
 4. Confirm `activated_at` / `access_expires_at` on the row (90-day window from activation).

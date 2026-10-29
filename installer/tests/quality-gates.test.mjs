@@ -170,12 +170,27 @@ test('staging moderation always rejects an approved fixture after a failed verif
 });
 
 test('validation exposes a stable quality gate and a six-combination high-risk matrix', async () => {
-  const workflow = await readFile(new URL('../../.github/workflows/validate.yml', import.meta.url), 'utf8');
+  const workflow = (await readFile(new URL('../../.github/workflows/validate.yml', import.meta.url), 'utf8')).replace(/\r\n/g, '\n');
   assert.match(workflow, /^\s{2}quality-gate:/m);
   assert.match(workflow, /name:\s*quality-gate/);
   assert.match(workflow, /matrix:/);
-  assert.match(workflow, /os:\s*\[ubuntu-latest, macos-latest, windows-latest\]/);
-  assert.match(workflow, /node:\s*\[20, 24\]/);
+  // Ubuntu on every high-risk change; macOS/Windows on push to main or a `full-matrix` PR label.
+  assert.match(workflow, /^\s{2}high-risk:\n(?:\s{4}.*\n)*?\s{8}os:\s*\[ubuntu-latest\]/m);
+  assert.match(workflow, /^\s{2}high-risk-cross-os:\n(?:\s{4}.*\n)*?\s{8}os:\s*\[macos-latest, windows-latest\]/m);
+  assert.match(workflow, /github\.event_name == 'push' && github\.ref == 'refs\/heads\/main'/);
+  assert.match(workflow, /contains\(github\.event\.pull_request\.labels\.\*\.name, 'full-matrix'\)/);
+  assert.match(workflow, /types:\s*\[opened, synchronize, reopened, ready_for_review, labeled\]/);
+  // Drafts run nothing; ready PRs, pushes and manual runs still report quality-gate.
+  const draftGuard = "github.event_name != 'pull_request' || github.event.pull_request.draft == false";
+  assert.ok(workflow.includes(`  classify:\n    name: classify\n    # Draft PRs run no CI; every other job needs classify (or repeats this guard).\n    if: ${draftGuard}\n`));
+  assert.ok(workflow.includes(`  core:\n    name: core\n    if: ${draftGuard}\n`));
+  assert.match(workflow, /if: always\(\) && \(github\.event_name != 'pull_request' \|\| github\.event\.pull_request\.draft == false\)/);
+  // One cancellable run per PR; pushes and manual runs get a per-commit, never-cancelled group.
+  assert.match(workflow, /format\('pr-\{0\}', github\.event\.pull_request\.number\)/);
+  assert.match(workflow, /format\('\{0\}-\{1\}', github\.ref, github\.sha\)/);
+  assert.match(workflow, /cancel-in-progress: \$\{\{ github\.event_name == 'pull_request' \}\}/);
+  assert.match(workflow, /"\$HIGH_RISK_CROSS_OS_RESULT"/);
+  assert.equal((workflow.match(/node:\s*\[20, 24\]/g) ?? []).length, 2);
   assert.match(workflow, /classify-paths\.mjs/);
   assert.match(workflow, /check:native-artifacts/);
 });
@@ -185,7 +200,7 @@ test('validation runs site lint and typecheck when site paths change', async () 
   assert.match(workflow, /^\s{2}site:/m);
   assert.match(workflow, /site_changed/);
   assert.match(workflow, /npm --prefix site run lint && npm --prefix site run typecheck/);
-  assert.match(workflow, /needs:\s*\[classify, core, dependency-review, site, high-risk, codeql\]/);
+  assert.match(workflow, /needs:\s*\[classify, core, dependency-review, site, high-risk, high-risk-cross-os, codeql\]/);
 });
 
 test('validation commands are portable across Windows and pipefail shells', async () => {
@@ -193,7 +208,9 @@ test('validation commands are portable across Windows and pipefail shells', asyn
   const workflow = await readFile(new URL('../../.github/workflows/validate.yml', import.meta.url), 'utf8');
   const smokePackage = await readFile(new URL('../../scripts/smoke-package.mjs', import.meta.url), 'utf8');
 
-  assert.equal(packageJson.scripts.test, 'node --test', 'the shell must not be responsible for expanding test globs');
+  // Optional --import of the test setup (no live telemetry); never a shell-expanded glob.
+  assert.match(packageJson.scripts.test, /^node --test( --import \.\/[\w./-]+\.mjs)?$/, 'the shell must not be responsible for expanding test globs');
+  assert.doesNotMatch(packageJson.scripts.test, /\*/);
   assert.match(workflow, /tar -tzf "\$package_file" > "\$package_listing"/);
   assert.doesNotMatch(workflow, /tar -tzf "\$package_file" \| grep/, 'tar must not receive SIGPIPE under pipefail');
   assert.match(smokePackage, /process\.env\.npm_execpath/);
