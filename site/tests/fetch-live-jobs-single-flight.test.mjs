@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { registerHooks } from 'node:module';
+import * as nodeModule from 'node:module';
 import test from 'node:test';
 
 // fetch-live-jobs imports `env` from cloudflare:workers; give it a stub env whose
@@ -37,16 +37,20 @@ globalThis.__liveJobsTestEnv = {
     },
   },
 };
-registerHooks({
+// node:module registerHooks needs Node >= 22.15; the root suite also runs on Node 20, where this
+// file skips (the site job covers it on Node 24).
+const supported = typeof nodeModule.registerHooks === 'function';
+if (supported) nodeModule.registerHooks({
   resolve(specifier, context, next) {
     if (specifier === 'cloudflare:workers') return { url: 'data:text/javascript,export const env = globalThis.__liveJobsTestEnv;', shortCircuit: true };
     return next(specifier, context);
   },
 });
 
-const { loadLiveJobs } = await import('../lib/fetch-live-jobs.mjs');
+const { loadLiveJobs } = supported ? await import('../lib/fetch-live-jobs.mjs') : {};
+const skip = supported ? false : 'needs node:module registerHooks (Node >= 22.15)';
 
-test('concurrent board loads in one isolate share a single relay pagination', async () => {
+test('concurrent board loads in one isolate share a single relay pagination', { skip }, async () => {
   relay.calls = 0;
   const [first, second, third] = await Promise.all([loadLiveJobs(), loadLiveJobs(), loadLiveJobs()]);
   assert.equal(relay.calls, 2, 'one 2-page walk, not three');
@@ -58,7 +62,7 @@ test('concurrent board loads in one isolate share a single relay pagination', as
   assert.equal(relay.calls, 2);
 });
 
-test('followers retry once, together, when the shared load fails', async () => {
+test('followers retry once, together, when the shared load fails', { skip }, async () => {
   relay.calls = 0;
   relay.fail = true;
   const leader = loadLiveJobs({ status: 'closed' });
