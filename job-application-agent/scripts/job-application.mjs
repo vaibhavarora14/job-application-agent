@@ -43,7 +43,7 @@ import {
   afterSubmissionCoverageMessage, communityFeedRequirementMessage, evaluateRoundCoverage, feedPulls, isPerJobApproval, latestAssessmentDecision, leadTimesBySource,
   resumePreflightRecord, roundGatesRecord, routineSubmitGateMessage,
 } from './routine-gates.mjs';
-import { LEGACY_GRANT_NOTICE, applicationMatcher, approveBatch, batchToken, batchView, closeBatch, consumeReview, listBatches, loadBatch, resumeDigest, stageBatch, verifyReview } from './review-batch.mjs';
+import { LEGACY_GRANT_NOTICE, applicationMatcher, approveBatch, batchSummary, batchToken, batchView, closeBatch, consumeReview, listBatches, loadBatch, resumeDigest, reviewTelemetryResult, stageBatch, verifyReview } from './review-batch.mjs';
 import { reviewPageInfoFile } from './review-page.mjs';
 
 const SOURCES = new Set(['linkedin', 'greenhouse', 'lever', 'ashby', 'workable', 'comeet', 'workday', 'rippling', 'smartrecruiters', 'google-form', 'company', 'email', 'other']);
@@ -2006,6 +2006,22 @@ async function assertJobNotSkipped(dir, { url, company, role }) {
   throw new Error(`Skipped job refused: score decided "${skipped.decision}" (${skipped.reason}) for ${company || 'this job'} at ${skipped.at}. A skipped or excluded job is never staged, submitted or recorded, in any mode. Do not apply; tell the candidate.`);
 }
 
+// `command_completed.result` for a `review` command. Never `success` unless the batch has sent
+// something: a round that staged and polled batches without submitting showed as a run of
+// sub-second "batch success" events with no application_submitted.
+export async function reviewCommandTelemetryResult(action, value, result, { stateDirectory = null, now = new Date() } = {}) {
+  try {
+    if (result && result.staged === false) return 'paused';
+    if (action === 'list') return reviewTelemetryResult(result?.batches ?? []);
+    const batchId = typeof result?.batchId === 'string' ? result.batchId : value;
+    const batch = await loadBatch(stateDirectory ?? await ensureStateDir(), batchId);
+    return reviewTelemetryResult([batchSummary(batch, now)]);
+  } catch {
+    // Unknown state: report a stall rather than a success.
+    return 'paused';
+  }
+}
+
 async function reviewCommand(action, value) {
   const dir = await ensureStateDir();
   if (action === 'stage' && value === '--stdin') {
@@ -3291,7 +3307,8 @@ async function main(rawArgs) {
     await prepareCloudState(area, action);
     const result = await executeCommand(args, telemetry, session, community);
     if (!(area === 'sources' || (area === 'ledger' && action === 'add'))) await communityJobsSync(community).catch(() => null);
-    await telemetry.record({ event: 'command_completed', properties: { command, result: 'success', durationBucket: durationBucket(Date.now() - started) } }, session);
+    const completed = command === 'batch' ? await reviewCommandTelemetryResult(action, value, result) : 'success';
+    await telemetry.record({ event: 'command_completed', properties: { command, result: completed, durationBucket: durationBucket(Date.now() - started) } }, session);
     return print(result);
   } catch (error) {
     // Repeated guard refusals are not new information; report only the first one of each stop.
