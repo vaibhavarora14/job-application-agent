@@ -837,9 +837,11 @@ export default {
     if (env.PUBLIC_STATS_DB?.prepare && env.PUBLIC_STATS_DB?.batch) {
       await applyPendingInstallCorrections(env.PUBLIC_STATS_DB, { log: env.CORRECTION_LOG ?? console.log });
     }
-    // Live-jobs KV snapshot (every 2 h, or when missing). On a tick that writes the
+    // Live-jobs KV snapshot (every 30 min, or when missing). On a tick that writes the
     // snapshot, skip the 5-job liveness batch so the tick stays inside the Free-plan
-    // cron CPU budget; the sweep resumes on the next tick.
+    // cron CPU budget; the sweep resumes on the next tick (240 of 288 ticks/day still
+    // sweep = 1,200 checks/day, a full rotation of ~1,600 jobs in ~1.4 days, inside the
+    // 3-day board window and the 26 h newest-check staleness alert).
     let wroteSnapshot = false;
     if (env.LIVE_JOBS_SNAPSHOT) {
       try {
