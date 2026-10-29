@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { SiteFooter, SiteHeader } from "../components/SiteChrome";
 
 export const metadata: Metadata = {
   title: "Privacy",
@@ -7,8 +8,9 @@ export const metadata: Metadata = {
 };
 
 export default function Privacy() {
-  return <main className="legal page-width">
-    <Link className="legal-back" href="/">← Back to the product</Link>
+  return <div className="site-shell">
+    <SiteHeader foundingCta={false} />
+    <main className="legal page-width">
     <h1>Privacy, in plain language.</h1><p>Last updated 21 October 2026.</p>
     <h2>Founding purchases</h2><p>The site creates an anonymous purchase reference before sending you to checkout. Dodo Payments collects your email and payment details as our merchant of record. After a signed payment notification, we store the customer email and operational references needed to fulfill founding hosted access and resolve payment disputes. We never receive or store your full card details.</p>
     <h2>Agent usage analytics</h2><p>Structured usage analytics are enabled by default so we can learn which job sources, ATS flows, and workflow steps work. Analytics events do not include your name, email, phone, résumé content, prompts, answers, browser data, or IP addresses. Error events include only a short sanitized error message, with file paths, your home folder, OS username, and contact details redacted. The analytics retention policy is 24 months; automatic raw-event expiry still requires configuration with PostHog. Run <code>telemetry disable</code> to stop all analytics. Previously collected events are not deleted by opting out.</p>
@@ -18,5 +20,7 @@ export default function Privacy() {
     <h2>Your choices</h2><p>You can unsubscribe from any email. Use <code>telemetry contact disable</code> or <code>telemetry disable</code> in the CLI for agent contact/analytics controls. For access or deletion requests, open a private contact request through the project&apos;s GitHub profile until a dedicated support address is published.</p>
     <h2>Cloud access</h2><p>The cloud agent will have separate, explicit controls for candidate profiles and application data before it accepts either.</p>
     <p>About the open-source agent: <Link href="/open-source">About the project</Link> · <Link href="/compare">See how it compares</Link></p>
-  </main>;
+  </main>
+    <SiteFooter />
+  </div>;
 }

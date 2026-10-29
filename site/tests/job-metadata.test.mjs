@@ -334,7 +334,8 @@ test('review fix: explicit weekly and daily pay units are kept', () => {
 });
 
 test('review fix: the refresh workflow only ever pushes a checkout of main', async () => {
-  const workflow = await readFile(new URL('../../.github/workflows/job-locations-refresh.yml', import.meta.url), 'utf8');
+  // Normalise CRLF: Windows runners check the workflow out with \r\n (core.autocrlf), which broke the \n-only pattern.
+  const workflow = (await readFile(new URL('../../.github/workflows/job-locations-refresh.yml', import.meta.url), 'utf8')).replace(/\r\n/g, '\n');
   const refresh = workflow.slice(workflow.indexOf('\n  refresh:'), workflow.indexOf('\n  alert:'));
   assert.match(refresh, /actions\/checkout@[^\n]+\n\s+with:\n(?:\s+#[^\n]*\n)*\s+ref: main/);
   assert.match(refresh, /git rev-parse --abbrev-ref HEAD\)" != "main"/);
@@ -348,7 +349,7 @@ test('pay bands: each row is a band name and a range with its currency', () => {
   assert.equal(rows.single, null);
   assert.deepEqual(rows.bands[0], { name: 'Engineer 1', range: '$150K–$180K USD' });
   assert.equal(rows.more, 0);
-  // A single range is not a band list; unknown pay is null ("Pay not listed").
+  // A single range is not a band list; unknown pay is null (no pay chip or row is shown).
   assert.deepEqual(payRows({ ...liveJob, location: { ...liveJob.location, salary: bandSalary(1) } }), { single: '$150K–$180K USD', bands: [], more: 0 });
   assert.equal(payRows(liveJob), null);
 });
@@ -372,11 +373,17 @@ test('pay bands: OTE in caps after the currency; total comp spelled out, never T
 
 test('pay bands: CSS keeps the name muted and the range bold and unsplittable', async () => {
   const css = await readFile(new URL('../app/jobs/jobs.module.css', import.meta.url), 'utf8');
+  const globals = await readFile(new URL('../app/globals.css', import.meta.url), 'utf8');
   const rule = (name) => css.match(new RegExp(`\\.${name}\\s*\\{([^}]*)\\}`))?.[1] ?? '';
-  assert.match(rule('payBandName'), /color:\s*#526b63/i);
+  // Direction B tokens live site-wide in globals.css :root (muted #5B6B80, ink #0F172A); /jobs aliases them.
+  assert.match(globals, /--muted:\s*#5b6b80/i);
+  assert.match(globals, /--ink:\s*#0f172a/i);
+  assert.match(css, /--j-muted:\s*var\(--muted\)/i);
+  assert.match(css, /--j-ink:\s*var\(--ink\)/i);
+  assert.match(rule('payBandName'), /color:\s*var\(--j-muted\)/);
   assert.match(rule('payBandRange'), /font-weight:\s*600/);
   assert.match(rule('payBandRange'), /white-space:\s*nowrap/);
-  assert.match(rule('payBandRange'), /color:\s*var\(--text\)/);
-  assert.match(rule('payBandMore'), /color:\s*#526b63/i);
+  assert.match(rule('payBandRange'), /color:\s*var\(--j-ink\)/);
+  assert.match(rule('payBandMore'), /color:\s*var\(--j-muted\)/);
   assert.doesNotMatch(rule('payBand'), /nowrap/);
 });

@@ -5,6 +5,7 @@ import catalog from "../../../../job-application-agent/platforms.json";
 import { JsonLd } from "../../components/JsonLd";
 import { breadcrumbListJsonLd } from "../../../lib/structured-data.mjs";
 import styles from "../platforms.module.css";
+import { SiteFooter, SiteHeader } from "../../components/SiteChrome";
 
 type Props = { params: Promise<{ platform: string }> };
 function findPlatform(id: string) {
@@ -26,7 +27,9 @@ export default async function PlatformGuide({ params }: Props) {
     { name: "Platforms", path: "/platforms" },
     { name: platform.name, path: `/platforms/${platform.id}` },
   ]);
-  return <main className={`legal page-width ${styles.guide}`}>
+  return <div className="site-shell">
+    <SiteHeader foundingCta={false} />
+    <main className={`legal page-width ${styles.guide}`}>
     <JsonLd data={breadcrumbs} />
     <Link className="legal-back" href="/platforms">← All agent setup guides</Link>
     <p className="eyebrow">{platform.name}</p>
@@ -51,5 +54,7 @@ export default async function PlatformGuide({ params }: Props) {
     <h2>Verify before your first application</h2>
     <p>Check that your agent can load the complete skill, keep your profile private, upload a synthetic PDF on a local test page, and hand the browser back to you. Then review one real application. Only visible confirmation counts as submitted.</p>
     <p><a href={platform.docsUrl}>Read the official {platform.name} documentation</a> · <a href="https://github.com/vaibhavarora14/job-application-agent">Inspect the open-source project</a></p>
-  </main>;
+  </main>
+    <SiteFooter />
+  </div>;
 }

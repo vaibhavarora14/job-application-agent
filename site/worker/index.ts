@@ -14,7 +14,7 @@ import {
   liveSessionFrameSrcOrigins,
 } from "../lib/attention-live-session.mjs";
 import { captureApiServerError, siteSentryOptions } from "../lib/sentry.mjs";
-import { serveWithEdgeCache } from "../lib/edge-cache.mjs";
+import { serveWithEdgeCache, withSharedProxyNoStore } from "../lib/edge-cache.mjs";
 import { workersDefaultCache } from "../lib/workers-cache";
 
 interface Env {
@@ -60,12 +60,15 @@ const worker = {
       }, allowedWidths);
       const secured = withPublicSecurityHeaders(response, request, env);
       captureApiServerError(request, secured);
-      return secured;
+      return withSharedProxyNoStore(secured);
     }
 
     // Public documents (/, /jobs, /jobs/<slug>, ...) use Cache API + SWR so crawler
     // traffic is served from cache (HIT/STALE) instead of re-running SSR each time.
-    return serveWithEdgeCache(request, {
+    // Vercel's external-rewrite cache keys on the workers.dev destination, not the
+    // public host, so it must never store a Worker response (stats `/` vs apex `/`):
+    // every response leaves with Vercel-CDN-Cache-Control: private, no-store.
+    return withSharedProxyNoStore(await serveWithEdgeCache(request, {
       cache: workersDefaultCache(),
       release: env.SENTRY_RELEASE,
       waitUntil: (promise) => ctx.waitUntil(promise),
@@ -78,7 +81,7 @@ const worker = {
         captureApiServerError(renderRequest, secured);
         return secured;
       },
-    });
+    }));
   },
 };
 

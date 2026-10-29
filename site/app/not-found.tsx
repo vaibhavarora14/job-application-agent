@@ -16,7 +16,7 @@ export default function NotFound() {
         <p>The link may be old or mistyped. Your agent and applications aren’t affected.</p>
         <div className="not-found-actions">
           <Link className="button" href="/">Go to JobAppAgent home</Link>
-          <Link className="button button-secondary" href="/jobs">Browse published jobs</Link>
+          <Link className="button button-secondary" href="/jobs">Browse open roles</Link>
         </div>
       </section>
     </main>

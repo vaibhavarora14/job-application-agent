@@ -112,3 +112,13 @@ test('round lead without observedAt is recorded; reporting counts before leads e
   // Matching assertions remain accepted.
   assert.equal(ok(['round', 'source', '--stdin'], { roundId, sourceId: 'indeed', status: 'searched', reviewedCount: 2, qualifiedCount: 1, evidence: 'Synthetic search.' }).reviewedCount, 2);
 });
+
+test('prototype property names remain unknown CLI tokens rather than aliases', () => {
+  for (const token of ['constructor', 'toString', '__proto__', 'hasOwnProperty']) {
+    assert.deepEqual(normalizeCliArgs(['profile', token]).args, ['profile', token]);
+    assert.deepEqual(normalizeCliArgs([token, 'constructor']).args, [token, 'constructor']);
+    assert.deepEqual(normalizeCliArgs([token, 'constructor', '{}']).args, [token, 'constructor', '--stdin']);
+    assert.deepEqual(usageFor(token), usageFor());
+    assert.match(usageError(['profile', token]).message, /^Usage \(profile, unknown subcommand\)/);
+  }
+});

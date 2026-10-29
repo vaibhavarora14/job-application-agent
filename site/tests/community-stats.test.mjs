@@ -93,8 +93,14 @@ test("stats outcome coverage card leads with the live rate, never an outcome cou
   const { readFile } = await import("node:fs/promises");
   const dashboard = await readFile(new URL("../app/components/CommunityDashboard.tsx", import.meta.url), "utf8");
   const card = dashboard.slice(dashboard.indexOf('className="dashboard-panel outcome-panel"'), dashboard.indexOf("</article>", dashboard.indexOf('className="dashboard-panel outcome-panel"')));
-  assert.match(card, /<strong className="outcome-number">\{data \? `\$\{outcomeCoverage\}%`/);
-  assert.match(card, /of \{data \? fullNumber\.format\(data\.metrics\.applicationsSubmitted\) : "—"\} verified applications have a reported outcome/);
+  // Rate and sentence render only with real counters; otherwise the existing waiting state.
+  assert.match(card, /<strong className="outcome-number">\{`\$\{outcomeCoverage\}%`\}/);
+  assert.match(card, /of \{fullNumber\.format\(data\.metrics\.applicationsSubmitted\)\} verified applications have a reported outcome/);
+  // The card itself is hidden without real counters; the page carries one waiting line.
+  assert.match(dashboard, /\{counted \? <article className="dashboard-panel outcome-panel">/);
+  assert.equal((dashboard.match(/>Waiting for verified activity\.</g) ?? []).length, 1);
+  assert.doesNotMatch(dashboard, /Waiting for enough privacy-safe data/);
+  assert.doesNotMatch(card, /"—"/);
   // No visible known-outcome count (it would include interviews) and no duplicate rate pill.
   assert.doesNotMatch(card, /format\(outcomesReported\)|known outcomes|% reported|className="tag"/);
   assert.match(card, /publicOutcomeEntries/);

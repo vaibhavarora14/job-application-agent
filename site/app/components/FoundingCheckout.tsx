@@ -33,16 +33,17 @@ export function FoundingCheckout({ compact = false }: { compact?: boolean }) {
   }
 
   return <div className={`checkout-action${compact ? " checkout-action-compact" : ""}`}>
+    {/* Header (compact) CTA is the outline style with no regional note; the note sits under the offer-panel button. */}
     <button
-      className={`button${compact ? " button-small" : ""}`}
+      className={`button${compact ? " button-small button-secondary" : ""}`}
       type="button"
       onClick={startCheckout}
       disabled={opening}
-      aria-describedby={noteId}
+      aria-describedby={compact ? undefined : noteId}
     >
       {opening ? "Opening secure checkout…" : FOUNDING_CTA_LABEL}
     </button>
-    <p id={noteId} className="checkout-regional-note">{FOUNDING_REGIONAL_PRICE_NOTE}</p>
+    {compact ? null : <p id={noteId} className="checkout-regional-note">{FOUNDING_REGIONAL_PRICE_NOTE}</p>}
     {error && <p className="action-error" role="alert">{error}</p>}
   </div>;
 }
