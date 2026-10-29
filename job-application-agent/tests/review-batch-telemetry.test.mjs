@@ -8,7 +8,7 @@ import test from 'node:test';
 import { fileURLToPath } from 'node:url';
 
 import { reviewCommandTelemetryResult } from '../scripts/job-application.mjs';
-import { approvalPhrase, approveBatch, batchSummary, closeBatch, consumeReview, reviewTelemetryResult, stageBatch } from '../scripts/review-batch.mjs';
+import { approvalPhrase, approveBatch, batchSummary, closeBatch, consumeReview, reviewListTelemetryResult, reviewTelemetryResult, stageBatch } from '../scripts/review-batch.mjs';
 import { validateEvent } from '../scripts/telemetry-schema.mjs';
 
 const script = fileURLToPath(new URL('../scripts/job-application.mjs', import.meta.url));
@@ -48,10 +48,13 @@ test('reviewCommandTelemetryResult follows the batch through stage, approve, sen
   const revoked = await closeBatch(directory, other.batchId, 'revoked');
   assert.equal(await reviewCommandTelemetryResult('revoke', other.batchId, { batchId: other.batchId }, opts), 'abandoned');
 
-  // `review list` only counts live batches: an old sent batch never turns a stalled one into a success.
+  // `review list` is never a success on its own: an old sent batch (still `approved` until it
+  // expires) must not turn a stalled one into a success.
   assert.equal(await reviewCommandTelemetryResult('list', undefined, { batches: [batchSummary(revoked)] }, opts), 'skipped');
-  assert.equal(await reviewCommandTelemetryResult('list', undefined, { batches: [{ status: 'expired', used: 3 }, { status: 'pending', used: 0 }] }, opts), 'paused');
-  assert.equal(await reviewCommandTelemetryResult('list', undefined, { batches: [{ status: 'approved', used: 1 }, { status: 'pending', used: 0 }] }, opts), 'success');
+  assert.equal(await reviewCommandTelemetryResult('list', undefined, { batches: [{ status: 'expired', items: 3, approved: 3, used: 3 }, { status: 'pending', items: 1, approved: 0, used: 0 }] }, opts), 'paused');
+  assert.equal(await reviewCommandTelemetryResult('list', undefined, { batches: [{ status: 'approved', items: 2, approved: 2, used: 1 }] }, opts), 'paused', 'an approved batch with an unsent item is still waiting');
+  assert.equal(await reviewCommandTelemetryResult('list', undefined, { batches: [{ status: 'approved', items: 2, approved: 1, used: 1 }] }, opts), 'skipped', 'a fully sent batch is history, not a success');
+  assert.equal(reviewListTelemetryResult([]), 'skipped');
   assert.equal(await reviewCommandTelemetryResult('list', undefined, { batches: [] }, opts), 'skipped');
   assert.equal(await reviewCommandTelemetryResult('stage', '--stdin', { staged: false, batchId: null }, opts), 'paused');
   assert.equal(await reviewCommandTelemetryResult('show', 'rb-20260101-deadbeef', {}, opts), 'paused', 'an unreadable batch is never reported as success');

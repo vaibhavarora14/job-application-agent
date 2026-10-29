@@ -276,6 +276,18 @@ export function reviewTelemetryResult(summaries) {
   return 'abandoned';
 }
 
+/**
+ * `command_completed` result for `review list`. A listing covers many batches, including old ones
+ * that stay `approved` after their items were sent, so it is never a success on its own:
+ * `paused` when a live batch still waits (pending, or approved with unsent items), else `skipped`.
+ */
+export function reviewListTelemetryResult(batches) {
+  const list = Array.isArray(batches) ? batches.filter(Boolean) : [];
+  const waiting = list.some((entry) => entry.status === 'pending'
+    || (entry.status === 'approved' && Number(entry.used ?? 0) < Number(entry.approved ?? entry.items ?? 0)));
+  return waiting ? 'paused' : 'skipped';
+}
+
 export async function stageBatch(stateDir, input, { now = new Date(), resume = null } = {}) {
   const { items, roundId } = validateStageInput(input);
   await ensureDir(stateDir);

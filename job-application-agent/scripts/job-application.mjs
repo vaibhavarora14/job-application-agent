@@ -43,7 +43,7 @@ import {
   afterSubmissionCoverageMessage, communityFeedRequirementMessage, evaluateRoundCoverage, feedPulls, isPerJobApproval, latestAssessmentDecision, leadTimesBySource,
   resumePreflightRecord, roundGatesRecord, routineSubmitGateMessage,
 } from './routine-gates.mjs';
-import { LEGACY_GRANT_NOTICE, applicationMatcher, approveBatch, batchSummary, batchToken, batchView, closeBatch, consumeReview, listBatches, loadBatch, resumeDigest, reviewTelemetryResult, stageBatch, verifyReview } from './review-batch.mjs';
+import { LEGACY_GRANT_NOTICE, applicationMatcher, approveBatch, batchSummary, batchToken, batchView, closeBatch, consumeReview, listBatches, loadBatch, resumeDigest, reviewListTelemetryResult, reviewTelemetryResult, stageBatch, verifyReview } from './review-batch.mjs';
 import { reviewPageInfoFile } from './review-page.mjs';
 import { emptyCurrentLocationAnswers, fillCurrentLocationAnswers } from './location-answers.mjs';
 
@@ -2013,9 +2013,9 @@ async function assertJobNotSkipped(dir, { url, company, role }) {
 export async function reviewCommandTelemetryResult(action, value, result, { stateDirectory = null, now = new Date() } = {}) {
   try {
     if (result && result.staged === false) return 'paused';
-    // `review list` also returns old, finished batches; a batch sent days ago must not make a
-    // stalled current batch look like a success. Only live (pending or approved) batches count.
-    if (action === 'list') return reviewTelemetryResult((result?.batches ?? []).filter((entry) => entry?.status === 'pending' || entry?.status === 'approved'));
+    // `review list` also returns old batches (a sent batch stays `approved` until it expires), so a
+    // listing is never a success on its own: `paused` while a live batch waits, else `skipped`.
+    if (action === 'list') return reviewListTelemetryResult(result?.batches ?? []);
     const batchId = typeof result?.batchId === 'string' ? result.batchId : value;
     const batch = await loadBatch(stateDirectory ?? await ensureStateDir(), batchId);
     return reviewTelemetryResult([batchSummary(batch, now)]);
