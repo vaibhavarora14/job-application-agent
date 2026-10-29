@@ -12,7 +12,8 @@
     "test": "npm run build && node --import ./tests/support/cloudflare-workers-loader.mjs --test tests/*.test.mjs tests/*.spec.mjs",
     "lint": "eslint . --ignore-pattern dist --ignore-pattern .next",
     "typecheck": "tsc --noEmit",
-    "db:generate": "drizzle-kit generate"
+    "db:generate": "drizzle-kit generate",
+    "fx:refresh": "node scripts/refresh-fx-rates.mjs"
   },
   "dependencies": {
     "@sentry/cloudflare": "^11.0.0",
