@@ -46,6 +46,32 @@ export const EDGE_CACHE_SWR_SECONDS = 3600;
 export const EDGE_CACHE_API_TTL_SECONDS = 300;
 export const EDGE_CACHE_API_SWR_SECONDS = 300;
 export const EDGE_CACHE_404_TTL_SECONDS = 60;
+/**
+ * Pages whose server render depends only on the deployed build and the host: no
+ * board data, clock, cookies or env reads on the server (live numbers on them load
+ * client-side). The key already carries the release, so a deploy replaces them; until
+ * then a re-render returns the same HTML, and a 1 h SWR refresh only spent a full
+ * cold-isolate SSR (100+ ms CPU on Workers Free) to store identical bytes.
+ * Fresh for a day, then served stale for up to 6 more while one refresh runs.
+ */
+export const EDGE_CACHE_STATIC_TTL_SECONDS = 24 * 3600;
+export const EDGE_CACHE_STATIC_SWR_SECONDS = 6 * 24 * 3600;
+const RELEASE_STATIC_PATHS = new Set([
+  "/",
+  "/platforms",
+  "/privacy",
+  "/terms",
+  "/community-view",
+  "/open-source",
+  "/compare",
+  "/robots.txt",
+  "/manifest.webmanifest",
+]);
+
+/** @param {string} pathname */
+export function isReleaseStaticPath(pathname) {
+  return RELEASE_STATIC_PATHS.has(pathname) || PLATFORM_DETAIL.test(pathname);
+}
 /** Debug header: HIT | MISS | STALE | BYPASS */
 export const EDGE_CACHE_STATUS_HEADER = "x-cache";
 /** Vercel-only CDN directive; outranks CDN-Cache-Control and Cache-Control on Vercel. */
@@ -136,12 +162,14 @@ export function isEdgeCacheablePath(pathname) {
 export function edgeCacheTtlSeconds(pathname, status = 200) {
   if (status === 404 && JOB_DETAIL.test(pathname)) return EDGE_CACHE_404_TTL_SECONDS;
   if (PUBLIC_API_PATHS.has(pathname)) return EDGE_CACHE_API_TTL_SECONDS;
+  if (status === 200 && isReleaseStaticPath(pathname)) return EDGE_CACHE_STATIC_TTL_SECONDS;
   return EDGE_CACHE_TTL_SECONDS;
 }
 
 export function edgeCacheSwrSeconds(pathname, status = 200) {
   if (status === 404) return 0;
   if (PUBLIC_API_PATHS.has(pathname)) return EDGE_CACHE_API_SWR_SECONDS;
+  if (status === 200 && isReleaseStaticPath(pathname)) return EDGE_CACHE_STATIC_SWR_SECONDS;
   return EDGE_CACHE_SWR_SECONDS;
 }
 
@@ -381,6 +409,38 @@ function storeOptionsFor(request, response, now) {
   const ttlSeconds = edgeCacheTtlSeconds(pathname, response.status);
   const swrSeconds = edgeCacheSwrSeconds(pathname, response.status);
   return { ttlSeconds, swrSeconds, now };
+}
+
+/**
+ * Fresh-hit fast path, run before the Sentry wrapper and the app router are entered.
+ *
+ * Why: on Workers Free most requests land on a cold or rarely used isolate, and even a
+ * cache HIT through the full stack paid for Sentry's per-request SDK setup plus the app
+ * wrapper (~8-13 ms CPU on a cold isolate in local measurements, vs ~1 ms warm). A fresh
+ * stored copy needs none of that: the stored response already carries the security
+ * headers it was rendered with. Returns the exact response `serveWithEdgeCache` would
+ * return for a HIT, or null (stale, miss, bypass, or any error) so the caller runs the
+ * normal path, which re-checks the cache itself.
+ * @param {Request} request
+ * @param {{ cache: Cache | undefined, release?: string, now?: () => number }} options
+ * @returns {Promise<Response | null>}
+ */
+export async function serveFreshEdgeCacheHit(request, { cache, release, now = Date.now }) {
+  if (!cache) return null;
+  try {
+    if (edgeCacheBypassReason(request) !== null) return null;
+    const cached = await cache.match(edgeCacheKey(request, release));
+    if (!cached) return null;
+    if (!(now() < Number(cached.headers.get(FRESH_UNTIL_HEADER) || 0))) return null;
+    const pathname = new URL(request.url).pathname;
+    const hit = fromStoredResponse(cached, "HIT", {
+      ttlSeconds: edgeCacheTtlSeconds(pathname, cached.status),
+      swrSeconds: edgeCacheSwrSeconds(pathname, cached.status),
+    });
+    return request.method === "HEAD" ? asHeadResponse(hit) : hit;
+  } catch {
+    return null;
+  }
 }
 
 /**

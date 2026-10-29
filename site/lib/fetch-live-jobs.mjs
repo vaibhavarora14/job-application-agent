@@ -5,9 +5,13 @@ const MAX_UPSTREAM_BYTES = 256 * 1024;
 const BOARD_CACHE_SECONDS = 5 * 60;
 const BOARD_CACHE_ORIGIN = 'https://jobappagent.com';
 /** Per-isolate memo so one SSR request (metadata + page) and back-to-back requests
- * do not re-parse and re-validate the whole board (~6 ms CPU per pass). */
+ * do not re-parse and re-validate the whole board (~6 ms CPU per pass, several times
+ * that on a cold isolate). The memo lives at least this long, and otherwise as long as
+ * the Cache API copy it mirrors (built-at + BOARD_CACHE_SECONDS): until then a re-read
+ * would only return the same board again. */
 const BOARD_MEMO_MS = 60 * 1000;
-/** @type {Map<string, { at: number, jobs: unknown[] }>} */
+const BOARD_BUILT_AT_HEADER = 'x-jaa-board-built-at';
+/** @type {Map<string, { until: number, jobs: unknown[] }>} */
 const boardMemo = new Map();
 /** @type {Map<string, Promise<unknown[]>>} */
 const boardInflight = new Map();
@@ -69,7 +73,7 @@ export async function loadLiveJobs(options = {}) {
   const useMemo = !options.fetcher && !options.skipCache;
   if (useMemo) {
     const memo = boardMemo.get(memoKey);
-    if (memo && Date.now() - memo.at < BOARD_MEMO_MS) return memo.jobs;
+    if (memo && Date.now() < memo.until) return memo.jobs;
     // Single-flight: an SSR request renders metadata and page concurrently and a
     // crawler burst lands several requests on one isolate. Each used to page the
     // whole board through the relay on its own (12 relay calls per refresh instead
@@ -93,6 +97,14 @@ export async function loadLiveJobs(options = {}) {
   return loadBoard({ base, status, cache, cacheKey, memoKey, useMemo, options });
 }
 
+/** Memo expiry: the cached copy's own expiry, never shorter than BOARD_MEMO_MS. */
+function memoUntil(builtAt) {
+  const now = Date.now();
+  const floor = now + BOARD_MEMO_MS;
+  if (!Number.isFinite(builtAt) || builtAt <= 0 || builtAt > now) return floor;
+  return Math.max(floor, builtAt + BOARD_CACHE_SECONDS * 1000);
+}
+
 /**
  * @param {{ base: string, status: 'open' | 'closed' | 'unknown' | null, cache: Cache | undefined, cacheKey: Request | null, memoKey: string, useMemo: boolean, options: { fetcher?: typeof fetch, signal?: AbortSignal } }} input
  */
@@ -105,7 +117,7 @@ async function loadBoard({ base, status, cache, cacheKey, memoKey, useMemo, opti
       // made every hit fall through to a full re-pagination of the upstream.
       const validated = validateLiveJobsBoard(JSON.parse(await cached.text()));
       if (validated.ok) {
-        boardMemo.set(memoKey, { at: Date.now(), jobs: validated.data.jobs });
+        boardMemo.set(memoKey, { until: memoUntil(Number(cached.headers.get(BOARD_BUILT_AT_HEADER))), jobs: validated.data.jobs });
         return validated.data.jobs;
       }
     }
@@ -135,7 +147,8 @@ async function loadBoard({ base, status, cache, cacheKey, memoKey, useMemo, opti
     cursor = validated.data.nextCursor;
     if (!cursor) {
       const list = [...jobs.values()];
-      if (useMemo) boardMemo.set(memoKey, { at: Date.now(), jobs: list });
+      const builtAt = Date.now();
+      if (useMemo) boardMemo.set(memoKey, { until: memoUntil(cache && cacheKey ? builtAt : Number.NaN), jobs: list });
       if (cache && cacheKey) {
         const payload = {
           version: 1,
@@ -148,6 +161,7 @@ async function loadBoard({ base, status, cache, cacheKey, memoKey, useMemo, opti
           headers: {
             'content-type': 'application/json; charset=utf-8',
             'cache-control': `public, max-age=60, s-maxage=${BOARD_CACHE_SECONDS}, stale-while-revalidate=900`,
+            [BOARD_BUILT_AT_HEADER]: String(builtAt),
           },
         }));
       }

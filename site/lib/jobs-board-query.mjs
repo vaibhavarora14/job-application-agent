@@ -212,13 +212,21 @@ export function compactLocation(job) {
   return parts.length === 1 ? parts[0] : `${parts[0]} +${parts.length - 1}`;
 }
 
+// One formatter per variant: constructing Intl.DateTimeFormat per job row dominated
+// the /jobs render (ICU setup each call); format() output is the same.
+let postedSameYearFormat = null;
+let postedOtherYearFormat = null;
+
 /** "24 Sep" this year, "18 Dec 2025" otherwise. */
 export function shortPostedLabel(iso, now = Date.now()) {
   const ms = Date.parse(iso);
   if (!Number.isFinite(ms)) return '';
   const date = new Date(ms);
   const sameYear = date.getUTCFullYear() === new Date(now).getUTCFullYear();
-  return new Intl.DateTimeFormat('en-GB', { day: 'numeric', month: 'short', ...(sameYear ? {} : { year: 'numeric' }), timeZone: 'UTC' }).format(date);
+  const format = sameYear
+    ? (postedSameYearFormat ??= new Intl.DateTimeFormat('en-GB', { day: 'numeric', month: 'short', timeZone: 'UTC' }))
+    : (postedOtherYearFormat ??= new Intl.DateTimeFormat('en-GB', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' }));
+  return format.format(date);
 }
 
 function matches(job, query, now) {

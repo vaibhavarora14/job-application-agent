@@ -45,8 +45,22 @@ function publicHttps(value, maximum = 2048) {
   }
 }
 
+// Board validation checks ~4 timestamps per job, and they repeat heavily (one liveness
+// sweep stamps many jobs with the same lastCheckedAt). Validity depends only on the
+// string, so strings already proven valid are remembered (bounded).
+const validIsoDates = new Set();
+
 function isoDate(value) {
-  return typeof value === 'string' && Number.isFinite(Date.parse(value)) && new Date(value).toISOString() === value;
+  if (typeof value !== 'string') return false;
+  if (validIsoDates.has(value)) return true;
+  // Parse once: new Date(string) is new Date(Date.parse(string)).
+  const ms = Date.parse(value);
+  const valid = Number.isFinite(ms) && new Date(ms).toISOString() === value;
+  if (valid) {
+    if (validIsoDates.size >= 8192) validIsoDates.clear();
+    validIsoDates.add(value);
+  }
+  return valid;
 }
 
 function nullableIso(value) {
@@ -222,11 +236,26 @@ export function classifyRoleFamily(role) {
   return 'Other';
 }
 
+/** Formatter instances by variant + time zone (construction is the costly part). */
+const dateFormats = new Map();
+function cachedDateFormat(withYear, timeZone) {
+  const key = `${withYear ? 'y' : 'n'}|${timeZone}`;
+  let format = dateFormats.get(key);
+  if (!format) {
+    // Throws for an invalid time zone exactly as before; failures are not cached.
+    format = new Intl.DateTimeFormat('en-GB', withYear
+      ? { day: 'numeric', month: 'short', year: 'numeric', timeZone }
+      : { day: 'numeric', month: 'short', timeZone });
+    if (dateFormats.size < 64) dateFormats.set(key, format);
+  }
+  return format;
+}
+
 export function formatReviewedDate(isoDate, timeZone = 'UTC') {
   try {
     const target = Date.parse(isoDate);
     if (!Number.isFinite(target)) return '';
-    return new Intl.DateTimeFormat('en-GB', { day: 'numeric', month: 'short', timeZone }).format(new Date(target));
+    return cachedDateFormat(false, timeZone).format(new Date(target));
   } catch {
     return String(isoDate ?? '').slice(0, 10);
   }
@@ -236,7 +265,7 @@ export function formatClosedDate(isoDate, timeZone = 'UTC') {
   try {
     const target = Date.parse(isoDate);
     if (!Number.isFinite(target)) return '';
-    return new Intl.DateTimeFormat('en-GB', { day: 'numeric', month: 'short', year: 'numeric', timeZone }).format(new Date(target));
+    return cachedDateFormat(true, timeZone).format(new Date(target));
   } catch {
     return String(isoDate ?? '').slice(0, 10);
   }
