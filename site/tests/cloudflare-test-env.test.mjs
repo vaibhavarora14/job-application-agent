@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
+// Root `npm test` also discovers site tests without the site's --import, so register the loader here too.
+import './support/cloudflare-workers-loader.mjs';
 import { setCloudflareTestEnv } from './support/cloudflare-test-env.mjs';
 
 test('cloudflare:workers env stub throws until bindings are installed, then serves them', async () => {
