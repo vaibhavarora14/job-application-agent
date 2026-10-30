@@ -786,7 +786,18 @@ export async function telemetryApplicationSubmitted(entry, details = {}) {
   };
 }
 
-function skipReasonFromAssessment(result) {
+// Automatic cut-offs in scoreJob() append their reason as the last gap. Classify that one first so a
+// fit-0 cut-off gets its own reason, not a keyword hit from an earlier, softer gap (#227).
+const CUTOFF_GAP_REASONS = Object.freeze([
+  [/compensation maximum is below the configured floor/i, 'salary'],
+  [/must-have evidence coverage is .* below/i, 'low-fit'],
+]);
+
+// Every reason here comes from the automatic assessment, so it is never 'candidate-choice'; that value
+// stays for skips the candidate chose. All values are existing SKIP_REASONS (no relay change).
+export function skipReasonFromAssessment(result) {
+  const lastGap = String((result.gaps ?? []).at(-1) ?? '');
+  for (const [pattern, reason] of CUTOFF_GAP_REASONS) if (pattern.test(lastGap)) return reason;
   const gaps = (result.gaps ?? []).join(' ').toLowerCase();
   if (/closed|stale/i.test(gaps)) return 'closed';
   if (/location|work mode|remote|excluded location/i.test(gaps)) return 'location';
@@ -795,7 +806,9 @@ function skipReasonFromAssessment(result) {
   if (/eligib|authoriz|excluded by the candidate/i.test(gaps)) return 'ineligible';
   if (/skill|role family|experience/i.test(gaps)) return 'low-fit';
   if (result.decision === 'exclude') return 'ineligible';
-  return 'candidate-choice';
+  // A score below manualReviewMinScore (or any other automatic skip) is a low fit.
+  if (result.decision === 'skip') return 'low-fit';
+  return 'other';
 }
 
 export async function telemetryApplicationSkipped(job, result) {
@@ -984,6 +997,16 @@ export function migrateProfile(existingInput, overridesInput = {}) {
   if (migrated.targetCompensation == null && existing.salaryPreference != null) migrated.targetCompensation = existing.salaryPreference;
   for (const field of LEGACY_PROFILE_FIELDS) delete migrated[field];
   return validateProfile(migrated);
+}
+
+export const MISSING_DESCRIPTION_NEXT_STEP = 'Open the direct employer or ATS posting, pass its full text as job.description, then run score once. Do not call score again without it.';
+
+/** The not-scored answer for a job object that has no posting text yet (#217); null otherwise. */
+export function missingDescriptionResult(job) {
+  if (!job || typeof job !== 'object' || Array.isArray(job)) return null;
+  if (typeof job.description === 'string' && job.description.trim()) return null;
+  if (job.description != null && typeof job.description !== 'string') return null;
+  return { scored: false, missingDescription: true, decision: null, nextStep: MISSING_DESCRIPTION_NEXT_STEP };
 }
 
 export function scoreJob(input, target) {
@@ -3144,6 +3167,11 @@ async function executeCommand([area, action, value], telemetry, session, communi
     let profile;
     try {
       job = await jsonStdin();
+      // A lead without posting text (for example a community feed row) is not invalid input: it
+      // has not been opened yet. Answer before the guard so it never counts toward the
+      // invalid-input stop, and say what to do instead of failing (#217).
+      const unscored = missingDescriptionResult(job);
+      if (unscored) return unscored;
       profile = job.target ?? storedProfile();
       ticket = await guard.before(job, profile, writePrivateJson);
       if (ticket.cached) {
@@ -3276,6 +3304,10 @@ async function executeCommand([area, action, value], telemetry, session, communi
   else if (area === 'sources' && action === 'sync' && value == null) result = await syncAllCommunityData(community);
   else if (area === 'sources' && action === 'jobs' && (value == null || value === '--stdin')) {
     result = await community.listJobs(value === '--stdin' ? await jsonStdin() : undefined);
+    // Feed rows are leads (links and public metadata), not posting text (#217).
+    if (Array.isArray(result?.jobs) && result.jobs.some((row) => !(typeof row?.description === 'string' && row.description.trim()))) {
+      result = { ...result, scoringNote: `Feed rows carry no posting text. ${MISSING_DESCRIPTION_NEXT_STEP}` };
+    }
     // Recorded locally so `round source`/`round complete` can verify the community feed was pulled.
     if (!await recordCommunityFeedPull(community, result)) result = { ...result, communityFeedUnavailable: true };
   }
