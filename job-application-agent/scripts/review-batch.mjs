@@ -40,7 +40,7 @@ function keysOnly(value, allowed, label) {
 // Matching stays exact (the flag must point at the very answer that is sent), but the error says
 // how to fix it in one retry: the closest key, or the keys to copy from (#220).
 const answerKeyShape = (key) => String(key).normalize('NFKC').toLowerCase().replace(/[\s\u00a0]+/gu, ' ').replace(/[\s?:.*!]+$/u, '').trim();
-const quoteKey = (key) => JSON.stringify(String(key).slice(0, 80));
+const quoteKey = (key) => JSON.stringify(String(key));
 export function flaggedAnswerKeyError(label, given, answers) {
   const keys = Object.keys(answers);
   const head = `${label} must name a key in answers, copied exactly.`;

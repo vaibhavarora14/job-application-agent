@@ -24,3 +24,10 @@ test('review stage still matches exactly and reports the closest key (#220)', as
   const staged = await stageBatch(directory, { items: [item('Why do you want to work here?')] });
   assert.equal(staged.items[0].flaggedAnswers[0].answer, 'Why do you want to work here?');
 });
+
+test('a long answer key is suggested in full so it can be copied exactly', async () => {
+  const { flaggedAnswerKeyError } = await import('../scripts/review-batch.mjs');
+  const key = `Describe ${'a very long screening question '.repeat(5)}in detail?`;
+  assert.ok(key.length > 80 && key.length <= 200);
+  assert.ok(flaggedAnswerKeyError('flag', key.toLowerCase().replace(/\?$/, ''), { [key]: 'Yes' }).includes(JSON.stringify(key)));
+});
