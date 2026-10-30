@@ -12,7 +12,9 @@ import {
   tableCurrencies,
 } from '../lib/fx-rates-refresh.mjs';
 
-const source = await readFile(new URL('../lib/fx-rates.mjs', import.meta.url), 'utf8');
+// Normalise CRLF so the line-level assertions below hold on Windows checkouts (autocrlf);
+// the CRLF test at the end covers the refresher on a CRLF file directly.
+const source = (await readFile(new URL('../lib/fx-rates.mjs', import.meta.url), 'utf8')).replace(/\r\n/g, '\n');
 
 test(`/jobs pay-filter FX table is no older than ${FX_MAX_AGE_DAYS} days (refresh: node site/scripts/refresh-fx-rates.mjs)`, () => {
   const ageDays = fxTableAgeDays(FX_AS_OF);
@@ -76,4 +78,14 @@ test('rendering the current table back is byte-identical, and a refresh only cha
   const refreshed = await import(`data:text/javascript,${encodeURIComponent(next)}`);
   assert.equal(refreshed.FX_AS_OF, '2026-11-02');
   assert.equal(refreshed.toUsd(95.22, 'INR'), 1);
+});
+
+test('the refresher reads and rewrites a CRLF checkout of fx-rates.mjs, keeping CRLF', () => {
+  const crlf = source.replace(/\n/g, '\r\n');
+  const currencies = tableCurrencies(crlf);
+  assert.deepEqual(currencies, Object.keys(UNITS_PER_USD));
+  assert.equal(renderFxRatesSource(crlf, FX_AS_OF, selectRates(currencies, UNITS_PER_USD)), crlf);
+  const next = renderFxRatesSource(crlf, '2026-11-02', selectRates(currencies, { ...UNITS_PER_USD, EUR: 0.89823 }));
+  assert.ok(next.includes('\r\n  EUR: 0.89823,\r\n'));
+  assert.equal(next.replace(/\r\n/g, '').includes('\n'), false);
 });
