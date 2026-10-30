@@ -64,7 +64,7 @@ Read [references/SOURCES.md](references/SOURCES.md) before the first discovery p
 4. Classify eligibility only after checking residence, location, work authorization, sponsorship, schedule, and employment type.
 5. Extract explicit seniority, experience range, work mode, locations, comparable published salary maximum, and all must-have requirements.
 6. Classify each must-have as `met`, `partial`, `missing`, or `unclear`. Attach private, resume-backed evidence for `met` and `partial`; never invent evidence.
-7. Run `score --stdin`. Apply the returned gate decision before considering the score:
+7. Run `score --stdin` only with the posting's full text in `job.description`. Feed rows from `sources jobs` have none (see its `scoringNote`); open the posting first. If `score` answers `missingDescription: true` (`scored: false`), fetch the posting and score once with its text; never re-run `score` without it. Apply the returned gate decision before considering the score:
    - `exclude`: closed or stale channel, explicit ineligibility, excluded company/location, or incompatible work mode.
    - `ask`: unclear posting status, eligibility, authorization, location/work mode, seniority, or requirement evidence.
    - `skip`: explicit non-target seniority, comparable compensation below the configured floor, insufficient must-have coverage, or score below the manual-review floor. A `skip` or `exclude` is final for that job in every mode: never fill, stage, submit or record it; `review stage` and `ledger add` refuse it.

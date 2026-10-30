@@ -336,9 +336,9 @@ test('entryOrigin=logged entries do not count toward a gated round target withou
 
 test('score stops retrying a job after 3 invalid-input failures and records it as blocked', async (t) => {
   const { env } = await fixture(t, 'invalid');
-  const broken = job('bad', { description: '' });
+  const broken = job('bad', { source: '' });
   for (const attempt of [1, 2]) {
-    const stderr = await refused(env, ['score', '--stdin'], broken, /description/);
+    const stderr = await refused(env, ['score', '--stdin'], broken, /job\.source must be a non-empty string/);
     assert.doesNotMatch(stderr, /now blocked/, `attempt ${attempt}`);
     // A valid job in between resets the global streak but not this job's count.
     await ok(env, ['score', '--stdin'], job(`ok${attempt}`));
