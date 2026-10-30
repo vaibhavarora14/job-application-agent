@@ -37,6 +37,20 @@ function keysOnly(value, allowed, label) {
   return value;
 }
 
+// Matching stays exact (the flag must point at the very answer that is sent), but the error says
+// how to fix it in one retry: the closest key, or the keys to copy from (#220).
+const answerKeyShape = (key) => String(key).normalize('NFKC').toLowerCase().replace(/[\s\u00a0]+/gu, ' ').replace(/[\s?:.*!]+$/u, '').trim();
+const quoteKey = (key) => JSON.stringify(String(key));
+export function flaggedAnswerKeyError(label, given, answers) {
+  const keys = Object.keys(answers);
+  const head = `${label} must name a key in answers, copied exactly.`;
+  if (!keys.length) return `${head} answers is empty, so there is nothing to flag; add the answer or drop the flag.`;
+  if (typeof given !== 'string') return `${head} It must be a string. Answer keys: ${keys.slice(0, 10).map(quoteKey).join(', ')}.`;
+  const close = keys.find((key) => answerKeyShape(key) === answerKeyShape(given));
+  if (close) return `${head} Did you mean ${quoteKey(close)}? Use that exact key.`;
+  return `${head} Answer keys: ${keys.slice(0, 10).map(quoteKey).join(', ')}${keys.length > 10 ? ` (+${keys.length - 10} more)` : ''}.`;
+}
+
 function normalizeAnswers(raw, label) {
   const answers = raw ?? {};
   keysOnly(answers, Object.keys(answers), label);
@@ -81,7 +95,7 @@ function normalizeItem(raw, index) {
   const flags = flagged.map((flag, i) => {
     if (!flag || typeof flag !== 'object' || Array.isArray(flag)) fail(`${label}.flaggedAnswers[${i}] must be { "answer": "<answer key>", "reason": "<why to check it>" }.`);
     keysOnly(flag, ['answer', 'reason'], `${label}.flaggedAnswers[${i}]`);
-    if (!Object.hasOwn(answers, flag.answer)) fail(`${label}.flaggedAnswers[${i}].answer must name a key in answers.`);
+    if (!Object.hasOwn(answers, flag.answer)) fail(flaggedAnswerKeyError(`${label}.flaggedAnswers[${i}].answer`, flag.answer, answers));
     return { answer: flag.answer, reason: text(flag.reason, `${label}.flaggedAnswers[${i}].reason (why the candidate should check it)`, 400) };
   });
   if (new Set(flags.map((f) => f.answer)).size !== flags.length) fail(`${label}.flaggedAnswers lists an answer twice.`);
