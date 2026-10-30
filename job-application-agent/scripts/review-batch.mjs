@@ -59,8 +59,18 @@ const FIT_REASON_MAX_CHARS = 200;
 const PAY_WORD = /\b(?:compensation|comp|pay|salary|salaries|wages?|remuneration|pay range|salary range|base pay)\b/i;
 const MISSING_WORD = /\b(?:no|not|none|missing|without|unknown|absent|n\/a|un(?:listed|published|stated|disclosed|specified|known|available))\b|n't\b/i;
 // Checked per clause, so "No Go experience; salary is $120k" stays and only a missing-pay clause goes.
+// Inside a semicolon clause the pay word and the missing word must also share one comma- or
+// conjunction-separated part, so "No Go experience and salary is $120k" stays whole and
+// "No Go experience, salary not listed" keeps "No Go experience".
 const isMissingPayClause = (clause) => PAY_WORD.test(clause) && MISSING_WORD.test(clause);
-const withoutMissingPay = (line) => line.split(/\s*;\s*/u).filter((clause) => clause && !isMissingPayClause(clause)).join('; ');
+const SUBCLAUSE_BREAK = /\s*(?:,|\b(?:and|but|while|plus)\b)\s*/iu;
+function withoutMissingPayParts(clause) {
+  const parts = clause.split(SUBCLAUSE_BREAK).filter(Boolean);
+  const kept = parts.filter((part) => !isMissingPayClause(part));
+  if (kept.length === parts.length) return clause;
+  return kept.join(', ');
+}
+const withoutMissingPay = (line) => line.split(/\s*;\s*/u).map((clause) => (clause ? withoutMissingPayParts(clause) : '')).filter(Boolean).join('; ');
 // Reason fragments read as fragments: one line (line breaks and runs of whitespace become one space,
 // so a reason can't fake another row in the table) and no trailing period (an ellipsis stays).
 const fragment = (line) => line.replace(/\s+/gu, ' ').trim().replace(/(?<!\.)\.$/u, '').trimEnd();

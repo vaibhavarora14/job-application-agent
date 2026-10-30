@@ -417,6 +417,10 @@ test('fit reasons follow the Design pass: no missing-pay gap, 3 matched then +N 
   } })] });
   assert.equal(variants.items[0].fitReasons.gaps, undefined, 'all missing-pay wordings are dropped');
   assert.deepEqual(variants.items[1].fitReasons.gaps, ['No Go experience; salary is $120k', 'Pay below your 150k floor'], 'checked per clause: real gaps and stated pay stay, only the missing-pay clause goes');
+  const joined = await stageBatch(directory, { items: [item({ applicationId: 'pay-3', company: 'Pay3', url: 'https://jobs.lever.co/pay/3', fitReasons: {
+    matched: ['Backend role'], gaps: ['No Go experience and salary is $120k', 'No Go experience, salary not listed', 'Kubernetes required but pay is unknown'],
+  } })] });
+  assert.deepEqual(joined.items[0].fitReasons.gaps, ['No Go experience and salary is $120k', 'No Go experience', 'Kubernetes required'], 'comma and conjunction clauses: a real gap never goes with a missing-pay part');
   assert.deepEqual(reasons.rules, ["Min pay: not listed, can't check", 'Remote only: the posting is remote']);
   assert.equal(reasons.matched.length, 5, 'all matched lines are kept; only the display is capped');
 
