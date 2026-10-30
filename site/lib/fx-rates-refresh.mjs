@@ -61,15 +61,16 @@ export function selectRates(currencies, rates) {
 export function renderFxRatesSource(source, date, rates) {
   if (fxTableAgeDays(date) === null) throw new Error(`date must be a real YYYY-MM-DD date, got ${date}`);
   const asOf = /export const FX_AS_OF = '\d{4}-\d{2}-\d{2}';/;
-  const table = /(export const UNITS_PER_USD = Object\.freeze\(\{\n)([\s\S]*?)(\n\}\);)/;
+  // Windows checkouts may use CRLF; match either and keep the file's own line ending.
+  const table = /(export const UNITS_PER_USD = Object\.freeze\(\{\r?\n)([\s\S]*?)(\r?\n\}\);)/;
   if (!asOf.test(source) || !table.test(source)) throw new Error('fx-rates.mjs layout changed; update renderFxRatesSource');
-  const body = Object.entries(rates).map(([code, value]) => `  ${code}: ${formatRate(value)},`).join('\n');
+  const body = Object.entries(rates).map(([code, value]) => `  ${code}: ${formatRate(value)},`).join(source.includes('\r\n') ? '\r\n' : '\n');
   return source.replace(asOf, `export const FX_AS_OF = '${date}';`).replace(table, `$1${body}$3`);
 }
 
 /** Currency codes in table order, read from the fx-rates.mjs source. */
 export function tableCurrencies(source) {
-  const match = source.match(/export const UNITS_PER_USD = Object\.freeze\(\{\n([\s\S]*?)\n\}\);/);
+  const match = source.match(/export const UNITS_PER_USD = Object\.freeze\(\{\r?\n([\s\S]*?)\r?\n\}\);/);
   if (!match) throw new Error('UNITS_PER_USD table not found');
   return [...match[1].matchAll(/^\s*([A-Z]{3}):/gm)].map((m) => m[1]);
 }

@@ -6,7 +6,6 @@ import { fileURLToPath } from 'node:url';
 
 import worker, { handleRequest } from '../src/worker.mjs';
 import {
-  SNAPSHOT_BUILT_AT_KEY,
   SNAPSHOT_KEY,
   maybeWriteSnapshot,
   resetSnapshotMemo,
@@ -51,12 +50,19 @@ async function seededDb(count = 260) {
 
 function memoryKv() {
   const map = new Map();
+  const meta = new Map();
   return {
     map,
+    meta,
     gets: 0,
     puts: 0,
+    lists: 0,
     async get(key) { this.gets++; return map.has(key) ? map.get(key) : null; },
-    async put(key, value) { this.puts++; map.set(key, value); },
+    async put(key, value, options = {}) { this.puts++; map.set(key, value); meta.set(key, options.metadata); },
+    async list({ prefix = '' } = {}) {
+      this.lists++;
+      return { keys: [...map.keys()].filter((name) => name.startsWith(prefix)).map((name) => ({ name, metadata: meta.get(name) })) };
+    },
   };
 }
 
@@ -134,7 +140,8 @@ sqliteTest('cron writes the snapshot via the real store; missing or stale snapsh
   const env = bindings(db, kv);
   await worker.scheduled({ scheduledTime: Date.parse('2026-10-29T01:05:00Z') }, { ...env, LIVENESS_FETCH: async () => new Response('', { status: 404 }) });
   assert.ok(kv.map.has(SNAPSHOT_KEY), 'missing snapshot is written on the next tick');
-  assert.ok(kv.map.has(SNAPSHOT_BUILT_AT_KEY));
+  assert.equal(kv.puts, 1, 'one KV write per snapshot');
+  assert.match(kv.meta.get(SNAPSHOT_KEY).builtAt, /^\d{4}-\d{2}-\d{2}T/);
   const parsed = JSON.parse(kv.map.get(SNAPSHOT_KEY));
   assert.equal(parsed.v, 1);
   assert.equal(parsed.rows.length, db.database.prepare(`SELECT COUNT(*) AS n FROM community_jobs WHERE publication_status = 'published'`).get().n);
@@ -155,17 +162,28 @@ sqliteTest('cron writes the snapshot via the real store; missing or stale snapsh
   assert.equal((await getJson(env, '/v1/jobs/live?limit=5')).response.headers.get('x-live-jobs-source'), 'd1');
 });
 
-test('snapshot cadence is every 2 h on the UTC clock and skips other ticks', async () => {
+test('snapshot cadence is every 30 min on the UTC clock; other ticks only rebuild a missing/old snapshot', async () => {
   assert.equal(snapshotDue(Date.parse('2026-10-29T00:00:00Z')), true);
-  assert.equal(snapshotDue(Date.parse('2026-10-29T02:00:00Z')), true);
-  assert.equal(snapshotDue(Date.parse('2026-10-29T01:00:00Z')), false);
-  assert.equal(snapshotDue(Date.parse('2026-10-29T02:05:00Z')), false);
-  const kv = memoryKv();
-  const now = Date.parse('2026-10-29T02:05:00Z');
-  kv.map.set(SNAPSHOT_BUILT_AT_KEY, '2026-10-29T02:00:00.000Z');
+  assert.equal(snapshotDue(Date.parse('2026-10-29T00:30:00Z')), true);
+  assert.equal(snapshotDue(Date.parse('2026-10-29T01:00:00Z')), true);
+  assert.equal(snapshotDue(Date.parse('2026-10-29T00:05:00Z')), false);
+  assert.equal(snapshotDue(Date.parse('2026-10-29T00:25:00Z')), false);
   let built = 0;
   const store = { async listLiveSnapshotRows() { built++; return []; } };
+  const kv = memoryKv();
+  // Fresh snapshot (built at :30, now :35): no rebuild, no write.
+  kv.map.set(SNAPSHOT_KEY, '{}');
+  kv.meta.set(SNAPSHOT_KEY, { builtAt: '2026-10-29T02:30:00.000Z' });
+  const now = Date.parse('2026-10-29T02:35:00Z');
   assert.equal(await maybeWriteSnapshot({ LIVE_JOBS_SNAPSHOT: kv }, store, { scheduledTime: now, now }), false);
   assert.equal(built, 0);
   assert.equal(kv.puts, 0);
+  // 48 interval ticks a day.
+  let ticks = 0;
+  for (let minute = 0; minute < 24 * 60; minute += 5) if (snapshotDue(Date.parse('2026-10-29T00:00:00Z') + minute * 60000)) ticks++;
+  assert.equal(ticks, 48);
+  // Old snapshot (built 50 min ago) on an off tick: rebuilt.
+  const later = Date.parse('2026-10-29T03:20:00Z');
+  assert.equal(await maybeWriteSnapshot({ LIVE_JOBS_SNAPSHOT: kv }, store, { scheduledTime: later, now: later }), true);
+  assert.equal(kv.puts, 1);
 });

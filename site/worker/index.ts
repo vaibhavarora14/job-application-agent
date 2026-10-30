@@ -14,7 +14,7 @@ import {
   liveSessionFrameSrcOrigins,
 } from "../lib/attention-live-session.mjs";
 import { captureApiServerError, siteSentryOptions } from "../lib/sentry.mjs";
-import { serveWithEdgeCache, withSharedProxyNoStore } from "../lib/edge-cache.mjs";
+import { serveFreshEdgeCacheHit, serveWithEdgeCache, withSharedProxyNoStore } from "../lib/edge-cache.mjs";
 import { workersDefaultCache } from "../lib/workers-cache";
 
 interface Env {
@@ -105,4 +105,15 @@ function withPublicSecurityHeaders(response: Response, request: Request, env: En
   return new Response(response.body, { status: response.status, statusText: response.statusText, headers });
 }
 
-export default Sentry.withSentry((env: Env) => siteSentryOptions(env), worker);
+const sentryWorker = Sentry.withSentry((env: Env) => siteSentryOptions(env), worker);
+
+export default {
+  async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
+    // Fresh edge-cache hits skip Sentry's per-request setup and the app wrapper (CPU on
+    // Workers Free). Same response as the HIT branch of serveWithEdgeCache; anything else
+    // (stale, miss, bypass, errors) takes the full Sentry-wrapped path below.
+    const hit = await serveFreshEdgeCacheHit(request, { cache: workersDefaultCache(), release: env.SENTRY_RELEASE });
+    if (hit) return withSharedProxyNoStore(hit);
+    return sentryWorker.fetch!(request, env, ctx);
+  },
+};

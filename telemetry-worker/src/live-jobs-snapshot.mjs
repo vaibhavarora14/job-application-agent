@@ -8,8 +8,10 @@
  * as one compact JSON blob; the route pages that blob in memory and only falls back
  * to the indexed D1 query when the snapshot is missing, stale, or malformed.
  *
- * Free-plan budget: 1 snapshot write (+1 tiny built-at write) every 2 h = 24 KV
- * writes/day (limit 1,000); reads are one KV get per isolate per memo window.
+ * Free-plan budget: 1 snapshot write every 30 min = 48 KV writes/day (limit 1,000).
+ * The build time rides on the key's metadata, so the cron's "is it missing/old?"
+ * check is one KV list per tick (288/day, limit 1,000) instead of an extra write.
+ * Reads are one KV get per isolate per memo window.
  *
  * Wire format: rows are positional arrays in SNAPSHOT_COLUMNS order (smaller blob,
  * cheaper JSON.parse than objects). Rows are already sorted by
@@ -17,8 +19,7 @@
  */
 
 export const SNAPSHOT_KEY = 'live-jobs:v1';
-export const SNAPSHOT_BUILT_AT_KEY = 'live-jobs:v1:built-at';
-export const SNAPSHOT_INTERVAL_MINUTES = 120;
+export const SNAPSHOT_INTERVAL_MINUTES = 30;
 /** Older than this and the route ignores the snapshot (cron stalled) and reads D1. */
 export const SNAPSHOT_MAX_AGE_MS = 6 * 60 * 60 * 1000;
 /** Per-isolate memo of the parsed snapshot; also used as the KV edge cacheTtl. */
@@ -133,14 +134,14 @@ export async function maybeWriteSnapshot(env, store, { scheduledTime, now = Date
   if (!kv?.put || !store?.listLiveSnapshotRows) return false;
   let due = snapshotDue(scheduledTime);
   if (!due) {
-    const builtAt = await kv.get(SNAPSHOT_BUILT_AT_KEY);
-    const builtAtMs = builtAt ? Date.parse(builtAt) : Number.NaN;
+    const listed = kv.list ? await kv.list({ prefix: SNAPSHOT_KEY, limit: 10 }) : null;
+    const builtAt = listed?.keys?.find((key) => key.name === SNAPSHOT_KEY)?.metadata?.builtAt;
+    const builtAtMs = typeof builtAt === 'string' ? Date.parse(builtAt) : Number.NaN;
     due = Number.isNaN(builtAtMs) || now - builtAtMs > SNAPSHOT_INTERVAL_MINUTES * 60 * 1000 + 10 * 60 * 1000;
   }
   if (!due) return false;
   const builtAt = new Date(now).toISOString();
   const rows = await store.listLiveSnapshotRows();
-  await kv.put(SNAPSHOT_KEY, serializeSnapshot(rows, builtAt));
-  await kv.put(SNAPSHOT_BUILT_AT_KEY, builtAt);
+  await kv.put(SNAPSHOT_KEY, serializeSnapshot(rows, builtAt), { metadata: { builtAt } });
   return true;
 }

@@ -61,7 +61,7 @@ Company and title values are bounded and rejected when they resemble an email, p
 | Event | Structured properties |
 |---|---|
 | `installation_started` | OS family, Node major version, submission mode |
-| `command_completed` | Command category (`onboard`, `search`, `assess`, `apply`, `check`, `delivery`, `attention`, `friction`, `round`, `outcome`, `review`, `resume`, `profile`, `telemetry`, `other`; legacy `batch` still accepted), result, duration bucket |
+| `command_completed` | Command category (`onboard`, `search`, `assess`, `apply`, `check`, `delivery`, `attention`, `friction`, `round`, `outcome`, `review`, `resume`, `profile`, `telemetry`, `other`; legacy `batch` still accepted), result, duration bucket. For `review` commands (category `batch`) the result is `success` only when the batch has sent at least one item; a batch waiting for approval or approved with nothing sent is `paused`, one that expired, was rejected or revoked with nothing sent is `abandoned`, and no batch at all is `skipped`; `review list` is never `success` on its own (`paused` while a live batch waits, else `skipped`) |
 | `source_checked` | Allowlisted packaged source ID or `community`, searched/blocked status, reviewed/qualified counts, optional bounded blocker |
 | `job_discovered` | Company, title, job hash/domain, ATS/source, job country, work mode, seniority, employment type, role family, published salary band |
 | `job_assessed` | Company, title, job hash/domain, ATS, fit score, eligibility, decision, match/gap tags |

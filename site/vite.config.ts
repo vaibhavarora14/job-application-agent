@@ -1,6 +1,7 @@
 import { sites } from "@openai/sites-vite-plugin";
 import vinext from "vinext";
-import { defineConfig } from "vite";
+import { readFile } from "node:fs/promises";
+import { defineConfig, type Plugin } from "vite";
 import hostingConfig from "./.openai/hosting.json";
 
 const SITE_CREATOR_PLACEHOLDER_DATABASE_ID =
@@ -32,6 +33,26 @@ const localBindingConfig = {
     : [],
 };
 
+/**
+ * Bundle data/job-locations.json as `JSON.parse("…")` instead of a JS object literal.
+ * Every cold isolate that renders /jobs or a job page evaluates this chunk (Workers
+ * Free: 10 ms CPU budget). Measured locally (Node, cold): 13.5 ms as an object literal,
+ * 10.2 ms as JSON.parse. Same value at runtime. Vite's `json.stringify` option is not
+ * applied by this build, hence the plugin.
+ */
+function jsonParseLargeData(): Plugin {
+  return {
+    name: "jobappagent:json-parse-large-data",
+    enforce: "pre",
+    async load(id) {
+      const file = id.split("?")[0];
+      if (!file.endsWith("/data/job-locations.json")) return null;
+      const text = JSON.stringify(JSON.parse(await readFile(file, "utf8")));
+      return { code: `export default JSON.parse(${JSON.stringify(text)});`, moduleType: "js" };
+    },
+  };
+}
+
 export default defineConfig(async () => {
   // Keep Wrangler and Miniflare state project-local. These are non-secret tool
   // settings; application environment belongs in ignored `.env*` files.
@@ -47,6 +68,7 @@ export default defineConfig(async () => {
       ? { watch: { useFsEvents: false, usePolling: true } }
       : undefined,
     plugins: [
+      jsonParseLargeData(),
       vinext(),
       sites(),
       cloudflare({
