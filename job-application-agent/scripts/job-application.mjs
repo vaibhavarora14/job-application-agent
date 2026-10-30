@@ -786,7 +786,18 @@ export async function telemetryApplicationSubmitted(entry, details = {}) {
   };
 }
 
-function skipReasonFromAssessment(result) {
+// Automatic cut-offs in scoreJob() append their reason as the last gap. Classify that one first so a
+// fit-0 cut-off gets its own reason, not a keyword hit from an earlier, softer gap (#227).
+const CUTOFF_GAP_REASONS = Object.freeze([
+  [/compensation maximum is below the configured floor/i, 'salary'],
+  [/must-have evidence coverage is .* below/i, 'low-fit'],
+]);
+
+// Every reason here comes from the automatic assessment, so it is never 'candidate-choice'; that value
+// stays for skips the candidate chose. All values are existing SKIP_REASONS (no relay change).
+export function skipReasonFromAssessment(result) {
+  const lastGap = String((result.gaps ?? []).at(-1) ?? '');
+  for (const [pattern, reason] of CUTOFF_GAP_REASONS) if (pattern.test(lastGap)) return reason;
   const gaps = (result.gaps ?? []).join(' ').toLowerCase();
   if (/closed|stale/i.test(gaps)) return 'closed';
   if (/location|work mode|remote|excluded location/i.test(gaps)) return 'location';
@@ -795,7 +806,9 @@ function skipReasonFromAssessment(result) {
   if (/eligib|authoriz|excluded by the candidate/i.test(gaps)) return 'ineligible';
   if (/skill|role family|experience/i.test(gaps)) return 'low-fit';
   if (result.decision === 'exclude') return 'ineligible';
-  return 'candidate-choice';
+  // A score below manualReviewMinScore (or any other automatic skip) is a low fit.
+  if (result.decision === 'skip') return 'low-fit';
+  return 'other';
 }
 
 export async function telemetryApplicationSkipped(job, result) {
