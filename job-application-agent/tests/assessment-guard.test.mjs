@@ -228,9 +228,10 @@ test('CLI persists the invalid-input streak across invocations and refuses with 
   await disabledTelemetry(directory);
   const env = cliEnv(directory);
   for (let i = 0; i < 5; i += 1) {
-    const result = await runCli(['score', '--stdin'], job(i, { description: '' }), env);
+    // An empty description is answered as not scored (#217), so use another invalid field.
+    const result = await runCli(['score', '--stdin'], job(i, { title: '' }), env);
     assert.equal(result.code, 1);
-    assert.match(result.stderr, /job\.description must be a non-empty string/);
+    assert.match(result.stderr, /job\.title must be a non-empty string/);
     if (i === 4) assert.match(result.stderr, /STOP the run, fix the job JSON, and tell the user/);
   }
   const refused = await runCli(['score', '--stdin'], job(9), env);
