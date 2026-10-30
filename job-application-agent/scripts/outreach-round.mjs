@@ -68,7 +68,7 @@ export function roundNotFoundError(roundEvents, roundId = null) {
   const next = roundId
     ? ' Use an ID from round status (a completed round cannot take new work), or start a new round with round start --stdin.'
     : ' Start one with round start --stdin, or pass the roundId of an open round.';
-  return new Error(`Application round was not found: ${lookup}${known}${next} Rounds are stored per state folder (JOB_APPLICATION_AGENT_STATE_DIR), so a round started with another state folder or on another machine is not visible here.`);
+  return new Error(`Application round was not found: ${lookup}${known}${next} Without cloud sync, rounds live only in this state folder (JOB_APPLICATION_AGENT_STATE_DIR), so a round from another folder or machine is not visible; with cloud sync, check the round ID and that this install uses the same account.`);
 }
 
 export function resolveOutreachRoundId(roundEvents, { outreachId, roundId = null } = {}) {

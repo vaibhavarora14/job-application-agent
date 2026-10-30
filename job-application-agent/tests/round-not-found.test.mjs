@@ -36,7 +36,7 @@ test('roundNotFoundError names the lookup, recent rounds with status and the nex
   assert.match(byId, /^Application round was not found: no round "r-typo" was started in this state folder\./);
   assert.match(byId, /Recent rounds: r-new \(open\), r-old \(completed\)\./);
   assert.match(byId, /round status/);
-  assert.match(byId, /JOB_APPLICATION_AGENT_STATE_DIR/);
+  assert.match(byId, /Without cloud sync, rounds live only in this state folder \(JOB_APPLICATION_AGENT_STATE_DIR\).*with cloud sync, check the round ID/);
   const none = roundNotFoundError([], null).message;
   assert.match(none, /there is no open round in this state folder\. No rounds have been started here yet\. Start one with round start --stdin/);
 });
