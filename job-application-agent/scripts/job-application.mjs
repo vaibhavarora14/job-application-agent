@@ -986,6 +986,16 @@ export function migrateProfile(existingInput, overridesInput = {}) {
   return validateProfile(migrated);
 }
 
+export const MISSING_DESCRIPTION_NEXT_STEP = 'Open the direct employer or ATS posting, pass its full text as job.description, then run score once. Do not call score again without it.';
+
+/** The not-scored answer for a job object that has no posting text yet (#217); null otherwise. */
+export function missingDescriptionResult(job) {
+  if (!job || typeof job !== 'object' || Array.isArray(job)) return null;
+  if (typeof job.description === 'string' && job.description.trim()) return null;
+  if (job.description != null && typeof job.description !== 'string') return null;
+  return { scored: false, missingDescription: true, decision: null, nextStep: MISSING_DESCRIPTION_NEXT_STEP };
+}
+
 export function scoreJob(input, target) {
   const job = object(input, 'job');
   const profile = validateProfile(target);
@@ -3144,6 +3154,11 @@ async function executeCommand([area, action, value], telemetry, session, communi
     let profile;
     try {
       job = await jsonStdin();
+      // A lead without posting text (for example a community feed row) is not invalid input: it
+      // has not been opened yet. Answer before the guard so it never counts toward the
+      // invalid-input stop, and say what to do instead of failing (#217).
+      const unscored = missingDescriptionResult(job);
+      if (unscored) return unscored;
       profile = job.target ?? storedProfile();
       ticket = await guard.before(job, profile, writePrivateJson);
       if (ticket.cached) {
@@ -3276,6 +3291,10 @@ async function executeCommand([area, action, value], telemetry, session, communi
   else if (area === 'sources' && action === 'sync' && value == null) result = await syncAllCommunityData(community);
   else if (area === 'sources' && action === 'jobs' && (value == null || value === '--stdin')) {
     result = await community.listJobs(value === '--stdin' ? await jsonStdin() : undefined);
+    // Feed rows are leads (links and public metadata), not posting text (#217).
+    if (Array.isArray(result?.jobs) && result.jobs.some((row) => !(typeof row?.description === 'string' && row.description.trim()))) {
+      result = { ...result, scoringNote: `Feed rows carry no posting text. ${MISSING_DESCRIPTION_NEXT_STEP}` };
+    }
     // Recorded locally so `round source`/`round complete` can verify the community feed was pulled.
     if (!await recordCommunityFeedPull(community, result)) result = { ...result, communityFeedUnavailable: true };
   }
