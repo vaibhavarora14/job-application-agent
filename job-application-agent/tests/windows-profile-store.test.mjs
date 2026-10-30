@@ -92,6 +92,11 @@ test('windows-profile-store.ps1 rejects requests outside its fixed service and s
   // A valid request passes validation (on non-Windows it then fails at the Windows API).
   const valid = request(stateDir, good);
   assert.doesNotMatch(valid.stderr, /rejected the request/);
+  if (!isWindows) {
+    // The helper names the failing step instead of one generic line (#228).
+    assert.match(valid.stderr, /Windows profile storage failed: [a-z-]+(?: \([A-Za-z0-9_.; ]+\))?\./);
+    assert.doesNotMatch(valid.stderr, /payload|jaa-win-store/);
+  }
 });
 
 test('windows-profile-store.ps1 round-trips a profile through Credential Manager and DPAPI', { skip: isWindows ? false : 'Windows only' }, async () => {
@@ -103,4 +108,42 @@ test('windows-profile-store.ps1 round-trips a profile through Credential Manager
   const sealed = await readFile(join(stateDir, 'profile.dat'));
   assert.ok(!sealed.includes(Buffer.from('Test Candidate')));
   assert.equal(store.readProfile(), profile);
+});
+
+function failingStore(stderr, extra = {}) {
+  return createSecretStore({
+    platform: 'win32',
+    stateDir: join(tmpdir(), 'unused'),
+    execFileSync: () => { throw Object.assign(new Error('exit 1'), { stderr, ...extra }); },
+  });
+}
+
+test('the win32 store keeps the failing step and only files Credential Manager failures as authentication_required (#228)', () => {
+  const cases = [
+    ['Windows profile storage failed: credential-write (win32 1312).\n', /credential-write, win32 1312\).*Sign in to Windows interactively/, 'authentication_required'],
+    ['Windows profile storage failed: credential-read (win32 5).\n', /credential-read, win32 5\)/, 'authentication_required'],
+    ['Windows profile storage failed: add-type (System.InvalidOperationException).\n', /add-type, System\.InvalidOperationException\).*Constrained Language Mode/, 'internal_error'],
+    ['Windows profile storage failed: dpapi (System.Security.Cryptography.CryptographicException).\n', /\(dpapi, System\.Security\.Cryptography\.CryptographicException\)/, 'internal_error'],
+    ['Windows profile storage failed: file-write (System.UnauthorizedAccessException).\n', /file-write.*OneDrive/, 'internal_error'],
+    ['Windows profile storage failed: path-check (System.IO.IOException).\n', /path-check.*JOB_APPLICATION_AGENT_STATE_DIR/, 'internal_error'],
+    ['Windows profile storage failed.\n', /unknown step/, 'internal_error'],
+    ['', /unknown step/, 'internal_error'],
+  ];
+  for (const [stderr, message, code] of cases) {
+    assert.throws(() => failingStore(stderr).writeProfile('{"name":"secret"}'), (error) => {
+      assert.match(error.message, message, stderr);
+      assert.match(error.message, /no profile data was logged/i);
+      assert.doesNotMatch(error.message, /secret/);
+      assert.equal(error.telemetryErrorCode, code, stderr);
+      return true;
+    });
+  }
+  assert.throws(() => failingStore('', { code: 'ENOENT' }).writeProfile('{}'), (error) => /powershell\.exe was not found/.test(error.message) && error.telemetryErrorCode === 'internal_error');
+  assert.throws(() => failingStore('Windows profile storage failed: missing.\n').readProfile(), /The stored profile is missing or unreadable\. Run profile set again\./);
+});
+
+test('a non-Credential-Manager Windows storage failure is not misfiled as authentication_required in telemetry (#228)', async () => {
+  const { telemetryErrorCode } = await import('../scripts/job-application.mjs');
+  assert.throws(() => failingStore('Windows profile storage failed: dpapi (System.Security.Cryptography.CryptographicException).\n').writeProfile('{}'), (error) => telemetryErrorCode(error) === 'internal_error');
+  assert.throws(() => failingStore('Windows profile storage failed: credential-write (win32 1312).\n').writeProfile('{}'), (error) => telemetryErrorCode(error) === 'authentication_required');
 });

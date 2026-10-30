@@ -66,6 +66,25 @@ function Resolve-ProfilePath([string]$Path) {
   return $full
 }
 
+# Which step failed, reported on stderr as a fixed class so secret-store.mjs can name the real
+# cause (#228). Only these class names, a Win32 error number and a .NET exception type name are
+# ever written; never paths, the profile, or exception messages.
+$script:Stage = 'add-type'
+$script:Win32Error = 0
+
+function Write-Failure([string]$Stage, $Exception) {
+  $detail = @()
+  if ($Stage -like 'credential-*' -and $script:Win32Error -gt 0) { $detail += ('win32 ' + [string]$script:Win32Error) }
+  if ($Exception) {
+    $typeName = [string]$Exception.GetType().FullName
+    if ($typeName -match '^[A-Za-z0-9_.]{1,100}$') { $detail += $typeName }
+  }
+  $suffix = ''
+  if ($detail.Count -gt 0) { $suffix = ' (' + ($detail -join '; ') + ')' }
+  [Console]::Error.WriteLine('Windows profile storage failed: ' + $Stage + $suffix + '.')
+}
+
+try {
 Add-Type -AssemblyName System.Security
 
 Add-Type -TypeDefinition @"
@@ -99,6 +118,11 @@ public static class JobAppCred {
   public static extern void CredFree(IntPtr credentialPtr);
 }
 "@
+} catch {
+  # Constrained Language Mode, AppLocker/WDAC or antivirus blocking the C# P/Invoke helper.
+  Write-Failure 'add-type' $_.Exception
+  exit 1
+}
 
 function Read-Request {
   $stdin = New-Object System.IO.StreamReader([Console]::OpenStandardInput(), [Text.Encoding]::UTF8)
@@ -111,6 +135,7 @@ function Read-Request {
 
 function Get-WrappingKey([string]$Target, [string]$UserName, [bool]$Create) {
   $ptr = [IntPtr]::Zero
+  $script:Stage = 'credential-read'
   if ([JobAppCred]::CredRead($Target, 1, 0, [ref]$ptr)) {
     try {
       $cred = [Runtime.InteropServices.Marshal]::PtrToStructure($ptr, [type][JobAppCred+CREDENTIAL])
@@ -121,7 +146,12 @@ function Get-WrappingKey([string]$Target, [string]$UserName, [bool]$Create) {
       [JobAppCred]::CredFree($ptr)
     }
   }
+  # Control flow is unchanged (no key yet -> create one). The read error is only kept for the
+  # failure report; ERROR_NOT_FOUND (1168) is the normal "no key yet" case.
+  $readError = [Runtime.InteropServices.Marshal]::GetLastWin32Error()
+  if ($readError -ne 0 -and $readError -ne 1168) { $script:Win32Error = $readError }
   if (-not $Create) { return $null }
+  $script:Stage = 'credential-write'
   $key = New-Object byte[] 32
   [Security.Cryptography.RandomNumberGenerator]::Create().GetBytes($key)
   $blobPtr = [Runtime.InteropServices.Marshal]::AllocHGlobal($key.Length)
@@ -135,6 +165,7 @@ function Get-WrappingKey([string]$Target, [string]$UserName, [bool]$Create) {
     $cred.CredentialBlobSize = [uint32]$key.Length
     $cred.Persist = 2
     if (-not [JobAppCred]::CredWrite([ref]$cred, 0)) {
+      $script:Win32Error = [Runtime.InteropServices.Marshal]::GetLastWin32Error()
       throw 'write-failed'
     }
   } finally {
@@ -144,6 +175,7 @@ function Get-WrappingKey([string]$Target, [string]$UserName, [bool]$Create) {
 }
 
 function Protect-Profile([byte[]]$Key, [string]$Plaintext, [string]$Path) {
+  $script:Stage = 'encrypt'
   $plainBytes = [Text.Encoding]::UTF8.GetBytes($Plaintext)
   $aes = [Security.Cryptography.Aes]::Create()
   try {
@@ -154,7 +186,9 @@ function Protect-Profile([byte[]]$Key, [string]$Plaintext, [string]$Path) {
     $payload = New-Object byte[] ($aes.IV.Length + $cipher.Length)
     [Array]::Copy($aes.IV, 0, $payload, 0, $aes.IV.Length)
     [Array]::Copy($cipher, 0, $payload, $aes.IV.Length, $cipher.Length)
+    $script:Stage = 'dpapi'
     $protected = [Security.Cryptography.ProtectedData]::Protect($payload, $null, [Security.Cryptography.DataProtectionScope]::CurrentUser)
+    $script:Stage = 'file-write'
     $dir = Split-Path -Parent $Path
     if ($dir -and -not (Test-Path -LiteralPath $dir)) {
       New-Item -ItemType Directory -Path $dir -Force | Out-Null
@@ -166,8 +200,11 @@ function Protect-Profile([byte[]]$Key, [string]$Plaintext, [string]$Path) {
 }
 
 function Unprotect-Profile([byte[]]$Key, [string]$Path) {
+  $script:Stage = 'file-read'
   $protected = [IO.File]::ReadAllBytes($Path)
+  $script:Stage = 'dpapi'
   $payload = [Security.Cryptography.ProtectedData]::Unprotect($protected, $null, [Security.Cryptography.DataProtectionScope]::CurrentUser)
+  $script:Stage = 'decrypt'
   $aes = [Security.Cryptography.Aes]::Create()
   try {
     $aes.Key = $Key
@@ -185,6 +222,7 @@ function Unprotect-Profile([byte[]]$Key, [string]$Path) {
 }
 
 try {
+  $script:Stage = 'request'
   $request = Read-Request
   $meta = $request.Meta
   $op = [string]$meta.op
@@ -193,13 +231,18 @@ try {
   $account = [string]$meta.account
   Assert-Service $target
   Assert-Account $account
+  $script:Stage = 'path-check'
   $path = Resolve-ProfilePath ([string]$meta.path)
   if ($op -eq 'set') {
     $key = Get-WrappingKey $target $account $true
     Protect-Profile $key $request.Plaintext $path
   } elseif ($meta.op -eq 'get') {
     $key = Get-WrappingKey $target $account $false
-    if (-not $key -or -not (Test-Path -LiteralPath $path)) { throw 'missing' }
+    if (-not $key -or -not (Test-Path -LiteralPath $path)) {
+      $script:Stage = 'missing'
+      if (-not $key -and $script:Win32Error -gt 0) { $script:Stage = 'credential-read' }
+      throw 'missing'
+    }
     $text = Unprotect-Profile $key $path
     $utf8 = New-Object System.Text.UTF8Encoding $false
     [Console]::OutputEncoding = $utf8
@@ -212,7 +255,10 @@ try {
   if ($message.StartsWith('rejected: ')) {
     [Console]::Error.WriteLine('Windows profile storage rejected the request: ' + $message.Substring(10) + '.')
   } else {
-    [Console]::Error.WriteLine('Windows profile storage failed.')
+    # Our own throw strings carry no exception type worth reporting.
+    $exception = $_.Exception
+    if ($message -in @('write-failed', 'missing')) { $exception = $null }
+    Write-Failure $script:Stage $exception
   }
   exit 1
 }
