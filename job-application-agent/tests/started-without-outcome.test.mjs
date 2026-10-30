@@ -43,6 +43,25 @@ test('a completed round ignores jobs scored after it ended; the list is capped',
   assert.ok(!summary.jobs.some((item) => item.url.endsWith('/late')));
 });
 
+test('scores before and after a round do not place a job in it', () => {
+  let started = noteReviewStarted({ version: 1, jobs: {} }, job(1), at(-30));
+  started = noteReviewStarted(started, job(1), at(120));
+  assert.equal(startedWithoutOutcome({ started, startedAt: T0, completedAt: at(60) }).count, 0);
+  started = noteReviewStarted(started, job(1), at(30));
+  assert.equal(startedWithoutOutcome({ started, startedAt: T0, completedAt: at(60) }).jobs[0].scoredAt, at(30));
+});
+
+test('a same-title posting at another URL is not closed by the other posting\'s outcome', () => {
+  let started = noteReviewStarted({ version: 1, jobs: {} }, job(1, { title: 'Engineer' }), at(1));
+  started = noteReviewStarted(started, job(2, { title: 'Engineer' }), at(2));
+  started = noteReviewStarted(started, { company: 'Acme', title: 'Designer' }, at(3)); // scored without a URL
+  const summary = startedWithoutOutcome({
+    started, startedAt: T0,
+    applications: [{ url: 'https://jobs.lever.co/acme/1', company: 'Acme', role: 'Engineer' }, { url: 'https://jobs.lever.co/acme/77', company: 'Acme', role: 'Designer' }],
+  });
+  assert.deepEqual(summary.jobs.map((item) => item.url), ['https://jobs.lever.co/acme/2']);
+});
+
 test('round status reports a review-scored job until it is paused', async (t) => {
   const directory = await mkdtemp(join(tmpdir(), 'jaa-started-'));
   t.after(() => rm(directory, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 }));
@@ -86,5 +105,5 @@ test('round status reports a review-scored job until it is paused', async (t) =>
 
   // The record stays local: URL, company, title and times only.
   const stored = JSON.parse(await readFile(join(directory, 'review-started.json'), 'utf8'));
-  assert.deepEqual(Object.keys(Object.values(stored.jobs)[0]).sort(), ['company', 'firstScoredAt', 'lastScoredAt', 'title', 'url']);
+  assert.deepEqual(Object.keys(Object.values(stored.jobs)[0]).sort(), ['company', 'scoredAt', 'title', 'url']);
 });
