@@ -56,13 +56,18 @@ export const FIT_REASON_SHOWN = 3;
 const FIT_REASON_MAX_CHARS = 200;
 // Missing pay is not a gap (Design, #192): a posting without pay shows nothing. Only a candidate
 // min-pay rule surfaces it, under rules, as "Min pay: not listed, can't check".
-const PAY_WORD = /\b(?:compensation|comp|pay|salary|salaries|wages?|remuneration|pay range|salary range|base pay)\b/i;
-const MISSING_WORD = /\b(?:no|not|none|missing|without|unknown|absent|n\/a|un(?:listed|published|stated|disclosed|specified|known|available))\b|n't\b/i;
+// A clause counts as missing pay only when the missing word is attached to the pay term itself
+// ("No salary", "Unpublished pay range", "Salary not provided", "Pay range isn't posted"), so a
+// real requirement gap that merely mentions pay ("No experience with compensation planning") stays.
+const PAY_TERM = String.raw`(?:base\s+pay|pay\s+(?:range|band|scale)|salary\s+(?:range|band)|compensation|comp|pay|salary|salaries|wages?|remuneration)`;
+const DISCLOSURE = String.raw`(?:published|posted|listed|stated|disclosed|public|advertised|specified|provided)`;
+const MISSING_BEFORE_PAY = new RegExp(String.raw`\b(?:no|without|missing|unknown|absent|un(?:listed|published|stated|disclosed|specified|known|available|posted|advertised))\s+(?:${DISCLOSURE}\s+)?${PAY_TERM}\b`, 'iu');
+const PAY_THEN_MISSING = new RegExp(String.raw`\b${PAY_TERM}(?:\s+(?:info(?:rmation)?|details|data))?[\s:,-]+(?:(?:is|are|was|were)\s+)?(?:(?:is|are|was|were)n't|not|none|missing|unknown|absent|n\/a|un(?:listed|published|stated|disclosed|specified|known|available|posted|advertised))\b`, 'iu');
 // Checked per clause, so "No Go experience; salary is $120k" stays and only a missing-pay clause goes.
-// Inside a semicolon clause the pay word and the missing word must also share one comma- or
-// conjunction-separated part, so "No Go experience and salary is $120k" stays whole and
-// "No Go experience, salary not listed" keeps "No Go experience".
-const isMissingPayClause = (clause) => PAY_WORD.test(clause) && MISSING_WORD.test(clause);
+// Inside a semicolon clause the check also runs per comma- or conjunction-separated part, so
+// "No Go experience and salary is $120k" stays whole and "No Go experience, salary not listed"
+// keeps "No Go experience".
+const isMissingPayClause = (clause) => MISSING_BEFORE_PAY.test(clause) || PAY_THEN_MISSING.test(clause);
 const SUBCLAUSE_BREAK = /\s*(?:,|\b(?:and|but|while|plus)\b)\s*/iu;
 function withoutMissingPayParts(clause) {
   const parts = clause.split(SUBCLAUSE_BREAK).filter(Boolean);
