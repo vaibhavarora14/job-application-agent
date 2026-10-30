@@ -4,6 +4,18 @@
 
 export const LOCATION_SHARD_COUNT = 32;
 
+// JSON.stringify already escapes quotes, backslashes and control characters.
+const UNSAFE_IN_SOURCE = /[<>/\b\f\n\r\t\0\u2028\u2029]/g;
+const SOURCE_ESCAPES = {
+  '<': '\\u003C', '>': '\\u003E', '/': '\\u002F', '\b': '\\b', '\f': '\\f', '\n': '\\n',
+  '\r': '\\r', '\t': '\\t', '\0': '\\0', '\u2028': '\\u2028', '\u2029': '\\u2029',
+};
+
+/** A JS string literal for `value` that is safe to splice into generated source. */
+export function sourceString(value) {
+  return JSON.stringify(String(value)).replace(UNSAFE_IN_SOURCE, (char) => SOURCE_ESCAPES[char]);
+}
+
 /** Shard for a jobId (`community-job-<16 hex>`), or -1 when the id has no hex tail. */
 export function locationShardOf(jobId, count = LOCATION_SHARD_COUNT) {
   const tail = String(jobId ?? '').slice(-2);
@@ -27,7 +39,7 @@ export function buildLocationShards(data, count = LOCATION_SHARD_COUNT) {
 
 /** One shard module: `export default JSON.parse("…")` (cheaper than an object literal). */
 export function shardModuleSource(shard) {
-  return `export default JSON.parse(${JSON.stringify(JSON.stringify(shard))});\n`;
+  return `export default JSON.parse(${sourceString(JSON.stringify(shard))});\n`;
 }
 
 /**
@@ -37,7 +49,7 @@ export function shardModuleSource(shard) {
  * @param {string} fullSpecifier import specifier of the whole JSON file
  */
 export function lookupModuleSource(count, shardSpecifier, fullSpecifier) {
-  const loaders = Array.from({ length: count }, (_, i) => `  () => import(${JSON.stringify(shardSpecifier(i))}),`).join('\n');
+  const loaders = Array.from({ length: count }, (_, i) => `  () => import(${sourceString(shardSpecifier(i))}),`).join('\n');
   return `const shards = [
 ${loaders}
 ];
@@ -53,7 +65,7 @@ export async function locationRecordFor(jobId) {
   return Object.prototype.hasOwnProperty.call(records, jobId) ? records[jobId] : undefined;
 }
 export async function allJobLocations() {
-  return (await import(${JSON.stringify(fullSpecifier)})).default;
+  return (await import(${sourceString(fullSpecifier)})).default;
 }
 `;
 }

@@ -53,3 +53,11 @@ test('shard of a jobId comes from its hex tail', () => {
   assert.equal(locationShardOf('community-job-000000000000000G'), -1);
   assert.equal(locationShardOf(undefined), -1);
 });
+
+test('generated source escapes characters that could end a string or script', async () => {
+  const tricky = { 'community-job-0000000000000001': { note: '</script><b>\u2028\u2029"\\\n' } };
+  const source = shardModuleSource(tricky);
+  assert.doesNotMatch(source, /[<>\u2028\u2029]/);
+  const mod = await import(`data:text/javascript,${encodeURIComponent(source)}`);
+  assert.deepEqual(mod.default, tricky);
+});
