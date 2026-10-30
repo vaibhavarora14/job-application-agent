@@ -8,7 +8,7 @@ import { join } from 'node:path';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
 import { assessmentJobKey } from '../scripts/assessment-guard.mjs';
-import { MAX_LISTED_STARTED_JOBS, noteReviewStarted, startedWithoutOutcome, startedWithoutOutcomeWarning } from '../scripts/started-without-outcome.mjs';
+import { MAX_LISTED_STARTED_JOBS, noteReviewPaused, noteReviewStarted, startedWithoutOutcome, startedWithoutOutcomeWarning } from '../scripts/started-without-outcome.mjs';
 
 const script = fileURLToPath(new URL('../scripts/job-application.mjs', import.meta.url));
 const T0 = '2026-10-30T09:00:00.000Z';
@@ -62,6 +62,14 @@ test('a same-title posting at another URL is not closed by the other posting\'s 
   assert.deepEqual(summary.jobs.map((item) => item.url), ['https://jobs.lever.co/acme/2']);
 });
 
+test('a job scored without a URL is closed by a pause that names its company and title', () => {
+  let started = noteReviewStarted({ version: 1, jobs: {} }, { company: 'Acme', title: 'Designer' }, at(1));
+  started = noteReviewStarted(started, job(2, { title: 'Designer' }), at(2));
+  const paused = noteReviewPaused(started, { url: 'https://example.com/apply/designer', company: 'Acme', title: 'Designer' }, at(3));
+  assert.equal(paused.changed, true);
+  assert.deepEqual(startedWithoutOutcome({ started: paused.state, startedAt: T0 }).jobs.map((item) => item.url), ['https://jobs.lever.co/acme/2']);
+});
+
 test('round status reports a review-scored job until it is paused', async (t) => {
   const directory = await mkdtemp(join(tmpdir(), 'jaa-started-'));
   t.after(() => rm(directory, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 }));
@@ -105,5 +113,7 @@ test('round status reports a review-scored job until it is paused', async (t) =>
 
   // The record stays local: URL, company, title and times only.
   const stored = JSON.parse(await readFile(join(directory, 'review-started.json'), 'utf8'));
-  assert.deepEqual(Object.keys(Object.values(stored.jobs)[0]).sort(), ['company', 'scoredAt', 'title', 'url']);
+  const records = Object.values(stored.jobs);
+  for (const record of records) for (const key of Object.keys(record)) assert.ok(['company', 'pausedAt', 'scoredAt', 'title', 'url'].includes(key), key);
+  assert.equal(records.filter((record) => record.pausedAt).length, 1, 'attention add marks the paused job locally');
 });

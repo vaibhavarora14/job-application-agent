@@ -37,7 +37,7 @@ import {
 } from './attention-questions.mjs';
 import { confirmOutreachTowardRound, loadOutreachRoundView, loadSentVerifiedOutreach, outreachConfirmationEvents, projectOutreachRoundCounts, resolveOutreachRoundId, roundNotFoundError } from './outreach-round.mjs';
 import { isFixtureOrSandboxApply, resolveApplyKind } from './ats/apply-url-gate.mjs';
-import { REVIEW_STARTED_FILE, noteReviewStarted, startedWithoutOutcome, startedWithoutOutcomeWarning } from './started-without-outcome.mjs';
+import { REVIEW_STARTED_FILE, noteReviewPaused, noteReviewStarted, startedWithoutOutcome, startedWithoutOutcomeWarning } from './started-without-outcome.mjs';
 import { ASSESSMENT_GUARD_FILE, assessmentJobKey, createAssessmentGuard, invalidJobMessage, isAssessmentGuardStop } from './assessment-guard.mjs';
 import {
   ASSESSMENT_DECISIONS_FILE, COMMUNITY_FEED_BLOCKERS, COMMUNITY_FEED_SOURCE_ID, RESUME_UPLOAD_BLOCKER, ROUND_EVIDENCE_FILE, ROUND_GATES_VERSION,
@@ -1991,6 +1991,16 @@ async function recordReviewStarted(job) {
   });
 }
 
+async function recordReviewPaused(job) {
+  await withStateLock('review-started', async (dir) => {
+    const file = join(dir, REVIEW_STARTED_FILE);
+    const state = await readPrivateJson(file, null).catch(() => null);
+    if (!state) return;
+    const next = noteReviewPaused(state, job, new Date().toISOString());
+    if (next.changed) await writePrivateJson(file, next.state);
+  });
+}
+
 async function latestDecisionFor(dir, { url, company, role }) {
   const keys = [assessmentJobKey({ url }), assessmentJobKey({ company, title: role })].filter(Boolean);
   const decisions = await readPrivateJson(join(dir, ASSESSMENT_DECISIONS_FILE), null).catch(() => null);
@@ -2779,6 +2789,7 @@ async function attentionAdd(input) {
     createdAt: isoDate(value.createdAt, 'attention.createdAt'),
   };
   await appendPrivateEvent('attention', event);
+  await recordReviewPaused({ url: event.url, company, title: role }).catch(() => {});
 
   let sessionBinding = null;
   if (localBindingFields) {

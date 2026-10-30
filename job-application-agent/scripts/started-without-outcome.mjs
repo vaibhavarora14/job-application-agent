@@ -35,6 +35,22 @@ export function noteReviewStarted(state, job, at) {
 }
 
 /**
+ * Updated state after `attention add` paused a job. The attention event keeps only the URL, so a
+ * job scored without one is matched here by company + title, and the mark stays local.
+ */
+export function noteReviewPaused(state, { url, company, title }, at) {
+  const jobs = state?.jobs && typeof state.jobs === 'object' && !Array.isArray(state.jobs) ? { ...state.jobs } : {};
+  const urlKey = typeof url === 'string' && url.trim() ? assessmentJobKey({ url }) : null;
+  const nameKey = assessmentJobKey({ company, title });
+  let changed = false;
+  for (const [key, record] of Object.entries(jobs)) {
+    const matches = record?.url ? urlKey && assessmentJobKey({ url: record.url }) === urlKey : nameKey && key === nameKey;
+    if (matches) { jobs[key] = { ...record, pausedAt: at }; changed = true; }
+  }
+  return { state: { version: 1, jobs }, changed };
+}
+
+/**
  * Review-scored jobs scored at least once inside the round window that have no outcome.
  * Outcomes count at any time: a ledger entry (any status), a skip record, an attention item
  * (open or resolved), or a later non-review decision.
@@ -61,7 +77,7 @@ export function startedWithoutOutcome({ started, applications = [], attentionEve
     if (!times.length) continue;
     const latest = decisions?.jobs?.[key];
     if (latest && latest.decision !== 'review') continue;
-    if (skipped.has(key)) continue;
+    if (skipped.has(key) || record.pausedAt) continue;
     if (record.url ? urlKeys.has(assessmentJobKey({ url: record.url })) : nameKeys.has(key)) continue;
     list.push({ company: record.company, role: record.title, url: record.url, scoredAt: times.at(-1) });
   }
