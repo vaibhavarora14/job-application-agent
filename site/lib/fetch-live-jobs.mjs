@@ -16,6 +16,18 @@ const boardMemo = new Map();
 /** @type {Map<string, Promise<unknown[]>>} */
 const boardInflight = new Map();
 
+/**
+ * Open-board lookup index for /jobs/<slug>: one line per job, `\n<jobId>\t<wire JSON>`,
+ * stored in the Cache API next to the board with the board's own expiry. A cold job
+ * page used to validate the whole board (~600 jobs, ~10 ms CPU unoptimised: two URL
+ * parses, a slug and four dates per job) to read one job. With the index it finds its
+ * line, parses and validates that one record with the same validateLiveJobs rules.
+ * Only the site writes it, always from a board that passed validation.
+ */
+const INDEX_MEMO_MAX = 512;
+/** @type {{ until: number, text: string, found: Map<string, unknown[]> } | null} */
+let indexMemo = null;
+
 /** @returns {Cache | undefined} */
 function workersDefaultCache() {
   if (typeof caches === 'undefined') return undefined;
@@ -48,6 +60,99 @@ function liveUpstreamBase() {
   }
   return null;
 }
+
+function indexCacheKey() {
+  return new Request(new URL('/__cache/live-jobs-index?status=open', BOARD_CACHE_ORIGIN).toString(), { method: 'GET' });
+}
+
+/** @param {unknown[]} jobs validated open board */
+function indexText(jobs) {
+  let text = '\n';
+  for (const job of jobs) text += `${job.jobId}\t${JSON.stringify(liveJobWireRecord(job))}\n`;
+  return text;
+}
+
+/**
+ * @param {Cache} cache
+ * @param {unknown[]} jobs validated open board
+ * @param {number} builtAt when the board was built (index expires with it)
+ */
+async function putIndex(cache, jobs, builtAt) {
+  const remaining = Math.floor((builtAt + BOARD_CACHE_SECONDS * 1000 - Date.now()) / 1000);
+  if (!Number.isFinite(remaining) || remaining < 5) return;
+  await cache.put(indexCacheKey(), new Response(indexText(jobs), {
+    headers: {
+      'content-type': 'text/plain; charset=utf-8',
+      'cache-control': `public, max-age=${Math.min(60, remaining)}, s-maxage=${remaining}`,
+      [BOARD_BUILT_AT_HEADER]: String(builtAt),
+    },
+  }));
+}
+
+/**
+ * @param {string} text index body
+ * @param {string} jobId
+ * @returns {unknown[] | null} [job] / [] when absent; null when the line is invalid
+ */
+function lookupIndexed(text, jobId) {
+  const start = text.indexOf(`\n${jobId}\t`);
+  if (start < 0) return [];
+  const end = text.indexOf('\n', start + 1);
+  if (end < 0) return null;
+  let record;
+  try {
+    record = JSON.parse(text.slice(start + jobId.length + 2, end));
+  } catch {
+    return null;
+  }
+  if (record?.jobId !== jobId) return null;
+  const validated = validateLiveJobs({ version: 1, jobs: [record], nextCursor: null });
+  return validated.ok ? validated.data.jobs : null;
+}
+
+/**
+ * Raw open jobs a /jobs/<slug> page needs to find `jobId`: the whole board when this
+ * isolate already holds it, else `[job]` or `[]` from the lookup index, else (no
+ * usable index) the whole board, which also writes the index for the next cold isolate.
+ * `jobId` is `community-job-<16 hex>` (jobIdFromSlug), so a job is on the board iff
+ * its line is in the index.
+ * @param {string} jobId
+ * @returns {Promise<unknown[]>}
+ */
+export async function loadOpenJobsForJobId(jobId) {
+  const memo = boardMemo.get('open');
+  if (memo && Date.now() < memo.until) return memo.jobs;
+  const cache = workersDefaultCache();
+  if (!cache || !liveUpstreamBase()) return loadLiveJobsSafe();
+  try {
+    if (!indexMemo || Date.now() >= indexMemo.until) {
+      indexMemo = null;
+      const hit = await cache.match(indexCacheKey());
+      if (hit) {
+        const builtAt = Number(hit.headers.get(BOARD_BUILT_AT_HEADER));
+        const text = await hit.text();
+        if (text.startsWith('\n')) indexMemo = { until: memoUntil(builtAt), text, found: new Map() };
+      }
+    }
+    if (indexMemo) {
+      const known = indexMemo.found.get(jobId);
+      if (known) return known;
+      const found = lookupIndexed(indexMemo.text, jobId);
+      if (found) {
+        if (indexMemo.found.size >= INDEX_MEMO_MAX) indexMemo.found.clear();
+        indexMemo.found.set(jobId, found);
+        return found;
+      }
+    }
+  } catch {
+    /* fall back to the whole board */
+  }
+  indexWanted = true;
+  return loadLiveJobsSafe();
+}
+
+/** Set when a job page found no usable index; the next validated open board writes one. */
+let indexWanted = false;
 
 function boardCacheKey(status) {
   const key = new URL('/__cache/live-jobs-board', BOARD_CACHE_ORIGIN);
@@ -117,7 +222,12 @@ async function loadBoard({ base, status, cache, cacheKey, memoKey, useMemo, opti
       // made every hit fall through to a full re-pagination of the upstream.
       const validated = validateLiveJobsBoard(JSON.parse(await cached.text()));
       if (validated.ok) {
-        boardMemo.set(memoKey, { until: memoUntil(Number(cached.headers.get(BOARD_BUILT_AT_HEADER))), jobs: validated.data.jobs });
+        const builtAt = Number(cached.headers.get(BOARD_BUILT_AT_HEADER));
+        boardMemo.set(memoKey, { until: memoUntil(builtAt), jobs: validated.data.jobs });
+        if (status === 'open' && indexWanted) {
+          indexWanted = false;
+          await putIndex(cache, validated.data.jobs, builtAt).catch(() => {});
+        }
         return validated.data.jobs;
       }
     }
@@ -164,6 +274,10 @@ async function loadBoard({ base, status, cache, cacheKey, memoKey, useMemo, opti
             [BOARD_BUILT_AT_HEADER]: String(builtAt),
           },
         }));
+        if (status === 'open' && indexWanted) {
+          indexWanted = false;
+          await putIndex(cache, list, builtAt).catch(() => {});
+        }
       }
       return list;
     }

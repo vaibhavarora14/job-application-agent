@@ -665,7 +665,17 @@ export function locationRecordsByJobId(index) {
  * @param {number} [now]
  */
 export function attachLocationToJob(job, index, now = Date.now()) {
-  const record = locationRecordsByJobId(index).get(job.jobId);
+  return attachLocationRecord(job, locationRecordsByJobId(index).get(job.jobId), now);
+}
+
+/**
+ * Attach one directory location record (the job's own, or undefined) to a job.
+ * Same checks as attachLocationToJob; used where the record was looked up by jobId.
+ * @param {object} job
+ * @param {object | null | undefined} record
+ * @param {number} [now]
+ */
+export function attachLocationRecord(job, record, now = Date.now()) {
   const age = now - Date.parse(record?.checkedAt);
   const valid = record && record.url === job.url && record.role === job.role && record.company === job.company && age >= 0 && age <= LOCATION_RECORD_MAX_AGE_MS;
   if (!valid) return { ...job, location: null };

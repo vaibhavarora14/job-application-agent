@@ -1,6 +1,6 @@
-import locations from '../data/job-locations.json' with { type: 'json' };
 import { fixtureLiveJobs } from './jobs-board-data.mjs';
-import { attachLocationToJob } from './job-locations.mjs';
+import { attachLocationRecord, attachLocationToJob } from './job-locations.mjs';
+import { allJobLocations, locationRecordFor } from './job-location-lookup.mjs';
 import { jobIdFromSlug, jobSlug, isListedOpenJob, similarOpenRoles } from './live-jobs.mjs';
 
 async function wantsFixtures(options = {}) {
@@ -37,12 +37,15 @@ const PAGE_MEMO_MS = 60 * 1000;
  *   locationIndex?: { collectedAt?: string, records: unknown[] },
  * }} [options]
  */
-async function loadRawJobs(options = {}) {
+async function loadRawJobs(options = {}, slug = '') {
   if (await wantsFixtures(options)) return fixtureLiveJobs(options.now ?? Date.now());
   if (options.loadLive) return options.loadLive();
+  // No valid job has a slug without its 16-hex id tail, so such a slug finds nothing.
+  const jobId = jobIdFromSlug(slug);
+  if (!jobId) return [];
   try {
-    const { loadLiveJobsSafe } = await import('./fetch-live-jobs.mjs');
-    return await loadLiveJobsSafe();
+    const { loadOpenJobsForJobId } = await import('./fetch-live-jobs.mjs');
+    return await loadOpenJobsForJobId(jobId);
   } catch {
     return [];
   }
@@ -96,6 +99,19 @@ function withLocation(job, locationIndex, now) {
 }
 
 /**
+ * withLocation for the page's own job: looks up only that job's record (one small
+ * shard in the Worker build) unless a test passed its own index.
+ * @param {object} job
+ * @param {{ records: unknown[] } | undefined} locationIndex
+ * @param {number} now
+ */
+async function withOwnLocation(job, locationIndex, now) {
+  if (job.location) return job;
+  if (locationIndex) return attachLocationToJob(job, locationIndex, now);
+  return attachLocationRecord(job, await locationRecordFor(job.jobId), now);
+}
+
+/**
  * @param {unknown[]} raw
  * @param {number} now
  * @param {boolean} memoisable
@@ -127,8 +143,7 @@ function memoFor(raw, now, memoisable) {
  */
 export async function loadJobPageBySlug(slug, options = {}) {
   const now = options.now ?? Date.now();
-  const locationIndex = options.locationIndex ?? locations;
-  const raw = await loadRawJobs(options);
+  const raw = await loadRawJobs(options, slug);
   const memoisable =
     options.now === undefined
     && options.locationIndex === undefined
@@ -146,7 +161,7 @@ export async function loadJobPageBySlug(slug, options = {}) {
     return null;
   }
 
-  const job = withLocation(found, locationIndex, now);
+  const job = await withOwnLocation(found, options.locationIndex, now);
   const staleOpen = job.livenessStatus !== 'closed' && !isListedOpenJob(job, now);
   if (staleOpen) {
     memo.pages.set(slug, null);
@@ -158,6 +173,7 @@ export async function loadJobPageBySlug(slug, options = {}) {
     // Closed pages only — attach locations for similar scoring/display.
     // Open slug pages (crawler-hot path) never enter this branch.
     if (!memo.openRaw) memo.openRaw = openJobsRaw(raw, now);
+    const locationIndex = options.locationIndex ?? await allJobLocations();
     const openEnriched = memo.openRaw.map((candidate) => withLocation(candidate, locationIndex, now));
     similar = similarOpenRoles(job, openEnriched, 3);
   }
