@@ -1,8 +1,15 @@
 import { sites } from "@openai/sites-vite-plugin";
 import vinext from "vinext";
 import { readFile } from "node:fs/promises";
+import { fileURLToPath } from "node:url";
 import { defineConfig, type Plugin } from "vite";
 import hostingConfig from "./.openai/hosting.json";
+import {
+  LOCATION_SHARD_COUNT,
+  buildLocationShards,
+  lookupModuleSource,
+  shardModuleSource,
+} from "./scripts/job-location-shards.mjs";
 
 const SITE_CREATOR_PLACEHOLDER_DATABASE_ID =
   "00000000-0000-4000-8000-000000000000";
@@ -53,6 +60,44 @@ function jsonParseLargeData(): Plugin {
   };
 }
 
+/**
+ * Replace lib/job-location-lookup.mjs with a sharded version in the Worker build.
+ * A job page needs one location record, but importing data/job-locations.json
+ * evaluates all ~1,600 records (~4.5 ms CPU on a cold isolate, of a 10 ms budget).
+ * The records are split by jobId into LOCATION_SHARD_COUNT lazily imported chunks;
+ * the page imports only its own. Same record per jobId as the Node module (tested).
+ */
+function jobLocationShards(): Plugin {
+  const prefix = "virtual:jobappagent-location-shard/";
+  const dataFile = fileURLToPath(new URL("./data/job-locations.json", import.meta.url));
+  let shards: Promise<object[]> | null = null;
+  const loadShards = () =>
+    (shards ??= readFile(dataFile, "utf8").then((text) => buildLocationShards(JSON.parse(text))));
+  return {
+    name: "jobappagent:job-location-shards",
+    enforce: "pre",
+    resolveId(id) {
+      return id.startsWith(prefix) ? `\0${id}` : null;
+    },
+    watchChange(id) {
+      if (id === dataFile) shards = null;
+    },
+    async load(id) {
+      if (id.startsWith(`\0${prefix}`)) {
+        const index = Number(id.slice(prefix.length + 1));
+        const all = await loadShards();
+        return { code: shardModuleSource(all[index] ?? {}), moduleType: "js" };
+      }
+      if (id.split("?")[0].endsWith("/lib/job-location-lookup.mjs")) {
+        this.addWatchFile(dataFile);
+        const code = lookupModuleSource(LOCATION_SHARD_COUNT, (i) => `${prefix}${i}`, dataFile);
+        return { code, moduleType: "js" };
+      }
+      return null;
+    },
+  };
+}
+
 export default defineConfig(async () => {
   // Keep Wrangler and Miniflare state project-local. These are non-secret tool
   // settings; application environment belongs in ignored `.env*` files.
@@ -69,6 +114,7 @@ export default defineConfig(async () => {
       : undefined,
     plugins: [
       jsonParseLargeData(),
+      jobLocationShards(),
       vinext(),
       sites(),
       cloudflare({
