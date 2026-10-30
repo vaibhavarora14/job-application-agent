@@ -1533,7 +1533,15 @@ async function sourceCatalog() {
 export async function sourcesList(filtersInput = {}, communitySources = []) {
   const filters = object(filtersInput, 'source filters');
   const allowed = new Set(['regions', 'roleFamilies', 'kinds', 'requiresSession']);
-  for (const key of Object.keys(filters)) if (!allowed.has(key)) throw new Error(`Unknown source filter: ${key}.`);
+  for (const key of Object.keys(filters)) {
+    if (allowed.has(key)) continue;
+    // Agents reach for a free-text job query here (#221). This command picks discovery sources; it
+    // does not search jobs, so say so and name the real filters instead of a bare "unknown".
+    const jobSearch = /^(?:q|query|search|keywords?|text|title|role)$/i.test(key)
+      ? ' sources list chooses where to search, not what: it has no text query. Pick sources by region, role family or kind, then search each source\'s jobsUrl with your keywords.'
+      : '';
+    throw new Error(`Unknown source filter: ${String(key).slice(0, 60)}. Allowed filters: regions, roleFamilies, kinds (string arrays) and requiresSession (Boolean), for example {"regions":["remote"],"roleFamilies":["engineering"]}.${jobSearch}`);
+  }
   const regions = filters.regions == null ? [] : terms(stringArray(filters.regions, 'source filters.regions'));
   const roleFamilies = filters.roleFamilies == null ? [] : terms(stringArray(filters.roleFamilies, 'source filters.roleFamilies'));
   const kinds = filters.kinds == null ? [] : terms(stringArray(filters.kinds, 'source filters.kinds'));

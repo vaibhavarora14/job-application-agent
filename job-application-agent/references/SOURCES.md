@@ -11,7 +11,7 @@ node scripts/job-application.mjs sources jobs
 echo '{"limit":25,"cursor":"opaque-cursor"}' | node scripts/job-application.mjs sources jobs --stdin
 ```
 
-Optional filter input:
+Optional filter input for `sources list --stdin`. These are the only keys: `regions`, `roleFamilies` and `kinds` are string arrays (a source matches when it shares any value) and `requiresSession` is a Boolean. There is no text `query`. `sources list` chooses where to search, so search each chosen source's `jobsUrl` with your keywords.
 
 ```json
 {
