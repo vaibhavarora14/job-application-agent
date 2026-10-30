@@ -35,7 +35,7 @@ import {
   extractNarrativeQuestionsFromText,
   normalizeAttentionQuestions,
 } from './attention-questions.mjs';
-import { confirmOutreachTowardRound, loadOutreachRoundView, loadSentVerifiedOutreach, outreachConfirmationEvents, projectOutreachRoundCounts, resolveOutreachRoundId } from './outreach-round.mjs';
+import { confirmOutreachTowardRound, loadOutreachRoundView, loadSentVerifiedOutreach, outreachConfirmationEvents, projectOutreachRoundCounts, resolveOutreachRoundId, roundNotFoundError } from './outreach-round.mjs';
 import { isFixtureOrSandboxApply, resolveApplyKind } from './ats/apply-url-gate.mjs';
 import { ASSESSMENT_GUARD_FILE, assessmentJobKey, createAssessmentGuard, invalidJobMessage, isAssessmentGuardStop } from './assessment-guard.mjs';
 import {
@@ -2743,7 +2743,7 @@ async function roundStatus(roundId = null) {
   const id = roundId ?? starts.at(-1)?.roundId;
   if (!id) throw new Error('No application round has been started.');
   const started = starts.find((event) => event.roundId === id);
-  if (!started) throw new Error('Application round was not found.');
+  if (!started) throw roundNotFoundError(events, id);
   const evidence = await roundEvidence(dir);
   const gates = roundGatesRecord(evidence, id);
   const roundSubmitted = (await jsonLines(join(dir, 'applications.ndjson')))
@@ -2868,7 +2868,7 @@ async function roundConfirm(input) {
   const sentVerified = new Set((await loadSentVerifiedOutreach(dir, cloudState, { allowCache: false })).map((item) => item.id));
   for (const outreachId of uniqueIds) {
     const targetRoundId = resolveOutreachRoundId(roundEvents, { outreachId, roundId });
-    if (!targetRoundId) throw new Error('Application round was not found.');
+    if (!targetRoundId) throw roundNotFoundError(roundEvents, roundId);
     const alreadyAttached = outreachConfirmationEvents(roundEvents, targetRoundId).some((event) => event.outreachId === outreachId);
     if (!alreadyAttached && !sentVerified.has(outreachId)) throw new Error(`Outreach ${outreachId} is not sent-verified.`);
   }
@@ -2881,7 +2881,7 @@ async function roundConfirm(input) {
       cloudClient: cloudState,
       requireRoundId: true,
     });
-    if (result.reason === 'round-not-found') throw new Error('Application round was not found.');
+    if (result.reason === 'round-not-found') throw roundNotFoundError(await jsonLines(join(dir, 'rounds.ndjson')), roundId);
     if (result.reason === 'not-sent-verified') throw new Error(`Outreach ${outreachId} is not sent-verified.`);
     confirmations.push(result);
   }
