@@ -195,8 +195,41 @@ function windowsRequest(exec, scriptPath, payload, plaintext = '') {
   } catch (error) {
     const rejected = /Windows profile storage rejected the request: ([a-z .-]+)\./.exec(String(error?.stderr ?? ''));
     if (rejected) throw new Error(`Windows profile storage rejected the request: ${rejected[1]}. No profile data was logged.`);
-    throw new Error('Windows profile storage failed. Unlock Windows Credential Manager and retry; no profile data was logged.');
+    throw windowsStorageError(error);
   }
+}
+
+// windows-profile-store.ps1 reports which step failed as a fixed class (#228). Map it to a message
+// with the right next step and an existing telemetry error code; only Credential Manager failures
+// are `authentication_required`. Paths, profile data and exception messages never reach here.
+const WINDOWS_FAILURE = /Windows profile storage failed: ([a-z-]{1,40})(?: \(([A-Za-z0-9_.; ]{1,160})\))?\./;
+const WINDOWS_STAGE_HINTS = Object.freeze({
+  'credential-read': ['authentication_required', 'Windows Credential Manager could not read the profile key. Sign in to Windows interactively (not over SSH, a service or a scheduled task), unlock Credential Manager and retry'],
+  'credential-write': ['authentication_required', 'Windows Credential Manager refused to store the profile key. Sign in to Windows interactively (not over SSH, a service or a scheduled task), unlock Credential Manager and retry'],
+  'add-type': ['internal_error', 'PowerShell blocked the profile helper (Constrained Language Mode, AppLocker/WDAC or antivirus). Allow the job-application-agent profile helper or run from a standard PowerShell session, then retry'],
+  dpapi: ['internal_error', 'Windows data protection (DPAPI) could not seal or open the profile for this Windows account. Retry from the same signed-in Windows user'],
+  'file-write': ['internal_error', 'The profile file could not be written to the job-application-agent state folder. Check that the folder is writable and not blocked by OneDrive or antivirus, then retry'],
+  'file-read': ['internal_error', 'The profile file in the job-application-agent state folder could not be read. Check the folder is available (OneDrive files on demand, antivirus), then retry'],
+  'path-check': ['internal_error', 'The job-application-agent state folder could not be checked. If it is redirected (OneDrive, a network share or a link), set JOB_APPLICATION_AGENT_STATE_DIR to a local folder and retry'],
+  encrypt: ['internal_error', 'The profile could not be encrypted. Retry'],
+  decrypt: ['internal_error', 'The stored profile could not be decrypted with the current key. Run profile set again'],
+  request: ['internal_error', 'The profile helper could not read its request. Retry'],
+});
+
+function windowsStorageError(error) {
+  if (error?.code === 'ENOENT') {
+    return Object.assign(new Error('Windows profile storage failed: powershell.exe was not found. Windows PowerShell is required to store the profile; no profile data was logged.'), { telemetryErrorCode: 'internal_error' });
+  }
+  const match = WINDOWS_FAILURE.exec(String(error?.stderr ?? ''));
+  const stage = match?.[1];
+  if (stage === 'missing') return new Error('The stored profile is missing or unreadable. Run profile set again.');
+  const hint = WINDOWS_STAGE_HINTS[stage];
+  if (!hint) {
+    // An older helper, or PowerShell failed before the helper's own error handling ran.
+    return Object.assign(new Error('Windows profile storage failed (unknown step). Retry; if it keeps failing, report the PowerShell version. No profile data was logged.'), { telemetryErrorCode: 'internal_error' });
+  }
+  const detail = match[2] ? `, ${match[2]}` : '';
+  return Object.assign(new Error(`Windows profile storage failed (${stage}${detail}). ${hint}; no profile data was logged.`), { telemetryErrorCode: hint[0] });
 }
 
 function createWin32Store({
