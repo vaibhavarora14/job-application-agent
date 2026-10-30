@@ -58,11 +58,15 @@ const FIT_REASON_MAX_CHARS = 200;
 // min-pay rule surfaces it, under rules, as "Min pay: not listed, can't check".
 // A clause counts as missing pay only when the missing word is attached to the pay term itself
 // ("No salary", "Unpublished pay range", "Salary not provided", "Pay range isn't posted"), so a
-// real requirement gap that merely mentions pay ("No experience with compensation planning") stays.
+// real requirement gap that merely mentions pay ("No experience with compensation planning",
+// "No compensation planning experience") stays.
 const PAY_TERM = String.raw`(?:base\s+pay|pay\s+(?:range|band|scale)|salary\s+(?:range|band)|compensation|comp|pay|salary|salaries|wages?|remuneration)`;
 const DISCLOSURE = String.raw`(?:published|posted|listed|stated|disclosed|public|advertised|specified|provided)`;
-const MISSING_BEFORE_PAY = new RegExp(String.raw`\b(?:no|without|missing|unknown|absent|un(?:listed|published|stated|disclosed|specified|known|available|posted|advertised))\s+(?:${DISCLOSURE}\s+)?${PAY_TERM}\b`, 'iu');
-const PAY_THEN_MISSING = new RegExp(String.raw`\b${PAY_TERM}(?:\s+(?:info(?:rmation)?|details|data))?[\s:,-]+(?:(?:is|are|was|were)\s+)?(?:(?:is|are|was|were)n't|not|none|missing|unknown|absent|n\/a|un(?:listed|published|stated|disclosed|specified|known|available|posted|advertised))\b`, 'iu');
+// The pay term must end the part (optionally "… information" / "… listed" / "… in the posting"),
+// so "No compensation planning experience" is a real skill gap and stays.
+const PAY_TAIL = String.raw`(?:\s+(?:info(?:rmation)?|details|data|figures?))?(?:\s+(?:is|was))?(?:\s+(?:${DISCLOSURE}|given|shown|mentioned|available))?(?:\s+(?:in|on)\s+(?:the\s+)?(?:posting|listing|job\s+post))?`;
+const MISSING_BEFORE_PAY = new RegExp(String.raw`\b(?:no|without|missing|unknown|absent|un(?:listed|published|stated|disclosed|specified|known|available|posted|advertised))\s+(?:${DISCLOSURE}\s+)?${PAY_TERM}${PAY_TAIL}\s*[.!]?$`, 'iu');
+const PAY_THEN_MISSING = new RegExp(String.raw`\b${PAY_TERM}(?:\s+(?:info(?:rmation)?|details|data|figures?))?[\s:,-]+(?:(?:is|are|was|were)\s+)?(?:(?:is|are|was|were)n't|not|none|missing|unknown|absent|n\/a|un(?:listed|published|stated|disclosed|specified|known|available|posted|advertised))(?:\s+(?:yet\s+)?(?:${DISCLOSURE}|given|shown|mentioned|available|known|included))?(?:\s+(?:in|on)\s+(?:the\s+)?(?:posting|listing|job\s+post))?\s*[.!]?$`, 'iu');
 // Checked per clause, so "No Go experience; salary is $120k" stays and only a missing-pay clause goes.
 // Inside a semicolon clause the check also runs per comma- or conjunction-separated part, so
 // "No Go experience and salary is $120k" stays whole and "No Go experience, salary not listed"
