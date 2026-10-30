@@ -426,7 +426,7 @@ test('fit reasons follow the Design pass: no missing-pay gap, 3 matched then +N 
   assert.doesNotMatch(html, /compensation|Salary range/);
   assert.match(html, /\.fit \.matched li::before\{content:"✓";color:var\(--check\)\}/);
   assert.match(html, /\.fit \.gaps li::before\{content:"●";color:var\(--gap\)/);
-  assert.match(html, /\.fit \.rules li::before\{content:"◦";color:rgba\(23,63,53,\.45\)/);
+  assert.match(html, /\.fit \.rules li::before\{content:"◦";color:rgba\(23,63,53,\.6\)/);
   assert.match(html, /@media \(max-width:640px\)\{[^@]*?\.fit div\{grid-template-columns:1fr;gap:2px\}/, 'labels stack above their list on narrow screens');
 
   const table = renderTable(batch);

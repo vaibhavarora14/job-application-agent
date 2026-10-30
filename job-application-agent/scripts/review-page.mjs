@@ -102,7 +102,7 @@ dd.why{margin:0;padding:0 2px;background:none;font-size:13px;color:var(--amber);
 .fit li::before{position:absolute;left:0;top:0;width:14px;text-align:center;font-weight:700}
 .fit .matched li::before{content:"✓";color:var(--check)}
 .fit .gaps li::before{content:"●";color:var(--gap);font-size:10px;line-height:21px}
-.fit .rules li::before{content:"◦";color:rgba(23,63,53,.45);font-weight:400}
+.fit .rules li::before{content:"◦";color:rgba(23,63,53,.6);font-weight:400}
 .fit li.more{color:var(--muted);font-size:13px}
 .fit li.more::before{content:""}
 .hdrs{grid-column:2;display:grid;gap:4px;margin-top:8px;font-size:14px}
