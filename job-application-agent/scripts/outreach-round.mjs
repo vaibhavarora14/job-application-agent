@@ -53,6 +53,24 @@ export function sentVerifiedFromOutreachState(state, now = new Date().toISOStrin
   return sentVerifiedFromOutreachItems(Object.keys(state.opportunities).map((id) => readOutreach(state, 'show', { id }, now)));
 }
 
+/**
+ * "Application round was not found." with what was looked up, the recent rounds in this state
+ * folder and the next command (#218). Round IDs are local random IDs; no job or candidate data.
+ */
+export function roundNotFoundError(roundEvents, roundId = null) {
+  const completed = new Set(roundEvents.filter((event) => event.type === 'completed').map((event) => event.roundId));
+  const recent = roundEvents.filter((event) => event.type === 'started').slice(-3).reverse()
+    .map((event) => `${event.roundId} (${completed.has(event.roundId) ? 'completed' : 'open'})`);
+  const lookup = roundId
+    ? `no round "${String(roundId).slice(0, 100)}" was started in this state folder.`
+    : 'there is no open round in this state folder.';
+  const known = recent.length ? ` Recent rounds: ${recent.join(', ')}.` : ' No rounds have been started here yet.';
+  const next = roundId
+    ? ' Use an ID from round status (a completed round cannot take new work), or start a new round with round start --stdin.'
+    : ' Start one with round start --stdin, or pass the roundId of an open round.';
+  return new Error(`Application round was not found: ${lookup}${known}${next} Rounds are stored per state folder (JOB_APPLICATION_AGENT_STATE_DIR), so a round started with another state folder or on another machine is not visible here.`);
+}
+
 export function resolveOutreachRoundId(roundEvents, { outreachId, roundId = null } = {}) {
   const attached = roundEvents.find((event) => event.type === 'submission-confirmed' && event.outreachId === outreachId && event.channel === OUTREACH_ROUND_CHANNEL);
   if (attached) {
@@ -229,7 +247,7 @@ export async function confirmOutreachTowardRound({
     const targetRoundId = resolveOutreachRoundId(roundEvents, { outreachId: id, roundId });
     if (!targetRoundId) return { counted: false, reason: requireRoundId ? 'round-not-found' : 'no-active-round', outreachId: id, roundId: null };
     const started = roundEvents.find((event) => event.type === 'started' && event.roundId === targetRoundId);
-    if (!started) throw new Error('Application round was not found.');
+    if (!started) throw roundNotFoundError(roundEvents, targetRoundId);
     if (roundEvents.some((event) => event.type === 'completed' && event.roundId === targetRoundId)) {
       const existing = outreachConfirmationEvents(roundEvents, targetRoundId).some((event) => event.outreachId === id);
       return { counted: existing, reason: existing ? 'already-recorded' : 'round-completed', outreachId: id, roundId: targetRoundId };
