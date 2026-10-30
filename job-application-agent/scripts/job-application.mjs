@@ -2241,7 +2241,7 @@ export function possibleDuplicateError(duplicate) {
     `A possible same-company role duplicate requires NEW REQUISITION CONFIRMED: ${why}. `
     + 'Only pass duplicateOverride "NEW REQUISITION CONFIRMED" when the posting shows a different requisition: a different employer job ID or requisition number (record it as employerJobId), or a different team, level or location that the earlier role did not have. A repost of the same role is a duplicate; do not apply. '
     + 'review-each: put this application in its own batch review and tell the candidate it may duplicate the earlier one; pass the phrase only after they approve that batch. '
-    + 'Unattended, routine-auto or STANDING AUTHORIZATION: never pass it; queue the job with attention add (blocker "judgment") and continue with other jobs.',
+    + 'Unattended, routine-auto or STANDING AUTHORIZATION: never pass it on your own; queue the job with attention add (blocker "judgment") and continue with other jobs. It may be passed only after the candidate explicitly approves this job in its own one-application batch review.',
   );
 }
 
