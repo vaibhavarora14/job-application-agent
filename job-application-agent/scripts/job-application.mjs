@@ -37,6 +37,7 @@ import {
 } from './attention-questions.mjs';
 import { confirmOutreachTowardRound, loadOutreachRoundView, loadSentVerifiedOutreach, outreachConfirmationEvents, projectOutreachRoundCounts, resolveOutreachRoundId, roundNotFoundError } from './outreach-round.mjs';
 import { isFixtureOrSandboxApply, resolveApplyKind } from './ats/apply-url-gate.mjs';
+import { REVIEW_STARTED_FILE, noteReviewPaused, noteReviewStarted, startedWithoutOutcome, startedWithoutOutcomeWarning } from './started-without-outcome.mjs';
 import { ASSESSMENT_GUARD_FILE, assessmentJobKey, createAssessmentGuard, invalidJobMessage, isAssessmentGuardStop } from './assessment-guard.mjs';
 import {
   ASSESSMENT_DECISIONS_FILE, COMMUNITY_FEED_BLOCKERS, COMMUNITY_FEED_SOURCE_ID, RESUME_UPLOAD_BLOCKER, ROUND_EVIDENCE_FILE, ROUND_GATES_VERSION,
@@ -1981,6 +1982,25 @@ async function recordAssessmentDecision(job, result) {
   });
 }
 
+// Local-only list of jobs sent to review, read by round status (#222). Never sent anywhere.
+async function recordReviewStarted(job) {
+  await withStateLock('review-started', async (dir) => {
+    const file = join(dir, REVIEW_STARTED_FILE);
+    const state = await readPrivateJson(file, { version: 1, jobs: {} }).catch(() => ({ version: 1, jobs: {} }));
+    await writePrivateJson(file, noteReviewStarted(state, job, new Date().toISOString()));
+  });
+}
+
+async function recordReviewPaused(job) {
+  await withStateLock('review-started', async (dir) => {
+    const file = join(dir, REVIEW_STARTED_FILE);
+    const state = await readPrivateJson(file, null).catch(() => null);
+    if (!state) return;
+    const next = noteReviewPaused(state, job, new Date().toISOString());
+    if (next.changed) await writePrivateJson(file, next.state);
+  });
+}
+
 async function latestDecisionFor(dir, { url, company, role }) {
   const keys = [assessmentJobKey({ url }), assessmentJobKey({ company, title: role })].filter(Boolean);
   const decisions = await readPrivateJson(join(dir, ASSESSMENT_DECISIONS_FILE), null).catch(() => null);
@@ -2769,6 +2789,7 @@ async function attentionAdd(input) {
     createdAt: isoDate(value.createdAt, 'attention.createdAt'),
   };
   await appendPrivateEvent('attention', event);
+  await recordReviewPaused({ url: event.url, company, title: role }).catch(() => {});
 
   let sessionBinding = null;
   if (localBindingFields) {
@@ -2866,6 +2887,7 @@ async function roundStatus(roundId = null) {
     const resumePreflight = resumePreflightRecord(evidence, id);
     routineGates = { enforced: true, resumePreflight, blockers: resumeBlockers(resumePreflight), uncountedLoggedApplicationIds, coverage };
   }
+  const startedWithoutOutcomeSummary = await roundStartedWithoutOutcome(dir, started.occurredAt, completion?.occurredAt ?? null);
   return {
     roundId: id,
     requestedCount: started.requestedCount,
@@ -2884,9 +2906,22 @@ async function roundStatus(roundId = null) {
     needsRecovery: Boolean(completion) && confirmedCount < started.requestedCount,
     discovery,
     ...(routineGates ? { routineGates } : {}),
+    startedWithoutOutcome: startedWithoutOutcomeSummary,
     startedAt: started.occurredAt,
     ...(completion ? { completedAt: completion.occurredAt } : {}),
   };
+}
+
+async function roundStartedWithoutOutcome(dir, startedAt, completedAt) {
+  return startedWithoutOutcome({
+    started: await readPrivateJson(join(dir, REVIEW_STARTED_FILE), null).catch(() => null),
+    applications: await jsonLines(join(dir, 'applications.ndjson')),
+    attentionEvents: await jsonLines(join(dir, 'attention.ndjson')),
+    skips: await readPrivateJson(join(dir, ASSESSMENT_SKIPS_FILE), null).catch(() => null),
+    decisions: await readPrivateJson(join(dir, ASSESSMENT_DECISIONS_FILE), null).catch(() => null),
+    startedAt,
+    completedAt,
+  });
 }
 
 async function roundComplete(input) {
@@ -2917,7 +2952,11 @@ async function roundComplete(input) {
     await appendFile(file, `${JSON.stringify(event)}\n`, { mode: 0o600 });
     await chmod(file, 0o600);
     const warnings = (status.routineGates?.blockers ?? []).map((item) => `${item.blocker}: ${item.reason} Report this blocker to the candidate with the round summary.`);
-    return { ...status, discovery: { ...status.discovery, ...explanation }, completed: true, completionRecorded: true, completedAt: event.occurredAt, ...(warnings.length ? { warnings } : {}) };
+    // Bound the list by the completion time being recorded, as a later round status will.
+    const startedWithoutOutcomeSummary = await roundStartedWithoutOutcome(dir, status.startedAt, event.occurredAt);
+    const startedWarning = startedWithoutOutcomeWarning(startedWithoutOutcomeSummary);
+    if (startedWarning) warnings.push(startedWarning);
+    return { ...status, startedWithoutOutcome: startedWithoutOutcomeSummary, discovery: { ...status.discovery, ...explanation }, completed: true, completionRecorded: true, completedAt: event.occurredAt, ...(warnings.length ? { warnings } : {}) };
   }));
   if (result.completionRecorded) await appendCloudEvent('rounds', { type: 'completed', roundId: result.roundId, occurredAt: result.completedAt, ...(result.discovery.concentrationReason ? { concentrationReason: result.discovery.concentrationReason, concentrationEvidence: result.discovery.concentrationEvidence } : {}) });
   return result;
@@ -3277,6 +3316,7 @@ async function executeCommand([area, action, value], telemetry, session, communi
       await recordAssessmentSkip(job, result);
       await emitDomainEvent(telemetry, session, await telemetryApplicationSkipped(job, result));
     } else if (result.decision === 'review') {
+      await recordReviewStarted(job);
       await emitDomainEvent(telemetry, session, await telemetryApplicationStarted(job, {
         approvalMode: profile.submissionMode,
         ats: job.applicationChannel ?? job.source,
