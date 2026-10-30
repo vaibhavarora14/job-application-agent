@@ -412,3 +412,31 @@ test('coverage evaluation and the submit-gate message are pure and local', () =>
   assert.match(routineSubmitGateMessage({ decision: 'review', autoEligible: false, score: 74 }, 'X'), /"review" but autoEligible is false \(score 74\)/);
   assert.match(routineSubmitGateMessage({ decision: 'skip' }, 'X'), /latest score decision is "skip"/);
 });
+
+test('round lead takes {"leads": [...]} in one call, validates all first, and source coverage accepts them (#219)', async (t) => {
+  const { env } = await fixture(t, 'lead-batch');
+  const { roundId } = await ok(env, ['round', 'start', '--stdin'], { requestedCount: 1 });
+  await refused(env, ['round', 'lead', '--stdin'], { leads: [lead(roundId, 'linkedin-jobs-feed', 'x'), { ...lead(roundId, 'linkedin-jobs-feed', 'y'), disposition: 'nope' }] }, /Error: leads\[1\]: Invalid lead disposition/);
+  assert.equal((await ok(env, ['round', 'leads', roundId])).history.length, 0, 'a bad lead in the batch records nothing');
+  await refused(env, ['round', 'lead', '--stdin'], { leads: [] }, /array of 1 to 100 leads/);
+  await refused(env, ['round', 'lead', '--stdin'], { leads: [lead(roundId, 'linkedin-jobs-feed', 'x')], roundId }, /takes only \{"leads"/);
+  const batch = await ok(env, ['round', 'lead', '--stdin'], { leads: ['a', 'b', 'c'].map((slug) => lead(roundId, 'linkedin-jobs-feed', slug)) });
+  assert.equal(batch.leadCount, 3);
+  assert.equal(batch.recordedCount, 3);
+  assert.equal((await ok(env, ['round', 'leads', roundId])).history.length, 3);
+  await ok(env, ['round', 'source', '--stdin'], { roundId, sourceId: 'linkedin-jobs-feed', status: 'searched', evidence: 'Searched LinkedIn.' });
+  // A single lead still works and returns the old shape.
+  const single = await ok(env, ['round', 'lead', '--stdin'], emptySearch(roundId, 'direct-company-careers'));
+  assert.equal(single.recorded, true);
+});
+
+test('ledger check takes {"candidates": [...]} and returns one result per job (#219)', async (t) => {
+  const { env } = await fixture(t, 'check-batch');
+  const one = { id: 'batch-1', company: 'Batch Co', role: 'Senior Engineer', url: 'https://boards.greenhouse.io/batchco/jobs/1' };
+  const two = { id: 'batch-2', company: 'Other Co', role: 'Staff Engineer', url: 'https://boards.greenhouse.io/otherco/jobs/2' };
+  const single = await ok(env, ['ledger', 'check', '--stdin'], one);
+  const batch = await ok(env, ['ledger', 'check', '--stdin'], { candidates: [one, two] });
+  assert.equal(batch.results.length, 2);
+  assert.deepEqual(batch.results[0], single);
+  await refused(env, ['ledger', 'check', '--stdin'], { candidates: [one, { company: 'x' }] }, /candidates\[1\]: /);
+});
