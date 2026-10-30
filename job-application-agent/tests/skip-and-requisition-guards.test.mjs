@@ -125,5 +125,11 @@ test('NEW REQUISITION CONFIRMED never replaces the batch approval on a live send
   const withoutPhrase = run(env, ['ledger', 'add', '--stdin'], reviewed);
   assert.equal(withoutPhrase.status, 1);
   assert.match(withoutPhrase.stderr, /NEW REQUISITION CONFIRMED/);
+  // #223: why it matched (role and date, no company or URL), what proves a new requisition, and the next step per mode.
+  assert.match(withoutPhrase.stderr, /it matches an earlier application at this company for "Senior Backend Developer" on \d{4}-\d{2}-\d{2}\./);
+  assert.match(withoutPhrase.stderr, /different employer job ID or requisition number \(record it as employerJobId\)/);
+  assert.match(withoutPhrase.stderr, /review-each: put this application in its own batch review/);
+  assert.match(withoutPhrase.stderr, /never pass it; queue the job with attention add \(blocker "judgment"\)/);
+  assert.doesNotMatch(withoutPhrase.stderr, /Alias Co|jobs\.lever\.co/);
   assert.equal(ok(env, ['ledger', 'add', '--stdin'], { ...reviewed, duplicateOverride: 'NEW REQUISITION CONFIRMED' }).recorded, 'alias-2');
 });
