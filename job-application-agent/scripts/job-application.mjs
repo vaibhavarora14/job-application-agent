@@ -2252,6 +2252,22 @@ async function ledgerCheck(candidate) {
   return batch ? { results } : results[0];
 }
 
+// What to do about a possible same-company role duplicate (#223): why it matched, what proves a
+// distinct requisition, and the next step per mode. Role and date only; no company or URL.
+export function possibleDuplicateError(duplicate) {
+  // The earlier application's role and date stay out of this text: thrown errors feed
+  // skill_error telemetry, so the agent reads them with ledger check instead.
+  const why = duplicate?.reason === 'company-role' && !duplicate?.match
+    ? 'it matches more than one earlier application at this company'
+    : 'it matches an earlier application at this company';
+  return new Error(
+    `A possible same-company role duplicate requires NEW REQUISITION CONFIRMED: ${why} (run ledger check with this company and role to compare the earlier one). `
+    + 'Only pass duplicateOverride "NEW REQUISITION CONFIRMED" when the posting shows a different requisition: a different employer job ID or requisition number (record it as employerJobId), or a different team, level or location that the earlier role did not have. A repost of the same role is a duplicate; do not apply. '
+    + 'review-each: put this application in its own batch review and tell the candidate it may duplicate the earlier one; pass the phrase only after they approve that batch. '
+    + 'Unattended, routine-auto or STANDING AUTHORIZATION: never pass it on your own; queue the job with attention add (blocker "judgment") and continue with other jobs. It may be passed only after the candidate explicitly approves this job in its own one-application batch review.',
+  );
+}
+
 async function ledgerAdd(entryInput, duplicateOverride, companyReapplyOverride, cloudIntent = null, review = null, { routineAuto = false } = {}) {
   const entry = validateLedgerEntry(entryInput);
   return withStateLock('applications', async (dir) => {
@@ -2266,7 +2282,7 @@ async function ledgerAdd(entryInput, duplicateOverride, companyReapplyOverride, 
     }
     const duplicate = duplicateResult(entries, entry, outcomes);
     if (duplicate.duplicate) throw new Error(`Hard duplicate blocked: matching ${duplicate.reason === 'employer-job-id' ? 'employer job ID or requisition' : duplicate.reason === 'url' ? 'canonical URL' : 'ledger ID'}.`);
-    if (duplicate.possibleDuplicate && duplicateOverride !== 'NEW REQUISITION CONFIRMED') throw new Error('A possible same-company role duplicate requires NEW REQUISITION CONFIRMED.');
+    if (duplicate.possibleDuplicate && duplicateOverride !== 'NEW REQUISITION CONFIRMED') throw possibleDuplicateError(duplicate);
     if (!duplicate.possibleDuplicate && duplicate.companyReapply.decision === 'cooldown-active' && companyReapplyOverride !== COMPANY_REAPPLY_OVERRIDE) {
       throw new Error(`Company reapplication cooldown is active for ${COMPANY_REAPPLY_COOLDOWN_DAYS} full days; use ${COMPANY_REAPPLY_OVERRIDE} only with explicit candidate approval.`);
     }
