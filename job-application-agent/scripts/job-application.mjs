@@ -2221,12 +2221,27 @@ function duplicateResult(entries, candidate, outcomes = [], now = new Date()) {
   };
 }
 
+// {"candidates": [...]} checks several jobs in one call (#219); a single candidate works as before.
+export const MAX_LEDGER_CHECKS_PER_CALL = 50;
 async function ledgerCheck(candidate) {
-  const normalized = validateLedgerCheckCandidate(candidate);
+  const batch = candidate && typeof candidate === 'object' && !Array.isArray(candidate) && Object.hasOwn(candidate, 'candidates');
+  if (batch) {
+    if (Object.keys(candidate).length !== 1) throw new Error('ledger check with "candidates" takes only {"candidates": [...]}.');
+    if (!Array.isArray(candidate.candidates) || candidate.candidates.length === 0 || candidate.candidates.length > MAX_LEDGER_CHECKS_PER_CALL) {
+      throw new Error(`ledger check "candidates" must be an array of 1 to ${MAX_LEDGER_CHECKS_PER_CALL} jobs.`);
+    }
+  }
+  const normalized = (batch ? candidate.candidates : [candidate]).map((item, index) => {
+    try { return validateLedgerCheckCandidate(item); } catch (error) {
+      if (batch) error.message = `candidates[${index}]: ${error.message}`;
+      throw error;
+    }
+  });
   const dir = await ensureStateDir();
   const entries = await jsonLines(join(dir, 'applications.ndjson'));
   const outcomes = await jsonLines(join(dir, 'outcomes.ndjson'));
-  return duplicateResult(entries, normalized, outcomes);
+  const results = normalized.map((item) => duplicateResult(entries, item, outcomes));
+  return batch ? { results } : results[0];
 }
 
 async function ledgerAdd(entryInput, duplicateOverride, companyReapplyOverride, cloudIntent = null, review = null, { routineAuto = false } = {}) {
@@ -2371,17 +2386,51 @@ async function deliveryHistory(applicationId) {
   const events = (await jsonLines(join(dir, 'delivery.ndjson'))).filter(e => !applicationId || e.applicationId === applicationId);
   return { ...deliveryProjection(apps, events), events };
 }
+// One `round lead --stdin` call may carry a single lead, or {"leads": [...]} to record a whole
+// search's reviewed leads in one call (#219). Every lead is validated before any is written.
+export const MAX_LEADS_PER_CALL = 100;
 async function recordLead(input) {
-  const event = validateLead(input);
-  knownDiscoverySourceId(event.sourceId, 'lead.sourceId');
+  const batch = input && typeof input === 'object' && !Array.isArray(input) && Object.hasOwn(input, 'leads');
+  if (batch) {
+    const keys = Object.keys(input);
+    if (keys.length !== 1) throw new Error('round lead with "leads" takes only {"leads": [...]}.');
+    if (!Array.isArray(input.leads) || input.leads.length === 0 || input.leads.length > MAX_LEADS_PER_CALL) {
+      throw new Error(`round lead "leads" must be an array of 1 to ${MAX_LEADS_PER_CALL} leads.`);
+    }
+  }
+  const events = (batch ? input.leads : [input]).map((lead, index) => {
+    try {
+      const event = validateLead(lead);
+      knownDiscoverySourceId(event.sourceId, 'lead.sourceId');
+      return event;
+    } catch (error) {
+      if (batch) error.message = `leads[${index}]: ${error.message}`;
+      throw error;
+    }
+  });
   return withStateLock('rounds', async dir => {
-    const round = await roundStatus(event.roundId);
-    const events = await jsonLines(join(dir, 'discovery.ndjson'));
-    if (round.completed && !event.supersedes && !events.some(e => e.id === event.id)) throw new Error('Completed rounds accept only corrections to existing leads.');
-    validateLeadReferences(event, events);
-    const result = await appendAccounting('discovery', event);
-    if (result.recorded) await appendRoundEvidence({ type: 'lead-recorded', roundId: event.roundId, sourceId: event.sourceId, leadId: event.id, at: new Date().toISOString() });
-    return result;
+    // Check every lead's round and references against the history plus the earlier leads of this
+    // call before writing any of them, so a batch is recorded whole or not at all.
+    const staged = await jsonLines(join(dir, 'discovery.ndjson'));
+    for (const [index, event] of events.entries()) {
+      try {
+        const round = await roundStatus(event.roundId);
+        if (round.completed && !event.supersedes && !staged.some(e => e.id === event.id)) throw new Error('Completed rounds accept only corrections to existing leads.');
+        validateLeadReferences(event, staged);
+        staged.push(event);
+      } catch (error) {
+        if (batch) error.message = `leads[${index}]: ${error.message} No lead in this call was recorded.`;
+        throw error;
+      }
+    }
+    const results = [];
+    for (const event of events) {
+      const result = await appendAccounting('discovery', event);
+      if (result.recorded) await appendRoundEvidence({ type: 'lead-recorded', roundId: event.roundId, sourceId: event.sourceId, leadId: event.id, at: new Date().toISOString() });
+      results.push(result);
+    }
+    if (!batch) return results[0];
+    return { recordedCount: results.filter((result) => result.recorded).length, leadCount: results.length, results };
   });
 }
 async function leadHistory(roundId) {
