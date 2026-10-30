@@ -2232,13 +2232,13 @@ async function ledgerCheck(candidate) {
 // What to do about a possible same-company role duplicate (#223): why it matched, what proves a
 // distinct requisition, and the next step per mode. Role and date only; no company or URL.
 export function possibleDuplicateError(duplicate) {
-  const match = duplicate?.match;
-  const day = match?.submittedAt && !Number.isNaN(Date.parse(match.submittedAt)) ? new Date(match.submittedAt).toISOString().slice(0, 10) : null;
-  const why = duplicate?.reason === 'company-role' && !match
+  // The earlier application's role and date stay out of this text: thrown errors feed
+  // skill_error telemetry, so the agent reads them with ledger check instead.
+  const why = duplicate?.reason === 'company-role' && !duplicate?.match
     ? 'it matches more than one earlier application at this company'
-    : `it matches an earlier application at this company${match?.role ? ` for "${String(match.role).slice(0, 120)}"` : ''}${day ? ` on ${day}` : ''}`;
+    : 'it matches an earlier application at this company';
   return new Error(
-    `A possible same-company role duplicate requires NEW REQUISITION CONFIRMED: ${why}. `
+    `A possible same-company role duplicate requires NEW REQUISITION CONFIRMED: ${why} (run ledger check with this company and role to compare the earlier one). `
     + 'Only pass duplicateOverride "NEW REQUISITION CONFIRMED" when the posting shows a different requisition: a different employer job ID or requisition number (record it as employerJobId), or a different team, level or location that the earlier role did not have. A repost of the same role is a duplicate; do not apply. '
     + 'review-each: put this application in its own batch review and tell the candidate it may duplicate the earlier one; pass the phrase only after they approve that batch. '
     + 'Unattended, routine-auto or STANDING AUTHORIZATION: never pass it on your own; queue the job with attention add (blocker "judgment") and continue with other jobs. It may be passed only after the candidate explicitly approves this job in its own one-application batch review.',
