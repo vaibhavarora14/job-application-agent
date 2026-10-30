@@ -2399,20 +2399,25 @@ async function recordLead(input) {
     }
   });
   return withStateLock('rounds', async dir => {
-    const results = [];
+    // Check every lead's round and references against the history plus the earlier leads of this
+    // call before writing any of them, so a batch is recorded whole or not at all.
+    const staged = await jsonLines(join(dir, 'discovery.ndjson'));
     for (const [index, event] of events.entries()) {
       try {
         const round = await roundStatus(event.roundId);
-        const history = await jsonLines(join(dir, 'discovery.ndjson'));
-        if (round.completed && !event.supersedes && !history.some(e => e.id === event.id)) throw new Error('Completed rounds accept only corrections to existing leads.');
-        validateLeadReferences(event, history);
-        const result = await appendAccounting('discovery', event);
-        if (result.recorded) await appendRoundEvidence({ type: 'lead-recorded', roundId: event.roundId, sourceId: event.sourceId, leadId: event.id, at: new Date().toISOString() });
-        results.push(result);
+        if (round.completed && !event.supersedes && !staged.some(e => e.id === event.id)) throw new Error('Completed rounds accept only corrections to existing leads.');
+        validateLeadReferences(event, staged);
+        staged.push(event);
       } catch (error) {
-        if (batch) error.message = `leads[${index}] (${results.length} earlier leads in this call were recorded): ${error.message}`;
+        if (batch) error.message = `leads[${index}]: ${error.message} No lead in this call was recorded.`;
         throw error;
       }
+    }
+    const results = [];
+    for (const event of events) {
+      const result = await appendAccounting('discovery', event);
+      if (result.recorded) await appendRoundEvidence({ type: 'lead-recorded', roundId: event.roundId, sourceId: event.sourceId, leadId: event.id, at: new Date().toISOString() });
+      results.push(result);
     }
     if (!batch) return results[0];
     return { recordedCount: results.filter((result) => result.recorded).length, leadCount: results.length, results };

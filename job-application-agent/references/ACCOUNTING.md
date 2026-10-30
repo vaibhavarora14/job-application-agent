@@ -91,7 +91,7 @@ Record each reviewed job or careers page before reporting source totals:
 }
 ```
 
-Required: `roundId`, `sourceId`, `url`, `company`, `disposition`, `evidence`. `observedAt` is optional: use an ISO 8601 UTC date-time such as `2026-09-13T09:00:00Z` (epoch seconds or milliseconds are also accepted); when omitted or null it defaults to the recording time. Observation time never changes lead identity. Record leads one JSON object per `round lead --stdin` call, before the matching `round source` report.
+Required: `roundId`, `sourceId`, `url`, `company`, `disposition`, `evidence`. `observedAt` is optional: use an ISO 8601 UTC date-time such as `2026-09-13T09:00:00Z` (epoch seconds or milliseconds are also accepted); when omitted or null it defaults to the recording time. Observation time never changes lead identity. Record leads before the matching `round source` report, either one lead object per `round lead --stdin` call or one search's leads together as `{"leads": [ … ]}` (up to 100). A batch is checked whole (fields, round, references and `supersedes`, including earlier leads in the same call) before anything is written, so it is recorded completely or not at all, and errors name the failing `leads[i]`.
 
 Dispositions: `qualified`, `duplicate`, `no-relevant-opening`, `location-authorization-conflict`, `compensation-below-floor`, `seniority-mismatch`, `insufficient-must-have-coverage`, `closed-stale`, `blocked`. Role, employer job ID and application ID are optional during initial discovery; link the actual application ID before round completion. Use `supersedes` and a new event ID when revising an assessment or adding the application link.
 

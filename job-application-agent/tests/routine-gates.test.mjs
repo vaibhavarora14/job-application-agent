@@ -418,6 +418,8 @@ test('round lead takes {"leads": [...]} in one call, validates all first, and so
   const { roundId } = await ok(env, ['round', 'start', '--stdin'], { requestedCount: 1 });
   await refused(env, ['round', 'lead', '--stdin'], { leads: [lead(roundId, 'linkedin-jobs-feed', 'x'), { ...lead(roundId, 'linkedin-jobs-feed', 'y'), disposition: 'nope' }] }, /Error: leads\[1\]: Invalid lead disposition/);
   assert.equal((await ok(env, ['round', 'leads', roundId])).history.length, 0, 'a bad lead in the batch records nothing');
+  await refused(env, ['round', 'lead', '--stdin'], { leads: [lead(roundId, 'linkedin-jobs-feed', 'x'), lead(roundId, 'linkedin-jobs-feed', 'y', { supersedes: 'lead-that-does-not-exist' })] }, /Error: leads\[1\]: .*No lead in this call was recorded\./);
+  assert.equal((await ok(env, ['round', 'leads', roundId])).history.length, 0, 'a bad reference later in the batch records nothing');
   await refused(env, ['round', 'lead', '--stdin'], { leads: [] }, /array of 1 to 100 leads/);
   await refused(env, ['round', 'lead', '--stdin'], { leads: [lead(roundId, 'linkedin-jobs-feed', 'x')], roundId }, /takes only \{"leads"/);
   const batch = await ok(env, ['round', 'lead', '--stdin'], { leads: ['a', 'b', 'c'].map((slug) => lead(roundId, 'linkedin-jobs-feed', slug)) });
