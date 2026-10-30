@@ -46,6 +46,61 @@ function normalizeAnswers(raw, label) {
   return answers;
 }
 
+// Why the agent picked a role (#192): up to three short evidence lines per group, taken from the
+// assessment (matched requirements, gaps) and the candidate's own rules. Shown to the candidate;
+// not part of what is sent, so it is not hashed into the approval.
+export const FIT_REASON_GROUPS = Object.freeze(['matched', 'gaps', 'rules']);
+// Matched may list more; the page and table show the first FIT_REASON_SHOWN, then "+N more".
+const FIT_REASON_MAX_LINES = Object.freeze({ matched: 8, gaps: 3, rules: 3 });
+export const FIT_REASON_SHOWN = 3;
+const FIT_REASON_MAX_CHARS = 200;
+// Missing pay is not a gap (Design, #192): a posting without pay shows nothing. Only a candidate
+// min-pay rule surfaces it, under rules, as "Min pay: not listed, can't check".
+// A clause counts as missing pay only when the missing word is attached to the pay term itself
+// ("No salary", "Unpublished pay range", "Salary not provided", "Pay range isn't posted"), so a
+// real requirement gap that merely mentions pay ("No experience with compensation planning",
+// "No compensation planning experience") stays.
+const PAY_TERM = String.raw`(?:base\s+pay|pay\s+(?:range|band|scale)|salary\s+(?:range|band)|compensation|comp|pay|salary|salaries|wages?|remuneration)`;
+const DISCLOSURE = String.raw`(?:published|posted|listed|stated|disclosed|public|advertised|specified|provided)`;
+// The pay term must end the part (optionally "… information" / "… listed" / "… in the posting"),
+// so "No compensation planning experience" is a real skill gap and stays.
+const PAY_TAIL = String.raw`(?:\s+(?:info(?:rmation)?|details|data|figures?))?(?:\s+(?:is|was))?(?:\s+(?:${DISCLOSURE}|given|shown|mentioned|available))?(?:\s+(?:in|on)\s+(?:the\s+)?(?:posting|listing|job\s+post))?`;
+const MISSING_BEFORE_PAY = new RegExp(String.raw`\b(?:no|without|missing|unknown|absent|un(?:listed|published|stated|disclosed|specified|known|available|posted|advertised))\s+(?:${DISCLOSURE}\s+)?${PAY_TERM}${PAY_TAIL}\s*[.!]?$`, 'iu');
+const PAY_THEN_MISSING = new RegExp(String.raw`\b${PAY_TERM}(?:\s+(?:info(?:rmation)?|details|data|figures?))?[\s:,-]+(?:(?:is|are|was|were)\s+)?(?:(?:is|are|was|were)n't|not|none|missing|unknown|absent|n\/a|un(?:listed|published|stated|disclosed|specified|known|available|posted|advertised))(?:\s+(?:yet\s+)?(?:${DISCLOSURE}|given|shown|mentioned|available|known|included))?(?:\s+(?:in|on)\s+(?:the\s+)?(?:posting|listing|job\s+post))?\s*[.!]?$`, 'iu');
+// Checked per clause, so "No Go experience; salary is $120k" stays and only a missing-pay clause goes.
+// Inside a semicolon clause the check also runs per comma- or conjunction-separated part, so
+// "No Go experience and salary is $120k" stays whole and "No Go experience, salary not listed"
+// keeps "No Go experience".
+const isMissingPayClause = (clause) => MISSING_BEFORE_PAY.test(clause) || PAY_THEN_MISSING.test(clause);
+const SUBCLAUSE_BREAK = /\s*(?:,|\b(?:and|but|while|plus)\b)\s*/iu;
+function withoutMissingPayParts(clause) {
+  const parts = clause.split(SUBCLAUSE_BREAK).filter(Boolean);
+  const kept = parts.filter((part) => !isMissingPayClause(part));
+  if (kept.length === parts.length) return clause;
+  return kept.join(', ');
+}
+const withoutMissingPay = (line) => line.split(/\s*;\s*/u).map((clause) => (clause ? withoutMissingPayParts(clause) : '')).filter(Boolean).join('; ');
+// Reason fragments read as fragments: one line (line breaks and runs of whitespace become one space,
+// so a reason can't fake another row in the table) and no trailing period (an ellipsis stays).
+const fragment = (line) => line.replace(/\s+/gu, ' ').trim().replace(/(?<!\.)\.$/u, '').trimEnd();
+function normalizeFitReasons(raw, label) {
+  if (raw == null) return null;
+  if (typeof raw !== 'object' || Array.isArray(raw)) fail(`${label} must be { "matched": [...], "gaps": [...], "rules": [...] }.`);
+  keysOnly(raw, FIT_REASON_GROUPS, label);
+  const out = {};
+  for (const group of FIT_REASON_GROUPS) {
+    const lines = raw[group] ?? [];
+    if (!Array.isArray(lines)) fail(`${label}.${group} must be an array of short strings.`);
+    if (lines.length > FIT_REASON_MAX_LINES[group]) fail(`${label}.${group} holds at most ${FIT_REASON_MAX_LINES[group]} lines.`);
+    const cleaned = lines
+      .map((line, i) => fragment(text(line, `${label}.${group}[${i}]`, FIT_REASON_MAX_CHARS)))
+      .map((line) => (group === 'gaps' ? withoutMissingPay(line) : line))
+      .filter(Boolean);
+    if (cleaned.length) out[group] = cleaned;
+  }
+  return Object.keys(out).length ? out : null;
+}
+
 function normalizeItem(raw, index) {
   const label = `items[${index}]`;
   if (raw?.type === 'email') {
@@ -71,7 +126,7 @@ function normalizeItem(raw, index) {
     };
   }
   if (raw?.type !== 'application') fail(`${label}.type must be "application" or "email".`);
-  keysOnly(raw, ['type', 'purpose', 'applicationId', 'company', 'role', 'url', 'ats', 'fitScore', 'answers', 'flaggedAnswers'], label);
+  keysOnly(raw, ['type', 'purpose', 'applicationId', 'company', 'role', 'url', 'ats', 'fitScore', 'fitReasons', 'answers', 'flaggedAnswers'], label);
   const purpose = raw.purpose ?? 'submit';
   if (!PURPOSES.has(purpose)) fail(`${label}.purpose must be "submit" or "retry".`);
   if (!Number.isInteger(raw.fitScore) || raw.fitScore < 0 || raw.fitScore > 100) fail(`${label}.fitScore must be an integer from 0 to 100.`);
@@ -87,6 +142,7 @@ function normalizeItem(raw, index) {
   if (new Set(flags.map((f) => f.answer)).size !== flags.length) fail(`${label}.flaggedAnswers lists an answer twice.`);
   let url;
   try { url = canonicalUrl(raw.url); } catch { fail(`${label}.url must be a public HTTP(S) URL.`); }
+  const fitReasons = normalizeFitReasons(raw.fitReasons, `${label}.fitReasons`);
   return {
     type: 'application',
     purpose,
@@ -96,6 +152,7 @@ function normalizeItem(raw, index) {
     url,
     ats: optionalText(raw.ats, `${label}.ats`, 40)?.toLowerCase() ?? null,
     fitScore: raw.fitScore,
+    ...(fitReasons ? { fitReasons } : {}),
     answers,
     answersSha256: answersDigest(answers),
     flaggedAnswers: flags,
@@ -218,10 +275,25 @@ function resumeLabel(resume) {
   return `Canonical résumé (sha256 ${resume.sha256.slice(0, 12)}${kb})`;
 }
 
+// Same glyph per group as the page: check for matched, dot for gaps, small ring for your rules.
+const FIT_REASON_TABLE_LABELS = { matched: '✓ matched', gaps: '● gaps', rules: '◦ your rules' };
+export function shownFitReasons(lines, group) {
+  if (group !== 'matched' || lines.length <= FIT_REASON_SHOWN) return { lines, more: 0 };
+  return { lines: lines.slice(0, FIT_REASON_SHOWN), more: lines.length - FIT_REASON_SHOWN };
+}
+function fitReasonsLine(fitReasons) {
+  if (!fitReasons) return '';
+  const parts = FIT_REASON_GROUPS.filter((group) => fitReasons[group]?.length).map((group) => {
+    const { lines, more } = shownFitReasons(fitReasons[group], group);
+    return `${FIT_REASON_TABLE_LABELS[group]}: ${lines.join('; ')}${more ? `; +${more} more` : ''}`;
+  });
+  return parts.length ? `\n     why: ${parts.join(' | ')}` : '';
+}
+
 export function renderTable(batch) {
   const rows = batch.items.map((item) => (item.type === 'email'
     ? `${item.number}. EMAIL  ${item.company} to ${item.to}${item.subject ? ` | subject: ${item.subject}` : ''}${item.attachResume ? ' | résumé attached' : ''} (draft revision ${item.draftRevision}, ${item.text.length} characters)`
-    : `${item.number}. ${item.purpose === 'retry' ? 'RETRY' : 'APPLY'}  ${item.company} | ${item.role} | ${item.url} | fit ${item.fitScore}${item.ats ? ` | ${item.ats}` : ''} | ${Object.keys(item.answers).length} answers${item.flaggedAnswers.length ? ` (flagged: ${item.flaggedAnswers.map((f) => `${f.answer}: ${f.reason}`).join('; ')})` : ''}`));
+    : `${item.number}. ${item.purpose === 'retry' ? 'RETRY' : 'APPLY'}  ${item.company} | ${item.role} | ${item.url} | fit ${item.fitScore}${item.ats ? ` | ${item.ats}` : ''} | ${Object.keys(item.answers).length} answers${item.flaggedAnswers.length ? ` (flagged: ${item.flaggedAnswers.map((f) => `${f.answer}: ${f.reason}`).join('; ')})` : ''}${fitReasonsLine(item.fitReasons)}`));
   return [`Review batch ${batch.batchId} (${batch.items.length} item${batch.items.length === 1 ? '' : 's'})`, `Résumé: ${resumeLabel(batch.resume)}`, ...rows].join('\n');
 }
 
@@ -244,7 +316,7 @@ export function batchView(batch, now = new Date(), { includeContent = false, tok
       company: item.company,
       ...(item.type === 'email'
         ? { opportunityId: item.opportunityId, draftRevision: item.draftRevision, to: item.to, ...(item.subject ? { subject: item.subject } : {}), attachResume: item.attachResume, ...(item.recipient ? { recipient: item.recipient } : {}), ...(includeContent ? { text: item.text } : {}) }
-        : { purpose: item.purpose, applicationId: item.applicationId, role: item.role, url: item.url, ats: item.ats, fitScore: item.fitScore, answerCount: Object.keys(item.answers).length, flaggedAnswers: item.flaggedAnswers, ...(includeContent ? { answers: item.answers } : {}) }),
+        : { purpose: item.purpose, applicationId: item.applicationId, role: item.role, url: item.url, ats: item.ats, fitScore: item.fitScore, ...(item.fitReasons ? { fitReasons: item.fitReasons } : {}), answerCount: Object.keys(item.answers).length, flaggedAnswers: item.flaggedAnswers, ...(includeContent ? { answers: item.answers } : {}) }),
       ...(batch.approvedAt ? { approved: approved.has(item.itemId) } : {}),
       ...(batch.uses?.[item.itemId] ? { usedAt: batch.uses[item.itemId].usedAt } : {}),
     })),

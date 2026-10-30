@@ -7,7 +7,7 @@ import { createServer } from 'node:http';
 import { readFile, writeFile, rename, chmod, unlink } from 'node:fs/promises';
 import { join } from 'node:path';
 import { isEntrypoint } from './entrypoint.mjs';
-import { approvalPhrase, approveBatch, closeBatch, effectiveStatus, loadBatch } from './review-batch.mjs';
+import { approvalPhrase, approveBatch, closeBatch, effectiveStatus, loadBatch, shownFitReasons } from './review-batch.mjs';
 
 export const REVIEW_PAGE_TIMEOUT_MS = 30 * 60 * 1000;
 const MAX_BODY = 64 * 1024;
@@ -40,11 +40,13 @@ export function formatTime(iso, timeZone = undefined) {
 }
 
 const STYLE = `
-:root{--ink:#173f35;--text:#486159;--muted:#5d746c;--bg:#f2e9d8;--surface:#fffaf0;--line:#d8ccb7;--accent:#2f755f;--accent-strong:#245e4c;--accent-soft:#dfeee6;--coral:#9f4d42;--coral-soft:#f4e2dc;--amber-soft:#f6ead0;--amber:#7a5a12}
+:root{--ink:#173f35;--text:#486159;--muted:#5d746c;--bg:#f2e9d8;--surface:#fffaf0;--line:#d8ccb7;--accent:#2f755f;--accent-strong:#245e4c;--accent-soft:#dfeee6;--coral:#9f4d42;--coral-soft:#f4e2dc;--amber-soft:#f6ead0;--amber:#7a5a12;--check:#1f5fd1;--gap:#b7791f}
 *{box-sizing:border-box}
-html{-webkit-text-size-adjust:100%;scroll-padding-bottom:220px}
+html{-webkit-text-size-adjust:100%;scroll-padding-bottom:116px}
 body{margin:0;background:var(--bg);color:var(--text);font:16px/1.5 ui-sans-serif,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif}
-.wrap{max-width:880px;margin:0 auto;padding:32px 24px 180px}
+/* Bottom padding = the fixed approve bar's height + the 12px card gap (104px bar on desktop, 152px
+   on phones); the script below keeps it exact when the bar grows, e.g. with an error line. */
+.wrap{max-width:880px;margin:0 auto;padding:32px 24px 116px}
 .brand{display:flex;align-items:center;gap:10px;color:var(--ink);font-weight:600;font-size:15px;letter-spacing:.01em}
 .mark{width:28px;height:28px;border-radius:8px;background:var(--ink);color:var(--surface);display:grid;place-items:center;font:700 13px/1 Georgia,serif}
 h1{font:400 32px/1.2 Georgia,"Times New Roman",serif;color:var(--ink);margin:28px 0 8px}
@@ -91,6 +93,18 @@ button{font:600 15px/1 inherit;font-family:inherit;border-radius:10px;padding:13
 .rlink{color:var(--accent);font-weight:600}
 .dim{color:var(--muted)}
 dd.why{margin:0;padding:0 2px;background:none;font-size:13px;color:var(--amber);white-space:normal}
+.fit{grid-column:2;margin:6px 0 0;display:grid;gap:4px;font-size:14px}
+.fit div{display:grid;grid-template-columns:96px 1fr;gap:8px}
+.fit dt{font-size:13px;font-weight:600;color:var(--muted)}
+.fit dd{margin:0;padding:0;background:none;white-space:normal;color:var(--ink)}
+.fit ul{margin:0;padding:0;list-style:none}
+.fit li{position:relative;padding-left:18px}
+.fit li::before{position:absolute;left:0;top:0;width:14px;text-align:center;font-weight:700}
+.fit .matched li::before{content:"✓";color:var(--check)}
+.fit .gaps li::before{content:"●";color:var(--gap);font-size:10px;line-height:21px}
+.fit .rules li::before{content:"◦";color:rgba(23,63,53,.6);font-weight:400}
+.fit li.more{color:var(--muted);font-size:13px}
+.fit li.more::before{content:""}
 .hdrs{grid-column:2;display:grid;gap:4px;margin-top:8px;font-size:14px}
 .hdrs div{display:grid;grid-template-columns:72px 1fr;gap:8px}
 .hdrs span{color:var(--muted)}
@@ -102,7 +116,9 @@ dd.why{margin:0;padding:0 2px;background:none;font-size:13px;color:var(--amber);
 .res .no{border-left:4px solid var(--line);color:var(--muted)}
 .done h1{margin-top:0}
 @media (max-width:640px){
- .wrap{padding:20px 16px 200px}
+ html{scroll-padding-bottom:164px}
+ .wrap{padding:20px 16px 164px}
+ .fit div{grid-template-columns:1fr;gap:2px}
  h1{font-size:26px;margin-top:20px}
  .card{padding:14px;gap:4px 12px}
  .company,.role{font-size:16px}
@@ -112,9 +128,10 @@ dd.why{margin:0;padding:0 2px;background:none;font-size:13px;color:var(--amber);
  label.code{font-size:13px}
 }`;
 
-// The only script: keeps the primary button's count in step with the ticked boxes. Fixed text,
-// never interpolated, and allowed by a per-response CSP nonce.
-export const COUNT_SCRIPT = 'const b=document.getElementById("go");function u(){const n=document.querySelectorAll(".check input:checked").length;b.textContent=n?"Approve "+n+" item"+(n>1?"s":""):"Nothing ticked";b.disabled=!n}document.querySelectorAll(".check input").forEach(function(i){i.addEventListener("change",u)});';
+// The only script: keeps the primary button's count in step with the ticked boxes, and the page's
+// bottom padding equal to the fixed approve bar's height (+12px gap) so the last line is never
+// hidden behind it. Fixed text, never interpolated, and allowed by a per-response CSP nonce.
+export const COUNT_SCRIPT = 'const b=document.getElementById("go");function u(){const n=document.querySelectorAll(".check input:checked").length;b.textContent=n?"Approve "+n+" item"+(n>1?"s":""):"Nothing ticked";b.disabled=!n}document.querySelectorAll(".check input").forEach(function(i){i.addEventListener("change",u)});const r=document.querySelector(".bar"),w=document.querySelector(".wrap");function p(){if(!r||!w)return;const h=r.offsetHeight+12+"px";w.style.paddingBottom=h;document.documentElement.style.scrollPaddingBottom=h}p();if(r&&window.ResizeObserver)new ResizeObserver(p).observe(r);';
 
 function shell(title, body, { nonce = null } = {}) {
   const script = nonce ? `<script nonce="${escapeHtml(nonce)}">${COUNT_SCRIPT}</script>` : '';
@@ -138,6 +155,18 @@ function lowerFirst(reason) {
   return /^[A-Z][a-z]/.test(sentence) ? sentence[0].toLowerCase() + sentence.slice(1) : sentence;
 }
 
+const FIT_REASON_LABELS = { matched: 'Matched', gaps: 'Gaps', rules: 'Your rules' };
+function fitReasonsBlock(item) {
+  const groups = ['matched', 'gaps', 'rules'].filter((group) => item.fitReasons?.[group]?.length);
+  if (!groups.length) return '';
+  const rows = groups.map((group) => {
+    const { lines, more } = shownFitReasons(item.fitReasons[group], group);
+    const list = lines.map((line) => `<li>${escapeHtml(line)}</li>`).join('') + (more ? `<li class="more">+${more} more</li>` : '');
+    return `<div class="${group}"><dt>${FIT_REASON_LABELS[group]}</dt><dd><ul>${list}</ul></dd></div>`;
+  }).join('');
+  return `<dl class="fit" aria-label="Why fit ${escapeHtml(item.fitScore)}">${rows}</dl>`;
+}
+
 function itemCard(item, checked) {
   const id = `c-${escapeHtml(item.itemId)}`;
   const box = `<span class="check"><input type="checkbox" id="${id}" name="item" value="${escapeHtml(item.itemId)}"${checked ? ' checked' : ''}></span>`;
@@ -148,7 +177,7 @@ function itemCard(item, checked) {
   }
   const href = safeHref(item.url);
   const link = href ? `<a href="${escapeHtml(href)}" target="_blank" rel="noreferrer noopener">${escapeHtml(displayUrl(item.url))}</a>` : escapeHtml(item.url);
-  return `<li class="card" id="item-${escapeHtml(item.itemId)}">${box}<label class="title" for="${id}"><span class="num">${item.number}</span><span class="company">${escapeHtml(item.company)}</span><span class="role">${escapeHtml(item.role)}</span></label><div class="sub"><span class="pill">Fit ${item.fitScore}</span>${item.purpose === 'retry' ? '<span class="pill flag">Resend</span>' : ''}${item.ats ? `<span class="pill kind">${escapeHtml(item.ats)}</span>` : ''}${link}</div>${answersBlock(item)}</li>`;
+  return `<li class="card" id="item-${escapeHtml(item.itemId)}">${box}<label class="title" for="${id}"><span class="num">${item.number}</span><span class="company">${escapeHtml(item.company)}</span><span class="role">${escapeHtml(item.role)}</span></label><div class="sub"><span class="pill">Fit ${item.fitScore}</span>${item.purpose === 'retry' ? '<span class="pill flag">Resend</span>' : ''}${item.ats ? `<span class="pill kind">${escapeHtml(item.ats)}</span>` : ''}${link}</div>${fitReasonsBlock(item)}${answersBlock(item)}</li>`;
 }
 
 function resumeLine(batch, action) {

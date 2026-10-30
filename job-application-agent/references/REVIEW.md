@@ -36,6 +36,11 @@ The approval phrase and the review page show that a person reviewed the batch, a
       "url": "https://boards.greenhouse.io/acme/jobs/123",
       "ats": "greenhouse",
       "fitScore": 86,
+      "fitReasons": {
+        "matched": ["Role family: backend", "Skills evidence: 80% of must-haves"],
+        "gaps": ["The posting lists Kubernetes; the résumé shows none"],
+        "rules": ["Remote only: the posting is remote", "Min pay: not listed, can't check"]
+      },
       "answers": { "Why Acme?": "exact text that will be sent" },
       "flaggedAnswers": [
         { "answer": "Why Acme?", "reason": "The posting asks for a specific project and this answer stays general." }
@@ -58,6 +63,7 @@ The approval phrase and the review page show that a person reviewed the batch, a
 
    - `applicationId` must be the `id` you will pass to `ledger add`.
    - `answers` must be exactly the `answers` object you will record. Profile fields such as name and email do not need to be listed.
+   - Optional `fitReasons` explains the fit score before the candidate approves or unticks: short fragments (no trailing period) for `matched` (requirements the verified résumé meets; up to eight, the page and table show three then "+N more"), `gaps` (requirements it does not show; up to three) and `rules` (the candidate's own rules the role touches; up to three). Missing pay is never a gap: a posting without pay shows nothing, and gap lines about missing pay are dropped. Only when the candidate has a minimum-pay rule, add `Min pay: not listed, can't check` under `rules`. Take them from the `assess` result's `reasons` and `gaps` and from the profile rules. Use only facts from the posting and the verified résumé; never invent evidence. The page shows them under the score and the `table` adds a `why:` line. They are not sent, so they are not part of the approval.
    - An empty answer to a current-location question ("What is your current location?", "Current city", "Where are you based?") is filled from the profile: `location` first, then city/state/country or address fields, then the first specific target location (never "Remote" or "Worldwide"). Anything other than the profile's `location` is added to `flaggedAnswers` for the candidate to check. The output lists these in `filledAnswers`. If the profile has no location at all, that application is held out of the batch (`heldForAttention`) and an attention item (`unverifiable-claim`, `verify-claim`) asks the candidate for it; the other items are still staged. Ask the candidate, save the location in the profile, resolve the attention item and stage the application again. Never invent a location.
    - Use `flaggedAnswers` for anything the candidate should look at closely. Each flag names the answer and the real reason you flagged it, written to follow "Flagged because": the page shows it under the answer.
    - For an email, `to` is the exact address or profile the draft goes to, `subject` the exact subject line, and `attachResume` whether the canonical résumé is attached. They are approved together with `text`, so changing any of them needs a new batch.
