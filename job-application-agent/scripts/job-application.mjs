@@ -16,7 +16,7 @@ import { basename, join, resolve } from 'node:path';
 import { isEntrypoint } from './entrypoint.mjs';
 
 import { ACCOUNTING_CAPABILITY, accountingApplicationKey, canonicalUrl, deliveryProjection, discoveryProjection, validateDelivery, validateDeliveryReferences, validateLead, validateLeadReferences, stableJson } from './application-accounting.mjs';
-import { createSecretStore, migrateLegacyStateDir, resolveStateDir } from './secret-store.mjs';
+import { createSecretStore, isProfileMissingError, migrateLegacyStateDir, resolveStateDir } from './secret-store.mjs';
 import { SourceCommunityClient } from './source-community-client.mjs';
 import { normalizeCommunityJob, normalizeCommunitySource } from './source-community-schema.mjs';
 import { SKILL_VERSION, TelemetryClient } from './telemetry-client.mjs';
@@ -1160,6 +1160,26 @@ export function scoreJob(input, target) {
   return result(decision, finalScore, reasons, gaps, mustHaveCoverage, autoEligible);
 }
 
+const APPROVAL_HINT = 'Use "APPROVE SUBMIT" for a review-each batch of one, or "STANDING AUTHORIZATION" for a routine-auto batch.';
+
+function ledgerApproval(value) {
+  if (typeof value !== 'string' || !value.trim() || value.length > 80) throw new Error(`entry.approval must be a non-empty string no longer than 80 characters. ${APPROVAL_HINT}`);
+  return value.trim();
+}
+
+/**
+ * review-each (#240): the approved one-application batch (reviewBatchId + reviewToken, verified by
+ * ledger add) is the candidate's approval, so an omitted `approval` defaults to "APPROVE SUBMIT".
+ * It is never defaulted for a routine-auto send (STANDING AUTHORIZATION, an autonomy grant or a
+ * routine-auto profile) or a thin-submission override, which must say so explicitly.
+ */
+export function defaultLedgerApproval(input, { routineAuto = false } = {}) {
+  if (!input || typeof input !== 'object' || Array.isArray(input)) return { input, defaulted: false };
+  const omitted = input.approval == null || (typeof input.approval === 'string' && !input.approval.trim());
+  if (!omitted || routineAuto || input.thinSubmissionOverride != null || input.jobApprovalMode != null) return { input, defaulted: false };
+  return { input: { ...input, approval: 'APPROVE SUBMIT' }, defaulted: true };
+}
+
 export function validateLedgerEntry(input) {
   const entry = object(input, 'entry');
   const normalized = {
@@ -1171,7 +1191,7 @@ export function validateLedgerEntry(input) {
     score: entry.score,
     status: string(entry.status, 'entry.status', 40).toLowerCase(),
     submittedAt: string(entry.submittedAt, 'entry.submittedAt', 80),
-    approval: string(entry.approval, 'entry.approval', 80),
+    approval: ledgerApproval(entry.approval),
     answers: entry.answers ?? {},
   };
   if (entry.employerJobId != null) normalized.employerJobId = string(entry.employerJobId, 'entry.employerJobId', 300);
@@ -1205,7 +1225,7 @@ export function validateLedgerEntry(input) {
   }
   if (!Number.isInteger(normalized.score) || normalized.score < 0 || normalized.score > 100) throw new Error('entry.score must be an integer from 0 to 100.');
   if (normalized.status !== 'submitted') throw new Error('New ledger entries must have status submitted.');
-  if (!APPROVALS.has(normalized.approval)) throw new Error('entry.approval is invalid.');
+  if (!APPROVALS.has(normalized.approval)) throw new Error(`entry.approval is invalid. ${APPROVAL_HINT}`);
   if (Number.isNaN(Date.parse(normalized.submittedAt))) throw new Error('entry.submittedAt must be an ISO date.');
   object(normalized.answers, 'entry.answers');
   for (const [key, value] of Object.entries(normalized.answers)) {
@@ -1469,6 +1489,19 @@ function storedProfileRawUnnormalized() {
     if (/missing or unreadable|could not read|could not store|Windows profile storage|not supported on this platform|secret-tool is not installed/i.test(error.message)) throw error;
     throw new Error('The stored profile is missing or unreadable. Run profile set again.');
   }
+}
+
+export const FIRST_RUN_PROFILE_NEXT_STEP = 'No profile is stored yet (first run). Collect the required fields from the candidate and their résumé, then run profile set --stdin.';
+
+// `profile check` is the first command of a run, so "nothing stored yet" is an answer, not an error
+// (#240). Read failures (locked keyring, Credential Manager, corrupt data) still fail as before.
+function profileCheck() {
+  let raw;
+  try { raw = storedProfileRaw(); } catch (error) {
+    if (!isProfileMissingError(error)) throw error;
+    return { configured: false, stored: false, missing: [...REQUIRED_PROFILE], legacyFields: [], fields: [], required: REQUIRED_PROFILE, nextStep: FIRST_RUN_PROFILE_NEXT_STEP };
+  }
+  return { ...profileStatus(raw), stored: true, required: REQUIRED_PROFILE };
 }
 
 function storedProfile() {
@@ -3264,7 +3297,7 @@ async function executeCommand([area, action, value], telemetry, session, communi
   } else if (area === 'profile' && action === 'migrate' && value === '--stdin') {
     result = await profileMigrate(await jsonStdin());
   } else if (area === 'profile' && action === 'check') {
-    result = { ...profileStatus(storedProfileRaw()), required: REQUIRED_PROFILE };
+    result = profileCheck();
   } else if (area === 'profile' && action === 'field' && value) {
     if (![...STRING_PROFILE_FIELDS, ...ARRAY_PROFILE_FIELDS, ...NUMBER_PROFILE_FIELDS, ...OBJECT_PROFILE_FIELDS].includes(value)) throw new Error('Profile field is not allowed.');
     result = { [value]: storedProfile()[value] ?? null };
@@ -3331,7 +3364,9 @@ async function executeCommand([area, action, value], telemetry, session, communi
   else if (area === 'ledger' && action === 'retry' && value === '--stdin') result = await recordDelivery(await jsonStdin(), true);
   else if (area === 'ledger' && action === 'deliveries') result = await deliveryHistory(value);
   else if (area === 'ledger' && action === 'add' && value === '--stdin') {
-    const input = await jsonStdin();
+    const rawInput = await jsonStdin();
+    const approvalOmitted = rawInput && typeof rawInput === 'object' && (rawInput.approval == null || (typeof rawInput.approval === 'string' && !rawInput.approval.trim()));
+    const { input, defaulted: approvalDefaulted } = defaultLedgerApproval(rawInput, { routineAuto: approvalOmitted ? await isRoutineAutoSend({}) : false });
     const telemetryDetails = validateSubmissionTelemetry(input.telemetry);
     const baseEntry = validateLedgerEntry(input);
     const fillMetrics = resolveSubmissionFillMetrics(baseEntry, telemetryDetails);
@@ -3360,6 +3395,7 @@ async function executeCommand([area, action, value], telemetry, session, communi
       : null;
     const routineAuto = review ? await isRoutineAutoSend(entry) : false;
     result = await ledgerAdd(entry, input.duplicateOverride, input.companyReapplyOverride, input.cloudIntentId && input.cloudLeaseId ? { intentId: input.cloudIntentId, leaseId: input.cloudLeaseId } : null, review, { routineAuto });
+    if (approvalDefaulted) result.approvalDefaulted = 'APPROVE SUBMIT';
     result.communityJob = await communityJobsSync(community, { limit: 1, applicationIds: [entry.id] });
     const fillTelemetryReview = telemetrySupplied ? await reviewRapidFireFillTelemetry(entry, input.telemetry) : null;
     if (fillTelemetryReview) result.fillTelemetryReview = fillTelemetryReview;

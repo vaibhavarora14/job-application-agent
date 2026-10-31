@@ -51,6 +51,17 @@ export function flaggedAnswerKeyError(label, given, answers) {
   return `${head} Answer keys: ${keys.slice(0, 10).map(quoteKey).join(', ')}${keys.length > 10 ? ` (+${keys.length - 10} more)` : ''}.`;
 }
 
+// fitScore is the integer `score` that `score` returned for the job (0-100). A model often hands it
+// over as "86" or 86.4; those are rounded. A 0-1 fraction (0.86) is a different scale, so it is
+// refused with a hint instead of being rounded to 1 (#240).
+const FIT_SCORE_HINT = 'copy the integer "score" that the score command returned for this job (for example 86)';
+export function normalizeFitScore(value, label = 'fitScore') {
+  const number = typeof value === 'string' && /^\s*\d{1,3}(?:\.\d+)?\s*$/.test(value) ? Number(value) : value;
+  if (typeof number !== 'number' || !Number.isFinite(number) || number < 0 || number > 100) fail(`${label} must be an integer from 0 to 100: ${FIT_SCORE_HINT}.`);
+  if (number > 0 && number < 1) fail(`${label} must be an integer from 0 to 100, not a 0-1 fraction: ${FIT_SCORE_HINT}.`);
+  return Math.round(number);
+}
+
 function normalizeAnswers(raw, label) {
   const answers = raw ?? {};
   keysOnly(answers, Object.keys(answers), label);
@@ -88,7 +99,7 @@ function normalizeItem(raw, index) {
   keysOnly(raw, ['type', 'purpose', 'applicationId', 'company', 'role', 'url', 'ats', 'fitScore', 'answers', 'flaggedAnswers'], label);
   const purpose = raw.purpose ?? 'submit';
   if (!PURPOSES.has(purpose)) fail(`${label}.purpose must be "submit" or "retry".`);
-  if (!Number.isInteger(raw.fitScore) || raw.fitScore < 0 || raw.fitScore > 100) fail(`${label}.fitScore must be an integer from 0 to 100.`);
+  const fitScore = normalizeFitScore(raw.fitScore, `${label}.fitScore`);
   const answers = normalizeAnswers(raw.answers, `${label}.answers`);
   const flagged = raw.flaggedAnswers ?? [];
   if (!Array.isArray(flagged)) fail(`${label}.flaggedAnswers must be an array.`);
@@ -109,7 +120,7 @@ function normalizeItem(raw, index) {
     role: text(raw.role, `${label}.role`, 300),
     url,
     ats: optionalText(raw.ats, `${label}.ats`, 40)?.toLowerCase() ?? null,
-    fitScore: raw.fitScore,
+    fitScore,
     answers,
     answersSha256: answersDigest(answers),
     flaggedAnswers: flags,
