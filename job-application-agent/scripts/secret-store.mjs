@@ -15,6 +15,14 @@ export const UNSUPPORTED_PLATFORM_ERROR = 'Secure profile storage is not support
 export const LINUX_STORE_REQUIRED_TOOL = 'secret-tool';
 export const LINUX_SECRET_MAX_BYTES = 8191;
 export const WINDOWS_PROFILE_SCRIPT = fileURLToPath(new URL('./windows-profile-store.ps1', import.meta.url));
+export const PROFILE_MISSING_MESSAGE = 'The stored profile is missing or unreadable. Run profile set again.';
+
+// Nothing is stored yet (a first run), as opposed to a read that failed. `profile check` reports this
+// as "not configured" instead of failing (#240); every other caller still sees the same error text.
+export function profileMissingError() {
+  return Object.assign(new Error(PROFILE_MISSING_MESSAGE), { code: 'PROFILE_MISSING' });
+}
+export const isProfileMissingError = (error) => error?.code === 'PROFILE_MISSING';
 
 export function resolveSecretService(env = process.env) {
   return env.JOB_APPLICATION_AGENT_KEYCHAIN_SERVICE || DEFAULT_SECRET_SERVICE;
@@ -97,7 +105,7 @@ function createDarwinStore({ execFileSync: exec, service, legacyService, account
           return raw;
         }
       }
-      throw new Error('The stored profile is missing or unreadable. Run profile set again.');
+      throw profileMissingError();
     },
     writeProfile(raw) {
       darwinWrite(exec, service, account, raw);
@@ -145,7 +153,7 @@ function createLinuxStore({ execFileSync: exec, service, account }) {
     readProfile() {
       const current = linuxFind(exec, service, account);
       if (current != null && current.trim()) return decodeSecret(current.trim());
-      throw new Error('The stored profile is missing or unreadable. Run profile set again.');
+      throw profileMissingError();
     },
     writeProfile(raw) {
       linuxWrite(exec, service, account, raw);
@@ -222,7 +230,7 @@ function windowsStorageError(error) {
   }
   const match = WINDOWS_FAILURE.exec(String(error?.stderr ?? ''));
   const stage = match?.[1];
-  if (stage === 'missing') return new Error('The stored profile is missing or unreadable. Run profile set again.');
+  if (stage === 'missing') return profileMissingError();
   const hint = WINDOWS_STAGE_HINTS[stage];
   if (!hint) {
     // An older helper, or PowerShell failed before the helper's own error handling ran.
@@ -244,7 +252,7 @@ function createWin32Store({
     readProfile() {
       const raw = windowsRequest(exec, scriptPath, { op: 'get', service, account, path: profilePath() });
       const text = String(raw ?? '').replace(/^\uFEFF/, '');
-      if (!text.trim()) throw new Error('The stored profile is missing or unreadable. Run profile set again.');
+      if (!text.trim()) throw profileMissingError();
       return text;
     },
     writeProfile(raw) {

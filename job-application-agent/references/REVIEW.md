@@ -57,6 +57,7 @@ The approval phrase and the review page show that a person reviewed the batch, a
 ```
 
    - `applicationId` must be the `id` you will pass to `ledger add`.
+   - `fitScore` is the integer `score` (0–100) that `score` returned for this job; copy it as a number, not a 0–1 fraction. The CLI rounds a decimal or numeric string such as `"86"`.
    - `answers` must be exactly the `answers` object you will record. Profile fields such as name and email do not need to be listed.
    - An empty answer to a current-location question ("What is your current location?", "Current city", "Where are you based?") is filled from the profile: `location` first, then city/state/country or address fields, then the first specific target location (never "Remote" or "Worldwide"). Anything other than the profile's `location` is added to `flaggedAnswers` for the candidate to check. The output lists these in `filledAnswers`. If the profile has no location at all, that application is held out of the batch (`heldForAttention`) and an attention item (`unverifiable-claim`, `verify-claim`) asks the candidate for it; the other items are still staged. Ask the candidate, save the location in the profile, resolve the attention item and stage the application again. Never invent a location.
    - Use `flaggedAnswers` for anything the candidate should look at closely. Each flag names the answer (copy its `answers` key exactly, character for character; the error suggests the closest key when it doesn't match) and the real reason you flagged it, written to follow "Flagged because": the page shows it under the answer.
@@ -76,6 +77,7 @@ The approval phrase and the review page show that a person reviewed the batch, a
 5. **Send.** For each approved item, carry `reviewBatchId` and `reviewToken`:
    - In cloud mode, pass them to `cloud intent-prepare` before you submit.
    - Submit in the browser, wait for visible confirmation, then pass them to `ledger add` (or `ledger retry` for a resend).
+   - `ledger add` also takes `approval`: `"APPROVE SUBMIT"` for a `review-each` batch of one, `"STANDING AUTHORIZATION"` for a `routine-auto` batch. In `review-each` an omitted `approval` defaults to `"APPROVE SUBMIT"` (the output says `approvalDefaulted`); it is never defaulted for a routine-auto send or a `thinSubmissionOverride`.
    - For an email item, pass them to `outreach handoff`, which returns the text for the candidate to send.
    - Each item covers one send.
    - Approval expires 24 hours after it is given.
