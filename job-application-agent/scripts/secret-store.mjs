@@ -71,13 +71,20 @@ function decodeSecret(value) {
   return /^[0-9a-f]+$/i.test(trimmed) && trimmed.length % 2 === 0 ? Buffer.from(trimmed, 'hex').toString('utf8') : trimmed;
 }
 
-function darwinFind(exec, service, account) {
+// `security` exits 44 (errSecItemNotFound) when there is no such item. Any other failure (a locked
+// or inaccessible Keychain) is still read as "no item" here, as before, but is not reported as a
+// first run: only a confirmed not-found may make `profile check` say "nothing stored yet".
+const DARWIN_ITEM_NOT_FOUND = 44;
+const darwinNotFound = (error) => error?.status === DARWIN_ITEM_NOT_FOUND || /could not be found in the keychain/i.test(String(error?.stderr ?? ''));
+
+function darwinFind(exec, service, account, misses) {
   try {
     return exec('security', ['find-generic-password', '-s', service, '-a', account, '-w'], {
       encoding: 'utf8',
       stdio: ['ignore', 'pipe', 'pipe'],
     });
-  } catch {
+  } catch (error) {
+    if (!darwinNotFound(error)) misses.unconfirmed = true;
     return null;
   }
 }
@@ -95,17 +102,18 @@ function darwinWrite(exec, service, account, raw) {
 function createDarwinStore({ execFileSync: exec, service, legacyService, account }) {
   return {
     readProfile() {
-      const current = darwinFind(exec, service, account);
+      const misses = { unconfirmed: false };
+      const current = darwinFind(exec, service, account, misses);
       if (current != null) return decodeSecret(current);
       if (legacyService && legacyService !== service) {
-        const legacy = darwinFind(exec, legacyService, account);
+        const legacy = darwinFind(exec, legacyService, account, misses);
         if (legacy != null) {
           const raw = decodeSecret(legacy);
           darwinWrite(exec, service, account, raw);
           return raw;
         }
       }
-      throw profileMissingError();
+      throw misses.unconfirmed ? new Error(PROFILE_MISSING_MESSAGE) : profileMissingError();
     },
     writeProfile(raw) {
       darwinWrite(exec, service, account, raw);

@@ -57,8 +57,9 @@ function linuxPreload(lookup) {
 
 test('every store tags "nothing stored yet" so callers can tell it from a failed read', async () => {
   const notFound = () => { const error = new Error('not found'); error.status = 1; error.stderr = ''; throw error; };
+  const keychainNotFound = () => { const error = new Error('not found'); error.status = 44; error.stderr = 'security: SecKeychainSearchCopyNext: The specified item could not be found in the keychain.'; throw error; };
   const linux = createSecretStore({ platform: 'linux', execFileSync: notFound });
-  const darwin = createSecretStore({ platform: 'darwin', execFileSync: notFound });
+  const darwin = createSecretStore({ platform: 'darwin', execFileSync: keychainNotFound });
   const windows = createSecretStore({
     platform: 'win32',
     stateDir: tmpdir(),
@@ -69,6 +70,9 @@ test('every store tags "nothing stored yet" so callers can tell it from a failed
   }
   const locked = createSecretStore({ platform: 'linux', execFileSync: () => { const error = new Error('x'); error.status = 1; error.stderr = 'locked'; throw error; } });
   assert.throws(() => locked.readProfile(), (error) => !isProfileMissingError(error) && /Secret Service could not read/.test(error.message));
+  // A locked or inaccessible Keychain keeps the old message but is not reported as a first run.
+  const keychainLocked = createSecretStore({ platform: 'darwin', execFileSync: () => { const error = new Error('x'); error.status = 36; error.stderr = 'User interaction is not allowed.'; throw error; } });
+  assert.throws(() => keychainLocked.readProfile(), (error) => !isProfileMissingError(error) && error.message === PROFILE_MISSING_MESSAGE);
 });
 
 test('profile check on a first run reports "not configured" instead of failing', async (t) => {
