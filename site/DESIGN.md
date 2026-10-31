@@ -26,7 +26,7 @@ Free first, paid next: hero with the three-step path (open-source agent → job 
 
 ## Mark
 
-The boundary-run mark is intentionally limited to three shapes: a parchment tile, a forest route, and an eucalyptus endpoint. It represents routine work moving within a clear boundary. It must stay legible at 16px and remain recognizable in monochrome. Use the same mark for favicon, installable app icon, header, and social identity.
+The boundary-run mark (candidate A) is intentionally limited to three shapes: a white `#FFFFFF` rounded tile with a `#E2E8F0` hairline, an ink `#0F172A` route, and an electric-blue `#2563EB` endpoint. It represents routine work moving within a clear boundary, in the same white/blue palette as theme B. The wordmark beside it is **Libre Baskerville** Bold in ink. It must stay legible at 16px and remain recognizable in monochrome. Use the same mark for favicon, installable app icon, header, and social identity; the apple-touch icon drops the tile and hairline and sits full-bleed on white because iOS applies its own mask.
 
 ## Voice and evidence
 
