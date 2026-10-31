@@ -26,7 +26,7 @@ Free first, paid next: hero with the three-step path (open-source agent → job 
 
 ## Mark
 
-The boundary-run mark is intentionally limited to three shapes: a parchment tile, a forest route, and an eucalyptus endpoint. It represents routine work moving within a clear boundary. It must stay legible at 16px and remain recognizable in monochrome. Use the same mark for favicon, installable app icon, header, and social identity.
+The boundary-run mark (candidate A) is intentionally limited to three shapes: a white `#FFFFFF` rounded tile with a `#E2E8F0` hairline, an ink `#0F172A` route, and an electric-blue `#2563EB` endpoint. It represents routine work moving within a clear boundary, in the same white/blue palette as theme B. The wordmark beside it is **Libre Baskerville** Bold in ink. It must stay legible at 16px and remain recognizable in monochrome. Use the same mark for favicon, installable app icon, header, and social identity. Small sizes and masked icons are tuned, not just scaled: `favicon.ico` carries a hand-drawn 16px frame (no hairline, 2px pixel-snapped route, a clear pixel between the dot and the right stem) next to 32px and 48px frames from the master; the apple-touch icon and the manifest `maskable` icons are a full-bleed white square with no rounded corners or hairline, because the OS applies its own mask. The rounded tile with its hairline stays on favicon sizes from 32px up, the `any` app icons, the header mark (the asset carries the hairline; the header adds no CSS border) and the OG card.
 
 ## Voice and evidence
 

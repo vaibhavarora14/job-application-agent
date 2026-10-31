@@ -53,7 +53,7 @@ button, input { font: inherit; }
 .site-nav { position: sticky; top: 0; z-index: 20; min-height: 4.75rem; border-bottom: 1px solid var(--line); background: rgb(255 255 255 / 94%); backdrop-filter: blur(.875rem); }
 .nav-inner { min-height: 4.75rem; padding-block: .55rem; display: flex; align-items: center; justify-content: space-between; gap: 1.5rem; }
 .brand { min-height: 2.75rem; display: flex; align-items: center; gap: .7rem; text-decoration: none; }
-.brand-mark { width: 2.25rem; height: 2.25rem; flex: 0 0 auto; border: 1px solid var(--hair); border-radius: .7rem; background: url("/brand-mark.png") center / contain no-repeat; }
+.brand-mark { width: 2.25rem; height: 2.25rem; flex: 0 0 auto; background: url("/brand-mark.png") center / contain no-repeat; }
 .brand-lockup { display: grid; gap: .05rem; line-height: 1; }
 .brand-name { font-family: var(--font-display), serif; font-size: 1rem; font-weight: 700; letter-spacing: -.035em; }
 .brand-name > span { color: var(--accent); }

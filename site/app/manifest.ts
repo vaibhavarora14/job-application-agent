@@ -7,11 +7,13 @@ export default function manifest(): MetadataRoute.Manifest {
     description: "A calmer job search with disciplined automation and clear boundaries.",
     start_url: "/",
     display: "standalone",
-    background_color: "#f2e9d8",
-    theme_color: "#173f35",
+    background_color: "#ffffff",
+    theme_color: "#0f172a",
     icons: [
-      { src: "/icon-192.png", sizes: "192x192", type: "image/png" },
-      { src: "/icon-512.png", sizes: "512x512", type: "image/png" },
+      { src: "/icon-192.png", sizes: "192x192", type: "image/png", purpose: "any" },
+      { src: "/icon-512.png", sizes: "512x512", type: "image/png", purpose: "any" },
+      { src: "/icon-maskable-192.png", sizes: "192x192", type: "image/png", purpose: "maskable" },
+      { src: "/icon-maskable-512.png", sizes: "512x512", type: "image/png", purpose: "maskable" },
     ],
   };
 }
