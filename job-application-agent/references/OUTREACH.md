@@ -107,10 +107,9 @@ explicit declaration about prior outreach; label that evidence user-reported.
 {"operationId":"handoff-1","id":"opportunity-1","draftRevision":1,"qualificationRevision":1,"selectedByUser":true,"recheckedAt":"2026-09-16T10:00:00Z","history":{"kind":"user-reported","noPriorPitch":true,"checkedAt":"2026-09-16T10:00:00Z"}}
 ```
 
-A handoff is a send, so it needs a batch approval: stage an `email` item with
-the opportunity ID, draft revision and exact text ([REVIEW.md](REVIEW.md)), get
-the candidate's approval, and add `reviewBatchId` and `reviewToken` to the
-handoff input. Each approval covers one handoff of that draft revision.
+The candidate selects the exact draft (`selectedByUser`) before a handoff; no
+review batch or token is needed (removed in 3.8.6). Older inputs that still carry
+`reviewBatchId` and `reviewToken` are accepted and those fields are ignored.
 
 Return `copyableText` for the candidate to send manually. Never click Send or
 claim the handoff itself was a send. Linked applications with hiring outcomes

@@ -4,7 +4,6 @@ import { mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
-import { withTestReview } from './support/review-approval.mjs';
 import { fileURLToPath } from 'node:url';
 import { createServer } from 'node:http';
 
@@ -103,7 +102,6 @@ function isolatedCliEnv(directory) {
 }
 
 function runCli(script, args, input, env, runtimeArgs = []) {
-  input = withTestReview(env, args, input);
   return new Promise((resolve) => {
     const child = spawn(process.execPath, [...runtimeArgs, script, ...args], { env, stdio: ['pipe', 'pipe', 'pipe'] });
     let stdout = '';
@@ -480,7 +478,7 @@ test('blocks ledger add for empty fill metrics without thin override', async (t)
   const env = isolatedCliEnv(directory);
   const base = {
     id: 'empty-submit-role', company: 'Example', role: 'Engineer', url: 'https://jobs.example.com/empty-submit',
-    source: 'lever', score: 80, status: 'submitted', submittedAt: '2026-10-13T18:00:00Z', approval: 'STANDING AUTHORIZATION', answers: {},
+    source: 'lever', score: 80, status: 'submitted', submittedAt: '2026-10-13T18:00:00Z', approval: 'APPROVE SUBMIT', answers: {},
   };
   const missing = await runCli(script, ['ledger', 'add', '--stdin'], base, env);
   assert.equal(missing.code, 1);
@@ -494,6 +492,7 @@ test('blocks ledger add for empty fill metrics without thin override', async (t)
     ...base,
     id: 'empty-submit-routine-ack',
     url: 'https://jobs.example.com/empty-submit-routine-ack',
+    approval: 'STANDING AUTHORIZATION',
     telemetry: { fieldsFilled: 0, resumeUploaded: false, durationBucket: 'under-1s' },
     thinSubmissionOverride: thinOverride('Candidate confirmed empty apply for routine batch job one'),
   }, env);
@@ -699,7 +698,7 @@ test('ledger add emits resumeFieldPresent to the relay and keeps it out of the l
   const script = fileURLToPath(new URL('../scripts/job-application.mjs', import.meta.url));
   const entry = (slug, telemetry) => ({
     id: `resume-field-${slug}`, company: `Field ${slug}`, role: 'Engineer', url: `https://jobs.example.com/resume-field-${slug}`,
-    source: 'lever', score: 80, status: 'submitted', submittedAt: '2026-10-20T04:00:00Z', approval: 'STANDING AUTHORIZATION', answers: {}, telemetry,
+    source: 'lever', score: 80, status: 'submitted', submittedAt: '2026-10-20T04:00:00Z', approval: 'APPROVE SUBMIT', answers: {}, telemetry,
   });
   for (const [slug, telemetry] of [
     ['none', { durationBucket: '1-2m', fieldsFilled: 6, shortAnswerCount: 1, resumeUploaded: false, resumeFieldPresent: false }],
@@ -756,12 +755,12 @@ test('deduplicates ledger entries by normalized URL', async (t) => {
   t.after(() => rm(directory, { recursive: true, force: true }));
   const script = fileURLToPath(new URL('../scripts/job-application.mjs', import.meta.url));
   const entry = {
-    id: 'example-role-1', company: 'Example', role: 'Senior Product Engineer', url: 'https://jobs.example.com/123?utm_source=x', source: 'company', score: 80, status: 'submitted', submittedAt: '2026-01-15T10:00:00Z', approval: 'STANDING AUTHORIZATION', answers: {},
+    id: 'example-role-1', company: 'Example', role: 'Senior Product Engineer', url: 'https://jobs.example.com/123?utm_source=x', source: 'company', score: 80, status: 'submitted', submittedAt: '2026-01-15T10:00:00Z', approval: 'APPROVE SUBMIT', answers: {},
     telemetry: { durationBucket: '5-15m', fieldsFilled: 14, shortAnswerCount: 2, resumeUploaded: true },
   };
   await writeFile(join(directory, 'telemetry.json'), JSON.stringify({ version: 1, enabled: false, disclosed: true, graceConsumed: true, installationEventPending: false }));
   const env = isolatedCliEnv(directory);
-  execFileSync(process.execPath, [script, 'ledger', 'add', '--stdin'], { input: JSON.stringify(withTestReview(env, ['ledger', 'add'], entry)), env, encoding: 'utf8' });
+  execFileSync(process.execPath, [script, 'ledger', 'add', '--stdin'], { input: JSON.stringify(entry), env, encoding: 'utf8' });
   const duplicate = JSON.parse(execFileSync(process.execPath, [script, 'ledger', 'check', '--stdin'], { input: JSON.stringify({ id: 'different', url: 'https://jobs.example.com/123?ref=friend' }), env, encoding: 'utf8' }));
   assert.equal(duplicate.duplicate, true);
   const relabelled = JSON.parse(execFileSync(process.execPath, [script, 'ledger', 'check', '--stdin'], {
@@ -785,7 +784,7 @@ test('warns on same-company role matches and serializes concurrent duplicate sub
   const env = isolatedCliEnv(directory);
   const base = {
     company: 'Example', role: 'Senior Product Engineer', url: 'https://jobs.example.com/123', source: 'company', score: 88,
-    status: 'submitted', submittedAt: '2026-01-15T10:00:00Z', approval: 'STANDING AUTHORIZATION', answers: {}, employerJobId: 'example:123',
+    status: 'submitted', submittedAt: '2026-01-15T10:00:00Z', approval: 'APPROVE SUBMIT', answers: {}, employerJobId: 'example:123',
     telemetry: { durationBucket: '2-5m', fieldsFilled: 8, shortAnswerCount: 1, resumeUploaded: true },
   };
   const [first, second] = await Promise.all([
@@ -1172,7 +1171,7 @@ test('marks answer-key fill metrics fallback on ledger and application_submitted
     score: 80,
     status: 'submitted',
     submittedAt: '2026-10-15T04:00:00Z',
-    approval: 'STANDING AUTHORIZATION',
+    approval: 'APPROVE SUBMIT',
     answers,
   }, env);
   assert.equal(result.code, 0, result.stderr);
@@ -1276,7 +1275,7 @@ test('ledger add stores and emits entryOrigin logged for answer-key fallback and
   const script = fileURLToPath(new URL('../scripts/job-application.mjs', import.meta.url));
   const entry = (slug, extra) => ({
     id: `entry-origin-${slug}`, company: `Origin ${slug}`, role: 'Engineer', url: `https://jobs.example.com/entry-origin-${slug}`,
-    source: 'greenhouse', score: 80, status: 'submitted', submittedAt: '2026-10-21T04:00:00Z', approval: 'STANDING AUTHORIZATION', ...extra,
+    source: 'greenhouse', score: 80, status: 'submitted', submittedAt: '2026-10-21T04:00:00Z', approval: 'APPROVE SUBMIT', ...extra,
   });
   const cases = [
     // Logged after the fact: answers only, no fill telemetry. Accepted, not rejected.
@@ -1633,7 +1632,7 @@ test('ledger add under a routine-auto profile blocks empty applies and allows a 
   assert.equal(perJob.code, 0, perJob.stderr);
 
   const filled = await cli.add({
-    ...profileGuardBase, id: 'ra-filled', company: 'Guard Co ra-filled', url: 'https://jobs.example.com/ra-filled', approval: 'STANDING AUTHORIZATION',
+    ...profileGuardBase, id: 'ra-filled', company: 'Guard Co ra-filled', url: 'https://jobs.example.com/ra-filled', approval: 'APPROVE SUBMIT',
     telemetry: { fieldsFilled: 11, shortAnswerCount: 2, resumeUploaded: true, durationBucket: '5-15m' },
   });
   assert.equal(filled.code, 0, filled.stderr);

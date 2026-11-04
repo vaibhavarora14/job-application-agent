@@ -1,5 +1,5 @@
 // First-time review-each users hit validation errors on normal steps (#240):
-// `profile check` before any profile exists and a non-integer `fitScore` at `review stage`.
+// `profile check` before any profile exists.
 // An omitted `approval` at `ledger add` is deliberately still a hard error: it is never
 // defaulted, and nothing is recorded or submitted for the job.
 import assert from 'node:assert/strict';
@@ -9,9 +9,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
-import { withTestReview } from './support/review-approval.mjs';
 import { createSecretStore, isProfileMissingError, PROFILE_MISSING_MESSAGE } from '../scripts/secret-store.mjs';
-import { normalizeFitScore, validateStageInput } from '../scripts/review-batch.mjs';
 import { telemetryErrorCategory, telemetryErrorCode, telemetryErrorFieldLabel, validateLedgerEntry } from '../scripts/job-application.mjs';
 
 const script = fileURLToPath(new URL('../scripts/job-application.mjs', import.meta.url));
@@ -27,7 +25,6 @@ function isolatedEnv(directory) {
 }
 
 function runCli(args, input, env, runtimeArgs = []) {
-  input = withTestReview(env, args, input);
   return new Promise((resolve) => {
     const child = spawn(process.execPath, [...runtimeArgs, script, ...args], { env, stdio: ['pipe', 'pipe', 'pipe'] });
     let stdout = '';
@@ -94,39 +91,6 @@ test('profile check still fails when the keyring cannot be read', async (t) => {
   const locked = await runCli(['profile', 'check'], undefined, isolatedEnv(directory), linuxPreload('locked'));
   assert.equal(locked.code, 1);
   assert.match(locked.stderr, /Secret Service could not read the profile/);
-});
-
-test('fitScore accepts the score command value in the shapes a model hands it over', () => {
-  assert.equal(normalizeFitScore(86), 86);
-  assert.equal(normalizeFitScore(0), 0);
-  assert.equal(normalizeFitScore(100), 100);
-  assert.equal(normalizeFitScore(1), 1);
-  assert.equal(normalizeFitScore(86.4), 86);
-  assert.equal(normalizeFitScore(85.5), 86);
-  assert.equal(normalizeFitScore('86'), 86);
-  assert.equal(normalizeFitScore(' 72.0 '), 72);
-  for (const bad of [null, undefined, '', 'high', '86%', '-5', -1, 100.5, 101, Number.NaN, Number.POSITIVE_INFINITY, true, [86], { score: 86 }]) {
-    assert.throws(() => normalizeFitScore(bad, 'items[0].fitScore'), /items\[0\]\.fitScore must be an integer from 0 to 100: copy the integer "score"/, String(bad));
-  }
-  for (const fraction of [0.86, '0.86', 0.5]) {
-    assert.throws(() => normalizeFitScore(fraction, 'items[0].fitScore'), /must be an integer from 0 to 100, not a 0-1 fraction/);
-  }
-});
-
-test('review stage stores the rounded integer fitScore', () => {
-  const item = { type: 'application', applicationId: 'acme-1', company: 'Acme', role: 'Engineer', url: 'https://job-boards.greenhouse.io/acme/jobs/1', ats: 'greenhouse', answers: {} };
-  assert.equal(validateStageInput({ items: [{ ...item, fitScore: '86' }] }).items[0].fitScore, 86);
-  assert.equal(validateStageInput({ items: [{ ...item, fitScore: 79.6 }] }).items[0].fitScore, 80);
-  assert.throws(() => validateStageInput({ items: [{ ...item, fitScore: 0.86 }] }), /0-1 fraction/);
-});
-
-test('fitScore errors keep their telemetry classification', () => {
-  for (const value of [null, 0.86]) {
-    let error;
-    try { normalizeFitScore(value, 'items[0].fitScore'); } catch (caught) { error = caught; }
-    assert.equal(telemetryErrorCategory(error), telemetryErrorCategory(new Error('items[0].fitScore must be an integer from 0 to 100.')));
-    assert.equal(telemetryErrorCode(error), 'invalid_input');
-  }
 });
 
 const entry = {

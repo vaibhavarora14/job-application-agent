@@ -12,7 +12,6 @@ import test from 'node:test';
 import { fileURLToPath } from 'node:url';
 import { createAssessmentGuard } from '../scripts/assessment-guard.mjs';
 import { evaluateRoundCoverage, latestAssessmentDecision, routineSubmitGateMessage } from '../scripts/routine-gates.mjs';
-import { applicationItem, approveItemsSync } from './support/review-approval.mjs';
 import { asLegacyRound } from './support/legacy-round.mjs';
 
 const script = fileURLToPath(new URL('../scripts/job-application.mjs', import.meta.url));
@@ -152,8 +151,7 @@ test('the Oct 22 pattern: coverage recorded after the submits and no community p
   const { roundId } = await ok(env, ['round', 'start', '--stdin'], { requestedCount: 1 });
   await ok(env, ['score', '--stdin'], job('a'));
   await ok(env, ['round', 'lead', '--stdin'], lead(roundId, 'linkedin-jobs-feed', 'a'));
-  const approved = approveItemsSync(directory, [applicationItem(entry('a'))]);
-  await ok(env, ['ledger', 'add', '--stdin'], { ...entry('a', { roundId, discoverySourceId: 'linkedin-jobs-feed' }), ...approved });
+  await ok(env, ['ledger', 'add', '--stdin'], { ...entry('a', { roundId, discoverySourceId: 'linkedin-jobs-feed' }) });
 
   // Searches recorded only after the round's last submit are refused...
   await ok(env, ['round', 'lead', '--stdin'], emptySearch(roundId, 'direct-company-careers'));
@@ -188,8 +186,7 @@ test('a round with verified coverage before its submits completes; a failed feed
   for (const sourceId of ['indeed', 'linkedin-jobs-feed', 'hacker-news-who-is-hiring']) {
     await ok(env, ['round', 'source', '--stdin'], { roundId, sourceId, status: 'searched', evidence: 'Searched with the target filters.' });
   }
-  const approved = approveItemsSync(directory, [applicationItem(entry('h'))]);
-  await ok(env, ['ledger', 'add', '--stdin'], { ...entry('h', { roundId }), ...approved });
+  await ok(env, ['ledger', 'add', '--stdin'], { ...entry('h', { roundId }) });
   await refused(env, ['round', 'complete', '--stdin'], { roundId, concentrationReason: 'stronger-fit', concentrationEvidence: 'Only Indeed had a fit.' },
     /Round requires at least one community job feed pull per round, made before the round's submissions/);
 
@@ -201,8 +198,7 @@ test('a round with verified coverage before its submits completes; a failed feed
   await ok(env, ['round', 'lead', '--stdin'], lead(second.roundId, 'indeed', 'i'));
   await ok(env, ['round', 'lead', '--stdin'], emptySearch(second.roundId, 'linkedin-jobs-feed'));
   for (const sourceId of ['indeed', 'linkedin-jobs-feed']) await ok(env, ['round', 'source', '--stdin'], { roundId: second.roundId, sourceId, status: 'searched', evidence: 'Searched.' });
-  const approvedI = approveItemsSync(directory, [applicationItem(entry('i'))]);
-  await ok(env, ['ledger', 'add', '--stdin'], { ...entry('i', { roundId: second.roundId }), ...approvedI });
+  await ok(env, ['ledger', 'add', '--stdin'], { ...entry('i', { roundId: second.roundId }) });
   const done = await ok(env, ['round', 'complete', '--stdin'], { roundId: second.roundId, concentrationReason: 'stronger-fit', concentrationEvidence: 'Only Indeed had a fit.' });
   assert.equal(done.completed, true);
   assert.equal(done.routineGates.coverage.communityFeed.blockerRecorded, true);
@@ -241,7 +237,7 @@ test('round start preflights the résumé upload and surfaces resume-upload-unav
   await ok(env, ['round', 'lead', '--stdin'], lead(roundId, 'indeed', 'r'));
   await ok(env, ['round', 'lead', '--stdin'], emptySearch(roundId, 'linkedin-jobs-feed'));
   for (const sourceId of ['indeed', 'linkedin-jobs-feed']) await ok(env, ['round', 'source', '--stdin'], { roundId, sourceId, status: 'searched', evidence: 'Searched.' });
-  await ok(env, ['ledger', 'add', '--stdin'], { ...entry('r', { roundId }), ...approveItemsSync(directory, [applicationItem(entry('r'))]) });
+  await ok(env, ['ledger', 'add', '--stdin'], { ...entry('r', { roundId }) });
   const done = await ok(env, ['round', 'complete', '--stdin'], { roundId, concentrationReason: 'stronger-fit', concentrationEvidence: 'Only Indeed had a fit.' });
   assert.equal(done.completed, true);
   assert.match(done.warnings[0], /^resume-upload-unavailable: .*Report this blocker to the candidate/);
@@ -251,7 +247,7 @@ test('ledger add requires resumeFieldPresent (true, false or "unknown") whenever
   const { directory, env } = await fixture(t, 'field');
   const send = (slug, telemetry) => {
     const value = entry(slug, { approval: 'APPROVE SUBMIT', telemetry });
-    return run(env, ['ledger', 'add', '--stdin'], { ...value, ...approveItemsSync(directory, [applicationItem(value)]) });
+    return run(env, ['ledger', 'add', '--stdin'], value);
   };
   const missing = await send('m', { durationBucket: '2-5m', fieldsFilled: 6, resumeUploaded: false });
   assert.equal(missing.status, 1);
@@ -266,12 +262,12 @@ test('ledger add requires resumeFieldPresent (true, false or "unknown") whenever
   const logged = await send('log', undefined);
   assert.equal(logged.status, 1, 'empty answers with no telemetry stay refused by the empty-submit guard');
   const loggedEntry = entry('log2', { approval: 'APPROVE SUBMIT', telemetry: undefined, answers: { Email: 'filled', Resume: 'uploaded' } });
-  assert.equal((await run(env, ['ledger', 'add', '--stdin'], { ...loggedEntry, ...approveItemsSync(directory, [applicationItem(loggedEntry)]) })).status, 0);
+  assert.equal((await run(env, ['ledger', 'add', '--stdin'], { ...loggedEntry })).status, 0);
   const rows = (await readFile(join(directory, 'applications.ndjson'), 'utf8')).trim().split('\n').map((line) => JSON.parse(line));
   for (const row of rows) assert.equal('resumeFieldPresent' in row, false);
 });
 
-test('routine-auto ledger add refuses a routine-batch job whose latest score is not review + autoEligible', async (t) => {
+test('routine-auto ledger add refuses a routine job whose latest score is not review + autoEligible', async (t) => {
   const { directory, env } = await fixture(t, 'submit');
   const good = await ok(env, ['score', '--stdin'], job('good'));
   assert.equal(good.decision, 'review');
@@ -280,37 +276,31 @@ test('routine-auto ledger add refuses a routine-batch job whose latest score is 
   const manual = await ok(env, ['score', '--stdin'], job('manual', { experienceMin: 15 }));
   assert.equal(manual.decision, 'review');
   assert.equal(manual.autoEligible, false);
-  const items = ['good', 'ask', 'never', 'manual'].map((slug) => applicationItem(entry(slug)));
-  const routine = approveItemsSync(directory, items);
-  await refused(env, ['ledger', 'add', '--stdin'], { ...entry('ask'), ...routine },
-    /Routine-auto submit refused for Gate ask: the latest score decision is "ask"\. In routine-auto only jobs whose latest score is "review" with autoEligible: true can be sent from a routine batch/);
-  await refused(env, ['ledger', 'add', '--stdin'], { ...entry('never'), ...routine }, /Routine-auto submit refused for Gate never: no score decision is recorded for this job/);
-  await refused(env, ['ledger', 'add', '--stdin'], { ...entry('manual'), ...routine },
+  await refused(env, ['ledger', 'add', '--stdin'], entry('ask'),
+    /Routine-auto submit refused for Gate ask: the latest score decision is "ask"\. In routine-auto only jobs whose latest score is "review" with autoEligible: true can be sent as routine work/);
+  await refused(env, ['ledger', 'add', '--stdin'], entry('never'), /Routine-auto submit refused for Gate never: no score decision is recorded for this job/);
+  await refused(env, ['ledger', 'add', '--stdin'], entry('manual'),
     /Routine-auto submit refused for Gate manual: the latest score decision is "review" but autoEligible is false \(score 79\)/);
-  assert.equal((await ok(env, ['ledger', 'add', '--stdin'], { ...entry('good'), ...routine })).recorded, 'gate-good');
+  assert.equal((await ok(env, ['ledger', 'add', '--stdin'], entry('good'))).recorded, 'gate-good');
 
   // A re-score that changes the answer is what counts: the latest decision wins.
   assert.equal((await ok(env, ['score', '--stdin'], job('good2'))).decision, 'review');
   assert.equal((await ok(env, ['score', '--stdin'], job('good2', { eligibility: 'unclear' }))).decision, 'ask');
-  const second = approveItemsSync(directory, [applicationItem(entry('good2')), applicationItem(entry('other'))]);
-  await refused(env, ['ledger', 'add', '--stdin'], { ...entry('good2'), ...second }, /latest score decision is "ask"/);
+  await refused(env, ['ledger', 'add', '--stdin'], entry('good2'), /latest score decision is "ask"/);
 
-  // The candidate's per-job approval (a one-application batch) still lets them send an `ask` job.
-  const single = approveItemsSync(directory, [applicationItem(entry('ask'))]);
-  assert.equal((await ok(env, ['ledger', 'add', '--stdin'], { ...entry('ask'), ...single })).recorded, 'gate-ask');
+  // The candidate's explicit per-job approval ("APPROVE SUBMIT") still lets them send an `ask` job;
+  // legacy batch-review fields are accepted and ignored.
+  assert.equal((await ok(env, ['ledger', 'add', '--stdin'], { ...entry('ask', { approval: 'APPROVE SUBMIT' }), reviewBatchId: 'rb-20261101-00000000', reviewToken: 'rbt1.legacy.ignored' })).recorded, 'gate-ask');
   // Skips stay final even with a per-job approval (3.8.3).
   assert.equal((await ok(env, ['score', '--stdin'], job('skip', { seniority: 'principal' }))).decision, 'skip');
-  await refused(env, ['ledger', 'add', '--stdin'], { ...entry('skip'), ...approveItemsSync(directory, [applicationItem(entry('skip'))]) }, /Skipped job refused/);
+  await refused(env, ['ledger', 'add', '--stdin'], entry('skip', { approval: 'APPROVE SUBMIT' }), /Skipped job refused/);
 });
 
-test('routine-auto applies to a routine-auto profile or autonomy grant too, not only STANDING AUTHORIZATION', async (t) => {
-  const { directory, env } = await fixture(t, 'grant');
+test('under an autonomy grant a routine send is gated; the candidate\'s per-job APPROVE SUBMIT is not', async (t) => {
+  const { env } = await fixture(t, 'grant');
   await ok(env, ['autonomy', 'grant', '--stdin'], { mode: 'routine-auto' });
-  const attended = entry('g', { approval: 'APPROVE SUBMIT' });
-  const batch = approveItemsSync(directory, [applicationItem(attended), applicationItem(entry('g2'))]);
-  await refused(env, ['ledger', 'add', '--stdin'], { ...attended, ...batch }, /Routine-auto submit refused for Gate g: no score decision/);
-  await ok(env, ['autonomy', 'revoke']);
-  assert.equal((await ok(env, ['ledger', 'add', '--stdin'], { ...attended, ...batch })).recorded, 'gate-g');
+  await refused(env, ['ledger', 'add', '--stdin'], entry('g'), /Routine-auto submit refused for Gate g: no score decision/);
+  assert.equal((await ok(env, ['ledger', 'add', '--stdin'], entry('g2', { approval: 'APPROVE SUBMIT' }))).recorded, 'gate-g2');
 });
 
 test('entryOrigin=logged entries do not count toward a gated round target without a per-job approval', async (t) => {
@@ -318,8 +308,7 @@ test('entryOrigin=logged entries do not count toward a gated round target withou
   const { roundId } = await ok(env, ['round', 'start', '--stdin'], { requestedCount: 2 });
   for (const slug of ['l1', 'l2']) await ok(env, ['score', '--stdin'], job(slug));
   const logged = (slug) => entry(slug, { roundId, telemetry: undefined, answers: { 'Full name': 'filled', Email: 'filled' } });
-  const routine = approveItemsSync(directory, [applicationItem(logged('l1')), applicationItem(logged('l2'))]);
-  const first = await ok(env, ['ledger', 'add', '--stdin'], { ...logged('l1'), ...routine });
+  const first = await ok(env, ['ledger', 'add', '--stdin'], logged('l1'));
   assert.equal(first.roundCount.counted, false);
   assert.match(first.roundCount.reason, /entryOrigin=logged entries count toward a round target only with a per-job approval/);
   let status = await ok(env, ['round', 'status', roundId]);
@@ -327,8 +316,7 @@ test('entryOrigin=logged entries do not count toward a gated round target withou
   assert.deepEqual(status.routineGates.uncountedLoggedApplicationIds, ['gate-l1']);
   await refused(env, ['round', 'complete', '--stdin'], { roundId }, /1 entryOrigin=logged entry is not counted without a per-job approval/);
 
-  const single = approveItemsSync(directory, [applicationItem(logged('l2'))]);
-  const second = await ok(env, ['ledger', 'add', '--stdin'], { ...logged('l2'), ...single });
+  const second = await ok(env, ['ledger', 'add', '--stdin'], { ...logged('l2'), approval: 'APPROVE SUBMIT' });
   assert.equal(second.roundCount, undefined);
   status = await ok(env, ['round', 'status', roundId]);
   assert.equal(status.confirmedCount, 1);
