@@ -14,8 +14,8 @@ export const metadata: Metadata = {
   title: { absolute: TITLE },
   description: DESCRIPTION,
   alternates: { canonical: URL },
-  openGraph: { title: TITLE, description: DESCRIPTION, url: URL, type: "website", images: [{ url: "/og.png", width: 1200, height: 630, alt: "How JobAppAgent compares to other open-source job application agents" }] },
-  twitter: { card: "summary_large_image", title: TITLE, description: DESCRIPTION, images: ["/og.png"] },
+  openGraph: { title: TITLE, description: DESCRIPTION, url: URL, type: "website", images: [{ url: "/og-v2.png", width: 1200, height: 630, alt: "How JobAppAgent compares to other open-source job application agents" }] },
+  twitter: { card: "summary_large_image", title: TITLE, description: DESCRIPTION, images: ["/og-v2.png"] },
 };
 
 /** Public sources for the table, numbered as in the reviewed copy. */

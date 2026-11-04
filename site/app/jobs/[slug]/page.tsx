@@ -43,13 +43,13 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
       description,
       url,
       type: "website",
-      images: [{ url: "/og.png", width: 1200, height: 630, alt: `${job.role} at ${job.company}` }],
+      images: [{ url: "/og-v2.png", width: 1200, height: 630, alt: `${job.role} at ${job.company}` }],
     },
     twitter: {
       card: "summary_large_image",
       title: `${title} · JobAppAgent`,
       description,
-      images: ["/og.png"],
+      images: ["/og-v2.png"],
     },
   };
 }

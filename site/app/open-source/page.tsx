@@ -16,8 +16,8 @@ export const metadata: Metadata = {
   title: { absolute: TITLE },
   description: DESCRIPTION,
   alternates: { canonical: URL },
-  openGraph: { title: TITLE, description: DESCRIPTION, url: URL, type: "website", images: [{ url: "/og.png", width: 1200, height: 630, alt: "JobAppAgent, the open-source job application agent" }] },
-  twitter: { card: "summary_large_image", title: TITLE, description: DESCRIPTION, images: ["/og.png"] },
+  openGraph: { title: TITLE, description: DESCRIPTION, url: URL, type: "website", images: [{ url: "/og-v2.png", width: 1200, height: 630, alt: "JobAppAgent, the open-source job application agent" }] },
+  twitter: { card: "summary_large_image", title: TITLE, description: DESCRIPTION, images: ["/og-v2.png"] },
 };
 
 export default function OpenSource() {
