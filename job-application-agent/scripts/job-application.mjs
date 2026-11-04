@@ -1,15 +1,7 @@
 #!/usr/bin/env node
 
-// child_process is used for exactly two local, shell-free spawns (argument arrays, no `shell: true`):
-//   1. `review open` starts this package's own review-page.mjs with the current Node binary
-//      (process.execPath) to serve the local approval page on 127.0.0.1.
-//   2. openBrowser() hands that local review URL to the OS opener (open / xdg-open /
-//      `cmd /c start`), only when a desktop is present; JOB_APPLICATION_AGENT_NO_BROWSER=1 turns it off.
-// Nothing user- or page-supplied is ever executed.
-import { spawn } from 'node:child_process';
-import { fileURLToPath } from 'node:url';
 import { createHash, randomUUID } from 'node:crypto';
-import { existsSync, mkdirSync, openSync, closeSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { appendFile, chmod, mkdir, open, readFile, rename, stat, unlink, writeFile } from 'node:fs/promises';
 import { homedir, platform, userInfo } from 'node:os';
 import { basename, join, resolve } from 'node:path';
@@ -44,9 +36,6 @@ import {
   afterSubmissionCoverageMessage, communityFeedRequirementMessage, evaluateRoundCoverage, feedPulls, isPerJobApproval, latestAssessmentDecision, leadTimesBySource,
   resumePreflightRecord, roundGatesRecord, routineSubmitGateMessage,
 } from './routine-gates.mjs';
-import { LEGACY_GRANT_NOTICE, applicationMatcher, approveBatch, batchSummary, batchToken, batchView, closeBatch, consumeReview, listBatches, loadBatch, resumeDigest, reviewListTelemetryResult, reviewTelemetryResult, stageBatch, verifyReview } from './review-batch.mjs';
-import { reviewPageInfoFile } from './review-page.mjs';
-import { emptyCurrentLocationAnswers, fillCurrentLocationAnswers } from './location-answers.mjs';
 
 const SOURCES = new Set(['linkedin', 'greenhouse', 'lever', 'ashby', 'workable', 'comeet', 'workday', 'rippling', 'smartrecruiters', 'google-form', 'company', 'email', 'other']);
 /** Ledger applicationChannel values: ATS sources plus honest one-click profile applies (not a community job-board channel). */
@@ -81,11 +70,9 @@ const FILL_METRICS_SOURCES = new Set(['telemetry', 'answer_keys', 'empty']);
 // 'agent' is reserved; current clients only ever write/emit 'logged' and omit the key otherwise.
 const ENTRY_ORIGINS = new Set(['agent', 'logged']);
 export const LOGGED_ENTRY_ORIGIN = 'logged';
-// Since 3.8.0 a grant never covers a send on its own: every submission, resend and outreach
-// handoff needs a batch approval token (see review-batch.mjs).
-const AUTONOMY_SCOPES = Object.freeze(['discover', 'assess', 'fill', 'upload-resume', 'stage-review-batch', 'record-ledger', 'record-outcomes', 'cleanup-tabs', 'open-improvement-pr']);
-const LEGACY_SEND_SCOPES = new Set(['submit', 'send-recruiting-email']);
-const AUTONOMY_NOTICE_FILE = 'autonomy-batch-review-notice.json';
+// A routine-auto grant covers routine submissions and verified recruiting email again (as before
+// 3.8.0); there is no batch approval token (the batch review gate was removed in 3.8.6).
+const AUTONOMY_SCOPES = Object.freeze(['discover', 'assess', 'fill', 'upload-resume', 'submit', 'send-recruiting-email', 'record-ledger', 'record-outcomes', 'cleanup-tabs', 'open-improvement-pr']);
 const AUTONOMY_HARD_STOPS = Object.freeze(['authentication', 'mfa', 'captcha', 'legal-attestation', 'demographic', 'government-id', 'unverifiable-claim', 'ambiguous-authorization', 'ambiguous-compensation']);
 const ATTENTION_STAGES = new Set(['discovery', 'assessment', 'application', 'contact', 'resume', 'questions', 'legal', 'demographic', 'review', 'submission', 'confirmation', 'outcome', 'answers', 'upload']);
 const ATTENTION_BLOCKERS = new Set(['authentication', 'mfa', 'captcha', 'legal-attestation', 'demographic', 'government-id', 'ambiguous-authorization', 'ambiguous-compensation', 'unverifiable-claim', 'judgment', 'video', 'upload', 'site-error', 'other']);
@@ -212,7 +199,6 @@ export function commandCategory([area, action]) {
   if (area === 'attention') return 'attention';
   if (area === 'friction') return 'friction';
   if (area === 'cloud') return 'other';
-  if (area === 'review') return 'batch';
   return 'other';
 }
 
@@ -1160,7 +1146,7 @@ export function scoreJob(input, target) {
   return result(decision, finalScore, reasons, gaps, mustHaveCoverage, autoEligible);
 }
 
-const APPROVAL_HINT = 'Use "APPROVE SUBMIT" for a review-each batch of one, or "STANDING AUTHORIZATION" for a routine-auto batch.';
+const APPROVAL_HINT = 'Use "APPROVE SUBMIT" when the candidate approved this application, or "STANDING AUTHORIZATION" for a routine-auto send within their standing permission.';
 // A missing approval is never defaulted, in any mode: nothing is recorded for the job until the
 // agent resends with an explicit decision (reverts the #240 review-each default).
 // The CLI cannot know whether the browser already sent the form, so the hint separates "nothing
@@ -1168,7 +1154,7 @@ const APPROVAL_HINT = 'Use "APPROVE SUBMIT" for a review-each batch of one, or "
 const APPROVAL_MISSING_HINT = 'Nothing was recorded for this job. Resend ledger add with an explicit "approval": '
   + '"APPROVE SUBMIT" if the candidate approved this exact application (always resend it if the ATS already confirmed '
   + 'the submission, so it is not left unrecorded); otherwise SKIP this job and do not submit it. '
-  + 'In a routine-auto batch use "STANDING AUTHORIZATION".';
+  + 'For a routine-auto send use "STANDING AUTHORIZATION".';
 
 function ledgerApproval(value) {
   if (typeof value !== 'string' || !value.trim() || value.length > 80) throw new Error(`entry.approval must be a non-empty string no longer than 80 characters. ${APPROVAL_MISSING_HINT}`);
@@ -1760,9 +1746,8 @@ function autonomyView(value) {
     mode: enabled ? 'routine-auto' : null,
     scopes: enabled ? [...AUTONOMY_SCOPES] : [],
     hardStops: [...AUTONOMY_HARD_STOPS],
-    maySubmitRoutineApplications: false,
-    maySendVerifiedRecruitingEmail: false,
-    submissionsRequireBatchReview: true,
+    maySubmitRoutineApplications: enabled,
+    maySendVerifiedRecruitingEmail: enabled,
     mayCreateImprovementPr: enabled,
     mayMergeReleaseOrPublish: false,
     mayBypassHostPermissionPrompts: false,
@@ -1772,16 +1757,8 @@ function autonomyView(value) {
 }
 
 async function autonomyStatus() {
-  const dir = await ensureStateDir();
-  const stored = await readPrivateJson(join(dir, 'autonomy.json'), { version: 1, enabled: false });
-  if (stored?.enabled === true && Array.isArray(stored.scopes) && stored.scopes.some((scope) => LEGACY_SEND_SCOPES.has(scope))) {
-    const marker = join(dir, AUTONOMY_NOTICE_FILE);
-    if (!existsSync(marker)) {
-      process.stderr.write(LEGACY_GRANT_NOTICE);
-      await writePrivateJson(marker, { version: 1, shownAt: new Date().toISOString() });
-    }
-  }
-  return autonomyView(stored);
+  const file = join(await ensureStateDir(), 'autonomy.json');
+  return autonomyView(await readPrivateJson(file, { version: 1, enabled: false }));
 }
 
 async function autonomyGrant(input) {
@@ -1876,68 +1853,10 @@ async function importResume(source) {
 
 /**
  * Owned fixtures and vendor sandboxes (by URL allowlist, never by a caller-supplied applyKind)
- * are not employer submissions, so they do not need a batch approval.
+ * are not employer submissions, so the routine-auto score gate does not apply to them.
  */
-function requiresBatchReview(url) {
+function isLiveApply(url) {
   try { return resolveApplyKind(url) === 'live'; } catch { return true; }
-}
-
-/** Staging refreshes the cloud résumé cache; verification hashes the local copy the browser uploads. */
-async function currentResumeDigest({ refresh = false } = {}) {
-  const dir = await ensureStateDir();
-  if (refresh) {
-    try { await canonicalResumePath(); } catch { /* not imported, or the cloud is unreachable: hash what is cached */ }
-  }
-  return resumeDigest(join(dir, 'resume.pdf'));
-}
-
-const REVIEW_NEXT_STEP = 'Show the candidate `table` exactly as printed. Then run `review open <batchId>` and give the candidate the URL so they can read every item and approve on the page; poll `review status <batchId>` for the reviewToken. Where the candidate has no browser on this machine, show them the items with `review show <batchId>` and ask them to type the approval phrase in chat, then pass their exact words to `review approve --stdin`. Never open, read the code from, or operate the review page yourself, and never type the phrase for the candidate.';
-
-function openBrowser(url) {
-  if (process.env.JOB_APPLICATION_AGENT_NO_BROWSER === '1') return false;
-  const os = platform();
-  let command; let args;
-  if (os === 'darwin') { command = 'open'; args = [url]; }
-  else if (os === 'win32') { command = 'cmd'; args = ['/c', 'start', '""', url]; }
-  else if (process.env.DISPLAY || process.env.WAYLAND_DISPLAY) { command = 'xdg-open'; args = [url]; }
-  else return false;
-  try {
-    const child = spawn(command, args, { detached: true, stdio: 'ignore' });
-    child.on('error', () => {});
-    child.unref();
-    return true;
-  } catch { return false; }
-}
-
-async function openReviewPage(dir, batchId) {
-  const batch = await loadBatch(dir, batchId);
-  const view = batchView(batch);
-  if (view.status !== 'pending') return { batchId, status: view.status, opened: false, message: `Review batch is ${view.status}; there is nothing to approve.` };
-  const infoFile = reviewPageInfoFile(dir, batchId);
-  const existing = await readPrivateJson(infoFile, null);
-  let alive = false;
-  if (existing?.pid) { try { process.kill(existing.pid, 0); alive = true; } catch { alive = false; } }
-  let info = alive ? existing : null;
-  if (!info) {
-    await unlink(infoFile).catch(() => {});
-    const logFd = openSync(join(dir, 'review-batches', `${batchId}.page.log`), 'a', 0o600);
-    const child = spawn(process.execPath, [fileURLToPath(new URL('./review-page.mjs', import.meta.url)), dir, batchId, infoFile], { detached: true, stdio: ['ignore', 'ignore', logFd], env: process.env });
-    child.unref();
-    closeSync(logFd);
-    for (let attempt = 0; attempt < 100 && !info; attempt += 1) {
-      await new Promise((resolveDelay) => setTimeout(resolveDelay, 50));
-      info = await readPrivateJson(infoFile, null);
-    }
-    if (!info) throw new Error('The review page did not start. Use the chat approval phrase instead (`review show`, then `review approve --stdin`).');
-  }
-  return {
-    batchId,
-    status: 'pending',
-    url: info.url,
-    browserOpened: alive ? false : openBrowser(info.url),
-    pageClosesAfter: '30 minutes, or once the candidate decides',
-    next: 'Give the candidate this URL (it only works on this machine). Do not open it in your own browser automation. Poll `review status <batchId>` until the status is approved, rejected or expired.',
-  };
 }
 
 // Local-only gate evidence (see routine-gates.mjs). Never appended to cloud state or telemetry.
@@ -2060,7 +1979,7 @@ async function isRoutineAutoSend(entry) {
 
 // Skip decisions are final. `score` records each skip/exclude (job key hash, decision, reason,
 // time; no job text) in a private local file that the assessment-guard reset does not touch, and
-// `review stage` and `ledger add` refuse that job. A later re-score never clears it, so changing
+// `ledger add` refuses that job. A later re-score never clears it, so changing
 // the job input cannot turn a skip into a send.
 const ASSESSMENT_SKIPS_FILE = 'assessment-skips.json';
 
@@ -2098,112 +2017,18 @@ async function assertJobNotSkipped(dir, { url, company, role }) {
   const keys = [assessmentJobKey({ url }), assessmentJobKey({ company, title: role })].filter(Boolean);
   const skipped = keys.map((key) => jobs[key]).find((record) => record && typeof record === 'object');
   if (!skipped) return;
-  throw new Error(`Skipped job refused: score decided "${skipped.decision}" (${skipped.reason}) for ${company || 'this job'} at ${skipped.at}. A skipped or excluded job is never staged, submitted or recorded, in any mode. Do not apply; tell the candidate.`);
+  throw new Error(`Skipped job refused: score decided "${skipped.decision}" (${skipped.reason}) for ${company || 'this job'} at ${skipped.at}. A skipped or excluded job is never submitted or recorded, in any mode. Do not apply; tell the candidate.`);
 }
 
-// `command_completed.result` for a `review` command. Never `success` unless the batch has sent
-// something: a round that staged and polled batches without submitting showed as a run of
-// sub-second "batch success" events with no application_submitted.
-export async function reviewCommandTelemetryResult(action, value, result, { stateDirectory = null, now = new Date() } = {}) {
-  try {
-    if (result && result.staged === false) return 'paused';
-    // `review list` also returns old batches (a sent batch stays `approved` until it expires), so a
-    // listing is never a success on its own: `paused` while a live batch waits, else `skipped`.
-    if (action === 'list') return reviewListTelemetryResult(result?.batches ?? []);
-    const batchId = typeof result?.batchId === 'string' ? result.batchId : value;
-    const batch = await loadBatch(stateDirectory ?? await ensureStateDir(), batchId);
-    return reviewTelemetryResult([batchSummary(batch, now)]);
-  } catch {
-    // Unknown state: report a stall rather than a success.
-    return 'paused';
-  }
-}
+// The batch review gate (`review stage/approve/show/open/status/revoke/list`, 3.8.0 to 3.8.5) was
+// removed in 3.8.6: sends need no review batch or token. The commands remain as stateless no-ops so
+// an agent following an older SKILL.md gets a clear answer instead of a usage error.
+export const REVIEW_REMOVED_MESSAGE = 'Batch review was removed in 3.8.6. There is no review batch, review page or approval code any more, and nothing was staged or changed. '
+  + 'Do not run review commands. review-each: fill the real application page, stop before Submit, and ask the candidate in chat (or let them submit it themselves); '
+  + 'routine-auto: submit within the candidate\'s standing permission. Then record it with ledger add (no reviewBatchId or reviewToken).';
 
-// The round an attention item belongs to when `review stage` was not given a roundId: the latest
-// started round that has not completed. Null when there is none.
-async function latestOpenRoundId(dir) {
-  const events = await jsonLines(join(dir, 'rounds.ndjson')).catch(() => []);
-  const completed = new Set(events.filter((event) => event.type === 'completed').map((event) => event.roundId));
-  return events.filter((event) => event.type === 'started' && !completed.has(event.roundId)).at(-1)?.roundId ?? null;
-}
-
-const MISSING_LOCATION_NEXT_STEP = 'Ask the candidate for their current location (city and country), save it with `profile migrate --stdin` or `profile set --stdin` (field `location`), fill the answer, resolve the attention item, and stage the application again. Do not invent a location.';
-
-// Empty current-location answers ("What is your current location?") are filled from the profile's
-// location fields. When the profile has none, the item is held back from the batch and an
-// attention item asks the candidate, so the round shows why it stopped instead of failing the
-// whole batch on invalid input.
-async function prepareLocationAnswers(dir, input, { telemetry, session } = {}) {
-  const items = Array.isArray(input?.items) ? input.items : null;
-  if (!items || !items.some((item) => emptyCurrentLocationAnswers(item).length)) return { input, filled: [], held: [] };
-  let profile = null;
-  try { profile = storedProfileRaw(); } catch { profile = null; }
-  const { items: filledItems, filled, missing } = fillCurrentLocationAnswers(items, profile);
-  if (!missing.length) return { input: { ...input, items: filledItems }, filled, held: [] };
-  const roundId = typeof input.roundId === 'string' && input.roundId.trim() ? input.roundId.trim() : await latestOpenRoundId(dir);
-  if (!roundId) {
-    const first = missing[0];
-    throw new Error(`Application ${first.applicationId ?? `items[${first.index}]`} has an empty answer to "${first.answers[0]}" and the profile has no location to fill it from. ${MISSING_LOCATION_NEXT_STEP}`);
-  }
-  const open = (await attentionList(roundId)).items;
-  const held = [];
-  for (const miss of missing) {
-    const item = items[miss.index];
-    // Reuse an open item only when it already asks every one of these location questions.
-    const existing = open.find((entry) => !entry.derived && entry.applicationId === item.applicationId && entry.blocker === 'unverifiable-claim' && entry.stage === 'questions'
-      && miss.answers.every((prompt) => Array.isArray(entry.questions) && entry.questions.some((question) => question?.prompt === prompt)));
-    const attention = existing ?? await attentionAdd({
-      roundId,
-      applicationId: item.applicationId,
-      url: item.url,
-      stage: 'questions',
-      blocker: 'unverifiable-claim',
-      requiredActions: ['verify-claim'],
-      questions: miss.answers.map((prompt) => ({ prompt, kind: 'other', required: true })),
-      createdAt: new Date().toISOString(),
-      ...(typeof item.company === 'string' ? { company: item.company } : {}),
-      ...(typeof item.role === 'string' ? { role: item.role } : {}),
-    });
-    if (!existing && telemetry) await emitDomainEvent(telemetry, session, await telemetryApplicationPaused(attention, { ats: item.ats }));
-    held.push({ applicationId: item.applicationId, company: item.company ?? null, url: item.url, answers: miss.answers, reason: 'profile-has-no-location', attentionId: attention.id, ...(existing ? { reusedAttention: true } : {}) });
-  }
-  const heldIndexes = new Set(missing.map((miss) => miss.index));
-  return { input: { ...input, items: filledItems.filter((_, index) => !heldIndexes.has(index)) }, filled, held };
-}
-
-async function reviewCommand(action, value, context = {}) {
-  const dir = await ensureStateDir();
-  if (action === 'stage' && value === '--stdin') {
-    const raw = await jsonStdin();
-    for (const item of Array.isArray(raw?.items) ? raw.items : []) {
-      if (item?.type === 'application' && (item.purpose ?? 'submit') === 'submit') await assertJobNotSkipped(dir, { url: item.url, company: item.company, role: item.role });
-    }
-    const { input, filled, held } = await prepareLocationAnswers(dir, raw, context);
-    const notes = {
-      ...(filled.length ? { filledAnswers: filled.map(({ applicationId, answer, source }) => ({ applicationId, answer, source })) } : {}),
-      ...(held.length ? { heldForAttention: held } : {}),
-    };
-    if (held.length && !input.items.length) {
-      return { staged: false, batchId: null, ...notes, next: `Nothing was staged: every item needs the candidate's current location. ${MISSING_LOCATION_NEXT_STEP}` };
-    }
-    const batch = await stageBatch(dir, input, { resume: await currentResumeDigest({ refresh: true }) });
-    return { ...batchView(batch), ...notes, next: held.length ? `${REVIEW_NEXT_STEP} ${held.length} application(s) were held back because the profile has no current location: ${MISSING_LOCATION_NEXT_STEP}` : REVIEW_NEXT_STEP };
-  }
-  if (action === 'show' && typeof value === 'string') return batchView(await loadBatch(dir, value), new Date(), { includeContent: true });
-  if (action === 'open' && typeof value === 'string') return openReviewPage(dir, value);
-  if (action === 'approve' && value === '--stdin') {
-    const input = object(await jsonStdin(), 'review approve');
-    for (const key of Object.keys(input)) if (!['batchId', 'phrase', 'exclude'].includes(key)) throw new Error(`Unknown review approve property: ${key}.`);
-    const { batch, token } = await approveBatch(dir, input.batchId, { channel: 'chat-phrase', phrase: input.phrase, excludeNumbers: input.exclude });
-    return batchView(batch, new Date(), { token });
-  }
-  if (action === 'status' && typeof value === 'string') {
-    const batch = await loadBatch(dir, value);
-    return batchView(batch, new Date(), { token: await batchToken(dir, batch) });
-  }
-  if (action === 'list' && value == null) return listBatches(dir);
-  if (action === 'revoke' && typeof value === 'string') return batchView(await closeBatch(dir, value, 'revoked'));
-  throw usageError(['review', action, value]);
+function reviewCommand(action) {
+  return { deprecated: true, removedIn: '3.8.6', command: `review ${action ?? ''}`.trim(), message: REVIEW_REMOVED_MESSAGE };
 }
 
 async function canonicalResumePath() {
@@ -2326,12 +2151,19 @@ export function possibleDuplicateError(duplicate) {
   return new Error(
     `A possible same-company role duplicate requires NEW REQUISITION CONFIRMED: ${why} (run ledger check with this company and role to compare the earlier one). `
     + 'Only pass duplicateOverride "NEW REQUISITION CONFIRMED" when the posting shows a different requisition: a different employer job ID or requisition number (record it as employerJobId), or a different team, level or location that the earlier role did not have. A repost of the same role is a duplicate; do not apply. '
-    + 'review-each: put this application in its own batch review and tell the candidate it may duplicate the earlier one; pass the phrase only after they approve that batch. '
-    + 'Unattended, routine-auto or STANDING AUTHORIZATION: never pass it on your own; queue the job with attention add (blocker "judgment") and continue with other jobs. It may be passed only after the candidate explicitly approves this job in its own one-application batch review.',
+    + 'review-each: tell the candidate it may duplicate the earlier one and pass the phrase only after they explicitly approve this job in the conversation. '
+    + 'Unattended, routine-auto or STANDING AUTHORIZATION: never pass it on your own; queue the job with attention add (blocker "judgment") and continue with other jobs. It may be passed only after the candidate explicitly approves this job (then record it with approval "APPROVE SUBMIT").',
   );
 }
 
-async function ledgerAdd(entryInput, duplicateOverride, companyReapplyOverride, cloudIntent = null, review = null, { routineAuto = false } = {}) {
+export function newRequisitionApprovalError() {
+  return new Error(
+    'NEW REQUISITION CONFIRMED needs the candidate\'s explicit approval of this job: tell them it may duplicate an earlier application, and record it with approval "APPROVE SUBMIT" only after they approve it in the conversation. '
+    + 'Unattended, routine-auto or STANDING AUTHORIZATION: never pass it on your own; queue the job with attention add (blocker "judgment") and continue with other jobs.',
+  );
+}
+
+async function ledgerAdd(entryInput, duplicateOverride, companyReapplyOverride, cloudIntent = null, { routineAuto = false } = {}) {
   const entry = validateLedgerEntry(entryInput);
   return withStateLock('applications', async (dir) => {
     const file = join(dir, 'applications.ndjson');
@@ -2346,34 +2178,26 @@ async function ledgerAdd(entryInput, duplicateOverride, companyReapplyOverride, 
     const duplicate = duplicateResult(entries, entry, outcomes);
     if (duplicate.duplicate) throw new Error(`Hard duplicate blocked: matching ${duplicate.reason === 'employer-job-id' ? 'employer job ID or requisition' : duplicate.reason === 'url' ? 'canonical URL' : 'ledger ID'}.`);
     if (duplicate.possibleDuplicate && duplicateOverride !== 'NEW REQUISITION CONFIRMED') throw possibleDuplicateError(duplicate);
+    // #172 without batch review: the phrase stands only with the candidate's explicit approval of
+    // this one job ("APPROVE SUBMIT"), never on a standing or unattended authorization.
+    if (duplicate.possibleDuplicate && !isPerJobApproval(entry)) throw newRequisitionApprovalError();
     if (!duplicate.possibleDuplicate && duplicate.companyReapply.decision === 'cooldown-active' && companyReapplyOverride !== COMPANY_REAPPLY_OVERRIDE) {
       throw new Error(`Company reapplication cooldown is active for ${COMPANY_REAPPLY_COOLDOWN_DAYS} full days; use ${COMPANY_REAPPLY_OVERRIDE} only with explicit candidate approval.`);
     }
     if (!duplicate.possibleDuplicate && duplicate.companyReapply.decision === 'follow-up-present' && companyReapplyOverride !== COMPANY_REAPPLY_OVERRIDE) {
       throw new Error(`Company reapplication blocked because the latest application has a recorded follow-up; use ${COMPANY_REAPPLY_OVERRIDE} only with explicit candidate approval.`);
     }
-    let reviewed = null;
-    if (review) {
-      reviewed = await verifyReview(dir, review.credentials, {
-        action: 'ledger add',
-        match: applicationMatcher({ applicationId: entry.id, url: entry.url, answers: entry.answers }),
-        checkResume: true,
-        resumeSha256: review.resumeSha256,
-      });
-    }
-    // A one-application batch is the candidate's approval of this job; a routine batch item also
-    // needs the latest score to be review + autoEligible.
-    const perJobApproval = Boolean(reviewed) && isPerJobApproval(reviewed.batch);
-    if (reviewed && routineAuto && !perJobApproval) {
+    // "APPROVE SUBMIT" records the candidate's explicit approval of this one job; a routine-auto
+    // send without it also needs the latest score to be review + autoEligible.
+    const perJobApproval = isPerJobApproval(entry);
+    if (routineAuto && !perJobApproval) {
       const refusal = routineSubmitGateMessage(await latestDecisionFor(dir, entry), entry.company);
       if (refusal) throw new Error(refusal);
     }
     const reapproved = ['cooldown-active', 'follow-up-present'].includes(duplicate.companyReapply.decision)
       ? { ...entry, reapplicationApproval: 'candidate-explicit' }
       : entry;
-    const storedEntry = reviewed
-      ? { ...reapproved, reviewBatchId: reviewed.batch.batchId, reviewApprovedAt: reviewed.batch.approvedAt, reviewApprovalChannel: reviewed.batch.approvalChannel }
-      : reapproved;
+    const storedEntry = reapproved;
     await appendFile(file, `${JSON.stringify(storedEntry)}\n`, { mode: 0o600 });
     await chmod(file, 0o600);
     if (entry.roundId) {
@@ -2389,12 +2213,11 @@ async function ledgerAdd(entryInput, duplicateOverride, companyReapplyOverride, 
         if (entry.roundId) await cloudState.appendRecord('rounds', { type: 'submission-confirmed', roundId: entry.roundId, applicationId: entry.id, occurredAt: entry.submittedAt }, { recordKey: entry.roundId, idempotencyKey: `round-confirmation:${entry.roundId}:${entry.id}`, occurredAt: entry.submittedAt, queueOnFailure: true });
       }
     }
-    if (reviewed) await consumeReview(dir, reviewed.batch.batchId, reviewed.item.itemId, 'ledger-add');
     let roundCount = null;
     if (entry.roundId) {
       await appendRoundEvidence({ type: 'submit-recorded', roundId: entry.roundId, applicationId: entry.id, at: new Date().toISOString() });
       if (isLoggedNotAgentFilled(entry) && !perJobApproval && roundGatesRecord(await roundEvidence(dir), entry.roundId)) {
-        roundCount = { counted: false, reason: 'entryOrigin=logged entries count toward a round target only with a per-job approval (a one-application review batch). The entry is recorded in the ledger but not counted for this round.' };
+        roundCount = { counted: false, reason: 'entryOrigin=logged entries count toward a round target only with a per-job approval (approval "APPROVE SUBMIT"). The entry is recorded in the ledger but not counted for this round.' };
       }
     }
     return { recorded: storedEntry.id, ...(roundCount ? { roundCount } : {}), review: buildReview([...entries, storedEntry], outcomes, [], new Date(), await jsonLines(join(dir, 'delivery.ndjson'))), ...(cloudIntent ? { cloudIntent: cloudIntent.intentId } : {}) };
@@ -2436,7 +2259,8 @@ async function appendAccounting(stream, event, { cloudConfirmed = false } = {}) 
 }
 
 async function recordDelivery(input, retry = false) {
-  const { cloudIntentId, cloudLeaseId, reviewBatchId, reviewToken, ...raw } = object(input, 'delivery');
+  // reviewBatchId/reviewToken (3.8.0 to 3.8.5) are still accepted and ignored.
+  const { cloudIntentId, cloudLeaseId, reviewBatchId: _reviewBatchId, reviewToken: _reviewToken, ...raw } = object(input, 'delivery');
   const event = validateDelivery({ ...raw, ...(retry ? { type: 'retry-confirmed' } : {}) });
   if (!retry && event.type === 'retry-confirmed') throw new Error('Use ledger retry for replacement transmissions.');
   return withStateLock('applications', () => withStateLock('delivery', async dir => {
@@ -2447,23 +2271,12 @@ async function recordDelivery(input, retry = false) {
     // Cloud transmission eligibility was checked at intent preparation. The
     // Worker verifies that intent before we persist the observed transmission.
     validateDeliveryReferences(event, applications, events, { preparedRetry: cloudRetry });
-    // A replacement transmission is a new send: it needs its own approved batch item.
-    let reviewed = null;
-    if (retry && !events.some(e => e.id === event.id) && requiresBatchReview(event.url)) {
-      reviewed = await verifyReview(dir, { reviewBatchId, reviewToken }, {
-        action: 'ledger retry',
-        match: applicationMatcher({ applicationId: event.applicationId, url: event.url, purpose: 'retry' }),
-        checkResume: true,
-        resumeSha256: (await currentResumeDigest())?.sha256,
-      });
-    }
     let cloudConfirmed = false;
     if (cloudRetry && !events.some(e => e.id === event.id)) {
       await cloudState.confirmRetry(cloudIntentId, event, cloudLeaseId);
       cloudConfirmed = true;
     }
     const result = await appendAccounting('delivery', event, { cloudConfirmed });
-    if (reviewed && result.recorded) await consumeReview(dir, reviewed.batch.batchId, reviewed.item.itemId, 'ledger-retry');
     return { ...result, delivery: deliveryProjection(applications, [...events, event]) };
   }));
 }
@@ -2891,8 +2704,7 @@ async function roundStatus(roundId = null) {
   const matching = [];
   for (const entry of roundSubmitted) {
     if (gates && isLoggedNotAgentFilled(entry)) {
-      const batch = entry.reviewBatchId ? await loadBatch(dir, entry.reviewBatchId).catch(() => null) : null;
-      if (!isPerJobApproval(batch)) { uncountedLoggedApplicationIds.push(entry.id); continue; }
+      if (!isPerJobApproval(entry)) { uncountedLoggedApplicationIds.push(entry.id); continue; }
     }
     matching.push(entry);
   }
@@ -2976,7 +2788,7 @@ async function roundComplete(input) {
     const status = await roundStatus(string(value.roundId, 'round.roundId', 180));
     if (status.completed) return { ...status, completionRecorded: false };
     const uncounted = status.routineGates?.uncountedLoggedApplicationIds ?? [];
-    if (status.confirmedCount < status.requestedCount) throw new Error(`Round requires ${status.requestedCount} confirmed submissions before completion.${uncounted.length ? ` ${uncounted.length} entryOrigin=logged ${uncounted.length === 1 ? 'entry is' : 'entries are'} not counted without a per-job approval (a one-application review batch).` : ''}`);
+    if (status.confirmedCount < status.requestedCount) throw new Error(`Round requires ${status.requestedCount} confirmed submissions before completion.${uncounted.length ? ` ${uncounted.length} entryOrigin=logged ${uncounted.length === 1 ? 'entry is' : 'entries are'} not counted without a per-job approval (approval "APPROVE SUBMIT").` : ''}`);
     if (status.routineGates?.enforced) {
       const coverage = status.routineGates.coverage;
       if (coverage.afterSubmissionSourceIds.length) throw new Error(afterSubmissionCoverageMessage(coverage.afterSubmissionSourceIds, coverage.lastSubmissionAt));
@@ -3200,15 +3012,8 @@ async function cloudCommand(action, value) {
     return cloudState.releaseLease(lease.leaseId);
   }
   if (action === 'intent-prepare' && value === '--stdin') {
-    const { reviewBatchId, reviewToken, ...body } = object(await jsonStdin(), 'intent');
-    if (requiresBatchReview(body.canonicalUrl)) {
-      await verifyReview(await ensureStateDir(), { reviewBatchId, reviewToken }, {
-        action: 'cloud intent-prepare',
-        match: applicationMatcher({ applicationId: body.applicationId, url: body.canonicalUrl, purpose: body.retry === true ? 'retry' : 'submit' }),
-        checkResume: true,
-        resumeSha256: (await currentResumeDigest())?.sha256,
-      });
-    }
+    // reviewBatchId/reviewToken (3.8.0 to 3.8.5) are still accepted and ignored.
+    const { reviewBatchId: _reviewBatchId, reviewToken: _reviewToken, ...body } = object(await jsonStdin(), 'intent');
     return cloudState.createIntent(body);
   }
   if (action === 'intent-sent' && value === '--stdin') {
@@ -3216,22 +3021,8 @@ async function cloudCommand(action, value) {
     return cloudState.markIntentSentUnverified(string(input.intentId, 'intentId', 200), string(input.leaseId, 'leaseId', 200));
   }
   if (action === 'intent-confirm' && value === '--stdin') {
-    const { reviewBatchId, reviewToken, ...input } = object(await jsonStdin(), 'intent');
-    const application = object(input.application, 'application');
-    // Confirming an intent records the application, so it needs the same approval as ledger add.
-    let reviewed = null;
-    const dir = await ensureStateDir();
-    if (requiresBatchReview(application.url)) {
-      reviewed = await verifyReview(dir, { reviewBatchId, reviewToken }, {
-        action: 'cloud intent-confirm',
-        match: applicationMatcher({ applicationId: application.id, url: application.url, answers: application.answers ?? {} }),
-        checkResume: true,
-        resumeSha256: (await currentResumeDigest())?.sha256,
-      });
-    }
-    const confirmed = await cloudState.confirmIntent(string(input.intentId, 'intentId', 200), application, string(input.leaseId, 'leaseId', 200), input.idempotencyKey);
-    if (reviewed) await consumeReview(dir, reviewed.batch.batchId, reviewed.item.itemId, 'cloud-intent-confirm');
-    return confirmed;
+    const { reviewBatchId: _reviewBatchId, reviewToken: _reviewToken, ...input } = object(await jsonStdin(), 'intent');
+    return cloudState.confirmIntent(string(input.intentId, 'intentId', 200), object(input.application, 'application'), string(input.leaseId, 'leaseId', 200), input.idempotencyKey);
   }
   throw usageError(['cloud', action, value]);
 }
@@ -3398,11 +3189,9 @@ async function executeCommand([area, action, value], telemetry, session, communi
       telemetrySupplied,
       ...(fillMetrics.entryOrigin ? { entryOrigin: fillMetrics.entryOrigin } : {}),
     });
-    const review = requiresBatchReview(entry.url)
-      ? { credentials: { reviewBatchId: input.reviewBatchId, reviewToken: input.reviewToken }, resumeSha256: (await currentResumeDigest())?.sha256 }
-      : null;
-    const routineAuto = review ? await isRoutineAutoSend(entry) : false;
-    result = await ledgerAdd(entry, input.duplicateOverride, input.companyReapplyOverride, input.cloudIntentId && input.cloudLeaseId ? { intentId: input.cloudIntentId, leaseId: input.cloudLeaseId } : null, review, { routineAuto });
+    // reviewBatchId/reviewToken (3.8.0 to 3.8.5) are still accepted and ignored.
+    const routineAuto = isLiveApply(entry.url) ? await isRoutineAutoSend(entry) : false;
+    result = await ledgerAdd(entry, input.duplicateOverride, input.companyReapplyOverride, input.cloudIntentId && input.cloudLeaseId ? { intentId: input.cloudIntentId, leaseId: input.cloudLeaseId } : null, { routineAuto });
     result.communityJob = await communityJobsSync(community, { limit: 1, applicationIds: [entry.id] });
     const fillTelemetryReview = telemetrySupplied ? await reviewRapidFireFillTelemetry(entry, input.telemetry) : null;
     if (fillTelemetryReview) result.fillTelemetryReview = fillTelemetryReview;
@@ -3490,7 +3279,7 @@ async function executeCommand([area, action, value], telemetry, session, communi
   else if (area === 'attention' && action === 'resolve' && value === '--stdin') result = await attentionResolve(await jsonStdin());
   else if (area === 'friction' && action === 'record' && value === '--stdin') result = await frictionRecord(await jsonStdin());
   else if (area === 'friction' && action === 'list' && value == null) result = await frictionList();
-  else if (area === 'review') result = await reviewCommand(action, value, { telemetry, session });
+  else if (area === 'review') result = reviewCommand(action);
   else throw usageError([area, action, value]);
   return result;
 }
@@ -3562,8 +3351,7 @@ async function main(rawArgs) {
     await prepareCloudState(area, action);
     const result = await executeCommand(args, telemetry, session, community);
     if (!(area === 'sources' || (area === 'ledger' && action === 'add'))) await communityJobsSync(community).catch(() => null);
-    const completed = command === 'batch' ? await reviewCommandTelemetryResult(action, value, result) : 'success';
-    await telemetry.record({ event: 'command_completed', properties: { command, result: completed, durationBucket: durationBucket(Date.now() - started) } }, session);
+    await telemetry.record({ event: 'command_completed', properties: { command, result: 'success', durationBucket: durationBucket(Date.now() - started) } }, session);
     return print(result);
   } catch (error) {
     // Repeated guard refusals are not new information; report only the first one of each stop.

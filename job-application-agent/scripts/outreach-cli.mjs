@@ -7,7 +7,6 @@ import { migrateLegacyStateDir, resolveStateDir } from './secret-store.mjs';
 import { mutateOutreach, readOutreach, OUTREACH_CAPABILITY } from './outreach-domain.mjs';
 import { confirmOutreachTowardRound } from './outreach-round.mjs';
 import { privateOutreachWrite, withLocalOutreach, withOutreachLock } from './outreach-store.mjs';
-import { consumeReview, emailMatcher, verifyReview } from './review-batch.mjs';
 
 const READS = new Set(['policy-status', 'list', 'show', 'review']);
 const MUTATIONS = new Set(['policy-enable', 'policy-disable', 'assess', 'draft', 'handoff', 'record', 'suppress', 'clear']);
@@ -59,14 +58,9 @@ export async function runOutreach(args, { input: suppliedInput, stateDirectory =
   }
   let input = read ? (action === 'show' ? { id: value } : {}) : suppliedInput ?? await readInput();
   await migrate(stateDirectory);
-  // A handoff gives the candidate text to send, so it needs a batch approval like any other send.
-  let reviewed = null;
-  if (action === 'handoff') {
-    const { reviewBatchId, reviewToken, ...rest } = input ?? {};
-    reviewed = await verifyReview(stateDirectory, { reviewBatchId, reviewToken }, {
-      action: 'outreach handoff',
-      match: emailMatcher({ opportunityId: rest.id, draftRevision: rest.draftRevision }),
-    });
+  // reviewBatchId/reviewToken (3.8.0 to 3.8.5 batch review) are still accepted on a handoff and ignored.
+  if (action === 'handoff' && input && typeof input === 'object') {
+    const { reviewBatchId: _reviewBatchId, reviewToken: _reviewToken, ...rest } = input;
     input = rest;
   }
   const cloud = cloudClient ?? new CloudStateClient({ stateDir: stateDirectory, configPath: process.env.JOB_APPLICATION_AGENT_CLOUD_CONFIG ?? defaultCloudConfigPath() });
@@ -102,7 +96,6 @@ export async function runOutreach(args, { input: suppliedInput, stateDirectory =
     }
     result = await withLocalOutreach(stateDirectory, state => read ? { result: readOutreach(state, action, input) } : mutateOutreach(state, action, input, { ...context, actor: 'local' }));
   }
-  if (reviewed) await consumeReview(stateDirectory, reviewed.batch.batchId, reviewed.item.itemId, 'outreach-handoff');
   if (action === 'policy-enable') await guard();
   if (action === 'record' && input?.type === 'sent-verified' && result?.delivery === 'sent-verified' && input?.id) {
     try {

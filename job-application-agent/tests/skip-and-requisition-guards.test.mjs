@@ -10,7 +10,6 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
-import { applicationItem, approveItemsSync, withTestReview } from './support/review-approval.mjs';
 
 const script = fileURLToPath(new URL('../scripts/job-application.mjs', import.meta.url));
 
@@ -69,31 +68,25 @@ function ok(env, args, input) {
   return JSON.parse(result.stdout);
 }
 
-test('a seniority-skipped job is refused by review stage and ledger add, even after a re-score', async (t) => {
-  const { directory, env } = await fixture(t, 'skip');
+test('a seniority-skipped job is refused by ledger add, even after a re-score', async (t) => {
+  const { env } = await fixture(t, 'skip');
   const scored = ok(env, ['score', '--stdin'], job());
   assert.equal(scored.decision, 'skip');
 
-  // The send path is closed before anything is approved...
-  const staged = run(env, ['review', 'stage', '--stdin'], { items: [applicationItem(entry())] });
-  assert.equal(staged.status, 1);
-  assert.match(staged.stderr, /Skipped job refused: .*seniority/);
-
-  // ...and at the ledger, even with a batch approval obtained outside `review stage`.
-  const approved = approveItemsSync(directory, [applicationItem(entry())]);
-  const added = run(env, ['ledger', 'add', '--stdin'], { ...entry(), ...approved });
+  // The send path is closed at the ledger, in any mode (legacy review fields change nothing).
+  const added = run(env, ['ledger', 'add', '--stdin'], { ...entry(), reviewBatchId: 'rb-20261101-00000000', reviewToken: 'rbt1.legacy.ignored' });
   assert.equal(added.status, 1);
-  assert.match(added.stderr, /Skipped job refused/);
+  assert.match(added.stderr, /Skipped job refused: .*seniority/);
 
   // Re-scoring with tweaked input does not clear the skip.
   assert.equal(ok(env, ['score', '--stdin'], job({ seniority: 'senior' })).decision, 'review');
-  const again = run(env, ['ledger', 'add', '--stdin'], withTestReview(env, ['ledger', 'add'], entry({ id: 'skip-co-101b' })));
+  const again = run(env, ['ledger', 'add', '--stdin'], entry({ id: 'skip-co-101b' }));
   assert.equal(again.status, 1);
   assert.match(again.stderr, /Skipped job refused/);
 
   // Resetting the assessment guard does not clear it either.
   ok(env, ['score', 'guard-reset']);
-  assert.equal(run(env, ['ledger', 'add', '--stdin'], withTestReview(env, ['ledger', 'add'], entry({ id: 'skip-co-101c' }))).status, 1);
+  assert.equal(run(env, ['ledger', 'add', '--stdin'], entry({ id: 'skip-co-101c' })).status, 1);
   assert.equal(ok(env, ['ledger', 'review']).applications ?? 0, 0);
 });
 
@@ -101,27 +94,30 @@ test('a job scored without a URL is matched by company and role; other jobs stil
   const { env } = await fixture(t, 'skip-nourl');
   const { url: _url, ...noUrl } = job({ company: 'NoUrl Co' });
   assert.equal(ok(env, ['score', '--stdin'], noUrl).decision, 'skip');
-  const blocked = run(env, ['ledger', 'add', '--stdin'], withTestReview(env, ['ledger', 'add'], entry({ id: 'nourl-1', company: 'NoUrl Co', url: 'https://jobs.lever.co/nourl/1' })));
+  const blocked = run(env, ['ledger', 'add', '--stdin'], entry({ id: 'nourl-1', company: 'NoUrl Co', url: 'https://jobs.lever.co/nourl/1' }));
   assert.equal(blocked.status, 1);
   assert.match(blocked.stderr, /Skipped job refused/);
 
   assert.equal(ok(env, ['score', '--stdin'], job({ company: 'Fit Co', title: 'Senior Product Engineer', seniority: 'senior', url: 'https://jobs.lever.co/fitco/2' })).decision, 'review');
-  const recorded = ok(env, ['ledger', 'add', '--stdin'], withTestReview(env, ['ledger', 'add'], entry({ id: 'fit-2', company: 'Fit Co', role: 'Senior Product Engineer', url: 'https://jobs.lever.co/fitco/2', employerJobId: 'fitco:2' })));
+  const recorded = ok(env, ['ledger', 'add', '--stdin'], entry({ id: 'fit-2', company: 'Fit Co', role: 'Senior Product Engineer', url: 'https://jobs.lever.co/fitco/2', employerJobId: 'fitco:2' }));
   assert.equal(recorded.recorded, 'fit-2');
 });
 
-test('NEW REQUISITION CONFIRMED never replaces the batch approval on a live send, even in routine-auto with a grant', async (t) => {
+test('NEW REQUISITION CONFIRMED needs the candidate\'s explicit per-job approval, even in routine-auto with a grant', async (t) => {
   const { env } = await fixture(t, 'newreq');
   ok(env, ['autonomy', 'grant', '--stdin'], { mode: 'routine-auto' });
-  const original = entry({ id: 'alias-1', company: 'Alias Co', role: 'Senior Backend Developer', url: 'https://jobs.lever.co/alias/1', employerJobId: 'alias:1', submittedAt: new Date(Date.now() - 2 * 86_400_000).toISOString() });
-  ok(env, ['ledger', 'add', '--stdin'], withTestReview(env, ['ledger', 'add'], original));
+  const original = entry({ id: 'alias-1', approval: 'APPROVE SUBMIT', company: 'Alias Co', role: 'Senior Backend Developer', url: 'https://jobs.lever.co/alias/1', employerJobId: 'alias:1', submittedAt: new Date(Date.now() - 2 * 86_400_000).toISOString() });
+  ok(env, ['ledger', 'add', '--stdin'], original);
   const alias = entry({ id: 'alias-2', company: 'Alias Co', role: 'Sr Backend Engineer', url: 'https://jobs.lever.co/alias/2', employerJobId: 'alias:2' });
 
   const unattended = run(env, ['ledger', 'add', '--stdin'], { ...alias, duplicateOverride: 'NEW REQUISITION CONFIRMED' });
   assert.equal(unattended.status, 1);
-  assert.match(unattended.stderr, /needs a batch approval from the candidate/);
+  assert.match(unattended.stderr, /NEW REQUISITION CONFIRMED needs the candidate's explicit approval of this job/);
+  // Legacy batch-review fields do not stand in for that approval.
+  const legacy = run(env, ['ledger', 'add', '--stdin'], { ...alias, duplicateOverride: 'NEW REQUISITION CONFIRMED', reviewBatchId: 'rb-20261101-00000000', reviewToken: 'rbt1.legacy.ignored' });
+  assert.equal(legacy.status, 1);
 
-  const reviewed = withTestReview(env, ['ledger', 'add'], alias);
+  const reviewed = { ...alias, approval: 'APPROVE SUBMIT' };
   const withoutPhrase = run(env, ['ledger', 'add', '--stdin'], reviewed);
   assert.equal(withoutPhrase.status, 1);
   assert.match(withoutPhrase.stderr, /NEW REQUISITION CONFIRMED/);
@@ -129,8 +125,8 @@ test('NEW REQUISITION CONFIRMED never replaces the batch approval on a live send
   assert.match(withoutPhrase.stderr, /it matches an earlier application at this company \(run ledger check with this company and role/);
   assert.doesNotMatch(withoutPhrase.stderr, /Senior Backend Developer|\d{4}-\d{2}-\d{2}/, 'the earlier role and date stay out of error text (telemetry)');
   assert.match(withoutPhrase.stderr, /different employer job ID or requisition number \(record it as employerJobId\)/);
-  assert.match(withoutPhrase.stderr, /review-each: put this application in its own batch review/);
-  assert.match(withoutPhrase.stderr, /never pass it on your own; queue the job with attention add \(blocker "judgment"\).*only after the candidate explicitly approves this job in its own one-application batch review/);
+  assert.match(withoutPhrase.stderr, /review-each: tell the candidate it may duplicate the earlier one/);
+  assert.match(withoutPhrase.stderr, /never pass it on your own; queue the job with attention add \(blocker "judgment"\).*only after the candidate explicitly approves this job/);
   assert.doesNotMatch(withoutPhrase.stderr, /Alias Co|jobs\.lever\.co/);
   assert.equal(ok(env, ['ledger', 'add', '--stdin'], { ...reviewed, duplicateOverride: 'NEW REQUISITION CONFIRMED' }).recorded, 'alias-2');
 });

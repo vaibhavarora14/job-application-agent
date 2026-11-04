@@ -9,7 +9,6 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
-import { withTestReview } from './support/review-approval.mjs';
 import { assessmentJobKey } from '../scripts/assessment-guard.mjs';
 import { earliestLocalStartAt, noteReviewStarted } from '../scripts/started-without-outcome.mjs';
 import { telemetryApplicationSubmitted } from '../scripts/job-application.mjs';
@@ -97,7 +96,6 @@ async function telemetryEnv(t) {
 }
 
 function runCli(args, input, env) {
-  input = withTestReview(env, args, input);
   return new Promise((resolve) => {
     const child = spawn(process.execPath, [script, ...args], { env, stdio: ['pipe', 'pipe', 'pipe'] });
     let stdout = '';

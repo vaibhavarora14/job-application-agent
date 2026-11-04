@@ -111,14 +111,14 @@ and keeps outreach counts separate from applications. Cloud use requires the
 `outreach-tracking-v1` private-state migration; local use works with the managed
 npm installation on Node 20 or later.
 
-You approve every send. The agent fills applications but never submits them. It stages them as a review batch, and you approve that batch on a local review page, which shows the company, role, URL, fit score, every drafted answer and the résumé. On hosts without a local browser, you approve by typing a short approval phrase in chat. You can untick anything you don't want sent. Approval covers exactly what you saw, once, for 24 hours.
+You choose how applications are sent, and the agent asks you up front:
 
-- **`review-each`** (default): one application per review.
-- **`routine-auto`**: the agent batches up to 25 routine applications into one review. Sensitive and judgment-heavy steps still stop for you.
+- **`review-each`** (default): the agent fills each application on the employer's own page and stops before Submit. You look at the filled page in your browser, then say go in chat (or click Submit yourself).
+- **`routine-auto`**: you give standing permission, and the agent submits routine applications that pass every automatic-eligibility check without asking each time. Sensitive and judgment-heavy steps still stop for you.
 
-**What this does and doesn't enforce.** The CLI refuses to prepare a transmission intent (`cloud intent-prepare`), record a submission (`ledger add`), record a resend (`ledger retry`) or hand over an outreach email (`outreach handoff`) without an approval token for that exact item. It cannot stop a click made directly in the browser. The skill forbids that, and a send made that way is never recorded, counted or shared. Details: [`REVIEW.md`](job-application-agent/references/REVIEW.md).
+There is no separate review page or approval code (3.8.0 to 3.8.5 had one; it was removed in 3.8.6).
 
-For durable autonomy across resumable or scheduled runs (discovery, assessment, filling and staging batches; never sending):
+For durable autonomy across resumable or scheduled runs:
 
 ```bash
 echo '{"mode":"routine-auto"}' | node ~/.agents/skills/job-application-agent/scripts/job-application.mjs autonomy grant --stdin

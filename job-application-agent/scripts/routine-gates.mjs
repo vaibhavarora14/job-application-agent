@@ -161,11 +161,11 @@ export function routineSubmitGateMessage(decision, company) {
     : decision.decision === 'review'
       ? `the latest score decision is "review" but autoEligible is false (score ${decision.score ?? 'unknown'})`
       : `the latest score decision is "${decision.decision}"`;
-  return `Routine-auto submit refused for ${company || 'this job'}: ${what}. In routine-auto only jobs whose latest score is "review" with autoEligible: true can be sent from a routine batch. `
-    + 'Do not submit it as routine work; tell the candidate. To send it anyway, stage it alone in its own review batch (one application) so the candidate approves this job individually, then retry ledger add with that batch\'s reviewBatchId and reviewToken.';
+  return `Routine-auto submit refused for ${company || 'this job'}: ${what}. In routine-auto only jobs whose latest score is "review" with autoEligible: true can be sent as routine work. `
+    + 'Do not submit it as routine work; tell the candidate. To send it anyway, show the candidate the filled application page stopped before Submit and get their explicit approval for this job in the conversation, then submit and retry ledger add with approval "APPROVE SUBMIT".';
 }
 
-/** A one-application review batch is the candidate's per-job approval. */
-export function isPerJobApproval(batch) {
-  return Array.isArray(batch?.items) && batch.items.length === 1 && batch.items[0]?.type === 'application';
+/** approval "APPROVE SUBMIT" on a ledger entry records the candidate's explicit approval of that one job. */
+export function isPerJobApproval(entry) {
+  return entry?.approval === 'APPROVE SUBMIT';
 }

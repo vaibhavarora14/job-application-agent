@@ -9,7 +9,7 @@ export const COMMAND_USAGE = Object.freeze({
   score: 'score --stdin | guard | guard-reset',
   ledger: 'ledger check|add|outcome|review-ack|delivery|retry --stdin | review | deliveries [application-id]',
   autonomy: 'autonomy grant --stdin | status | preview | revoke',
-  review: 'review stage|approve --stdin | show|open|status|revoke <batch-id> | list',
+  review: 'review <any> (removed in 3.8.6: a no-op that explains batch review is gone)',
   round: 'round start|lead|source|confirm|complete --stdin | status [round-id] | leads [round-id]',
   sources: 'sources list [--stdin] | jobs [--stdin] | suggest --stdin | pending | sync | sharing status|enable|disable|reset',
   attention: 'attention add|resolve --stdin | list',

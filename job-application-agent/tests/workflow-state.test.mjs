@@ -4,7 +4,6 @@ import { mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
-import { withTestReview } from './support/review-approval.mjs';
 import { asLegacyRound } from './support/legacy-round.mjs';
 import { fileURLToPath } from 'node:url';
 
@@ -26,7 +25,6 @@ async function fixture(t, label) {
 }
 
 function cli(env, args, input) {
-  input = withTestReview(env, args, input);
   return JSON.parse(execFileSync(process.execPath, [script, ...args], {
     env,
     encoding: 'utf8',
@@ -35,7 +33,6 @@ function cli(env, args, input) {
 }
 
 function cliFailure(env, args, input) {
-  input = withTestReview(env, args, input);
   return spawnSync(process.execPath, [script, ...args], {
     env,
     encoding: 'utf8',
@@ -44,7 +41,6 @@ function cliFailure(env, args, input) {
 }
 
 function cliConcurrent(env, args, input) {
-  input = withTestReview(env, args, input);
   return new Promise((resolve) => {
     const child = spawn(process.execPath, [script, ...args], { env });
     let stdout = '';
@@ -70,7 +66,7 @@ function submission(index, roundId, overrides = {}) {
     score: 86,
     status: 'submitted',
     submittedAt: `2026-08-${String(index + 1).padStart(2, '0')}T10:00:00.000Z`,
-    approval: 'STANDING AUTHORIZATION',
+    approval: 'APPROVE SUBMIT',
     answers: {},
     telemetry: { durationBucket: '2-5m', fieldsFilled: 8, shortAnswerCount: 1, resumeUploaded: true },
     ...overrides,
@@ -88,11 +84,11 @@ test('persists a scoped autonomy grant and revokes future routine transmissions'
   const granted = cli(env, ['autonomy', 'grant', '--stdin'], { mode: 'routine-auto' });
   assert.equal(granted.enabled, true);
   assert.equal(granted.mode, 'routine-auto');
-  // Since batch review, a grant never covers a send on its own.
-  assert.ok(!granted.scopes.includes('submit'));
-  assert.ok(!granted.scopes.includes('send-recruiting-email'));
-  assert.ok(granted.scopes.includes('stage-review-batch'));
-  assert.equal(granted.submissionsRequireBatchReview, true);
+  // Batch review was removed in 3.8.6: a routine-auto grant covers routine sends again.
+  assert.ok(granted.scopes.includes('submit'));
+  assert.ok(granted.scopes.includes('send-recruiting-email'));
+  assert.ok(!granted.scopes.includes('stage-review-batch'));
+  assert.equal(granted.submissionsRequireBatchReview, undefined);
   assert.ok(granted.hardStops.includes('captcha'));
 
   const status = cli(env, ['autonomy', 'status']);
@@ -101,8 +97,8 @@ test('persists a scoped autonomy grant and revokes future routine transmissions'
   if (process.platform !== 'win32') assert.equal((await stat(join(directory, 'autonomy.json'))).mode & 0o777, 0o600);
 
   const preview = cli(env, ['autonomy', 'preview']);
-  assert.equal(preview.maySubmitRoutineApplications, false);
-  assert.equal(preview.maySendVerifiedRecruitingEmail, false);
+  assert.equal(preview.maySubmitRoutineApplications, true);
+  assert.equal(preview.maySendVerifiedRecruitingEmail, true);
   assert.equal(preview.mayBypassHostPermissionPrompts, false);
   assert.ok(preview.hardStops.includes('legal-attestation'));
 
@@ -263,7 +259,7 @@ test('ships a filterable global discovery source catalog and tracks source attri
     score: 90,
     status: 'submitted',
     submittedAt: new Date().toISOString(),
-    approval: 'STANDING AUTHORIZATION',
+    approval: 'APPROVE SUBMIT',
     answers: {},
     telemetry: { durationBucket: '2-5m', fieldsFilled: 6, resumeUploaded: true },
   });
@@ -282,7 +278,7 @@ test('ships a filterable global discovery source catalog and tracks source attri
     score: 85,
     status: 'submitted',
     submittedAt: new Date().toISOString(),
-    approval: 'STANDING AUTHORIZATION',
+    approval: 'APPROVE SUBMIT',
     answers: {},
     telemetry: { durationBucket: '2-5m', fieldsFilled: 6, resumeUploaded: true },
   });

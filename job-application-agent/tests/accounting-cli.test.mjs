@@ -5,7 +5,6 @@ import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
-import { withTestReview } from './support/review-approval.mjs';
 import { asLegacyRound } from './support/legacy-round.mjs';
 const script = fileURLToPath(new URL('../scripts/job-application.mjs', import.meta.url));
 async function fixture(t) {
@@ -13,13 +12,13 @@ async function fixture(t) {
   t.after(() => rm(dir, { recursive: true, force: true }));
   await writeFile(join(dir, 'telemetry.json'), JSON.stringify({ enabled: false, disclosed: true }));
   const env = { ...process.env, JOB_APPLICATION_AGENT_STATE_DIR: dir, JOB_APPLICATION_AGENT_CLOUD_CONFIG: join(dir, 'absent.json'), JOB_APPLICATION_AGENT_SOURCE_COMMUNITY_URL: 'http://127.0.0.1:9' };
-  const run = (args, input) => JSON.parse(execFileSync(process.execPath, [script, ...args], { env, encoding: 'utf8', input: JSON.stringify(withTestReview(env, args, input)) }));
-  const fail = (args, input) => spawnSync(process.execPath, [script, ...args], { env, encoding: 'utf8', input: JSON.stringify(withTestReview(env, args, input)) });
+  const run = (args, input) => JSON.parse(execFileSync(process.execPath, [script, ...args], { env, encoding: 'utf8', input: JSON.stringify(input) }));
+  const fail = (args, input) => spawnSync(process.execPath, [script, ...args], { env, encoding: 'utf8', input: JSON.stringify(input) });
   return { dir, run, fail };
 }
 const application = (roundId) => ({
   id: 'app', company: 'Example', role: 'Senior Engineer', url: 'https://example.test/jobs/1', source: 'email', discoverySourceId: 'indeed',
-  score: 90, status: 'submitted', submittedAt: '2026-01-01T00:00:00Z', approval: 'STANDING AUTHORIZATION', roundId, answers: {},
+  score: 90, status: 'submitted', submittedAt: '2026-01-01T00:00:00Z', approval: 'APPROVE SUBMIT', roundId, answers: {},
   telemetry: { durationBucket: '2-5m', fieldsFilled: 6, resumeUploaded: true },
 });
 const failure = { id: 'bounce-1', applicationId: 'app', attemptId: 'initial:app', type: 'delivery-failed', evidenceType: 'final-delivery-failure', evidence: 'Matched final failure for the original recruiting message.', occurredAt: '2026-01-02T00:00:00Z' };

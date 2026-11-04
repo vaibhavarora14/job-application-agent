@@ -6,7 +6,6 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
-import { withTestReview } from './support/review-approval.mjs';
 import {
   FILL_TELEMETRY_REVIEW_REASON,
   FILL_TELEMETRY_REVIEW_WINDOW_MS,
@@ -27,7 +26,6 @@ function isolatedCliEnv(directory) {
 }
 
 function runCli(args, input, env) {
-  input = withTestReview(env, args, input);
   return new Promise((resolve) => {
     const child = spawn(process.execPath, [script, ...args], { env, stdio: ['pipe', 'pipe', 'pipe'] });
     let stdout = '';
@@ -63,7 +61,7 @@ async function telemetryEnv(t, prefix) {
 
 const entry = (slug, extra) => ({
   id: `rapid-${slug}`, company: `Rapid ${slug}`, role: 'Engineer', url: `https://www.linkedin.com/jobs/view/${1000 + slug.length}${slug.charCodeAt(0)}`,
-  source: 'linkedin', score: 80, status: 'submitted', submittedAt: '2026-10-22T04:00:00Z', approval: 'STANDING AUTHORIZATION', answers: {}, ...extra,
+  source: 'linkedin', score: 80, status: 'submitted', submittedAt: '2026-10-22T04:00:00Z', approval: 'APPROVE SUBMIT', answers: {}, ...extra,
 });
 
 const readRows = async (file) => (await readFile(file, 'utf8')).trim().split('\n').filter(Boolean).map((line) => JSON.parse(line));

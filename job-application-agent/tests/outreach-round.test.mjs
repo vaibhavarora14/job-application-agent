@@ -1,6 +1,5 @@
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { withTestReview } from './support/review-approval.mjs';
 import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -36,7 +35,7 @@ function application(roundId, company = 'Example') {
     score: 86,
     status: 'submitted',
     submittedAt: '2026-09-14T10:00:00.000Z',
-    approval: 'STANDING AUTHORIZATION',
+    approval: 'APPROVE SUBMIT',
     answers: {},
     telemetry: { durationBucket: '2-5m', fieldsFilled: 8, shortAnswerCount: 1, resumeUploaded: true },
   };
@@ -155,7 +154,7 @@ async function fixture(t, label) {
   const cli = (args, input) => JSON.parse(execFileSync(process.execPath, [script, ...args], {
     env,
     encoding: 'utf8',
-    ...(input === undefined ? {} : { input: JSON.stringify(withTestReview(env, args, input)) }),
+    ...(input === undefined ? {} : { input: JSON.stringify(input) }),
   }));
   return { directory, env, cli };
 }
