@@ -1,6 +1,7 @@
-// First-time review-each users hit three validation errors on normal steps (#240):
-// `profile check` before any profile exists, a non-integer `fitScore` at `review stage`,
-// and an omitted `approval` at `ledger add`.
+// First-time review-each users hit validation errors on normal steps (#240):
+// `profile check` before any profile exists and a non-integer `fitScore` at `review stage`.
+// An omitted `approval` at `ledger add` is deliberately still a hard error: it is never
+// defaulted, and nothing is recorded or submitted for the job.
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
@@ -11,7 +12,7 @@ import { fileURLToPath } from 'node:url';
 import { withTestReview } from './support/review-approval.mjs';
 import { createSecretStore, isProfileMissingError, PROFILE_MISSING_MESSAGE } from '../scripts/secret-store.mjs';
 import { normalizeFitScore, validateStageInput } from '../scripts/review-batch.mjs';
-import { defaultLedgerApproval, telemetryErrorCategory, telemetryErrorCode, telemetryErrorFieldLabel, validateLedgerEntry } from '../scripts/job-application.mjs';
+import { telemetryErrorCategory, telemetryErrorCode, telemetryErrorFieldLabel, validateLedgerEntry } from '../scripts/job-application.mjs';
 
 const script = fileURLToPath(new URL('../scripts/job-application.mjs', import.meta.url));
 
@@ -133,37 +134,57 @@ const entry = {
   source: 'greenhouse', score: 86, status: 'submitted', submittedAt: '2026-10-30T16:15:00.000Z', answers: { 'Why Acme?': 'filled' },
 };
 
-test('an omitted approval defaults to APPROVE SUBMIT only for a review-each send', () => {
-  assert.deepEqual(defaultLedgerApproval(entry), { input: { ...entry, approval: 'APPROVE SUBMIT' }, defaulted: true });
-  assert.equal(defaultLedgerApproval({ ...entry, approval: '  ' }).input.approval, 'APPROVE SUBMIT');
-  assert.equal(defaultLedgerApproval({ ...entry, approval: 'STANDING AUTHORIZATION' }).defaulted, false);
-  assert.equal(defaultLedgerApproval(entry, { routineAuto: true }).defaulted, false);
-  assert.equal(defaultLedgerApproval({ ...entry, thinSubmissionOverride: {} }).defaulted, false);
-  assert.equal(defaultLedgerApproval({ ...entry, jobApprovalMode: 'review-each' }).defaulted, false);
-  assert.equal(validateLedgerEntry(defaultLedgerApproval(entry).input).approval, 'APPROVE SUBMIT');
-});
-
-test('a missing or wrong approval names the allowed values and keeps its telemetry classification', () => {
-  let missing;
-  try { validateLedgerEntry(entry); } catch (error) { missing = error; }
-  assert.match(missing.message, /^entry\.approval must be a non-empty string no longer than 80 characters\. Use "APPROVE SUBMIT" for a review-each batch of one, or "STANDING AUTHORIZATION"/);
-  assert.equal(telemetryErrorCategory(missing), 'submission');
-  assert.equal(telemetryErrorCode(missing), 'invalid_input');
-  assert.equal(telemetryErrorFieldLabel(missing), 'entry.approval');
+test('a missing or empty approval is a hard error that says to resend with APPROVE SUBMIT or SKIP', () => {
+  for (const approval of [undefined, null, '', '   ']) {
+    let missing;
+    try { validateLedgerEntry({ ...entry, approval }); } catch (error) { missing = error; }
+    assert.ok(missing, `approval ${JSON.stringify(approval)} must be refused`);
+    assert.match(missing.message, /^entry\.approval must be a non-empty string no longer than 80 characters\./);
+    assert.match(missing.message, /Nothing was recorded for this job\./);
+    assert.match(missing.message, /always resend it if the ATS already confirmed the submission/);
+    assert.match(missing.message, /Resend ledger add with an explicit "approval": "APPROVE SUBMIT"/);
+    assert.match(missing.message, /otherwise SKIP this job and do not submit it/);
+    assert.equal(telemetryErrorCategory(missing), 'submission');
+    assert.equal(telemetryErrorCode(missing), 'invalid_input');
+    assert.equal(telemetryErrorFieldLabel(missing), 'entry.approval');
+  }
   assert.throws(() => validateLedgerEntry({ ...entry, approval: 'yes' }), /^Error: entry\.approval is invalid\. Use "APPROVE SUBMIT"/);
+  assert.equal(validateLedgerEntry({ ...entry, approval: 'APPROVE SUBMIT' }).approval, 'APPROVE SUBMIT');
 });
 
-test('ledger add without approval records a review-each submit', async (t) => {
-  const directory = await stateDir(t, 'job-agent-first-run-approval-');
-  const env = isolatedEnv(directory);
+async function assertNothingSubmitted(directory) {
+  const ledger = await readFile(join(directory, 'applications.ndjson'), 'utf8').catch((error) => (error.code === 'ENOENT' ? '' : Promise.reject(error)));
+  assert.equal(ledger.trim(), '', 'no ledger row may be recorded');
+  const queue = await readFile(join(directory, 'telemetry-queue.ndjson'), 'utf8').catch(() => '');
+  assert.doesNotMatch(queue, /application_submitted/);
+}
+
+for (const [label, approval] of [['an omitted', undefined], ['an empty', ''], ['a blank', '   ']]) {
+  test(`ledger add with ${label} approval in review-each is refused and records nothing`, async (t) => {
+    const directory = await stateDir(t, 'job-agent-first-run-approval-');
+    const input = { ...entry, telemetry: { fieldsFilled: 8, resumeUploaded: true, resumeFieldPresent: true, durationBucket: '2-5m' } };
+    if (approval !== undefined) input.approval = approval;
+    const refused = await runCli(['ledger', 'add', '--stdin'], input, isolatedEnv(directory));
+    assert.equal(refused.code, 1, refused.stdout);
+    assert.equal(refused.stdout.trim(), '');
+    assert.match(refused.stderr, /entry\.approval must be a non-empty string/);
+    assert.match(refused.stderr, /APPROVE SUBMIT/);
+    assert.match(refused.stderr, /SKIP this job/);
+    assert.doesNotMatch(refused.stderr, /approvalDefaulted/);
+    await assertNothingSubmitted(directory);
+  });
+}
+
+test('ledger add with an explicit APPROVE SUBMIT records the submit and reports no approvalDefaulted', async (t) => {
+  const directory = await stateDir(t, 'job-agent-first-run-approved-');
   const added = await runCli(['ledger', 'add', '--stdin'], {
-    ...entry,
+    ...entry, approval: 'APPROVE SUBMIT',
     telemetry: { fieldsFilled: 8, resumeUploaded: true, resumeFieldPresent: true, durationBucket: '2-5m' },
-  }, env);
+  }, isolatedEnv(directory));
   assert.equal(added.code, 0, added.stderr);
   const result = JSON.parse(added.stdout);
   assert.equal(result.recorded, entry.id);
-  assert.equal(result.approvalDefaulted, 'APPROVE SUBMIT');
+  assert.equal('approvalDefaulted' in result, false);
   const rows = (await readFile(join(directory, 'applications.ndjson'), 'utf8')).trim().split('\n').map((line) => JSON.parse(line));
   assert.equal(rows.at(-1).approval, 'APPROVE SUBMIT');
 });

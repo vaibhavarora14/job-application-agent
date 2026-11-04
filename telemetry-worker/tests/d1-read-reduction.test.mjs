@@ -165,11 +165,14 @@ sqliteTest('migration backfill keeps lifetime totals equal to table aggregates',
     if (file.startsWith('0005')) break;
     await db.exec(await readFile(join(migrationsDir, file), 'utf8'));
   }
+  // 0005 counts active installs against the real clock (datetime('now', '-30 days')), so the
+  // active one is seeded relative to now; a fixed date made this test fail 30 days later.
+  const recentlyActive = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
   db.database.prepare(`
     INSERT INTO public_installations (installation_hash, installed_at, last_active_at)
-    VALUES ('a', '2026-01-01T00:00:00.000Z', '2026-10-01T00:00:00.000Z'),
+    VALUES ('a', '2026-01-01T00:00:00.000Z', ?),
            ('b', '2026-01-01T00:00:00.000Z', NULL)
-  `).run();
+  `).run(recentlyActive);
   db.database.prepare(`
     INSERT INTO public_daily_metrics (day, metric, segment, count) VALUES
       ('2026-10-01', 'jobs_assessed', '', 10),
