@@ -37,7 +37,7 @@ import {
 } from './attention-questions.mjs';
 import { confirmOutreachTowardRound, loadOutreachRoundView, loadSentVerifiedOutreach, outreachConfirmationEvents, projectOutreachRoundCounts, resolveOutreachRoundId, roundNotFoundError } from './outreach-round.mjs';
 import { isFixtureOrSandboxApply, resolveApplyKind } from './ats/apply-url-gate.mjs';
-import { REVIEW_STARTED_FILE, noteReviewPaused, noteReviewStarted, startedWithoutOutcome, startedWithoutOutcomeWarning } from './started-without-outcome.mjs';
+import { REVIEW_STARTED_FILE, earliestLocalStartAt, noteReviewPaused, noteReviewStarted, startedWithoutOutcome, startedWithoutOutcomeWarning } from './started-without-outcome.mjs';
 import { ASSESSMENT_GUARD_FILE, assessmentJobKey, createAssessmentGuard, invalidJobMessage, isAssessmentGuardStop } from './assessment-guard.mjs';
 import {
   ASSESSMENT_DECISIONS_FILE, COMMUNITY_FEED_BLOCKERS, COMMUNITY_FEED_SOURCE_ID, RESUME_UPLOAD_BLOCKER, ROUND_EVIDENCE_FILE, ROUND_GATES_VERSION,
@@ -2029,6 +2029,21 @@ async function recordReviewPaused(job) {
   });
 }
 
+// Earliest local time this job was worked on, for a submit with no start time of its own (#241).
+// Local private files only; nothing here is sent anywhere.
+async function localSubmitStartAt(entry) {
+  try {
+    const dir = stateDir();
+    return earliestLocalStartAt({
+      started: await readPrivateJson(join(dir, REVIEW_STARTED_FILE), null).catch(() => null),
+      decisions: await readPrivateJson(join(dir, ASSESSMENT_DECISIONS_FILE), null).catch(() => null),
+      url: entry.url, company: entry.company, role: entry.role,
+    });
+  } catch {
+    return null;
+  }
+}
+
 async function latestDecisionFor(dir, { url, company, role }) {
   const keys = [assessmentJobKey({ url }), assessmentJobKey({ company, title: role })].filter(Boolean);
   const decisions = await readPrivateJson(join(dir, ASSESSMENT_DECISIONS_FILE), null).catch(() => null);
@@ -3393,7 +3408,11 @@ async function executeCommand([area, action, value], telemetry, session, communi
     if (fillTelemetryReview) result.fillTelemetryReview = fillTelemetryReview;
     if (!isFixtureOrSandboxApply(entry)) {
       const identity = await jobIdentity(entry.url);
-      const lifecycleStartedAt = await telemetry.applicationStartedAt?.(identity.jobHash);
+      // Duration order: the submit's own telemetry timing, then the application_started time for
+      // this job hash, then (#241) the earliest local `score` time for the job. The fallback is
+      // read-only: it emits and records no start, so starts are never double-counted.
+      const lifecycleStartedAt = await telemetry.applicationStartedAt?.(identity.jobHash)
+        ?? (fillMetrics.durationBucket == null ? await localSubmitStartAt(entry) : null);
       await emitDomainEvent(telemetry, session, await telemetryApplicationSubmitted(entry, {
         ...fillMetrics,
         telemetrySupplied,

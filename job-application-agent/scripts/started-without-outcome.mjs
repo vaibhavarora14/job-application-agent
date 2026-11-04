@@ -89,3 +89,34 @@ export function startedWithoutOutcomeWarning(summary) {
   if (!summary?.count) return null;
   return `${summary.count} ${summary.count === 1 ? 'job was' : 'jobs were'} scored for review in this round with no submit, skip or pause (startedWithoutOutcome). Report ${summary.count === 1 ? 'it' : 'them'} to the candidate in the round summary as not pursued; do not apply to ${summary.count === 1 ? 'it' : 'them'} after the round without a new review.`;
 }
+
+/**
+ * Earliest local time this job was worked on, for `ledger add` when the submit has no duration of
+ * its own (#241): no `telemetry` timing and no `application_started` time for the job hash. Uses
+ * the local `score` times for the job: every review score time (review-started.json) and the latest
+ * score decision time (assessment-decisions.json, written for every decision), whichever is earliest
+ * and not after `endedAt`. The job is matched by URL or company + role, the same keys `score` uses.
+ * A review batch's staging time is deliberately not used: it comes after the form is filled, so it
+ * would understate the duration. Returns null when no local time exists, so the bucket stays
+ * `unknown` (never a made-up `under-1s`).
+ * Read-only: it never records or emits a start, so a job is never counted as started twice.
+ */
+export function earliestLocalStartAt({ started = null, decisions = null, url = null, company = null, role = null, endedAt = null }) {
+  const keys = [...new Set([assessmentJobKey({ url }), assessmentJobKey({ company, title: role })].filter(Boolean))];
+  const end = endedAt == null ? Date.now() : ms(endedAt);
+  if (end == null) return null;
+  const candidates = [];
+  for (const key of keys) {
+    const record = started?.jobs?.[key];
+    if (Array.isArray(record?.scoredAt)) candidates.push(...record.scoredAt);
+    const decision = decisions?.jobs?.[key];
+    if (decision && typeof decision === 'object') candidates.push(decision.at);
+  }
+  let earliest = null;
+  for (const value of candidates) {
+    const t = typeof value === 'string' ? ms(value) : null;
+    if (t == null || t > end) continue;
+    if (earliest == null || t < earliest) earliest = t;
+  }
+  return earliest == null ? null : new Date(earliest).toISOString();
+}
