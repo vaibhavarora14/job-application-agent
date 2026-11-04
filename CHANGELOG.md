@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 3.8.6
 
 - **Batch review gate removed (owner decision, 5 Nov 2026).** Approval is again an explicit choice the candidate makes, as before 3.8.0. In `review-each` (the default) the agent fills the real application page on the employer's site, stops before Submit, and asks the candidate in chat; they look at the filled page in their own browser and confirm (or click Submit themselves). In `routine-auto` the candidate's standing permission (a `routine-auto` profile or autonomy grant) lets the agent submit routine applications with no approval step. There is no local review page, review batch or typed approval code any more.
   - **Removed:** the CLI requirement for `reviewBatchId` / `reviewToken` on `ledger add`, `ledger retry`, `cloud intent-prepare`, `cloud intent-confirm` and `outreach handoff` (#160, #162). The old fields are still accepted and ignored, and are no longer stored on ledger rows. The local review page (`review open`, `review-page.mjs`), `review-batch.mjs` and `references/REVIEW.md` are deleted. `review stage|approve|show|open|status|revoke|list` remain only as stateless no-ops that return `deprecated: true` and say batch review was removed, so an agent on an older SKILL.md gets a clear answer instead of a usage error. Filling empty current-location answers during `review stage` (#224) went with it.
