@@ -20,13 +20,13 @@ export const metadata: Metadata = {
     description: JOBS_DESCRIPTION,
     url: JOBS_URL,
     type: "website",
-    images: [{ url: "/og.png", width: 1200, height: 630, alt: "JobAppAgent open roles" }],
+    images: [{ url: "/og-v2.png", width: 1200, height: 630, alt: "JobAppAgent open roles" }],
   },
   twitter: {
     card: "summary_large_image",
     title: `${JOBS_TITLE} · JobAppAgent`,
     description: JOBS_DESCRIPTION,
-    images: ["/og.png"],
+    images: ["/og-v2.png"],
   },
 };
 
