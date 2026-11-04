@@ -1161,23 +1161,15 @@ export function scoreJob(input, target) {
 }
 
 const APPROVAL_HINT = 'Use "APPROVE SUBMIT" for a review-each batch of one, or "STANDING AUTHORIZATION" for a routine-auto batch.';
+// A missing approval is never defaulted, in any mode: nothing is recorded or submitted for the job
+// until the agent resends with an explicit decision (reverts the #240 review-each default).
+const APPROVAL_MISSING_HINT = 'Nothing was recorded or submitted for this job. Resend with an explicit "approval": '
+  + '"APPROVE SUBMIT" only if the candidate approved this exact application, or SKIP this job and do not submit it. '
+  + 'In a routine-auto batch use "STANDING AUTHORIZATION".';
 
 function ledgerApproval(value) {
-  if (typeof value !== 'string' || !value.trim() || value.length > 80) throw new Error(`entry.approval must be a non-empty string no longer than 80 characters. ${APPROVAL_HINT}`);
+  if (typeof value !== 'string' || !value.trim() || value.length > 80) throw new Error(`entry.approval must be a non-empty string no longer than 80 characters. ${APPROVAL_MISSING_HINT}`);
   return value.trim();
-}
-
-/**
- * review-each (#240): the approved one-application batch (reviewBatchId + reviewToken, verified by
- * ledger add) is the candidate's approval, so an omitted `approval` defaults to "APPROVE SUBMIT".
- * It is never defaulted for a routine-auto send (STANDING AUTHORIZATION, an autonomy grant or a
- * routine-auto profile) or a thin-submission override, which must say so explicitly.
- */
-export function defaultLedgerApproval(input, { routineAuto = false } = {}) {
-  if (!input || typeof input !== 'object' || Array.isArray(input)) return { input, defaulted: false };
-  const omitted = input.approval == null || (typeof input.approval === 'string' && !input.approval.trim());
-  if (!omitted || routineAuto || input.thinSubmissionOverride != null || input.jobApprovalMode != null) return { input, defaulted: false };
-  return { input: { ...input, approval: 'APPROVE SUBMIT' }, defaulted: true };
 }
 
 export function validateLedgerEntry(input) {
@@ -3364,9 +3356,7 @@ async function executeCommand([area, action, value], telemetry, session, communi
   else if (area === 'ledger' && action === 'retry' && value === '--stdin') result = await recordDelivery(await jsonStdin(), true);
   else if (area === 'ledger' && action === 'deliveries') result = await deliveryHistory(value);
   else if (area === 'ledger' && action === 'add' && value === '--stdin') {
-    const rawInput = await jsonStdin();
-    const approvalOmitted = rawInput && typeof rawInput === 'object' && (rawInput.approval == null || (typeof rawInput.approval === 'string' && !rawInput.approval.trim()));
-    const { input, defaulted: approvalDefaulted } = defaultLedgerApproval(rawInput, { routineAuto: approvalOmitted ? await isRoutineAutoSend({}) : false });
+    const input = await jsonStdin();
     const telemetryDetails = validateSubmissionTelemetry(input.telemetry);
     const baseEntry = validateLedgerEntry(input);
     const fillMetrics = resolveSubmissionFillMetrics(baseEntry, telemetryDetails);
@@ -3395,7 +3385,6 @@ async function executeCommand([area, action, value], telemetry, session, communi
       : null;
     const routineAuto = review ? await isRoutineAutoSend(entry) : false;
     result = await ledgerAdd(entry, input.duplicateOverride, input.companyReapplyOverride, input.cloudIntentId && input.cloudLeaseId ? { intentId: input.cloudIntentId, leaseId: input.cloudLeaseId } : null, review, { routineAuto });
-    if (approvalDefaulted) result.approvalDefaulted = 'APPROVE SUBMIT';
     result.communityJob = await communityJobsSync(community, { limit: 1, applicationIds: [entry.id] });
     const fillTelemetryReview = telemetrySupplied ? await reviewRapidFireFillTelemetry(entry, input.telemetry) : null;
     if (fillTelemetryReview) result.fillTelemetryReview = fillTelemetryReview;

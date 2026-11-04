@@ -77,7 +77,7 @@ The approval phrase and the review page show that a person reviewed the batch, a
 5. **Send.** For each approved item, carry `reviewBatchId` and `reviewToken`:
    - In cloud mode, pass them to `cloud intent-prepare` before you submit.
    - Submit in the browser, wait for visible confirmation, then pass them to `ledger add` (or `ledger retry` for a resend).
-   - `ledger add` also takes `approval`: `"APPROVE SUBMIT"` for a `review-each` batch of one, `"STANDING AUTHORIZATION"` for a `routine-auto` batch. In `review-each` an omitted `approval` defaults to `"APPROVE SUBMIT"` (the output says `approvalDefaulted`); it is never defaulted for a routine-auto send or a `thinSubmissionOverride`.
+   - `ledger add` also takes `approval`: `"APPROVE SUBMIT"` for a `review-each` batch of one, `"STANDING AUTHORIZATION"` for a `routine-auto` batch. `approval` is required in every mode and is never defaulted: a missing or empty `approval` is a hard error and nothing is recorded. Resend with an explicit `"APPROVE SUBMIT"` only if the candidate approved this application, or skip the job and do not submit it.
    - For an email item, pass them to `outreach handoff`, which returns the text for the candidate to send.
    - Each item covers one send.
    - Approval expires 24 hours after it is given.
