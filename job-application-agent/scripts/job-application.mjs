@@ -1161,10 +1161,13 @@ export function scoreJob(input, target) {
 }
 
 const APPROVAL_HINT = 'Use "APPROVE SUBMIT" for a review-each batch of one, or "STANDING AUTHORIZATION" for a routine-auto batch.';
-// A missing approval is never defaulted, in any mode: nothing is recorded or submitted for the job
-// until the agent resends with an explicit decision (reverts the #240 review-each default).
-const APPROVAL_MISSING_HINT = 'Nothing was recorded or submitted for this job. Resend with an explicit "approval": '
-  + '"APPROVE SUBMIT" only if the candidate approved this exact application, or SKIP this job and do not submit it. '
+// A missing approval is never defaulted, in any mode: nothing is recorded for the job until the
+// agent resends with an explicit decision (reverts the #240 review-each default).
+// The CLI cannot know whether the browser already sent the form, so the hint separates "nothing
+// recorded" from the ATS state: a confirmed send must be resent here, never skipped.
+const APPROVAL_MISSING_HINT = 'Nothing was recorded for this job. Resend ledger add with an explicit "approval": '
+  + '"APPROVE SUBMIT" if the candidate approved this exact application (always resend it if the ATS already confirmed '
+  + 'the submission, so it is not left unrecorded); otherwise SKIP this job and do not submit it. '
   + 'In a routine-auto batch use "STANDING AUTHORIZATION".';
 
 function ledgerApproval(value) {

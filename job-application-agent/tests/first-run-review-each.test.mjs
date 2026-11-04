@@ -140,9 +140,10 @@ test('a missing or empty approval is a hard error that says to resend with APPRO
     try { validateLedgerEntry({ ...entry, approval }); } catch (error) { missing = error; }
     assert.ok(missing, `approval ${JSON.stringify(approval)} must be refused`);
     assert.match(missing.message, /^entry\.approval must be a non-empty string no longer than 80 characters\./);
-    assert.match(missing.message, /Nothing was recorded or submitted for this job\./);
-    assert.match(missing.message, /explicit "approval": "APPROVE SUBMIT"/);
-    assert.match(missing.message, /SKIP this job and do not submit it/);
+    assert.match(missing.message, /Nothing was recorded for this job\./);
+    assert.match(missing.message, /always resend it if the ATS already confirmed the submission/);
+    assert.match(missing.message, /Resend ledger add with an explicit "approval": "APPROVE SUBMIT"/);
+    assert.match(missing.message, /otherwise SKIP this job and do not submit it/);
     assert.equal(telemetryErrorCategory(missing), 'submission');
     assert.equal(telemetryErrorCode(missing), 'invalid_input');
     assert.equal(telemetryErrorFieldLabel(missing), 'entry.approval');
