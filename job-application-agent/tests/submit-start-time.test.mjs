@@ -21,7 +21,7 @@ const at = (minutes) => new Date(Date.parse(T0) + minutes * 60_000).toISOString(
 const ago = (minutes) => new Date(Date.now() - minutes * 60_000).toISOString();
 const URL_A = 'https://job-boards.greenhouse.io/acme/jobs/241';
 
-test('earliestLocalStartAt picks the earliest score time for the job, by URL or company + role', () => {
+test('earliestLocalStartAt picks the earliest score time for the job, by URL first, else company + role', () => {
   let started = noteReviewStarted({ version: 1, jobs: {} }, { url: URL_A, company: 'Acme', title: 'Engineer' }, at(5));
   started = noteReviewStarted(started, { url: URL_A, company: 'Acme', title: 'Engineer' }, at(9));
   const decisions = { version: 1, jobs: { [assessmentJobKey({ url: URL_A })]: { decision: 'review', score: 86, at: at(9) } } };
@@ -31,6 +31,11 @@ test('earliestLocalStartAt picks the earliest score time for the job, by URL or 
   // A job scored without a URL is matched by company + role.
   const byName = noteReviewStarted({ version: 1, jobs: {} }, { company: 'Acme', title: 'Engineer' }, at(2));
   assert.equal(earliestLocalStartAt({ started: byName, url: URL_A, company: 'Acme', role: 'Engineer', endedAt: at(12) }), at(2));
+  // When the URL has its own record, an older same-title job scored without a URL is not used.
+  const both = noteReviewStarted(started, { company: 'Acme', title: 'Engineer' }, at(-60));
+  assert.equal(earliestLocalStartAt({ started: both, decisions, url: URL_A, company: 'Acme', role: 'Engineer', endedAt: at(12) }), at(5));
+  // Even when the URL record has no usable time, the name record is not borrowed.
+  assert.equal(earliestLocalStartAt({ started: both, url: URL_A, company: 'Acme', role: 'Engineer', endedAt: at(1) }), null);
 });
 
 test('earliestLocalStartAt returns null when no usable local time exists', () => {
