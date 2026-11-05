@@ -81,7 +81,7 @@ instructions only; they do not install a Bot, change agent settings, or access
 candidate state. Browse the [platform guides](https://jobappagent.com/platforms).
 Each template starts in review mode and requires browser validation on its host.
 The [Grok Bot template](https://x.ai/bot/0PNQABev0aiAUlhWI83XH) starts in review
-mode, where every submit is confirmed.
+mode (confirm each submit); you can switch on auto-apply when you ask.
 The existing installer also supports Codex, Claude Code, Cursor, Copilot, and
 Gemini skill directories when present.
 
@@ -114,7 +114,7 @@ npm installation on Node 20 or later.
 You choose how applications are sent, and the agent asks you up front:
 
 - **`review-each`** (default): the agent fills each application on the employer's own page and stops before Submit. You look at the filled page in your browser, then say go in chat (or click Submit yourself).
-- **`routine-auto`**: you give standing permission, and the agent submits routine applications that pass every automatic-eligibility check without asking each time. Sensitive and judgment-heavy steps still stop for you.
+- **`routine-auto`** (auto-apply): when you ask for it, the agent auto-applies for you under an opt-in standing grant you can revoke any time. It still stops for sign-in, CAPTCHA and anything it can't verify.
 
 There is no separate review page or approval code (3.8.0 to 3.8.5 had one; it was removed in 3.8.6).
 

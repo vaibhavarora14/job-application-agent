@@ -39,7 +39,7 @@ export default async function PlatformGuide({ params }: Props) {
     {templateUrl ? (
       <div className={styles.templateCta}>
         <a className="button" href={templateUrl}>Open the {platform.name} template</a>
-        <p className={styles.templateNote}>Starts in review mode, where every submit is confirmed.</p>
+        <p className={styles.templateNote}>Starts in review mode (confirm each submit). Auto-apply when you ask.</p>
       </div>
     ) : null}
     <p>This is a setup template for your own account. Full application support depends on the browser and secure storage available on your agent’s computer.</p>
