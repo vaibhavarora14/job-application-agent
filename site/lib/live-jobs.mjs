@@ -186,7 +186,7 @@ export function jobPostingDescription(job) {
     place ? `Location: ${place}.` : null,
     `Application channel: ${channel}.`,
     TRUST_LINE + '.',
-    'Apply through JobAppAgent on the employer\'s own posting; by default it stops before Submit for you to confirm.',
+    'Apply through JobAppAgent on the employer\'s own posting; by default it stops before Submit for you to confirm, or it auto-applies when you ask.',
   ].filter(Boolean);
   return parts.join(' ');
 }

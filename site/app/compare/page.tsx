@@ -45,9 +45,9 @@ type Row = { name: string; repo?: string; refs: number[]; approval: Approval; ce
 
 const ROWS: Row[] = [
   { name: "JobAppAgent", approval: { tone: "yes", label: "yes, by default" }, repo: "vaibhavarora14/job-application-agent", refs: [1], cells: [
-    "Searches, matches, fills and submits. `review-each` is the default. Optional `routine-auto`, opted into with a standing grant, submits routine applications without approval for each one, and pauses for sensitive steps.",
+    "Searches, matches, fills and submits. By default (`review-each`) it stops before Submit so you can confirm. When you ask for it, it auto-applies for you (`routine-auto`, an opt-in standing grant).",
     "Uses the browser your coding agent provides. Submits to Greenhouse, Ashby and Lever, which test fixtures cover. Other documented channels: LinkedIn, Workable, Comeet, Rippling, SmartRecruiters, Google Forms, company career sites and email. Workday is listed but not yet submitted to or tested. It won't automate LinkedIn or X sign-in or messaging.",
-    "Yes by default (`review-each`). Optional `routine-auto`.",
+    "Your choice: confirm each one by default (`review-each`), or auto-apply when you ask (`routine-auto`).",
     "MIT",
     "`npx job-application-agent@latest install` or `npx skills add`",
     "Profile in the OS credential store. Résumé and ledgers in a local owner-only folder (an optional private remote store can be configured). Analytics, contact record and community sharing are on by default, with opt-outs.",
@@ -161,7 +161,7 @@ export default function Compare() {
 
     <h2>How to choose</h2>
     <ul className={styles.choose}>
-      <li><strong>You want a person to approve every submit and you&apos;re comfortable in a coding agent.</strong> career-ops and agent-apply always keep you on the submit button. JobAppAgent does too in its default <code>review-each</code> mode (optional <code>routine-auto</code> can submit routine applications without asking each time), and also checks eligibility and duplicates, and only counts confirmed submissions. career-ops has the larger scanner and the CV and cover-letter tooling. agent-apply suits a spreadsheet tracker.</li>
+      <li><strong>You want a person to approve every submit and you&apos;re comfortable in a coding agent.</strong> career-ops and agent-apply always keep you on the submit button. JobAppAgent does too by default (<code>review-each</code>), and auto-applies for you when you ask (<code>routine-auto</code>). It also checks eligibility and duplicates, and only counts confirmed submissions. career-ops has the larger scanner and the CV and cover-letter tooling. agent-apply suits a spreadsheet tracker.</li>
       <li><strong>You want the most hands-off pipeline.</strong> ApplyPilot is built to submit on its own across many boards and Workday portals. LangHire does the same from a desktop app. Both fit that need better than JobAppAgent, which defaults to review.</li>
       <li><strong>You want documents prepared, and you apply yourself.</strong> Zeyad Elganainy&apos;s JobPilot never submits. It sends a daily digest with tailored documents.</li>
       <li><strong>You want a desktop app rather than a coding agent.</strong> LangHire ships installers for macOS, Windows and Linux.</li>
