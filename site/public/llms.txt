@@ -12,7 +12,7 @@ JobAppAgent (npm package `job-application-agent`, also called Job Application Ag
 ## How it works
 
 - Runs locally: the skill runs inside your own coding agent and browser. Your profile is kept in the OS credential store (macOS Keychain, Windows Credential Manager, or Linux Secret Service), and your résumé and application ledgers stay in an owner-only local state directory. An optional private Cloudflare D1 backend can share state across one person's trusted hosts.
-- Asks before submitting by default: it does not apply until you authorize a destination or batch. `review-each` mode asks you to approve every completed application before submission; `routine-auto` is opt-in through an explicit, revocable autonomy grant (`autonomy revoke`).
+- Asks before submitting by default: in `review-each` mode it fills the employer's own application page and stops before Submit, so you confirm each one in chat or click Submit yourself. Optional `routine-auto` mode, opted into with a standing, revocable autonomy grant (`autonomy revoke`), can submit routine applications without approval for each one.
 - Always pauses for you on passwords, SSO, MFA, CAPTCHA, legal attestations, government identifiers, demographic questions, and unverifiable claims.
 - Works across applicant-tracking systems: discovery searches a shared, versioned catalog of direct careers pages, ATS platforms, networks, feeds, and job boards, and verifies every lead at the employer or ATS page before applying.
 - Truthful applications: fills forms and uploads one canonical résumé using verified facts only, and refuses unverifiable claims.
