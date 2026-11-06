@@ -41,7 +41,7 @@ export default function OpenSource() {
     <p><strong>Search.</strong> It finds open roles from a reviewed list of sources plus a community registry of public job links, and resolves them to the employer&apos;s own careers page or job system where possible.</p>
     <p><strong>Match.</strong> Each role is checked against one verified résumé and the preferences you set: role, location, pay floor, work mode, sponsorship. It scores fit and checks for duplicates. Weak fits are skipped. The thresholds don&apos;t drop to hit a number.</p>
     <p><strong>Apply within your rules.</strong> By default (<code>review-each</code>) it fills the employer&apos;s own application page and stops before Submit so you can confirm. When you ask for it, it auto-applies for you (<code>routine-auto</code>, an opt-in standing grant). You can check or revoke that grant at any time.</p>
-    <p><strong>Track.</strong> Applications go into a ledger on your machine, and only visibly confirmed submissions get recorded as applied. A filled form isn&apos;t an application. You can log outcomes later and use them to adjust your targeting.</p>
+    <p><strong>Track.</strong> Applications go into a ledger on your machine, and only visibly confirmed submissions get recorded as applied. You can log outcomes later and use them to adjust your targeting.</p>
     <p>It always stops and asks you about:</p>
     <ul>
       <li>sign-in, SSO, MFA and CAPTCHA</li>

@@ -32,7 +32,7 @@ JobAppAgent (Job Application Agent) is an [Agent Skill](https://agentskills.io/s
 - OS credential store for profile
 - One verified résumé; refuse unverifiable claims
 - Never reads cookies/session files; pauses for SSO/MFA/CAPTCHA/legal
-- Only records confirmed submissions (filled ≠ applied)
+- Only records confirmed submissions after the employer site shows success.
 - Analytics/community sharing opt-out via CLI
 
 ## 🚀 Get started
@@ -142,7 +142,7 @@ The agent pauses for:
 - claims that cannot be verified from your profile or résumé;
 - browser or operating-system permission prompts.
 
-It never reads browser cookies or session files, bypasses access controls, or counts a filled form as a submission.
+It never reads browser cookies or session files, bypasses access controls, or records an application before the employer site confirms it.
 
 ## 🧭 How it works
 

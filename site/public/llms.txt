@@ -16,7 +16,7 @@ JobAppAgent (npm package `job-application-agent`, also called Job Application Ag
 - Always pauses for you on passwords, SSO, MFA, CAPTCHA, legal attestations, government identifiers, demographic questions, and unverifiable claims.
 - Works across applicant-tracking systems: discovery searches a shared, versioned catalog of direct careers pages, ATS platforms, networks, feeds, and job boards, and verifies every lead at the employer or ATS page before applying.
 - Truthful applications: fills forms and uploads one canonical résumé using verified facts only, and refuses unverifiable claims.
-- Verified record: deduplicates applications and records a submission only after a visible confirmation (filled is not applied). Outcomes are tracked so targeting can improve.
+- Verified record: deduplicates applications and records a submission only after a visible confirmation. Outcomes are tracked so targeting can improve.
 - Privacy controls: analytics and anonymous community sharing of confirmed public job links can each be disabled from the CLI (`telemetry disable`, `sources sharing disable`).
 
 ## Key pages
