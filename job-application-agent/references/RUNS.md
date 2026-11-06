@@ -112,7 +112,7 @@ Exit codes: `0` resume_requested · `10` skipped · `11` aborted · `20` timeout
 
 #### Resume → submit (after exit 0)
 
-**Submit if possible** once blockers are cleared and the candidate approved this application (`review-each`) or `routine-auto` covers it. filled ≠ applied until visible ATS confirmation.
+**Submit if possible** once blockers are cleared and the candidate approved this application (`review-each`) or `routine-auto` covers it. Record a submission only after visible ATS confirmation.
 
 ```text
 node scripts/attention-resume-submit.mjs --checklist
