@@ -60,5 +60,16 @@
     <input id="linkedin" name="linkedin" type="url" placeholder="https://linkedin.com/in/…" />
     <button type="submit" data-testid="submit-application">Submit application</button>
   </form>
+  <script>
+    // README recording only. Prove, smoke, and E2E load this page without ?demo=1.
+    if (new URLSearchParams(location.search).get("demo") === "1") {
+      var badge = document.querySelector(".badge");
+      if (badge) badge.remove();
+      var meta = document.querySelector(".meta");
+      if (meta) meta.textContent = "Example Co · Remote · Example posting";
+      var note = document.querySelector(".note");
+      if (note) note.remove();
+    }
+  </script>
 </body>
 </html>
