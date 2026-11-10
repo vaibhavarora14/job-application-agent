@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Application Questions (Fixture) — Workday-shaped</title>
+  <style>
+    :root { color-scheme: light; --ink: #1c2833; --muted: #5c6b73; --line: #d5dde3; --accent: #0b6e4f; }
+    * { box-sizing: border-box; }
+    body { margin: 0; font-family: "IBM Plex Sans", "Segoe UI", sans-serif; background: #f4f7f6; color: var(--ink); }
+    main { max-width: 40rem; margin: 0 auto; padding: 1.5rem 1.25rem 3rem; }
+    .badge { font-size: 0.75rem; letter-spacing: 0.04em; text-transform: uppercase; color: var(--muted); }
+    h1 { font-size: 1.6rem; margin: 0.4rem 0; }
+    form { background: #fff; border: 1px solid var(--line); padding: 1.1rem; }
+    label, legend { font-size: 0.9rem; }
+    legend { margin: 0.9rem 0 0.35rem; }
+    select { width: 100%; padding: 0.55rem 0.65rem; border: 1px solid var(--line); font: inherit; }
+    fieldset { border: 0; padding: 0; margin: 0; }
+    .choice { display: flex; gap: 1rem; }
+    .choice label { display: flex; gap: 0.4rem; align-items: center; }
+    .choice input { width: auto; }
+    button { margin-top: 1.2rem; background: var(--accent); color: #fff; border: 0; padding: 0.7rem 1.1rem; font: inherit; cursor: pointer; }
+    .note { color: var(--muted); font-size: 0.85rem; }
+  </style>
+</head>
+<body>
+  <main data-step="application-questions" data-fixture="workday">
+    <div class="badge">JobAppAgent owned fixture · Workday-shaped · fill only</div>
+    <h1>Application Questions</h1>
+    <p class="note">Step 3 of 5. Profile-backed authorization only. No legal attestation on this page.</p>
+    <form id="workday-application-questions" action="./voluntary-disclosures.html" method="get">
+      <fieldset>
+        <legend>Are you legally authorized to work in the United States? *</legend>
+        <div class="choice">
+          <label><input type="radio" name="workAuthorization" value="yes" required /> Yes</label>
+          <label><input type="radio" name="workAuthorization" value="no" /> No</label>
+        </div>
+      </fieldset>
+      <fieldset>
+        <legend>Will you now or in the future require employer sponsorship? *</legend>
+        <div class="choice">
+          <label><input type="radio" name="sponsorship" value="yes" required /> Yes</label>
+          <label><input type="radio" name="sponsorship" value="no" /> No</label>
+        </div>
+      </fieldset>
+      <label for="source">How did you hear about us?</label>
+      <select id="source" name="source">
+        <option value="">Select</option>
+        <option value="job-board">Job board</option>
+        <option value="referral">Referral</option>
+      </select>
+      <button type="button" data-action="continue" data-automation-id="pageFooterNextButton">Save and Continue</button>
+    </form>
+  </main>
+</body>
+</html>

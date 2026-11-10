@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Application Questions legal pause (Fixture) — Workday-shaped</title>
+  <style>
+    :root { color-scheme: light; --ink: #1c2833; --muted: #5c6b73; --line: #d5dde3; --accent: #0b6e4f; }
+    * { box-sizing: border-box; }
+    body { margin: 0; font-family: "IBM Plex Sans", "Segoe UI", sans-serif; background: #f4f7f6; color: var(--ink); }
+    main { max-width: 40rem; margin: 0 auto; padding: 1.5rem 1.25rem 3rem; }
+    .badge { font-size: 0.75rem; letter-spacing: 0.04em; text-transform: uppercase; color: var(--muted); }
+    h1 { font-size: 1.6rem; margin: 0.4rem 0; }
+    form { background: #fff; border: 1px solid var(--line); padding: 1.1rem; }
+    legend { margin: 0.9rem 0 0.35rem; font-size: 0.9rem; }
+    fieldset { border: 0; padding: 0; margin: 0; }
+    .choice { display: flex; gap: 1rem; }
+    .choice label, .check { display: flex; gap: 0.45rem; align-items: flex-start; }
+    .choice input, .check input { width: auto; margin-top: 0.2rem; }
+    button { margin-top: 1.2rem; background: var(--accent); color: #fff; border: 0; padding: 0.7rem 1.1rem; font: inherit; cursor: pointer; }
+    .note { color: var(--muted); font-size: 0.85rem; }
+  </style>
+</head>
+<body>
+  <main data-step="application-questions" data-fixture="workday">
+    <div class="badge">JobAppAgent owned fixture · Workday-shaped · fill only</div>
+    <h1>Application Questions</h1>
+    <p class="note">Same step, plus a legal attestation the agent must not accept.</p>
+    <form id="workday-application-questions-legal" action="#" method="get">
+      <fieldset>
+        <legend>Are you legally authorized to work in the United States? *</legend>
+        <div class="choice">
+          <label><input type="radio" name="workAuthorization" value="yes" required /> Yes</label>
+          <label><input type="radio" name="workAuthorization" value="no" /> No</label>
+        </div>
+      </fieldset>
+      <label class="check">
+        <input id="terms" name="terms" type="checkbox" required />
+        I agree to the terms of use and privacy policy.
+      </label>
+      <button type="button" data-action="continue" data-automation-id="pageFooterNextButton">Save and Continue</button>
+    </form>
+  </main>
+</body>
+</html>

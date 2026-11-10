@@ -112,7 +112,7 @@ Exit codes: `0` resume_requested · `10` skipped · `11` aborted · `20` timeout
 
 #### Resume → submit (after exit 0)
 
-**Submit if possible** once blockers are cleared and the candidate approved this application (`review-each`) or `routine-auto` covers it. Record a submission only after visible ATS confirmation.
+**Submit if possible** once blockers are cleared and the candidate approved this application (`review-each`) or `routine-auto` covers it. Record a submission only after visible ATS confirmation. Workday phase 1 is the exception: fill My Information, My Experience, and non-sensitive Application Questions, pause for account creation, sign-in, CAPTCHA, legal questions, and voluntary disclosures, and stop on Review. Do not click Submit and do not record a Workday submission. Greenhouse, Ashby, and Lever submit rules are unchanged.
 
 ```text
 node scripts/attention-resume-submit.mjs --checklist

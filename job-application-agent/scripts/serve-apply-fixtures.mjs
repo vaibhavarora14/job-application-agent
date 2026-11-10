@@ -60,4 +60,5 @@ server.listen(portArg, "127.0.0.1", () => {
   process.stdout.write(`Apply fixtures at http://127.0.0.1:${portArg}/fixtures/greenhouse/\n`);
   process.stdout.write(`                   http://127.0.0.1:${portArg}/fixtures/lever/\n`);
   process.stdout.write(`                   http://127.0.0.1:${portArg}/fixtures/ashby/\n`);
+  process.stdout.write(`                   http://127.0.0.1:${portArg}/fixtures/workday/\n`);
 });
