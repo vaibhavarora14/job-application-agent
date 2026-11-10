@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { index, integer, sqliteTable, text } from "drizzle-orm/sqlite-core";
+import { index, integer, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core";
 
 export const foundingRegistrations = sqliteTable("founding_registrations", {
   id: text("id").primaryKey(),
@@ -81,6 +81,31 @@ export const attentionSignals = sqliteTable("attention_signals", {
   updatedAt: text("updated_at").notNull().default(sql`CURRENT_TIMESTAMP`),
 }, (table) => [
   index("idx_attention_signals_updated_at").on(table.updatedAt),
+]);
+
+/**
+ * /jobs saved-search alerts. Email, canonical filter query, cadence, confirmation
+ * token hash, unsubscribe token, and send timestamps. No name, résumé, or IP.
+ */
+export const savedSearches = sqliteTable("saved_searches", {
+  id: text("id").primaryKey(),
+  email: text("email").notNull(),
+  filterQuery: text("filter_query").notNull(),
+  cadence: text("cadence").notNull(),
+  status: text("status").notNull(),
+  confirmTokenHash: text("confirm_token_hash"),
+  unsubscribeToken: text("unsubscribe_token").notNull(),
+  confirmExpiresAt: text("confirm_expires_at"),
+  createdAt: text("created_at").notNull(),
+  confirmedAt: text("confirmed_at"),
+  lastSentAt: text("last_sent_at"),
+  watermarkAt: text("watermark_at").notNull(),
+  updatedAt: text("updated_at").notNull(),
+}, (table) => [
+  uniqueIndex("idx_saved_searches_email_query").on(table.email, table.filterQuery),
+  uniqueIndex("idx_saved_searches_unsubscribe_token").on(table.unsubscribeToken),
+  index("idx_saved_searches_confirm_token_hash").on(table.confirmTokenHash),
+  index("idx_saved_searches_due").on(table.status, table.cadence, table.lastSentAt),
 ]);
 
 /**

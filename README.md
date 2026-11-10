@@ -228,6 +228,7 @@ Updates are staged and validated before replacement. Private candidate state liv
 |---|---|
 | Profile | OS credential store, or private D1 with an owner-only local cache |
 | Saved profile name and email (contact store, unless opted out) | Private maintainer contact database tied to the anonymous install ID, separate from analytics events (never in PostHog events since 3.7.3); local sharing preference in owner-only state |
+| Job-board saved search (only if you ask for email alerts) | Email address, filter query, daily or weekly cadence, confirmation token hash, unsubscribe token, and send timestamps in the site database. Not in analytics events. |
 | Résumé and ledgers | Owner-only local state, or private D1 plus private blob storage when configured |
 | Browser login | Existing browser session |
 | Community-sharing preference and delivery receipts | Owner-only local state directory |
@@ -238,6 +239,8 @@ Candidate data, résumés, application history, credentials, and browser session
 Private cloud state is opt-in and isolated from public analytics/community services. Client tokens remain in owner-only host configuration, only token hashes are stored server-side, and browser/Gmail credentials never enter the backend.
 
 Structured usage analytics are enabled by default for product improvement and are keyed to an anonymous install ID. Analytics events do not include your name, email, phone, résumé content, prompts, answers, browser data, or IP addresses. Error events carry only a short sanitized message with file paths, your home folder, OS username, and contact details redacted. `telemetry disable` stops all analytics; previously collected events remain subject to the 24-month retention policy.
+
+If you save a search on the job board, we store only the email address you enter, the filter query (the same filters as the board URL), whether you chose daily or weekly, a confirmation token hash, an unsubscribe token (a random secret that only deletes that saved search), and timestamps for when you subscribed, when you confirmed, when we last sent an alert, and a watermark of the newest role already considered. We send a confirmation email first and send no alerts until you confirm. Each email has a one-click unsubscribe link. Unsubscribing deletes that saved search. Unconfirmed searches are deleted after 7 days. Confirmed searches are kept until you unsubscribe. We do not store your name, résumé, or IP address on the saved search, and the emails we send have no tracking pixels.
 
 Separately from analytics, contact sharing is enabled by default: the name and email you explicitly saved in your candidate profile are stored privately in a maintainer contact database tied to your anonymous install ID, used only to support you and send product updates, and never written into PostHog events (since 3.7.3; the relay also strips such fields from older clients). It is not exposed on public community or job endpoints. `telemetry contact disable` stops future contact sharing (`telemetry identity disable` is an alias), and `telemetry disable` stops both analytics and contact sharing. Opting out does not automatically delete a stored contact; see the [privacy policy](https://jobappagent.com/privacy) for deletion requests.
 

@@ -2,11 +2,13 @@ import Link from "next/link";
 import {
   JOBS_PAGE_SIZE,
   boardHref,
+  boardQueryString,
   emptyBoardQuery,
   likelyZeroCause,
 } from "../../lib/jobs-board-query.mjs";
 import { SiteFooter, SiteHeader } from "../components/SiteChrome";
 import { BoardFrame } from "./BoardFilters";
+import { SaveSearch } from "./SaveSearch";
 import { JobRow } from "./JobRow";
 import styles from "./jobs.module.css";
 import type { JobSalary } from "./location-types";
@@ -118,6 +120,7 @@ export function JobsBoard({
           <h1>Open roles, reviewed.</h1>
           <p>Roles reviewed by maintainers. Closed roles drop off automatically.</p>
         </header>
+        <SaveSearch key={boardQueryString(query)} filterQuery={boardQueryString(query)} />
         <BoardFrame query={query} total={allOpen.length} matched={matches.length} failed={showError}>
           {showError ? (
             <ErrorState query={query} />

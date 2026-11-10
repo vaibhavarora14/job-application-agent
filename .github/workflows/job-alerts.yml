@@ -1,0 +1,30 @@
+name: Job search alerts
+
+on:
+  schedule:
+    - cron: "17 13 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: job-search-alerts
+  cancel-in-progress: false
+
+jobs:
+  send:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: site-production
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
+        with:
+          node-version: 24
+      - name: Send due saved-search alerts
+        run: node site/scripts/dispatch-job-alerts.mjs
+        env:
+          JOB_ALERTS_CRON_SECRET: ${{ secrets.JOB_ALERTS_CRON_SECRET }}
+          JOB_ALERTS_SITE_URL: https://jobappagent.com
+          COMMUNITY_JOBS_LIVE_UPSTREAM: https://job-application-agent-telemetry.varora1406.workers.dev/v1/jobs/live

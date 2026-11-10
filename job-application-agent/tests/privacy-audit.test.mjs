@@ -1,7 +1,9 @@
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import test from 'node:test';
 
 import { prepareTelemetryInput, TelemetryClient } from '../scripts/telemetry-client.mjs';
@@ -145,4 +147,35 @@ test('no telemetry event payload may contain name, email, phone, or résumé tex
   assert.equal(wire.includes('candidateName'), false);
   assert.equal(wire.includes('candidateEmail'), false);
   assert.ok(captured.every(({ body }) => body?.identity === undefined || !('identity' in (body ?? {}))));
+});
+
+test('job-board saved searches store only the declared alert fields and say so', () => {
+  const root = join(dirname(fileURLToPath(import.meta.url)), '../..');
+  const schema = readFileSync(join(root, 'site/lib/job-alerts-store.mjs'), 'utf8');
+  const migration = readFileSync(join(root, 'site/drizzle/0007_saved_searches.sql'), 'utf8');
+  for (const source of [schema, migration]) {
+    for (const column of ['email', 'filter_query', 'cadence', 'confirm_token_hash', 'unsubscribe_token', 'last_sent_at', 'watermark_at']) {
+      assert.match(source, new RegExp(column));
+    }
+    assert.doesNotMatch(source, /user_agent|ip_address|phone|resume/i);
+  }
+  const mail = readFileSync(join(root, 'site/lib/job-alerts-mail.mjs'), 'utf8');
+  const alerts = readFileSync(join(root, 'site/lib/job-alerts.mjs'), 'utf8');
+  assert.doesNotMatch(mail, /<img|telemetry-client|posthog/i);
+  assert.doesNotMatch(alerts, /telemetry-client|<img/i);
+  const phrases = [
+    'filter query',
+    'daily or weekly',
+    'confirmation token hash',
+    'unsubscribe token',
+    'watermark',
+    'confirmation email',
+    'Unsubscribing deletes that saved search',
+    '7 days',
+    'no tracking pixels',
+  ];
+  for (const relative of ['site/app/privacy/page.tsx', 'README.md', 'plugins/job-application-agent/PRIVACY.md']) {
+    const text = readFileSync(join(root, relative), 'utf8');
+    for (const phrase of phrases) assert.match(text, new RegExp(phrase.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')), `${relative} missing ${phrase}`);
+  }
 });
