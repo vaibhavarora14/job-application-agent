@@ -47,6 +47,21 @@ export function describeSavedSearch(filterQuery) {
   return chips.length ? chips.map((chip) => chip.label).join(", ") : "All open roles";
 }
 
+/** Start of the UTC day. `firstSeenAt` in the live feed is stored at this precision. */
+export function utcDayStart(now) {
+  const date = new Date(now);
+  return new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate())).toISOString();
+}
+
+/**
+ * Instant before the UTC day of `now`. A role whose `firstSeenAt` is that day's
+ * midnight is still newer than this, so confirming after 00:00 does not drop
+ * the day's bucket.
+ */
+export function previousUtcDayEnd(now) {
+  return new Date(Date.parse(utcDayStart(now)) - 1).toISOString();
+}
+
 /** @param {number} now */
 export function dueBefore(now) {
   return {
@@ -274,7 +289,8 @@ export async function subscribeSavedSearch(store, mailer, input) {
   const existing = await store.getByEmailQuery(email, filters.filterQuery);
   if (!existing && await store.countForEmail(email) >= MAX_SAVED_SEARCHES) return { ok: false, error: "too_many" };
   if (existing?.status === "active") {
-    await store.setCadence(existing.id, input.cadence, nowIso);
+    // Cadence stays until the person unsubscribes and confirms a new search.
+    // An unauthenticated retry must not change how often mail goes out.
     return { ok: true, state: "active" };
   }
   if (!mailer.enabled) return { ok: false, error: "alerts_disabled" };
@@ -291,7 +307,7 @@ export async function subscribeSavedSearch(store, mailer, input) {
     confirmTokenHash,
     unsubscribeToken,
     confirmExpiresAt: new Date(input.now + CONFIRM_TTL_MS).toISOString(),
-    createdAt: existing?.createdAt || nowIso,
+    createdAt: nowIso,
     confirmedAt: null,
     lastSentAt: null,
     watermarkAt: existing?.watermarkAt || nowIso,
@@ -348,8 +364,8 @@ export async function confirmSavedSearch(store, token, now) {
   if (state !== "ready") return { ok: false, error: state };
   const row = await store.getByConfirmHash(await hashAlertToken(token));
   if (!row) return { ok: false, error: "invalid" };
-  const nowIso = new Date(now).toISOString();
-  const activated = await store.activate(row.id, nowIso);
+  const confirmedAt = new Date(now).toISOString();
+  const activated = await store.activate(row.id, confirmedAt, previousUtcDayEnd(now));
   if (!activated) return { ok: false, error: "invalid" };
   return { ok: true };
 }
@@ -375,8 +391,8 @@ export async function deliverSavedSearch(store, mailer, input) {
   if (roles.length === 0) return advanceSavedSearch(store, input);
   const row = await store.getById(input.id);
   if (!row || row.status !== "active") return { ok: false, error: "not_found" };
-  const nowIso = new Date(input.now).toISOString();
-  const claimed = await store.claim(row.id, input.expectedLastSentAt ?? null, nowIso);
+  const lastSentAt = new Date(input.now).toISOString();
+  const claimed = await store.claim(row.id, input.expectedLastSentAt ?? null, lastSentAt, utcDayStart(input.now));
   if (!claimed) return { ok: true, skipped: true };
   const message = renderAlertEmail({
     origin: input.origin,
@@ -386,7 +402,7 @@ export async function deliverSavedSearch(store, mailer, input) {
   });
   const sent = await mailer.send({ ...message, to: row.email });
   if (!sent.ok) {
-    await store.revertClaim(row.id, claimed, nowIso);
+    await store.revertClaim(row.id, claimed, lastSentAt);
     return { ok: false, error: sent.error || "mail_failed" };
   }
   return { ok: true, sent: true };
@@ -397,8 +413,8 @@ export async function deliverSavedSearch(store, mailer, input) {
  * @param {{ id: string, expectedLastSentAt: string | null, now: number }} input
  */
 export async function advanceSavedSearch(store, input) {
-  const nowIso = new Date(input.now).toISOString();
-  const claimed = await store.claim(input.id, input.expectedLastSentAt ?? null, nowIso);
+  const lastSentAt = new Date(input.now).toISOString();
+  const claimed = await store.claim(input.id, input.expectedLastSentAt ?? null, lastSentAt, utcDayStart(input.now));
   if (!claimed) return { ok: true, skipped: true };
   return { ok: true, advanced: true };
 }

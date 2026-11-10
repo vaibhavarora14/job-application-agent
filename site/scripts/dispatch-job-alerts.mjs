@@ -65,26 +65,35 @@ try {
         counts.advanced += 1;
         continue;
       }
-      const result = await call("advance", { id: row.id, expectedLastSentAt: row.lastSentAt });
-      if (result.skipped) counts.skipped += 1;
-      else counts.advanced += 1;
+      try {
+        const result = await call("advance", { id: row.id, expectedLastSentAt: row.lastSentAt });
+        if (result.skipped) counts.skipped += 1;
+        else counts.advanced += 1;
+      } catch {
+        counts.failed += 1;
+      }
     }
     for (const item of plan.deliver) {
       if (dryRun) {
         counts.sent += 1;
         continue;
       }
-      const result = await call("deliver", {
-        id: item.row.id,
-        expectedLastSentAt: item.row.lastSentAt,
-        roles: item.roles,
-      });
-      if (result.skipped) counts.skipped += 1;
-      else counts.sent += 1;
+      try {
+        const result = await call("deliver", {
+          id: item.row.id,
+          expectedLastSentAt: item.row.lastSentAt,
+          roles: item.roles,
+        });
+        if (result.skipped) counts.skipped += 1;
+        else counts.sent += 1;
+      } catch {
+        counts.failed += 1;
+      }
     }
     if (dryRun) break;
   }
   console.log(JSON.stringify(counts));
+  if (counts.failed > 0) process.exit(1);
 } catch (error) {
   console.error(error instanceof Error ? error.message : "job alerts failed");
   process.exit(1);

@@ -7,6 +7,7 @@ import {
   confirmSavedSearch,
   confirmTokenState,
   deliverSavedSearch,
+  previousUtcDayEnd,
   handleJobAlertsAction,
   renderAlertEmail,
   runSavedSearchDigest,
@@ -100,7 +101,7 @@ async function saved(store, mail, { cadence = "daily", filterQuery = "workplace=
   const after = await store.getByEmailQuery(email, "workplace=remote");
   assert.equal(after.status, "active");
   assert.equal(after.confirmTokenHash, null);
-  assert.equal(after.watermarkAt, new Date(now).toISOString());
+  assert.equal(after.watermarkAt, previousUtcDayEnd(now));
   return { confirm, unsubscribe: after.unsubscribeToken, row: after };
 }
 
@@ -130,13 +131,14 @@ test("subscribe, confirm, unsubscribe, matching roles, and cadence", async () =>
     const remote = job(NOW + 60_000, { id: "4", firstSeenAt: new Date(NOW + 60_000).toISOString(), workplace: "remote", role: "Backend Engineer" });
     const onsite = job(NOW + 60_000, { id: "5", firstSeenAt: new Date(NOW + 60_000).toISOString(), workplace: "onsite", company: "Other" });
     const closed = job(NOW + 60_000, { id: "6", firstSeenAt: new Date(NOW + 60_000).toISOString(), livenessStatus: "closed" });
-    const sameInstant = job(NOW, { id: "7", firstSeenAt: new Date(NOW).toISOString() });
+    const sameDay = job(NOW, { id: "7", firstSeenAt: `${new Date(NOW).toISOString().slice(0, 10)}T00:00:00.000Z`, role: "Same Day Engineer" });
     const first = await runSavedSearchDigest({
-      store, jobs: [seenBefore, remote, onsite, closed, sameInstant], mailer: mail, origin: ORIGIN, now: NOW + 120_000,
+      store, jobs: [seenBefore, remote, onsite, closed, sameDay], mailer: mail, origin: ORIGIN, now: NOW + 120_000,
     });
     assert.equal(first.sent, 1, name);
     const alert = mail.sent.at(-1);
-    assert.match(alert.subject, /1 new role/);
+    assert.match(alert.subject, /2 new roles/);
+    assert.match(alert.html, /Same Day Engineer/);
     assert.match(alert.html, new RegExp(`https://jobappagent.com/jobs/${remote.slug}`));
     assert.match(alert.text, new RegExp(`https://jobappagent.com/jobs/${remote.slug}`));
     assert.match(alert.html, /Unsubscribe/);
@@ -153,10 +155,10 @@ test("subscribe, confirm, unsubscribe, matching roles, and cadence", async () =>
 
     const later = NOW + 120_000 + 25 * 60 * 60 * 1000;
     const newer = job(later, { id: "8", firstSeenAt: new Date(later - 1000).toISOString(), role: "Staff Engineer" });
-    const second = await runSavedSearchDigest({ store, jobs: [remote, newer], mailer: mail, origin: ORIGIN, now: later });
+    const second = await runSavedSearchDigest({ store, jobs: [sameDay, newer], mailer: mail, origin: ORIGIN, now: later });
     assert.equal(second.sent, 1, name);
     assert.match(mail.sent.at(-1).html, new RegExp(newer.slug));
-    assert.equal(mail.sent.at(-1).html.includes(remote.slug), false);
+    assert.equal(mail.sent.at(-1).html.includes(sameDay.slug), false);
 
     assert.equal((await unsubscribeSavedSearch(store, unsubscribe)).removed, true);
     assert.equal(await store.getByEmailQuery("reader@example.com", "workplace=remote"), null);
@@ -230,7 +232,24 @@ test("confirmation expires, a second confirm is refused, and an active search on
   });
   assert.equal(updated.state, "active");
   assert.equal(again.sent.length, before);
-  assert.equal((await store.getByEmailQuery("reader@example.com", "workplace=remote")).cadence, "weekly");
+  assert.equal((await store.getByEmailQuery("reader@example.com", "workplace=remote")).cadence, "daily");
+});
+
+test("resending a confirmation restarts the retention window", async () => {
+  const store = createMemoryAlertStore();
+  const mail = box();
+  await subscribeSavedSearch(store, mail, {
+    email: "reader@example.com", cadence: "daily", filterQuery: "", origin: ORIGIN, now: NOW,
+  });
+  const later = NOW + 6 * DAY;
+  await subscribeSavedSearch(store, mail, {
+    email: "reader@example.com", cadence: "weekly", filterQuery: "", origin: ORIGIN, now: later,
+  });
+  const row = await store.getByEmailQuery("reader@example.com", "");
+  assert.equal(row.createdAt, new Date(later).toISOString());
+  assert.equal(row.confirmExpiresAt, new Date(later + 2 * DAY).toISOString());
+  const token = tokenFrom(mail.sent.at(-1), "confirm");
+  assert.equal((await confirmSavedSearch(store, token, later + DAY)).ok, true);
 });
 
 test("honeypot and the due list omit the email", async () => {

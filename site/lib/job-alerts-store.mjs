@@ -85,8 +85,8 @@ export function createSqlAlertStore(db) {
       ]);
     },
     async replacePending(row) {
-      await changes(db, `UPDATE saved_searches SET cadence = ?, status = 'pending', confirm_token_hash = ?, unsubscribe_token = ?, confirm_expires_at = ?, confirmed_at = NULL, last_sent_at = NULL, updated_at = ? WHERE id = ?`, [
-        row.cadence, row.confirmTokenHash, row.unsubscribeToken, row.confirmExpiresAt, row.updatedAt, row.id,
+      await changes(db, `UPDATE saved_searches SET cadence = ?, status = 'pending', confirm_token_hash = ?, unsubscribe_token = ?, confirm_expires_at = ?, created_at = ?, confirmed_at = NULL, last_sent_at = NULL, updated_at = ? WHERE id = ?`, [
+        row.cadence, row.confirmTokenHash, row.unsubscribeToken, row.confirmExpiresAt, row.createdAt, row.updatedAt, row.id,
       ]);
     },
     async setCadence(id, cadence, nowIso) {
@@ -95,8 +95,8 @@ export function createSqlAlertStore(db) {
     async getByConfirmHash(hash) {
       return first(db, `SELECT ${COLUMNS} FROM saved_searches WHERE confirm_token_hash = ?`, [hash]);
     },
-    async activate(id, nowIso) {
-      const n = await changes(db, "UPDATE saved_searches SET status = 'active', confirmed_at = ?, watermark_at = ?, confirm_token_hash = NULL, confirm_expires_at = NULL, updated_at = ? WHERE id = ? AND status = 'pending'", [nowIso, nowIso, nowIso, id]);
+    async activate(id, confirmedAt, watermarkAt) {
+      const n = await changes(db, "UPDATE saved_searches SET status = 'active', confirmed_at = ?, watermark_at = ?, confirm_token_hash = NULL, confirm_expires_at = NULL, updated_at = ? WHERE id = ? AND status = 'pending'", [confirmedAt, watermarkAt, confirmedAt, id]);
       return n === 1;
     },
     async getById(id) {
@@ -112,11 +112,11 @@ export function createSqlAlertStore(db) {
       const cutoff = dueBefore(now);
       return all(db, `SELECT ${COLUMNS} FROM saved_searches WHERE status = 'active' AND (last_sent_at IS NULL OR (cadence = 'daily' AND last_sent_at <= ?) OR (cadence = 'weekly' AND last_sent_at <= ?)) ORDER BY COALESCE(last_sent_at, '') LIMIT 100`, [cutoff.daily, cutoff.weekly]);
     },
-    async claim(id, expectedLastSentAt, nowIso) {
+    async claim(id, expectedLastSentAt, lastSentAt, watermarkAt) {
       const row = await first(db, `SELECT ${COLUMNS} FROM saved_searches WHERE id = ?`, [id]);
       if (!row || row.status !== "active") return null;
       if ((row.lastSentAt ?? null) !== (expectedLastSentAt ?? null)) return null;
-      const n = await changes(db, "UPDATE saved_searches SET last_sent_at = ?, watermark_at = ?, updated_at = ? WHERE id = ? AND status = 'active' AND ((? IS NULL AND last_sent_at IS NULL) OR last_sent_at = ?)", [nowIso, nowIso, nowIso, id, expectedLastSentAt ?? null, expectedLastSentAt ?? null]);
+      const n = await changes(db, "UPDATE saved_searches SET last_sent_at = ?, watermark_at = ?, updated_at = ? WHERE id = ? AND status = 'active' AND ((? IS NULL AND last_sent_at IS NULL) OR last_sent_at = ?)", [lastSentAt, watermarkAt, lastSentAt, id, expectedLastSentAt ?? null, expectedLastSentAt ?? null]);
       if (n !== 1) return null;
       return { lastSentAt: row.lastSentAt, watermarkAt: row.watermarkAt };
     },
@@ -155,6 +155,7 @@ export function createMemoryAlertStore() {
         confirmTokenHash: row.confirmTokenHash,
         unsubscribeToken: row.unsubscribeToken,
         confirmExpiresAt: row.confirmExpiresAt,
+        createdAt: row.createdAt,
         confirmedAt: null,
         lastSentAt: null,
         updatedAt: row.updatedAt,
@@ -169,15 +170,15 @@ export function createMemoryAlertStore() {
     async getByConfirmHash(hash) {
       return list().find((row) => row.confirmTokenHash === hash) ?? null;
     },
-    async activate(id, nowIso) {
+    async activate(id, confirmedAt, watermarkAt) {
       const row = rows.get(id);
       if (!row || row.status !== "pending") return false;
       row.status = "active";
-      row.confirmedAt = nowIso;
-      row.watermarkAt = nowIso;
+      row.confirmedAt = confirmedAt;
+      row.watermarkAt = watermarkAt;
       row.confirmTokenHash = null;
       row.confirmExpiresAt = null;
-      row.updatedAt = nowIso;
+      row.updatedAt = confirmedAt;
       return true;
     },
     async getById(id) {
@@ -195,14 +196,14 @@ export function createMemoryAlertStore() {
     async listDue(now) {
       return list().filter((row) => isDue(row, now)).sort((a, b) => String(a.lastSentAt ?? "").localeCompare(String(b.lastSentAt ?? ""))).slice(0, 100);
     },
-    async claim(id, expectedLastSentAt, nowIso) {
+    async claim(id, expectedLastSentAt, lastSentAt, watermarkAt) {
       const row = rows.get(id);
       if (!row || row.status !== "active") return null;
       if ((row.lastSentAt ?? null) !== (expectedLastSentAt ?? null)) return null;
       const previous = { lastSentAt: row.lastSentAt, watermarkAt: row.watermarkAt };
-      row.lastSentAt = nowIso;
-      row.watermarkAt = nowIso;
-      row.updatedAt = nowIso;
+      row.lastSentAt = lastSentAt;
+      row.watermarkAt = watermarkAt;
+      row.updatedAt = lastSentAt;
       return previous;
     },
     async revertClaim(id, previous, claimedAt) {

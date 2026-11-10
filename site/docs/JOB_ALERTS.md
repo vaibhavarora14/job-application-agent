@@ -2,7 +2,7 @@
 
 Visitors save the current `/jobs` filters with an email and a daily or weekly cadence. Nothing is emailed until they open the confirmation link. Unsubscribing deletes that row. Unconfirmed rows are deleted after 7 days.
 
-Stored columns: `email`, `filter_query`, `cadence`, `confirm_token_hash`, `unsubscribe_token`, and the timestamps `created_at`, `confirm_expires_at`, `confirmed_at`, `last_sent_at`, `watermark_at`, `updated_at`. The watermark is the newest `firstSeenAt` already considered. Alerts include only open roles newer than that watermark that still match the filters. Each role links to `https://jobappagent.com/jobs/<slug>` (the page with Copy prompt). Emails are text and HTML with no images and no tracking pixels.
+Stored columns: `email`, `filter_query`, `cadence`, `confirm_token_hash`, `unsubscribe_token`, and the timestamps `created_at`, `confirm_expires_at`, `confirmed_at`, `last_sent_at`, `watermark_at`, `updated_at`. The live feed stores `firstSeenAt` at UTC midnight. Confirmation sets the watermark to the end of the previous UTC day, so that day's roles are still new. After a digest the watermark moves to the start of the UTC day just sent. Alerts include only open roles newer than the watermark that still match the filters. Each role links to `https://jobappagent.com/jobs/<slug>` (the page with Copy prompt). Emails are text and HTML with no images and no tracking pixels.
 
 Mail uses the Resend API key the site already uses for founding ops alerts. With `RESEND_API_KEY` unset, subscribe returns “Email alerts are not available yet” and writes no row.
 
