@@ -171,7 +171,7 @@ The owner-only `autonomy.json` stores the fixed routine scopes, grant time, and 
 
 ## Round input
 
-Use `round source --stdin` for per-source search/blocker reports and optional attribution of existing confirmed application IDs. The exact coverage and concentration contracts, completion requirements, and examples are in [RUNS.md](RUNS.md#discovery-coverage). Evidence remains local; only allowlisted packaged source IDs and bounded coverage metrics enter analytics.
+Use `round source --stdin` for per-source search/blocker reports and optional attribution of existing confirmed application IDs. Pass several reports in one call as a JSON array or `{"sources": [ … ]}` (up to 50). One report object is unchanged. `ledger check --stdin` likewise accepts a JSON array of jobs or `{"candidates": [ … ]}` (up to 50) and returns `{ "results": [ … ] }`; one candidate object still returns that one result. The exact coverage and concentration contracts, completion requirements, and examples are in [RUNS.md](RUNS.md#discovery-coverage). Evidence remains local; only allowlisted packaged source IDs and bounded coverage metrics enter analytics.
 
 ```json
 { "requestedCount": 30 }

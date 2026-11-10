@@ -9,7 +9,7 @@ import { createServer } from 'node:http';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { createAssessmentGuard } from '../scripts/assessment-guard.mjs';
 import { evaluateRoundCoverage, latestAssessmentDecision, routineSubmitGateMessage } from '../scripts/routine-gates.mjs';
 import { asLegacyRound } from './support/legacy-round.mjs';
@@ -445,4 +445,131 @@ test('ledger check takes {"candidates": [...]} and returns one result per job (#
   assert.equal(batch.results.length, 2);
   assert.deepEqual(batch.results[0], single);
   await refused(env, ['ledger', 'check', '--stdin'], { candidates: [one, { company: 'x' }] }, /candidates\[1\]: /);
+});
+
+// Counts lock-file opens in one CLI process. The batch must take each lock once.
+const LOCK_LOG_PRELOAD = `
+import fs from 'node:fs';
+import fsPromises from 'node:fs/promises';
+import { basename } from 'node:path';
+import { syncBuiltinESMExports } from 'node:module';
+const originalOpen = fsPromises.open;
+const counts = {};
+fsPromises.open = async function(path, ...args) {
+  const name = basename(String(path));
+  if (name.endsWith('.lock')) counts[name] = (counts[name] ?? 0) + 1;
+  return originalOpen.call(fsPromises, path, ...args);
+};
+syncBuiltinESMExports();
+process.on('exit', () => {
+  fs.writeFileSync(process.env.LOCK_LOG, JSON.stringify(counts));
+});
+`;
+
+async function runCountingLocks(env, args, input) {
+  const preload = join(env.JOB_APPLICATION_AGENT_STATE_DIR, 'lock-log-preload.mjs');
+  const log = join(env.JOB_APPLICATION_AGENT_STATE_DIR, `lock-log-${process.pid}-${Math.random().toString(36).slice(2)}.json`);
+  await writeFile(preload, LOCK_LOG_PRELOAD);
+  const result = await new Promise((resolve, reject) => {
+    const child = spawn(process.execPath, ['--import', pathToFileURL(preload).href, script, ...args], {
+      env: { ...env, LOCK_LOG: log },
+      stdio: ['pipe', 'pipe', 'pipe'],
+    });
+    let stdout = '';
+    let stderr = '';
+    child.stdout.on('data', (chunk) => { stdout += chunk; });
+    child.stderr.on('data', (chunk) => { stderr += chunk; });
+    child.on('error', reject);
+    child.on('close', (status) => resolve({ status, stdout, stderr }));
+    child.stdin.end(input === undefined ? '' : JSON.stringify(input));
+  });
+  const counts = JSON.parse(await readFile(log, 'utf8'));
+  return { ...result, counts };
+}
+
+test('a lead batch takes the rounds lock and the evidence lock once, not once per lead (#219)', async (t) => {
+  const { env } = await fixture(t, 'lead-locks');
+  const { roundId } = await ok(env, ['round', 'start', '--stdin'], { requestedCount: 1 });
+  const leads = ['a', 'b', 'c'].map((slug) => lead(roundId, 'linkedin-jobs-feed', slug));
+  const batch = await runCountingLocks(env, ['round', 'lead', '--stdin'], { leads });
+  assert.equal(batch.status, 0, batch.stderr);
+  assert.equal(batch.counts['.rounds.lock'], 1);
+  assert.equal(batch.counts['.round-evidence.lock'], 1);
+  const single = await runCountingLocks(env, ['round', 'lead', '--stdin'], emptySearch(roundId, 'direct-company-careers'));
+  assert.equal(single.status, 0, single.stderr);
+  assert.equal(single.counts['.rounds.lock'], 1);
+  assert.equal(single.counts['.round-evidence.lock'], 1);
+  assert.equal(JSON.parse(single.stdout).recorded, true);
+});
+
+test('round lead --stdin accepts a JSON array of leads and still records one lead object (#219)', async (t) => {
+  const { directory, env } = await fixture(t, 'lead-array');
+  const { roundId } = await ok(env, ['round', 'start', '--stdin'], { requestedCount: 1 });
+  const leads = ['a', 'b', 'c'].map((slug) => lead(roundId, 'indeed', slug));
+  await refused(env, ['round', 'lead', '--stdin'], [leads[0], { ...leads[1], disposition: 'nope' }], /Error: leads\[1\]: Invalid lead disposition/);
+  assert.equal((await ok(env, ['round', 'leads', roundId])).history.length, 0, 'a bad lead in the array records nothing');
+  await refused(env, ['round', 'lead', '--stdin'], [], /array of 1 to 100 leads/);
+  const batch = await runCountingLocks(env, ['round', 'lead', '--stdin'], leads);
+  assert.equal(batch.status, 0, batch.stderr);
+  const recorded = JSON.parse(batch.stdout);
+  assert.equal(recorded.leadCount, 3);
+  assert.equal(recorded.recordedCount, 3);
+  assert.equal(batch.counts['.rounds.lock'], 1);
+  assert.equal(batch.counts['.round-evidence.lock'], 1);
+  const evidence = (await readFile(join(directory, 'round-evidence.ndjson'), 'utf8')).split('\n').filter((line) => line.includes('"lead-recorded"'));
+  assert.equal(evidence.length, 3);
+  const single = await ok(env, ['round', 'lead', '--stdin'], emptySearch(roundId, 'direct-company-careers'));
+  assert.equal(single.recorded, true);
+  assert.equal(single.leadCount, undefined);
+});
+
+test('round source --stdin accepts one coverage object or a JSON array, and stores the evidence string (#219)', async (t) => {
+  const { directory, env } = await fixture(t, 'source-array');
+  const { roundId } = await ok(env, ['round', 'start', '--stdin'], { requestedCount: 1 });
+  for (const sourceId of ['linkedin-jobs-feed', 'direct-company-careers', 'indeed']) {
+    await ok(env, ['round', 'lead', '--stdin'], emptySearch(roundId, sourceId));
+  }
+  const single = await ok(env, ['round', 'source', '--stdin'], {
+    roundId, sourceId: 'indeed', status: 'searched', evidence: 'Searched Indeed.',
+  });
+  assert.equal(single.reviewedCount, 1);
+  assert.equal(single.evidence, 'Searched Indeed.');
+  assert.equal(single.sourceCount, undefined);
+  const bad = [
+    { roundId, sourceId: 'linkedin-jobs-feed', status: 'searched', evidence: 'Searched LinkedIn.' },
+    { roundId, sourceId: 'direct-company-careers', status: 'nope', evidence: 'Checked careers pages.' },
+  ];
+  await refused(env, ['round', 'source', '--stdin'], bad, /Error: sources\[1\]: coverage\.status must be searched or blocked\./);
+  const storedBefore = (await readFile(join(directory, 'rounds.ndjson'), 'utf8')).split('\n').filter((line) => line.includes('"source-checked"'));
+  assert.equal(storedBefore.length, 1, 'a bad source in the array records nothing');
+  const reports = [
+    { roundId, sourceId: 'linkedin-jobs-feed', status: 'searched', evidence: 'Searched LinkedIn.' },
+    { roundId, sourceId: 'direct-company-careers', status: 'searched', evidence: 'Checked careers pages.' },
+  ];
+  const batch = await runCountingLocks(env, ['round', 'source', '--stdin'], reports);
+  assert.equal(batch.status, 0, batch.stderr);
+  const parsed = JSON.parse(batch.stdout);
+  assert.equal(parsed.sourceCount, 2);
+  assert.equal(parsed.recordedCount, 2);
+  assert.deepEqual(parsed.results.map((item) => item.sourceId), ['linkedin-jobs-feed', 'direct-company-careers']);
+  assert.deepEqual(parsed.results.map((item) => item.evidence), ['Searched LinkedIn.', 'Checked careers pages.']);
+  assert.equal(batch.counts['.rounds.lock'], 1);
+  const wrapped = await ok(env, ['round', 'source', '--stdin'], { sources: [{ roundId, sourceId: 'hacker-news-who-is-hiring', status: 'blocked', blocker: 'login', evidence: 'Login wall.' }] });
+  // hacker news searched needs a lead; blocked does not. Recording a blocked source with no lead is allowed.
+  assert.equal(wrapped.sourceCount, 1);
+  assert.equal(wrapped.results[0].blocker, 'login');
+});
+
+test('ledger check --stdin accepts a JSON array of jobs and still returns one object for one job (#219)', async (t) => {
+  const { env } = await fixture(t, 'check-array');
+  const one = { id: 'array-1', company: 'Array Co', role: 'Senior Engineer', url: 'https://boards.greenhouse.io/arrayco/jobs/1' };
+  const two = { id: 'array-2', company: 'Other Co', role: 'Staff Engineer', url: 'https://boards.greenhouse.io/otherco/jobs/2' };
+  const single = await ok(env, ['ledger', 'check', '--stdin'], one);
+  assert.equal(single.results, undefined);
+  const batch = await ok(env, ['ledger', 'check', '--stdin'], [one, two]);
+  assert.equal(batch.results.length, 2);
+  assert.deepEqual(batch.results[0], single);
+  assert.equal(batch.results[1].duplicate, false);
+  await refused(env, ['ledger', 'check', '--stdin'], [one, { company: 'x' }], /candidates\[1\]: /);
+  await refused(env, ['ledger', 'check', '--stdin'], [], /array of 1 to 50 jobs/);
 });
