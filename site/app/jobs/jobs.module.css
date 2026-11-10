@@ -1275,10 +1275,26 @@
 
 .save {
   display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+  margin: 0 0 16px;
+}
+
+.saveFor {
+  margin: 0;
+  color: var(--j-muted);
+  font-size: 14px;
+  line-height: 20px;
+}
+
+.saveRow {
+  display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: 8px;
-  margin: 0 0 16px;
+  width: 100%;
+  min-height: 48px;
 }
 
 .save .field {
@@ -1286,35 +1302,62 @@
   min-width: 0;
 }
 
-.saveCadence {
-  display: flex;
-  gap: 8px;
+.saveSeg {
+  display: inline-flex;
+  flex: none;
+  height: 36px;
+  border: 1px solid var(--j-ink);
+  border-radius: 999px;
+  overflow: hidden;
+}
+
+.saveSeg button {
+  border: 0;
+  background: var(--page);
+  color: var(--j-ink);
+  font: 600 13px/1 var(--font-body), sans-serif;
+  padding: 0 14px;
+  cursor: pointer;
+}
+
+.saveSeg button[aria-pressed="true"] {
+  background: var(--j-ink);
+  color: #fff;
+}
+
+.saveSubmit {
+  flex: none;
 }
 
 .saveNote {
-  margin: 0 0 16px;
+  margin: 0;
   color: var(--j-body);
   font-size: 15px;
   line-height: 22px;
 }
 
 .saveErr {
-  flex-basis: 100%;
-  margin: 0;
+  display: block;
+  margin: 4px 0 0;
   color: var(--err);
-  font-size: 14px;
-  line-height: 20px;
+  font-size: 13px;
+  line-height: 18px;
 }
 
 @media (max-width: 640px) {
   .save .field,
-  .save .btn,
-  .saveCadence {
+  .saveSubmit {
     flex: 1 1 100%;
   }
 
-  .saveCadence .tg {
-    flex: 1;
+  .saveRow {
+    align-items: stretch;
+    /* Input, cadence, and Save stack. The confirmation line keeps this height. */
+    min-height: 144px;
+  }
+
+  .saveNote {
+    padding-top: 12px;
   }
 }
 

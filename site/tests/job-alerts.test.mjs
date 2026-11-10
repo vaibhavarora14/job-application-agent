@@ -10,6 +10,7 @@ import {
   previousUtcDayEnd,
   handleJobAlertsAction,
   renderAlertEmail,
+  renderConfirmEmail,
   runSavedSearchDigest,
   subscribeSavedSearch,
   unsubscribeSavedSearch,
@@ -137,8 +138,11 @@ test("subscribe, confirm, unsubscribe, matching roles, and cadence", async () =>
     });
     assert.equal(first.sent, 1, name);
     const alert = mail.sent.at(-1);
-    assert.match(alert.subject, /2 new roles/);
+    assert.match(alert.subject, /2 new roles for Remote/);
     assert.match(alert.html, /Same Day Engineer/);
+    assert.match(alert.html, /See all on the job board/);
+    assert.match(alert.html, /JobApp/);
+    assert.equal(/[—–]/.test(`${alert.subject}\n${alert.text}\n${alert.html}`), false);
     assert.match(alert.html, new RegExp(`https://jobappagent.com/jobs/${remote.slug}`));
     assert.match(alert.text, new RegExp(`https://jobappagent.com/jobs/${remote.slug}`));
     assert.match(alert.html, /Unsubscribe/);
@@ -299,6 +303,21 @@ test("resend mailer is a no-op without a key and sends no image when configured"
   });
   assert.equal((await off.send({ ...message, to: "reader@example.com" })).error, "disabled");
   assert.equal(/<img/i.test(message.html), false);
+  assert.equal(/[—–]/.test(`${message.subject}\n${message.text}\n${message.html}`), false);
+  assert.match(message.subject, /1 new role for all new roles/);
+  assert.match(message.html, /See all on the job board/);
+  const confirm = renderConfirmEmail({
+    origin: ORIGIN,
+    cadence: "daily",
+    filterQuery: "workplace=remote&level=senior",
+    confirmToken: "c".repeat(43),
+    unsubscribeToken: "u".repeat(43),
+  });
+  assert.match(confirm.html, /Confirm alerts/);
+  assert.match(confirm.html, /Remote, Senior\. Daily\./);
+  assert.match(confirm.html, /Didn't ask for this\? Ignore this email\./);
+  assert.equal(confirm.html.includes(">Unsubscribe<"), false);
+  assert.equal(/[—–]|Georgia|Times/.test(confirm.html), false);
 
   let captured = null;
   const on = createJobAlertMailer({

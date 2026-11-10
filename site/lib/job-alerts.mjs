@@ -4,7 +4,7 @@
  * send timestamps. Confirmation is required before any alert. Digests include
  * only roles whose firstSeenAt is newer than the watermark.
  */
-import { activeFilterChips, boardQueryString, filterAndSortJobs, parseBoardQuery } from "./jobs-board-query.mjs";
+import { activeFilterChips, boardQueryString, filterAndSortJobs, parseBoardQuery, workplaceLabel } from "./jobs-board-query.mjs";
 
 export const DAILY_MS = 24 * 60 * 60 * 1000;
 export const WEEKLY_MS = 7 * DAILY_MS;
@@ -41,10 +41,10 @@ export function canonicalFilterQuery(input) {
   return { ok: true, filterQuery: boardQueryString(query) };
 }
 
-/** @param {string} filterQuery */
+/** Plain words for the saved filters. Empty means every new role. */
 export function describeSavedSearch(filterQuery) {
   const chips = activeFilterChips(parseBoardQuery(new URLSearchParams(filterQuery)));
-  return chips.length ? chips.map((chip) => chip.label).join(", ") : "All open roles";
+  return chips.length ? chips.map((chip) => chip.label).join(", ") : "all new roles";
 }
 
 /** Start of the UTC day. `firstSeenAt` in the live feed is stored at this precision. */
@@ -148,6 +148,7 @@ export function planDigest(rows, jobs, now) {
       slug: job.slug,
       role: job.role,
       company: job.company,
+      workplace: workplaceLabel(job) || "",
     })));
     if (roles.length === 0) advance.push(row);
     else deliver.push({ row, roles });
@@ -167,6 +168,7 @@ export function sanitizeAlertRoles(roles) {
       slug,
       role: cleanLabel(role?.role, "Role"),
       company: cleanLabel(role?.company, "Company"),
+      workplace: cleanLabel(role?.workplace, ""),
     });
   }
   return out;
@@ -209,33 +211,50 @@ function listUnsubscribeHeaders(oneClickUrl) {
   };
 }
 
+const SANS = "'DM Sans', system-ui, sans-serif";
+const WORDMARK = "'Libre Baskerville', 'DM Sans', system-ui, sans-serif";
+
+function emailDocument(body) {
+  return [
+    "<!DOCTYPE html>",
+    '<html lang="en"><head><meta charset="utf-8">',
+    '<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;600;700&family=Libre+Baskerville:wght@700&display=swap">',
+    "</head>",
+    '<body style="margin:0;background:#ffffff;color:#0f172a">',
+    `<div style="max-width:560px;margin:0 auto;padding:32px 24px;font:16px/24px ${SANS}">`,
+    `<p style="margin:0 0 24px;font:700 22px/1 ${WORDMARK};color:#0f172a">JobApp<span style="color:#2563eb">Agent</span></p>`,
+    body,
+    "</div></body></html>",
+  ].join("");
+}
+
+function cadenceLabel(cadence) {
+  return cadence === "weekly" ? "Weekly" : "Daily";
+}
+
 /**
  * @param {{ origin: string, cadence: string, filterQuery: string, confirmToken: string, unsubscribeToken: string }} input
  */
 export function renderConfirmEmail(input) {
   const links = alertLinks(input.origin, input.unsubscribeToken, input.confirmToken);
-  const cadence = input.cadence === "weekly" ? "weekly" : "daily";
+  const cadence = cadenceLabel(input.cadence);
   const filters = describeSavedSearch(input.filterQuery);
   const subject = "Confirm your job search alert";
+  const summary = `${filters}. ${cadence}.`;
   const text = [
-    `Confirm this ${cadence} search to get new matching roles.`,
+    subject,
     "",
-    filters,
+    summary,
     "",
     links.confirmUrl,
     "",
-    `Unsubscribe: ${links.unsubscribeUrl}`,
+    "Didn't ask for this? Ignore this email.",
   ].join("\n");
-  const html = [
-    "<!DOCTYPE html>",
-    '<html lang="en"><body style="margin:0;background:#ffffff;color:#0f172a">',
-    '<div style="max-width:560px;margin:0 auto;padding:24px;font:16px/24px system-ui,sans-serif">',
-    `<p style="margin:0 0 12px;font:24px/32px Georgia,serif">${escapeHtml(subject)}</p>`,
-    `<p style="margin:0 0 12px;color:#334155">${escapeHtml(filters)}. ${escapeHtml(cadence[0].toUpperCase() + cadence.slice(1))}.</p>`,
-    `<p style="margin:0 0 16px"><a href="${escapeHtml(links.confirmUrl)}" style="color:#1d4ed8">Confirm alerts</a></p>`,
-    `<p style="margin:0"><a href="${escapeHtml(links.unsubscribeUrl)}" style="color:#1d4ed8">Unsubscribe</a></p>`,
-    "</div></body></html>",
-  ].join("");
+  const html = emailDocument([
+    `<p style="margin:0 0 8px;color:#334155">${escapeHtml(summary)}</p>`,
+    `<p style="margin:20px 0 28px"><a href="${escapeHtml(links.confirmUrl)}" style="display:inline-block;background:#2563eb;color:#ffffff;font:700 15px/1 ${SANS};text-decoration:none;border-radius:999px;padding:16px 22px">Confirm alerts</a></p>`,
+    `<p style="margin:0;color:#5b6b80;font-size:14px;line-height:20px">Didn't ask for this? Ignore this email.</p>`,
+  ].join(""));
   return { subject, text, html, headers: listUnsubscribeHeaders(links.oneClickUrl), toLinks: links };
 }
 
@@ -246,31 +265,30 @@ export function renderAlertEmail(input) {
   const links = alertLinks(input.origin, input.unsubscribeToken);
   const roles = sanitizeAlertRoles(input.roles);
   const count = roles.length;
-  const subject = count === 1 ? "1 new role" : `${count} new roles`;
+  const filters = describeSavedSearch(input.filterQuery);
+  const cadence = cadenceLabel(input.cadence || "daily");
+  const noun = count === 1 ? "1 new role" : `${count} new roles`;
+  const subject = `${noun} for ${filters}`;
   const base = String(input.origin || "https://jobappagent.com").replace(/\/$/, "");
+  const board = `${base}/jobs${input.filterQuery ? `?${input.filterQuery}` : ""}`;
   const lines = [subject, ""];
   const blocks = [
-    "<!DOCTYPE html>",
-    '<html lang="en"><body style="margin:0;background:#ffffff;color:#0f172a">',
-    '<div style="max-width:560px;margin:0 auto;padding:24px;font:16px/24px system-ui,sans-serif">',
-    `<p style="margin:0 0 16px;font:24px/32px Georgia,serif">${escapeHtml(subject)}</p>`,
+    `<p style="margin:0 0 20px;font:700 22px/28px ${SANS};color:#0f172a">${escapeHtml(subject)}</p>`,
   ];
   for (const role of roles) {
     const href = `${base}/jobs/${role.slug}`;
-    lines.push(`${role.role} — ${role.company}`, href, "");
+    const detail = role.workplace ? `${role.company} · ${role.workplace}` : role.company;
+    lines.push(role.role, detail, href, "");
     blocks.push(
-      `<p style="margin:0 0 14px"><a href="${escapeHtml(href)}" style="color:#1d4ed8;font-weight:600">${escapeHtml(role.role)}</a><br><span style="color:#334155">${escapeHtml(role.company)}</span></p>`,
+      `<p style="margin:0 0 16px"><a href="${escapeHtml(href)}" style="color:#0f172a;font-weight:700;text-decoration:none">${escapeHtml(role.role)}</a><br><span style="color:#5b6b80">${escapeHtml(detail)}</span></p>`,
     );
   }
-  if (count >= MAX_ROLES_PER_EMAIL) {
-    const more = `${base}/jobs${input.filterQuery ? `?${input.filterQuery}` : ""}`;
-    lines.push(more, "");
-    blocks.push(`<p style="margin:0 0 16px"><a href="${escapeHtml(more)}" style="color:#1d4ed8">More on the board</a></p>`);
-  }
-  lines.push(`Unsubscribe: ${links.unsubscribeUrl}`);
-  blocks.push(`<p style="margin:16px 0 0"><a href="${escapeHtml(links.unsubscribeUrl)}" style="color:#1d4ed8">Unsubscribe</a></p>`);
-  blocks.push("</div></body></html>");
-  return { subject, text: lines.join("\n"), html: blocks.join(""), headers: listUnsubscribeHeaders(links.oneClickUrl) };
+  lines.push("See all on the job board", board, "", `${cadence} alert for ${filters}.`, `Unsubscribe: ${links.unsubscribeUrl}`);
+  blocks.push(
+    `<p style="margin:8px 0 28px"><a href="${escapeHtml(board)}" style="color:#1d4ed8;font-weight:600;text-decoration:none">See all on the job board</a></p>`,
+    `<p style="margin:0;color:#5b6b80;font-size:14px;line-height:20px">${escapeHtml(cadence)} alert for ${escapeHtml(filters)}. <a href="${escapeHtml(links.unsubscribeUrl)}" style="color:#5b6b80">Unsubscribe</a></p>`,
+  );
+  return { subject, text: lines.join("\n"), html: emailDocument(blocks.join("")), headers: listUnsubscribeHeaders(links.oneClickUrl) };
 }
 
 /**
@@ -398,6 +416,7 @@ export async function deliverSavedSearch(store, mailer, input) {
     origin: input.origin,
     unsubscribeToken: row.unsubscribeToken,
     filterQuery: row.filterQuery,
+    cadence: row.cadence,
     roles,
   });
   const sent = await mailer.send({ ...message, to: row.email });
