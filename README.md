@@ -9,7 +9,7 @@
 [![MIT License](https://img.shields.io/badge/license-MIT-2563EB.svg)](LICENSE)
 [![Agent Skills](https://img.shields.io/badge/Agent_Skills-compatible-0F172A)](job-application-agent/SKILL.md)
 
-[Get started](#-get-started) · [Privacy in 30 seconds](#-privacy-in-30-seconds) · [Safety](#-safety) · [Privacy](#-privacy) · [Where to find it](#-where-to-find-it) · [Dashboard](https://job-application-agent-telemetry.varora1406.workers.dev/) · [Security](SECURITY.md)
+[Try it on one job](#try-it-on-one-job) · [Get started](#-get-started) · [Privacy in 30 seconds](#-privacy-in-30-seconds) · [Safety](#-safety) · [Privacy](#-privacy) · [Where to find it](#-where-to-find-it) · [Dashboard](https://job-application-agent-telemetry.varora1406.workers.dev/) · [Security](SECURITY.md)
 
 </div>
 
@@ -26,6 +26,15 @@ npx skills add vaibhavarora14/job-application-agent
 JobAppAgent (Job Application Agent) is an [Agent Skill](https://agentskills.io/specification) that helps a coding agent discover, evaluate, complete, and track your own job applications. It uses one verified résumé, checks eligibility and duplicates, and records only confirmed submissions.
 
 <!-- demo-video: embed goes here after approval -->
+
+## Try it on one job
+
+```bash
+npx job-application-agent@latest install
+npx job-application-agent@latest apply <url>
+```
+
+`<url>` is the HTTPS posting for one role from [https://jobappagent.com/jobs](https://jobappagent.com/jobs). `apply` takes that URL and no other flags, and prints a prompt for your coding agent. You choose whether the agent sends the application, or fills the employer's own page and stops before Submit so you can review it there. There is no separate review page.
 
 ## 🔒 Privacy in 30 seconds
 
