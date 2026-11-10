@@ -31,6 +31,7 @@ const profile = {
   email: "avery.quinn@example.com",
   phone: "+1-555-0100",
   location: "Austin, TX",
+  streetAddress: "100 Congress Ave",
   country: "United States",
   postalCode: "78701",
   linkedin: "https://www.linkedin.com/in/avery-quinn-fixture",
@@ -139,7 +140,7 @@ test("phase 1 fill walks every Workday step and stops on Review without a submis
   assert.equal(valueOf(info, "lastName").value, "Quinn");
   assert.equal(valueOf(info, "email").value, profile.email);
   assert.equal(valueOf(info, "phone").value, profile.phone);
-  assert.equal(valueOf(info, "address").value, "Austin, TX");
+  assert.equal(valueOf(info, "address").value, "100 Congress Ave");
   assert.equal(valueOf(info, "city").value, "Austin, TX");
   assert.equal(valueOf(info, "country").value, "US");
   assert.equal(valueOf(info, "postalCode").value, "78701");
@@ -148,7 +149,7 @@ test("phase 1 fill walks every Workday step and stops on Review without a submis
   const experience = result.steps[1];
   assert.equal(valueOf(experience, "jobTitle").value, "Staff Engineer");
   assert.equal(valueOf(experience, "company").value, "Example Systems");
-  assert.equal(valueOf(experience, "startDate").value, "2020-01");
+  assert.equal(valueOf(experience, "startDate").value, "2020-01-01");
   assert.equal(valueOf(experience, "school").value, "State University");
   assert.equal(valueOf(experience, "degree").value, "B.S. Computer Science");
   assert.equal(valueOf(experience, "resume").action, "upload_canonical_resume");
@@ -236,6 +237,114 @@ test("account creation, sign-in, CAPTCHA, and legal questions use the existing a
   assert.match(judgment.attention.questions[0].prompt, /why do you want to work here/i);
   assert.equal(judgment.fills.some((fill) => fill.name === "why"), false);
   assert.equal(JSON.stringify(judgment.attention).includes("drafted"), false);
+});
+
+const AUTHORIZATION_FORM = `<main data-step="application-questions"><h1>Application Questions</h1>
+  <fieldset>
+    <legend>Are you legally authorized to work in the United States? *</legend>
+    <div>
+      <label><input type="radio" name="workAuthorization" value="yes" required /> Yes</label>
+      <label><input type="radio" name="workAuthorization" value="no" /> No</label>
+    </div>
+  </fieldset>
+  <button type="button" data-action="continue">Save and Continue</button>
+</main>`;
+
+function authorizationPlan(workAuthorization) {
+  return planWorkdayFill({
+    pageUrl: "https://jobappagent.com/fixtures/workday/application-questions.html",
+    pageHtml: AUTHORIZATION_FORM,
+    profile: { workAuthorization },
+  });
+}
+
+test("street address is not copied from a coarse location", () => {
+  const fixtures = loadWorkdayFixtures();
+  const info = fixtures.steps.find((step) => step.url.endsWith("/my-information.html"));
+  const coarse = planWorkdayFill({
+    ...info,
+    pageHtml: info.html,
+    profile: { ...profile, streetAddress: "", addressLine1: "", location: "Austin, TX" },
+  });
+  assert.equal(coarse.action, "needs_profile");
+  assert.equal(coarse.fills.some((fill) => fill.name === "address"), false);
+  assert.equal(valueOf(coarse, "city").value, "Austin, TX");
+  assert.ok(coarse.unfilledRequired.some((field) => field.name === "address"));
+  assert.equal(coarse.clicks.every((click) => click.click === false), true);
+
+  const line = planWorkdayFill({
+    ...info,
+    pageHtml: info.html,
+    profile: { ...profile, streetAddress: "", addressLine1: "100 Congress Ave" },
+  });
+  assert.equal(valueOf(line, "address").value, "100 Congress Ave");
+  assert.equal(valueOf(line, "city").value, "Austin, TX");
+});
+
+test("negated or sponsorship-only authorization never selects yes", () => {
+  for (const phrase of [
+    "not legally authorized to work in the United States",
+    "not currently authorized",
+    "I am not authorized",
+    "unauthorized",
+    "not eligible to work",
+  ]) {
+    const plan = authorizationPlan(phrase);
+    assert.equal(plan.action, "fill", phrase);
+    assert.equal(valueOf(plan, "workAuthorization").value, "no", phrase);
+    assert.notEqual(valueOf(plan, "workAuthorization").value, "yes", phrase);
+  }
+
+  for (const phrase of [
+    "will require sponsorship",
+    "requires sponsorship",
+    "authorized to work but will require sponsorship",
+    "maybe",
+  ]) {
+    const plan = authorizationPlan(phrase);
+    assert.equal(plan.action, "pause", phrase);
+    assert.equal(plan.attention.blocker, "ambiguous-authorization", phrase);
+    assert.equal(plan.fills.some((fill) => fill.name === "workAuthorization" && fill.value === "yes"), false, phrase);
+    assert.equal(plan.clicks.every((click) => click.click === false), true, phrase);
+  }
+
+  const allowed = authorizationPlan("authorized to work and will not require sponsorship");
+  assert.equal(allowed.action, "fill");
+  assert.equal(valueOf(allowed, "workAuthorization").value, "yes");
+});
+
+test("native date inputs get a full calendar date or stay unfilled", () => {
+  const form = (type) => `<main data-step="my-experience"><h1>My Experience</h1>
+    <label for="startDate">Start Date *</label>
+    <input id="startDate" name="startDate" type="${type}" required />
+    <button type="button" data-action="continue">Save and Continue</button>
+  </main>`;
+  const planFor = (type, start) => planWorkdayFill({
+    pageUrl: "https://jobappagent.com/fixtures/workday/my-experience.html",
+    pageHtml: form(type),
+    profile: { experience: [{ start, title: "Staff Engineer", company: "Example Systems" }] },
+  });
+
+  const month = planFor("date", "2020-01");
+  assert.equal(month.action, "fill");
+  assert.equal(valueOf(month, "startDate").value, "2020-01-01");
+  assert.equal(month.clicks.some((click) => click.role === "continue" && click.click), true);
+
+  const full = planFor("date", "2020-01-15");
+  assert.equal(valueOf(full, "startDate").value, "2020-01-15");
+
+  const text = planFor("text", "2020-01");
+  assert.equal(text.action, "fill");
+  assert.equal(valueOf(text, "startDate").value, "2020-01");
+
+  for (const start of ["2020-13", "2021-02-31", "January 2020", "2020-1"]) {
+    const plan = planFor("date", start);
+    assert.equal(plan.action, "needs_profile", start);
+    assert.equal(plan.fills.some((fill) => fill.name === "startDate"), false, start);
+    assert.ok(plan.unfilledRequired.some((field) => field.name === "startDate"), start);
+    assert.equal(plan.clicks.every((click) => click.click === false), true, start);
+    assert.equal(JSON.stringify(plan.fills).includes(start), false, start);
+  }
 });
 
 test("unclear work authorization pauses instead of guessing", () => {

@@ -92,7 +92,9 @@ const FILL_RULES = Object.freeze([
   { key: "phone", re: /\bphone\b|\bmobile\b/i, category: "contact" },
   { key: "postalCode", re: /postal|zip code/i, category: "location" },
   { key: "country", re: /\bcountry\b/i, category: "location" },
-  { key: "location", re: /address line|\bcity\b|\blocation\b/i, category: "location" },
+  { key: "addressLine2", re: /address line\s*2|address line two/i, category: "location" },
+  { key: "streetAddress", re: /address line|street address|mailing address|home address|\bstreet\b/i, category: "location" },
+  { key: "location", re: /\bcity\b|\blocation\b/i, category: "location" },
   { key: "linkedin", re: /linkedin/i, category: "links" },
   { key: "resume", re: /r[eé]sum[eé]|curriculum vitae|\bcv\b/i, category: "resume", upload: true },
   { key: "workAuthorization", re: /authorized to work|legally authorized|work authorization/i, category: "authorization", choice: "authorization" },
@@ -629,8 +631,16 @@ function splitName(profile) {
 
 /**
  * @param {object} profile
- * @param {string} key
+ * @param {string[]} keys
  */
+function firstProfileString(profile, keys) {
+  for (const key of keys) {
+    const value = String(profile?.[key] ?? "").trim();
+    if (value) return value;
+  }
+  return "";
+}
+
 function profileValue(profile, key) {
   const name = splitName(profile ?? {});
   const job = Array.isArray(profile?.experience) ? profile.experience[0] : null;
@@ -640,6 +650,9 @@ function profileValue(profile, key) {
     lastName: name.lastName,
     email: profile?.email ?? "",
     phone: profile?.phone ?? "",
+    // Street lines are not profile.location. That field is only a city or country.
+    streetAddress: firstProfileString(profile, ["streetAddress", "addressLine1", "addressLine", "street"]),
+    addressLine2: firstProfileString(profile, ["addressLine2"]),
     location: profile?.location ?? profile?.city ?? "",
     country: profile?.country ?? "",
     postalCode: profile?.postalCode ?? "",
@@ -653,15 +666,65 @@ function profileValue(profile, key) {
   return String(values[key] ?? "").trim();
 }
 
+/** Negation may have a few words between "not" and the status it cancels. */
+const AUTHORIZATION_NEGATION = Object.freeze([
+  /\bunauthorized\b/,
+  /\bno authorization\b/,
+  /\bineligible\b/,
+  /\bnot\b(?:\s+\w+){0,5}\s+authorized\b/,
+  /\bnot\b(?:\s+\w+){0,5}\s+eligible\b/,
+  /\bnot\b(?:\s+\w+){0,5}\s+citizen\b/,
+]);
+
+/**
+ * A sponsorship requirement does not answer "are you authorized?".
+ * "will not require sponsorship" is not this phrase.
+ * @param {string} value
+ */
+function mentionsSponsorshipRequirement(value) {
+  if (/\bnot\b(?:\s+\w+){0,3}\s+require\b/.test(value)) return false;
+  return /\b(?:will|would)\s+require\s+sponsorship\b/.test(value)
+    || /\brequires?\s+sponsorship\b/.test(value);
+}
+
 /**
  * @param {object} profile
+ * @returns {"yes" | "no" | null}
  */
 function authorizationChoice(profile) {
   const value = String(profile?.workAuthorization ?? "").trim().toLowerCase();
   if (!value || /unclear|unknown|\bask\b/.test(value)) return null;
-  if (/not authorized|no authorization|ineligible/.test(value)) return "no";
-  if (/authorized|citizen|permanent resident|green card/.test(value)) return "yes";
+  if (AUTHORIZATION_NEGATION.some((pattern) => pattern.test(value))) return "no";
+  if (mentionsSponsorshipRequirement(value)) return null;
+  if (/\b(?:authorized|citizen|permanent resident|green card)\b/.test(value)) return "yes";
   return null;
+}
+
+/**
+ * @param {string} iso
+ */
+function isCalendarDate(iso) {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso);
+  if (!match) return false;
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+  const date = new Date(Date.UTC(year, month - 1, day));
+  return date.getUTCFullYear() === year && date.getUTCMonth() === month - 1 && date.getUTCDate() === day;
+}
+
+/**
+ * Native date inputs need YYYY-MM-DD. A month-only value becomes the first of that month.
+ * @param {string} raw
+ * @returns {string | null}
+ */
+function dateInputValue(raw) {
+  const text = String(raw ?? "").trim();
+  if (/^\d{4}-\d{2}-\d{2}$/.test(text)) return isCalendarDate(text) ? text : null;
+  const month = /^(\d{4})-(\d{2})$/.exec(text);
+  if (!month) return null;
+  const normalized = `${month[1]}-${month[2]}-01`;
+  return isCalendarDate(normalized) ? normalized : null;
 }
 
 /**
@@ -822,7 +885,10 @@ export function planWorkdayFill(input = {}) {
       if (control.required) unfilledRequired.push({ name: control.name || control.id, label: control.label });
       continue;
     }
-    const selected = control.kind === "select" ? matchChoice(control, raw) : raw;
+    let selected = control.kind === "select" ? matchChoice(control, raw) : raw;
+    if (selected && control.inputType === "date") {
+      selected = dateInputValue(selected);
+    }
     if (!selected) {
       if (control.required) unfilledRequired.push({ name: control.name || control.id, label: control.label });
       continue;
