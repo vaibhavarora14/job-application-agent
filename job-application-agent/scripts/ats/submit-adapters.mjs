@@ -7,7 +7,12 @@
  *
  * Prefer submit after resume when the DOM is clear (golden-path submit bias).
  * filled ≠ applied until a visible confirmation surface is observed.
+ *
+ * Workday is fill-only in phase 1: the adapter is recognized, but confirmation
+ * is refused and submit is not clicked. Greenhouse, Ashby, and Lever are unchanged.
  */
+
+import { FIXTURE_HOSTS } from "./apply-url-gate.mjs";
 
 /** Absolute blockers that must stay paused for a human. */
 export const ABSOLUTE_BLOCKER_HINTS = Object.freeze([
@@ -90,7 +95,37 @@ export const GENERIC_ADAPTER = Object.freeze({
   ],
 });
 
-export const ATS_ADAPTERS = Object.freeze([ASHBY_ADAPTER, GENERIC_ADAPTER]);
+/**
+ * Workday phase 1. Fill is tested in scripts/ats/fill-adapters.mjs.
+ * Submit is not tested and must not be recorded. The public compare page
+ * stays "listed but not yet submitted to or tested".
+ * @type {AtsSubmitAdapter & { fillOnly: true, matchPaths: RegExp[] }}
+ */
+export const WORKDAY_ADAPTER = Object.freeze({
+  id: "workday",
+  fillOnly: true,
+  matchHosts: [
+    /(^|\.)myworkdayjobs\.com$/i,
+    /(^|\.)myworkday\.com$/i,
+    /(^|\.)myworkdaysite\.com$/i,
+  ],
+  matchPaths: [/^\/fixtures\/workday(?:\/|$)/i],
+  submitSelectors: [
+    'button[data-action="submit"]',
+    'button[type="submit"]',
+    'button:has-text("Submit")',
+  ],
+  confirmationSelectors: [],
+  confirmationUrlPatterns: [],
+  blockerSelectors: [
+    "iframe[src*='recaptcha']",
+    "iframe[src*='hcaptcha']",
+    ".g-recaptcha",
+    "[data-testid='captcha']",
+  ],
+});
+
+export const ATS_ADAPTERS = Object.freeze([ASHBY_ADAPTER, WORKDAY_ADAPTER, GENERIC_ADAPTER]);
 
 /**
  * @param {string} pageUrl
@@ -98,14 +133,20 @@ export const ATS_ADAPTERS = Object.freeze([ASHBY_ADAPTER, GENERIC_ADAPTER]);
  */
 export function resolveAtsAdapter(pageUrl) {
   let host = "";
+  let pathname = "";
   try {
-    host = new URL(pageUrl).hostname;
+    const url = new URL(pageUrl);
+    host = url.hostname;
+    pathname = url.pathname;
   } catch {
     return GENERIC_ADAPTER;
   }
   for (const adapter of ATS_ADAPTERS) {
     if (adapter.id === "generic") continue;
     if (adapter.matchHosts?.some((re) => re.test(host))) return adapter;
+    if (FIXTURE_HOSTS.includes(host.toLowerCase()) && adapter.matchPaths?.some((re) => re.test(pathname))) {
+      return adapter;
+    }
   }
   return GENERIC_ADAPTER;
 }
@@ -153,6 +194,9 @@ export function detectAbsoluteBlockers(snapshot = {}, options = {}) {
  */
 export function detectConfirmation(snapshot = {}, adapter) {
   const resolved = adapter ?? resolveAtsAdapter(snapshot.pageUrl ?? "");
+  if (resolved.fillOnly) {
+    return { confirmed: false, reason: "fill_only_phase", adapterId: resolved.id, submitted: false };
+  }
   const url = String(snapshot.pageUrl ?? "");
   if (resolved.confirmationUrlPatterns.some((re) => re.test(url))) {
     return { confirmed: true, reason: "url_pattern", adapterId: resolved.id };
@@ -178,6 +222,23 @@ export function detectConfirmation(snapshot = {}, adapter) {
  */
 export function buildSubmitProbePlan(pageUrl) {
   const adapter = resolveAtsAdapter(pageUrl);
+  if (adapter.fillOnly) {
+    return {
+      adapterId: adapter.id,
+      submitSelectors: [...adapter.submitSelectors],
+      confirmationSelectors: [...adapter.confirmationSelectors],
+      blockerSelectors: [...(adapter.blockerSelectors ?? [])],
+      confirmationUrlPatterns: adapter.confirmationUrlPatterns.map((re) => re.source),
+      clickSubmit: false,
+      submitted: false,
+      notes: [
+        "Workday phase 1: fill is fixture-tested. Stop at Review.",
+        "Do not click Submit. Record nothing as submitted.",
+        "Pause for account creation, sign-in, CAPTCHA, legal, and voluntary disclosures.",
+        "The public compare page still says Workday is not yet submitted to or tested.",
+      ],
+    };
+  }
   return {
     adapterId: adapter.id,
     submitSelectors: [...adapter.submitSelectors],

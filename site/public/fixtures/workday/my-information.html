@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>My Information (Fixture) — Workday-shaped</title>
+  <style>
+    :root { color-scheme: light; --ink: #1c2833; --muted: #5c6b73; --line: #d5dde3; --accent: #0b6e4f; }
+    * { box-sizing: border-box; }
+    body { margin: 0; font-family: "IBM Plex Sans", "Segoe UI", sans-serif; background: #f4f7f6; color: var(--ink); }
+    main { max-width: 40rem; margin: 0 auto; padding: 1.5rem 1.25rem 3rem; }
+    .badge { font-size: 0.75rem; letter-spacing: 0.04em; text-transform: uppercase; color: var(--muted); }
+    h1 { font-size: 1.6rem; margin: 0.4rem 0; }
+    form { background: #fff; border: 1px solid var(--line); padding: 1.1rem; }
+    label { display: block; font-size: 0.9rem; margin: 0.85rem 0 0.3rem; }
+    input, select { width: 100%; padding: 0.55rem 0.65rem; border: 1px solid var(--line); font: inherit; }
+    button { margin-top: 1.2rem; background: var(--accent); color: #fff; border: 0; padding: 0.7rem 1.1rem; font: inherit; cursor: pointer; }
+    .note { color: var(--muted); font-size: 0.85rem; }
+  </style>
+</head>
+<body>
+  <main data-step="my-information" data-fixture="workday">
+    <div class="badge">JobAppAgent owned fixture · Workday-shaped · fill only</div>
+    <h1>My Information</h1>
+    <p class="note">Step 1 of 5. Local fixture for profile contact fields.</p>
+    <form id="workday-my-information" action="./my-experience.html" method="get">
+      <label for="firstName">First Name *</label>
+      <input id="firstName" name="firstName" autocomplete="given-name" required />
+      <label for="lastName">Last Name *</label>
+      <input id="lastName" name="lastName" autocomplete="family-name" required />
+      <label for="email">Email *</label>
+      <input id="email" name="email" type="email" autocomplete="email" required />
+      <label for="phone">Phone *</label>
+      <input id="phone" name="phone" type="tel" autocomplete="tel" required />
+      <label for="address">Address Line 1 *</label>
+      <input id="address" name="address" autocomplete="address-line1" required />
+      <label for="city">City *</label>
+      <input id="city" name="city" autocomplete="address-level2" required />
+      <label for="country">Country *</label>
+      <select id="country" name="country" required>
+        <option value="">Select</option>
+        <option value="US">United States</option>
+        <option value="CA">Canada</option>
+        <option value="IN">India</option>
+        <option value="GB">United Kingdom</option>
+      </select>
+      <label for="postalCode">Postal Code *</label>
+      <input id="postalCode" name="postalCode" autocomplete="postal-code" required />
+      <label for="linkedin">LinkedIn</label>
+      <input id="linkedin" name="linkedin" type="url" />
+      <button type="button" data-action="continue" data-automation-id="pageFooterNextButton">Save and Continue</button>
+    </form>
+  </main>
+</body>
+</html>

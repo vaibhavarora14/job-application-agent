@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Voluntary Disclosures (Fixture) — Workday-shaped</title>
+  <style>
+    :root { color-scheme: light; --ink: #1c2833; --muted: #5c6b73; --line: #d5dde3; --accent: #0b6e4f; }
+    * { box-sizing: border-box; }
+    body { margin: 0; font-family: "IBM Plex Sans", "Segoe UI", sans-serif; background: #f4f7f6; color: var(--ink); }
+    main { max-width: 40rem; margin: 0 auto; padding: 1.5rem 1.25rem 3rem; }
+    .badge { font-size: 0.75rem; letter-spacing: 0.04em; text-transform: uppercase; color: var(--muted); }
+    h1 { font-size: 1.6rem; margin: 0.4rem 0; }
+    form { background: #fff; border: 1px solid var(--line); padding: 1.1rem; }
+    label { display: block; font-size: 0.9rem; margin: 0.85rem 0 0.3rem; }
+    select { width: 100%; padding: 0.55rem 0.65rem; border: 1px solid var(--line); font: inherit; }
+    button { margin-top: 1.2rem; background: var(--accent); color: #fff; border: 0; padding: 0.7rem 1.1rem; font: inherit; cursor: pointer; }
+    .note { color: var(--muted); font-size: 0.85rem; }
+  </style>
+</head>
+<body>
+  <main data-step="voluntary-disclosures" data-fixture="workday">
+    <div class="badge">JobAppAgent owned fixture · Workday-shaped · fill only</div>
+    <h1>Voluntary Disclosures</h1>
+    <p class="note">Step 4 of 5. Self-identification. The agent does not choose an answer.</p>
+    <form id="workday-voluntary-disclosures" action="./review.html" method="get">
+      <label for="gender">Gender identity</label>
+      <select id="gender" name="gender">
+        <option value="">Select</option>
+        <option value="woman">Woman</option>
+        <option value="man">Man</option>
+        <option value="decline">Decline to answer</option>
+      </select>
+      <label for="race">Race/Ethnicity</label>
+      <select id="race" name="race">
+        <option value="">Select</option>
+        <option value="decline">Decline to answer</option>
+      </select>
+      <label for="veteran">Veteran Status</label>
+      <select id="veteran" name="veteran">
+        <option value="">Select</option>
+        <option value="decline">Decline to answer</option>
+      </select>
+      <label for="disability">Disability Status</label>
+      <select id="disability" name="disability">
+        <option value="">Select</option>
+        <option value="decline">Decline to answer</option>
+      </select>
+      <button type="button" data-action="continue" data-automation-id="pageFooterNextButton">Save and Continue</button>
+    </form>
+  </main>
+</body>
+</html>

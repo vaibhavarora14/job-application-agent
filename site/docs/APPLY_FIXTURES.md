@@ -7,6 +7,7 @@ After the next site deploy, these are public at:
 - https://jobappagent.com/fixtures/greenhouse/
 - https://jobappagent.com/fixtures/lever/
 - https://jobappagent.com/fixtures/ashby/
+- https://jobappagent.com/fixtures/workday/ (fill only; stops before submit)
 
 Confirmation pages: `…/confirmation.html` with **Thank you for applying (fixture)**.
 

@@ -9,6 +9,7 @@ Self-hosted ATS-shaped apply forms for prove / smoke / E2E. **Default CI and pro
 | Greenhouse | `http://127.0.0.1:4173/fixtures/greenhouse/` | `https://jobappagent.com/fixtures/greenhouse/` |
 | Lever | `http://127.0.0.1:4173/fixtures/lever/` | `https://jobappagent.com/fixtures/lever/` |
 | Ashby | `http://127.0.0.1:4173/fixtures/ashby/` | `https://jobappagent.com/fixtures/ashby/` |
+| Workday (fill only) | `http://127.0.0.1:4173/fixtures/workday/` | `https://jobappagent.com/fixtures/workday/` |
 
 Confirmation pages (submit target):
 
@@ -17,6 +18,8 @@ Confirmation pages (submit target):
 - `/fixtures/ashby/confirmation.html`
 
 Each confirmation page includes clear **Thank you for applying (fixture)** text so Playwright / `detectConfirmation` can treat it as success.
+
+Workday phase 1 has no confirmation page. The fixture walks My Information, My Experience, Application Questions, Voluntary Disclosures, and Review, then stops. `allowSubmit` is false. Account creation, sign-in, CAPTCHA, legal, and voluntary-disclosure pages pause through the existing attention queue. Fill is fixture-tested; submit is not, and the public compare page stays "not yet submitted to or tested".
 
 Allowlist source of truth: [`test-jobs.json`](./test-jobs.json) (`kind: "fixture"` | `"vendor-sandbox"`).
 

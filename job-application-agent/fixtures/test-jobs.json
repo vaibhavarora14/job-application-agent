@@ -54,6 +54,15 @@
     "title": "Ashby fixture confirmation"
   },
   {
+    "id": "fixture-workday",
+    "url": "https://jobappagent.com/fixtures/workday/",
+    "pathPrefixes": ["/fixtures/workday"],
+    "ats": "workday",
+    "kind": "fixture",
+    "allowSubmit": false,
+    "title": "Workday fixture (fill only, do not submit)"
+  },
+  {
     "id": "vendor-ashby-embed-demo",
     "url": "https://jobs.ashbyhq.com/ashby-embed-demo-org",
     "hostPathPrefixes": [
