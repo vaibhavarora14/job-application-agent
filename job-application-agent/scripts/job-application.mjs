@@ -73,6 +73,8 @@ const SUBMISSION_TELEMETRY_PII_KEYS = new Set([
 const FILL_METRICS_SOURCES = new Set(['telemetry', 'answer_keys', 'empty']);
 // entryOrigin marks how a submitted ledger entry was produced. 'logged' = recorded after the fact
 // without fill telemetry (answer-key fallback), so it is not an agent-filled submission.
+// Live employer submits no longer take that path: ledger add refuses them before anything is
+// recorded. The marker stays for fixture/vendor-sandbox rows and for rows already stored.
 // 'agent' is reserved; current clients only ever write/emit 'logged' and omit the key otherwise.
 const ENTRY_ORIGINS = new Set(['agent', 'logged']);
 export const LOGGED_ENTRY_ORIGIN = 'logged';
@@ -472,21 +474,24 @@ export function isLoggedNotAgentFilled(record) {
 /**
  * Resolve fill metrics for application_submitted without putting answer values in telemetry.
  * Prefer explicit entry.telemetry counts; fall back to answer *keys* only (labels, not content).
+ * `telemetry` (what a live ledger add records as telemetrySupplied) requires both
+ * fieldsFilled and resumeUploaded on the telemetry block. A missing one is not inferred
+ * from answer keys, and resumeFieldPresent does not stand in for resumeUploaded.
+ * An incomplete block falls back entirely, the same as no telemetry block.
  */
 export function resolveSubmissionFillMetrics(entry, details = {}) {
   const answers = Object.keys(entry?.answers ?? {});
   const hasExplicitFields = details.fieldsFilled != null;
   const hasExplicitResume = details.resumeUploaded != null;
   const hasExplicitShort = details.shortAnswerCount != null;
+  const explicitFillTelemetry = hasExplicitFields && hasExplicitResume;
   const resumeFromAnswers = answers.some((key) => RESUME_ANSWER_KEY.test(key));
-  const fieldsFilled = hasExplicitFields ? details.fieldsFilled : answers.length;
-  const resumeUploaded = hasExplicitResume ? details.resumeUploaded : resumeFromAnswers;
-  const shortAnswerCount = hasExplicitShort
-    ? details.shortAnswerCount
-    : hasExplicitFields
-      ? Math.max(0, fieldsFilled - (resumeUploaded ? 1 : 0))
-      : answers.filter((key) => !RESUME_ANSWER_KEY.test(key)).length;
-  const fillMetricsSource = (hasExplicitFields || hasExplicitResume || details.profileResumeOnFile === true)
+  const fieldsFilled = explicitFillTelemetry ? details.fieldsFilled : answers.length;
+  const resumeUploaded = explicitFillTelemetry ? Boolean(details.resumeUploaded) : resumeFromAnswers;
+  const shortAnswerCount = explicitFillTelemetry
+    ? (hasExplicitShort ? details.shortAnswerCount : Math.max(0, fieldsFilled - (resumeUploaded ? 1 : 0)))
+    : answers.filter((key) => !RESUME_ANSWER_KEY.test(key)).length;
+  const fillMetricsSource = explicitFillTelemetry
     ? 'telemetry'
     : (answers.length > 0 ? 'answer_keys' : 'empty');
   // Boolean only: did the form have a résumé/CV upload field? null = unknown (left out of analytics).
@@ -556,8 +561,31 @@ export function isProfileOneClickSubmission(entry, metrics) {
 }
 
 /**
+ * Live ledger add that would record a submission with no fill telemetry (answer-key fallback or
+ * empty metrics: entryOrigin logged, telemetrySupplied false). Nothing is recorded. The message
+ * names the keys to resend and the two honest empty-looking exceptions, which still require their
+ * own telemetry. No new analytics fields.
+ */
+export function missingLiveFillTelemetryError() {
+  return new Error(
+    'ledger add refused: a live submission without fill telemetry would be recorded after the fact '
+    + '(entryOrigin=logged, telemetrySupplied=false). Nothing was recorded. '
+    + 'Resend ledger add with telemetry from this session\'s own fill. '
+    + 'Required: entry.telemetry.fieldsFilled (the integer count of fields you filled) and entry.telemetry.resumeUploaded (Boolean). '
+    + 'Both must be explicit on the telemetry block. A missing one is not inferred from answer keys, and resumeFieldPresent does not replace resumeUploaded. '
+    + 'When you saw the form, also send entry.telemetry.resumeFieldPresent '
+    + '(true if it had a résumé/CV upload or selection field, false if it had none; "unknown" only if you never saw the form). '
+    + 'Include startedAt/endedAt or durationMs. Do not invent fill counts and do not omit the telemetry block. '
+    + `The only live submits that may look empty are applicationChannel "${PROFILE_ONE_CLICK_CHANNEL}" with telemetry.profileResumeOnFile: true, `
+    + `and an attended thinSubmissionOverride (acknowledgment "${THIN_SUBMISSION_OVERRIDE}" plus a unique per-job candidateConfirmation) under approval "APPROVE SUBMIT".`,
+  );
+}
+
+/**
  * Block ledger add when fill metrics are missing or the submission looks empty.
- * Fixture / vendor-sandbox applies are exempt.
+ * Allowlisted fixture / vendor-sandbox URLs are exempt (an answers-only fixture stays entryOrigin logged).
+ * A caller-supplied applyKind is not an exemption; a non-allowlisted URL is live.
+ * A live apply with no fill telemetry is refused before any row is written.
  * Honest one-click path: applicationChannel profile_one_click + telemetry.profileResumeOnFile.
  * Intentional empty ATS accepts need thinSubmissionOverride with a per-job candidate confirmation
  * and APPROVE SUBMIT — never routine-auto / unattended / STANDING AUTHORIZATION.
@@ -568,12 +596,7 @@ export function assertSubmissionFillGuard(entry, metrics, thinOverride = null, o
   if (isFixtureOrSandboxApply(entry)) {
     return { path: 'fixture', thinSubmissionOverrideUsed: false };
   }
-  if (metrics.fillMetricsSource === 'empty') {
-    throw new Error(
-      'entry.telemetry.fieldsFilled and entry.telemetry.resumeUploaded are required when answers are empty. '
-      + 'Pass integer field counts and a Boolean resumeUploaded only — never field values, paths, or answer text in telemetry.',
-    );
-  }
+  if (metrics?.fillMetricsSource !== 'telemetry') throw missingLiveFillTelemetryError();
   if (!(metrics.fieldsFilled === 0 && metrics.resumeUploaded !== true)) {
     return { path: 'filled', thinSubmissionOverrideUsed: false };
   }
@@ -634,15 +657,16 @@ export function assertSubmissionFillGuard(entry, metrics, thinOverride = null, o
   };
 }
 
+/** Fixture / vendor-sandbox only. Live applies are refused in assertSubmissionFillGuard before this runs. */
 export function warnAnswerKeyFillMetricsFallback(fillMetricsSource) {
   if (fillMetricsSource !== 'answer_keys') return;
   process.stderr.write(
     'WARNING: ledger add used answer-key fallback fill metrics '
-    + '(fillMetricsSource=answer_keys, telemetrySupplied=false). '
-    + 'Resend entry.telemetry with fieldsFilled, resumeUploaded, and startedAt/endedAt or durationMs '
-    + 'so analytics duration and counts are accurate — do not omit the telemetry block. '
-    + 'Without it this entry is recorded as logged after the fact (entryOrigin=logged), not as an agent-filled submission. '
-    + 'That is expected only when you did not fill this application in this session; never invent or reuse telemetry for it.\n',
+    + '(fillMetricsSource=answer_keys, telemetrySupplied=false) for a fixture or vendor-sandbox apply. '
+    + 'Resend entry.telemetry with fieldsFilled, resumeUploaded, and resumeFieldPresent when the form was seen, '
+    + 'plus startedAt/endedAt or durationMs. '
+    + 'This non-live entry is recorded as logged after the fact (entryOrigin=logged), not as an agent-filled submission. '
+    + 'A live employer submission without that telemetry block is refused and nothing is recorded.\n',
   );
 }
 
@@ -712,7 +736,7 @@ export async function reviewRapidFireFillTelemetry(entry, rawTelemetry, { now = 
       const message = `Flagged for review (not blocked): ledger add for ${entry.id} carried the same fill telemetry as `
         + `${matchingApplicationIds.join(', ')} within ${FILL_TELEMETRY_REVIEW_WINDOW_MS / 1000}s. `
         + 'Each live submit must report its own telemetry from its own fill (fieldsFilled, resumeUploaded, resumeFieldPresent, timing). '
-        + 'Never copy one submit\'s telemetry block to another. For entries logged after the fact, omit the telemetry block so they are recorded as entryOrigin=logged.';
+        + 'Never copy one submit\'s telemetry block to another. A live submit that omits the telemetry block is refused.';
       process.stderr.write(`WARNING: ${message}\n`);
       return { flagged: true, reason: FILL_TELEMETRY_REVIEW_REASON, windowSeconds: FILL_TELEMETRY_REVIEW_WINDOW_MS / 1000, matchingApplicationIds, recordedAt, message };
     });
@@ -1197,7 +1221,8 @@ export function validateLedgerEntry(input) {
   if (entry.applicationChannel != null) normalized.applicationChannel = string(entry.applicationChannel, 'entry.applicationChannel', 40).toLowerCase();
   if (entry.roundId != null) normalized.roundId = string(entry.roundId, 'entry.roundId', 180);
   // applyKind marks fixture/vendor-sandbox applies so metrics/community treat them as non-employer.
-  // Equivalent to "source=fixture" without overloading ATS channel `source`.
+  // The kind comes from the URL allowlist. A caller-supplied fixture/vendor-sandbox on any
+  // other URL is rejected; it is not an exemption from live fill telemetry.
   const applyKind = resolveApplyKind(normalized.url, { applyKind: entry.applyKind });
   if (!APPLY_KINDS.has(applyKind)) throw new Error('entry.applyKind is invalid.');
   normalized.applyKind = applyKind;
@@ -3192,10 +3217,13 @@ async function executeCommand([area, action, value], telemetry, session, communi
     if (fillGuard.thinSubmissionOverrideUsed) {
       await assertAndRecordThinOverrideUse(fillGuard.candidateConfirmation, baseEntry.url);
     }
+    // telemetry only when both fieldsFilled and resumeUploaded were explicit. An incomplete
+    // block is answer-key/empty fallback (refused above for a live URL), never telemetrySupplied.
     const telemetrySupplied = fillMetrics.fillMetricsSource === 'telemetry';
     warnAnswerKeyFillMetricsFallback(fillMetrics.fillMetricsSource);
-    // entryOrigin is derived here, never taken from the caller: only an answer-key fallback
-    // (no fill telemetry) marks the entry as logged after the fact / not agent-filled.
+    // entryOrigin is derived here, never taken from the caller. Live applies already failed
+    // closed above when fill telemetry was missing. Only a fixture/vendor-sandbox answer-key
+    // fallback still stores entryOrigin=logged (not an agent-filled submission).
     const { entryOrigin: _callerEntryOrigin, ...ledgerInput } = input;
     const entry = validateLedgerEntry({
       ...ledgerInput,

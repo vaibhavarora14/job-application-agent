@@ -91,6 +91,20 @@ test("shouldEnforceApplyUrlGate defaults", () => {
 test("resolveApplyKind and validateLedgerEntry mark fixture applies", () => {
   assert.equal(resolveApplyKind("https://jobappagent.com/fixtures/greenhouse/"), "fixture");
   assert.equal(resolveApplyKind("https://jobs.ashbyhq.com/confluent/x"), "live");
+  assert.equal(resolveApplyKind("https://jobappagent.com/fixtures/greenhouse/", { applyKind: "live" }), "fixture");
+  assert.equal(resolveApplyKind("https://jobappagent.com/fixtures/lever/", { applyKind: "vendor-sandbox" }), "fixture");
+  assert.equal(resolveApplyKind("https://jobs.lever.co/leverdemo/abc/apply", { applyKind: "fixture" }), "vendor-sandbox");
+  assert.throws(
+    () => resolveApplyKind("https://jobs.example.com/role", { applyKind: "fixture" }),
+    /allowlist/,
+  );
+  assert.throws(
+    () => resolveApplyKind("https://jobs.ashbyhq.com/confluent/x", { applyKind: "vendor-sandbox" }),
+    /allowlist/,
+  );
+  assert.equal(isFixtureOrSandboxApply({ url: "https://jobs.example.com/role", applyKind: "fixture" }), false);
+  assert.equal(isFixtureOrSandboxApply({ applyKind: "fixture" }), false);
+  assert.equal(isFixtureOrSandboxApply({ url: "https://jobappagent.com/fixtures/ashby/", applyKind: "live" }), true);
 
   const entry = validateLedgerEntry({
     id: "fixture-gh-1",
