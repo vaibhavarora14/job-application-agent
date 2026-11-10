@@ -309,6 +309,7 @@ test("open-source and compare pages pair JobAppAgent with open-source job applic
   assert.match(compareHtml, /Approval before submit: (?:<!-- -->)?no, by default/);
   assert.match(compareHtml, /Approval before submit: (?:<!-- -->)?not stated/);
   assert.match(compareHtml, /rel="canonical" href="https:\/\/jobappagent\.com\/compare"/);
+  assert.match(compareHtml, /Workday is listed but not yet submitted to or tested/);
   for (const html of [openHtml, compareHtml]) {
     assert.doesNotMatch(html, /\$49|Reserve for|Founding reservation|COMING SOON|\bbeta\b|"offers"|"price"/i);
     assert.doesNotMatch(html, /interview/i);

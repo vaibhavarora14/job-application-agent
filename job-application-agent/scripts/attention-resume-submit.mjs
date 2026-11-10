@@ -170,6 +170,24 @@ export function decideResumeSubmit(input) {
 
   const adapter = resolveAtsAdapter(snapshot.pageUrl);
   const probe = buildSubmitProbePlan(snapshot.pageUrl);
+  // Workday phase 1 never submits. Greenhouse, Ashby, and Lever keep the probe below.
+  if (adapter.fillOnly) {
+    return {
+      action: "stop_before_submit",
+      exitCode: RESUME_EXIT.STILL_BLOCKED,
+      submitted: false,
+      recordSubmission: false,
+      message: "Workday phase 1 stops before Submit. Do not click Submit and do not record a submission.",
+      adapterId: adapter.id,
+      binding,
+      probe,
+      next: [
+        "Fill My Information, My Experience, and non-sensitive Application Questions",
+        "Pause for account creation, sign-in, CAPTCHA, legal, and voluntary disclosures",
+        "Stop on Review. Do not ledger add or intent-confirm",
+      ],
+    };
+  }
   const confirmation = detectConfirmation(snapshot, adapter);
   if (confirmation.confirmed) {
     return {
@@ -308,6 +326,7 @@ export function resumeSubmitChecklist() {
     "12. If submit ambiguous → intent-sent; never retry until verified",
     "13. attention resolve; continue round or release lease",
     "14. Prove/smoke/E2E: allowlisted fixture URLs only unless LIVE_APPLY=1",
+    "15. Workday phase 1: stop on Review. Do not click Submit and do not record a submission.",
   ];
 }
 
@@ -375,7 +394,7 @@ Page snapshot fields:
 
 Exit codes:
   0  submitted_confirmed
- 10  still_blocked / submit_unavailable
+ 10  still_blocked / submit_unavailable / workday stop_before_submit (phase 1, nothing recorded)
  11  tab_drift / binding missing / lease lost
  12  submit_ambiguous (awaiting confirm)
  13  ready_to_submit

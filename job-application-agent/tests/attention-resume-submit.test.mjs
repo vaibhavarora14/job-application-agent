@@ -154,8 +154,60 @@ test("buildSubmitProbePlan and checklist are actionable", () => {
   const plan = buildSubmitProbePlan("https://jobs.ashbyhq.com/x/application");
   assert.equal(plan.adapterId, "ashby");
   assert.ok(plan.submitSelectors.includes('button[type="submit"]'));
+  assert.equal(plan.clickSubmit, undefined);
+  assert.ok(plan.notes.some((line) => /click submit/i.test(line)));
   const lines = resumeSubmitChecklist();
   assert.ok(lines.some((l) => /DISPLAY=:99/i.test(l)));
   assert.ok(lines.some((l) => /intent-confirm|ledger add/i.test(l)));
   assert.ok(lines.some((l) => /LIVE_APPLY/i.test(l)));
+});
+
+test("greenhouse and lever submit rules stay ready_to_submit", () => {
+  for (const pageUrl of [
+    "https://jobappagent.com/fixtures/greenhouse/",
+    "https://jobs.lever.co/leverdemo/abc/apply",
+  ]) {
+    const decision = decideResumeSubmit({
+      binding: { ...binding, jobUrl: pageUrl },
+      env: gateOn,
+      snapshot: { pageUrl, submitEnabled: true, leaseHeld: true },
+    });
+    assert.equal(decision.action, "ready_to_submit", pageUrl);
+    assert.equal(decision.exitCode, RESUME_EXIT.READY_TO_SUBMIT, pageUrl);
+  }
+});
+
+test("workday resume stops before submit even when the page says thank you", () => {
+  const pageUrl = "https://jobappagent.com/fixtures/workday/review.html";
+  const decision = decideResumeSubmit({
+    binding: { ...binding, jobUrl: pageUrl },
+    env: gateOn,
+    snapshot: {
+      pageUrl,
+      pageText: "Thank you for applying",
+      submitEnabled: true,
+      leaseHeld: true,
+    },
+  });
+  assert.equal(decision.action, "stop_before_submit");
+  assert.equal(decision.exitCode, RESUME_EXIT.STILL_BLOCKED);
+  assert.equal(decision.submitted, false);
+  assert.equal(decision.recordSubmission, false);
+  assert.match(decision.message, /do not click submit/i);
+
+  const live = decideResumeSubmit({
+    binding: { ...binding, jobUrl: "https://acme.wd5.myworkdayjobs.com/en-US/job/Role_R1/apply" },
+    env: { APPLY_URL_GATE: "1", LIVE_APPLY: "1" },
+    snapshot: {
+      pageUrl: "https://acme.wd5.myworkdayjobs.com/en-US/job/Role_R1/apply",
+      submitEnabled: true,
+      leaseHeld: true,
+    },
+  });
+  assert.equal(live.action, "stop_before_submit");
+  assert.equal(live.submitted, false);
+
+  const probe = buildSubmitProbePlan(pageUrl);
+  assert.equal(probe.clickSubmit, false);
+  assert.equal(probe.submitted, false);
 });
