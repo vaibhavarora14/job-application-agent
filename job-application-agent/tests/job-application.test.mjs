@@ -376,7 +376,18 @@ test('accepts only confirmed submission ledger shapes', () => {
   assert.deepEqual(validateLedgerEntry(entry), { ...entry, applyKind: 'live' });
   assert.equal(validateLedgerEntry({ ...entry, employerJobId: 'greenhouse:123' }).employerJobId, 'greenhouse:123');
   assert.equal(validateLedgerEntry({ ...entry, id: 'workday-role', source: 'workday' }).source, 'workday');
-  assert.equal(validateLedgerEntry({ ...entry, applyKind: 'fixture' }).applyKind, 'fixture');
+  assert.throws(() => validateLedgerEntry({ ...entry, applyKind: 'fixture' }), /allowlist/);
+  assert.throws(() => validateLedgerEntry({ ...entry, applyKind: 'vendor-sandbox' }), /allowlist/);
+  assert.equal(validateLedgerEntry({
+    ...entry,
+    url: 'https://jobappagent.com/fixtures/greenhouse/',
+    applyKind: 'vendor-sandbox',
+  }).applyKind, 'fixture');
+  assert.equal(validateLedgerEntry({
+    ...entry,
+    url: 'https://jobappagent.com/fixtures/lever/',
+    applyKind: 'live',
+  }).applyKind, 'fixture');
   assert.throws(() => validateLedgerEntry({ ...entry, status: 'draft' }), /submitted/);
   assert.throws(() => validateLedgerEntry({ ...entry, applyKind: 'demo' }), /applyKind/);
 });
@@ -452,6 +463,22 @@ test('resolves fill metrics from telemetry counts or answer keys without storing
   assert.deepEqual(resolveSubmissionFillMetrics({ answers: {} }, { fieldsFilled: 12, resumeUploaded: true }), {
     fieldsFilled: 12, shortAnswerCount: 11, resumeUploaded: true, fillMetricsSource: 'telemetry',
   });
+  // An incomplete block is not telemetry. The missing metric is not inferred, and the
+  // supplied half is not kept: the result is the same answer-key fallback as no telemetry.
+  const answers = { Email: 'filled', Resume: 'uploaded' };
+  const onlyFields = resolveSubmissionFillMetrics({ answers }, { fieldsFilled: 9, resumeFieldPresent: true });
+  assert.equal(onlyFields.fillMetricsSource, 'answer_keys');
+  assert.equal(onlyFields.fieldsFilled, 2);
+  assert.equal(onlyFields.resumeUploaded, true);
+  assert.notEqual(onlyFields.fieldsFilled, 9);
+  const onlyResume = resolveSubmissionFillMetrics({ answers }, { resumeUploaded: false, resumeFieldPresent: false });
+  assert.equal(onlyResume.fillMetricsSource, 'answer_keys');
+  assert.equal(onlyResume.fieldsFilled, 2);
+  assert.equal(onlyResume.resumeUploaded, true);
+  const both = resolveSubmissionFillMetrics({ answers }, { fieldsFilled: 4, resumeUploaded: false });
+  assert.equal(both.fillMetricsSource, 'telemetry');
+  assert.equal(both.fieldsFilled, 4);
+  assert.equal(both.resumeUploaded, false);
 });
 
 test('guards empty ledger submissions unless thin override, profile one-click, or fixture apply', () => {
@@ -508,10 +535,17 @@ test('guards empty ledger submissions unless thin override, profile one-click, o
     live,
     resolveSubmissionFillMetrics(live, { fieldsFilled: 9, resumeUploaded: true }),
   ));
-  assert.doesNotThrow(() => assertSubmissionFillGuard(
-    { applyKind: 'fixture', answers: {} },
+  assert.equal(assertSubmissionFillGuard(
+    { url: 'https://jobappagent.com/fixtures/greenhouse/', applyKind: 'live', answers: {} },
     resolveSubmissionFillMetrics({ answers: {} }, {}),
-  ));
+  ).path, 'fixture');
+  assert.throws(
+    () => assertSubmissionFillGuard(
+      { url: 'https://jobs.example.com/not-a-fixture', applyKind: 'fixture', answers: {}, approval: 'APPROVE SUBMIT' },
+      resolveSubmissionFillMetrics({ answers: {} }, {}),
+    ),
+    /telemetry\.fieldsFilled/,
+  );
 });
 
 test('normalizes thin override objects and rejects bare strings', () => {
@@ -723,8 +757,13 @@ test('application_submitted carries Boolean profileOneClick from the same rule a
   ];
   for (const event of no) assert.equal(event.properties.profileOneClick, false);
   assert.equal(assertSubmissionFillGuard(oneClickEntry, oneClickFilled).path, 'filled');
-  // Fixture / vendor-sandbox applies never count as the one-click path.
-  assert.equal(isProfileOneClickSubmission({ ...oneClickEntry, applyKind: 'fixture' }, oneClickMetrics), false);
+  // An allowlisted fixture URL is not the one-click path. A caller-supplied fixture kind
+  // on a live URL does not take the URL off that path.
+  assert.equal(isProfileOneClickSubmission({
+    ...oneClickEntry,
+    url: 'https://jobappagent.com/fixtures/greenhouse/',
+  }, oneClickMetrics), false);
+  assert.equal(isProfileOneClickSubmission({ ...oneClickEntry, applyKind: 'fixture' }, oneClickMetrics), true);
 
   // Boolean only, never the job URL or résumé details; every shape validates against the relay schema.
   for (const event of [yes, ...no]) {
@@ -1275,6 +1314,98 @@ test('fixture answer-key fallback stays entryOrigin logged; a live submit withou
   assert.equal(event.properties.durationBucket, 'unknown');
 });
 
+test('live ledger add requires both explicit fill metrics and does not honor a fake non-live kind', async (t) => {
+  const directory = await mkdtemp(join(tmpdir(), 'public-job-agent-explicit-fill-'));
+  t.after(() => rm(directory, { recursive: true, force: true }));
+  const script = fileURLToPath(new URL('../scripts/job-application.mjs', import.meta.url));
+  await writeFile(join(directory, 'telemetry.json'), JSON.stringify({ version: 1, enabled: false, disclosed: true, graceConsumed: true, installationEventPending: false }));
+  const env = isolatedCliEnv(directory);
+  const answers = { Email: 'filled', Resume: 'uploaded' };
+  const entry = (slug, extra) => ({
+    id: `explicit-fill-${slug}`,
+    company: `Explicit ${slug}`,
+    role: 'Engineer',
+    url: `https://jobs.example.com/explicit-fill-${slug}`,
+    source: 'lever',
+    score: 80,
+    status: 'submitted',
+    submittedAt: '2026-10-16T04:00:00Z',
+    approval: 'APPROVE SUBMIT',
+    answers,
+    ...extra,
+  });
+  const ledger = async () => {
+    const raw = await readFile(join(directory, 'applications.ndjson'), 'utf8').catch((error) => (error.code === 'ENOENT' ? '' : Promise.reject(error)));
+    return raw.trim() ? raw.trim().split('\n').map((line) => JSON.parse(line)) : [];
+  };
+
+  // fieldsFilled plus resumeFieldPresent, with answer keys that would infer resumeUploaded.
+  const onlyFields = await runCli(script, ['ledger', 'add', '--stdin'], entry('fields', {
+    telemetry: { fieldsFilled: 4, resumeFieldPresent: true, durationBucket: '2-5m' },
+  }), env);
+  assert.equal(onlyFields.code, 1);
+  assert.match(onlyFields.stderr, /telemetry\.fieldsFilled/);
+  assert.match(onlyFields.stderr, /telemetry\.resumeUploaded/);
+  assert.match(onlyFields.stderr, /not inferred from answer keys/);
+  assert.match(onlyFields.stderr, /resumeFieldPresent does not replace resumeUploaded/);
+  assert.match(onlyFields.stderr, /Nothing was recorded/);
+  assert.match(onlyFields.stderr, /profile_one_click/);
+  assert.match(onlyFields.stderr, /thinSubmissionOverride/);
+
+  // resumeUploaded without fieldsFilled. resumeFieldPresent is present and still not enough.
+  const onlyResume = await runCli(script, ['ledger', 'add', '--stdin'], entry('resume', {
+    telemetry: { resumeUploaded: false, resumeFieldPresent: false, durationBucket: '2-5m' },
+  }), env);
+  assert.equal(onlyResume.code, 1);
+  assert.match(onlyResume.stderr, /not inferred from answer keys/);
+  assert.deepEqual(await ledger(), []);
+
+  // A caller-supplied fixture or vendor-sandbox kind does not exempt a live employer URL.
+  for (const applyKind of ['fixture', 'vendor-sandbox']) {
+    const disguised = await runCli(script, ['ledger', 'add', '--stdin'], entry(applyKind, { applyKind }), env);
+    assert.equal(disguised.code, 1);
+    assert.match(disguised.stderr, /allowlist/);
+    assert.match(disguised.stderr, new RegExp(applyKind));
+  }
+  assert.deepEqual(await ledger(), []);
+
+  // Both metrics explicit: recorded as supplied telemetry, and the Resume answer key does not override resumeUploaded.
+  const complete = await runCli(script, ['ledger', 'add', '--stdin'], entry('complete', {
+    telemetry: { fieldsFilled: 4, resumeUploaded: false, resumeFieldPresent: true, durationBucket: '2-5m' },
+  }), env);
+  assert.equal(complete.code, 0, complete.stderr);
+
+  // Allowlisted fixture stays exempt with no telemetry. A mismatched caller kind is stored as the allowlist kind.
+  const fixture = await runCli(script, ['ledger', 'add', '--stdin'], entry('fixture-url', {
+    url: 'https://jobappagent.com/fixtures/greenhouse/',
+    source: 'greenhouse',
+    applyKind: 'vendor-sandbox',
+  }), env);
+  assert.equal(fixture.code, 0, fixture.stderr);
+  assert.match(fixture.stderr, /telemetrySupplied=false/);
+
+  const sandbox = await runCli(script, ['ledger', 'add', '--stdin'], entry('sandbox-url', {
+    url: 'https://jobs.lever.co/leverdemo/abc/apply',
+    applyKind: 'fixture',
+  }), env);
+  assert.equal(sandbox.code, 0, sandbox.stderr);
+
+  const stored = Object.fromEntries((await ledger()).map((row) => [row.id, row]));
+  assert.equal(stored['explicit-fill-complete'].telemetrySupplied, true);
+  assert.equal(stored['explicit-fill-complete'].fillMetricsSource, 'telemetry');
+  assert.equal('entryOrigin' in stored['explicit-fill-complete'], false);
+  assert.equal(stored['explicit-fill-complete'].applyKind, 'live');
+  assert.equal(stored['explicit-fill-fixture-url'].applyKind, 'fixture');
+  assert.equal(stored['explicit-fill-fixture-url'].telemetrySupplied, false);
+  assert.equal(stored['explicit-fill-fixture-url'].entryOrigin, 'logged');
+  assert.equal(stored['explicit-fill-sandbox-url'].applyKind, 'vendor-sandbox');
+  assert.equal(stored['explicit-fill-sandbox-url'].telemetrySupplied, false);
+  assert.equal(stored['explicit-fill-fields'], undefined);
+  assert.equal(stored['explicit-fill-resume'], undefined);
+  assert.equal(stored['explicit-fill-fixture'], undefined);
+  assert.equal(stored['explicit-fill-vendor-sandbox'], undefined);
+});
+
 test('answer-key fallback marks the entry as logged after the fact, not agent-filled', () => {
   assert.equal(LOGGED_ENTRY_ORIGIN, 'logged');
   assert.equal(entryOriginForFillMetrics('answer_keys'), 'logged');
@@ -1305,7 +1436,15 @@ test('logged-after-the-fact submissions are never thin agent submits', () => {
     () => assertSubmissionFillGuard(sparse, metrics),
     /telemetry\.fieldsFilled[\s\S]*telemetry\.resumeUploaded[\s\S]*telemetry\.resumeFieldPresent/,
   );
-  assert.equal(assertSubmissionFillGuard({ ...sparse, applyKind: 'fixture' }, metrics).path, 'fixture');
+  assert.throws(
+    () => assertSubmissionFillGuard({ ...sparse, url: 'https://jobs.example.com/sparse', applyKind: 'fixture' }, metrics),
+    /not inferred from answer keys/,
+  );
+  assert.equal(assertSubmissionFillGuard({
+    ...sparse,
+    url: 'https://jobappagent.com/fixtures/lever/',
+    applyKind: 'vendor-sandbox',
+  }, metrics).path, 'fixture');
 });
 
 test('validateLedgerEntry accepts known entryOrigin values and rejects others', () => {
@@ -1605,7 +1744,8 @@ test('routine-auto profile blocks thin submits even with APPROVE SUBMIT unless t
   assert.equal(isThinSubmission(live, empty), true);
   assert.equal(isThinSubmission(live, resolveSubmissionFillMetrics(live, { fieldsFilled: 3, resumeUploaded: false })), false);
   assert.equal(isThinSubmission(live, resolveSubmissionFillMetrics(live, { fieldsFilled: 0, resumeUploaded: true })), false);
-  assert.equal(isThinSubmission({ ...live, applyKind: 'fixture' }, empty), false);
+  assert.equal(isThinSubmission({ ...live, applyKind: 'fixture' }, empty), true);
+  assert.equal(isThinSubmission({ ...live, url: 'https://jobappagent.com/fixtures/greenhouse/', applyKind: 'live' }, empty), false);
 
   // Blocked with the exact guidance, with or without a per-job note.
   assert.throws(
