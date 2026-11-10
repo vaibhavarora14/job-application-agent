@@ -11,6 +11,7 @@ import {
   WORKDAY_FILL_COVERAGE,
   assertNotLiveWorkdayTenant,
   loadWorkdayFixtures,
+  htmlToVisibleText,
   planWorkdayFill,
   runWorkdayFixtureFill,
   toAttentionItem,
@@ -249,6 +250,46 @@ test("unclear work authorization pauses instead of guessing", () => {
   assert.equal(plan.attention.blocker, "ambiguous-authorization");
   assert.deepEqual(plan.attention.requiredActions, ["provide-authorization"]);
   assert.equal(plan.fills.some((fill) => fill.name === "workAuthorization"), false);
+});
+
+test("visible text strips script and style tags and decodes entities once", () => {
+  assert.equal(htmlToVisibleText("Tom &amp; Jerry"), "Tom & Jerry");
+  assert.equal(htmlToVisibleText("&AMP;"), "&");
+  assert.equal(htmlToVisibleText("&amp;amp;"), "&amp;");
+  assert.equal(htmlToVisibleText("&amp;lt;"), "&lt;");
+  assert.equal(htmlToVisibleText("&amp;nbsp;"), "&nbsp;");
+  assert.equal(htmlToVisibleText("A&nbsp;B"), "A B");
+  assert.equal(htmlToVisibleText("Say &quot;hi&quot;"), "Say \"hi\"");
+  assert.equal(htmlToVisibleText("it&#39;s &apos;ok&apos;"), "it's 'ok'");
+  assert.equal(htmlToVisibleText("1 < 2"), "1 < 2");
+  assert.equal(htmlToVisibleText("<span title=\"a>b\">OK</span>"), "OK");
+  assert.equal(htmlToVisibleText("<script>sign in</script>My Information"), "My Information");
+  assert.equal(htmlToVisibleText("<ScRiPt>sign in</sCrIpT>My Information"), "My Information");
+  assert.equal(htmlToVisibleText("<script type=\"text/javascript\" data-x=\"a>b\">secret</script>OK"), "OK");
+  assert.equal(htmlToVisibleText("Before<script>sign in"), "Before");
+  assert.equal(htmlToVisibleText("<style>sign in</style>After"), "After");
+  assert.equal(htmlToVisibleText("<STYLE>sign in</STYLE>After"), "After");
+  assert.equal(htmlToVisibleText("Before<style>sign in"), "Before");
+  assert.equal(
+    htmlToVisibleText("&amp;lt;script&amp;gt;sign in&amp;lt;/script&amp;gt;"),
+    "&lt;script&gt;sign in&lt;/script&gt;",
+  );
+
+  const plan = planWorkdayFill({
+    pageUrl: "https://jobappagent.com/fixtures/workday/my-information.html",
+    pageHtml: `<main data-step="my-information"><h1>My Information</h1>
+      <script>Please sign in and complete the CAPTCHA</script>
+      <style>sign in</style>
+      <label for="firstName">First Name *</label>
+      <input id="firstName" name="firstName" required />
+      <button type="button" data-action="continue">Save and Continue</button>
+    </main>`,
+    profile,
+  });
+  assert.equal(plan.step, "my-information");
+  assert.equal(plan.action, "fill");
+  assert.equal(plan.attention, null);
+  assert.equal(valueOf(plan, "firstName").value, "Avery");
 });
 
 test("a heading is enough to classify a Workday step", () => {

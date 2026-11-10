@@ -151,20 +151,183 @@ export function loadWorkdayFixtures(fixturesDir = FIXTURE_DIR) {
   };
 }
 
+const NAMED_HTML_ENTITIES = new Map([
+  ["nbsp", " "],
+  ["quot", "\""],
+  ["apos", "'"],
+  ["#39", "'"],
+  ["lt", "<"],
+  ["gt", ">"],
+]);
+
+/**
+ * @param {string} char
+ */
+function isTagNameChar(char) {
+  if (!char) return false;
+  const code = char.charCodeAt(0);
+  return (code >= 48 && code <= 57)
+    || (code >= 65 && code <= 90)
+    || (code >= 97 && code <= 122);
+}
+
+/**
+ * @param {string} source
+ * @param {number} index
+ * @param {string} literal
+ */
+function startsWithIgnoreCase(source, index, literal) {
+  if (index < 0 || index + literal.length > source.length) return false;
+  for (let i = 0; i < literal.length; i += 1) {
+    if (source[index + i].toLowerCase() !== literal[i]) return false;
+  }
+  return true;
+}
+
+/**
+ * @param {string} source
+ * @param {number} index
+ */
+function isTagStart(source, index) {
+  if (source[index] !== "<") return false;
+  const next = source[index + 1];
+  if (!next) return false;
+  return next === "/" || next === "!" || next === "?" || isTagNameChar(next);
+}
+
+/**
+ * @param {string} source
+ * @param {number} index
+ * @param {string} name
+ */
+function isNamedTagAt(source, index, name) {
+  if (!isTagStart(source, index) || source[index + 1] === "/") return false;
+  if (!startsWithIgnoreCase(source, index + 1, name)) return false;
+  return !isTagNameChar(source[index + 1 + name.length]);
+}
+
+/**
+ * @param {string} source
+ * @param {number} index
+ * @param {string} name
+ */
+function isCloseTagAt(source, index, name) {
+  if (source[index] !== "<" || source[index + 1] !== "/") return false;
+  if (!startsWithIgnoreCase(source, index + 2, name)) return false;
+  return !isTagNameChar(source[index + 2 + name.length]);
+}
+
+/**
+ * Consume one tag, including an unclosed tag through the end of the string.
+ * Quoted attribute values may contain `>`.
+ * @param {string} source
+ * @param {number} index
+ */
+function skipTag(source, index) {
+  let i = index + 1;
+  let quote = "";
+  while (i < source.length) {
+    const char = source[i];
+    if (quote) {
+      if (char === quote) quote = "";
+      i += 1;
+      continue;
+    }
+    if (char === "\"" || char === "'") {
+      quote = char;
+      i += 1;
+      continue;
+    }
+    if (char === ">") return i + 1;
+    i += 1;
+  }
+  return source.length;
+}
+
+/**
+ * Drop a script or style element, including its contents.
+ * An unclosed element consumes the remainder of the string.
+ * @param {string} source
+ * @param {number} index
+ * @param {string} name
+ */
+function skipRawTextElement(source, index, name) {
+  let i = skipTag(source, index);
+  while (i < source.length) {
+    if (isCloseTagAt(source, i, name)) return skipTag(source, i);
+    i += 1;
+  }
+  return source.length;
+}
+
+/**
+ * One-pass entity decode. Named entities are resolved before `&amp;`, and the
+ * replacement is not scanned again, so `&amp;lt;` stays `&lt;`.
+ * @param {string} text
+ */
+function decodeHtmlEntities(text) {
+  const chars = [];
+  for (let i = 0; i < text.length; i += 1) {
+    if (text[i] !== "&") {
+      chars.push(text[i]);
+      continue;
+    }
+    const semi = text.indexOf(";", i + 1);
+    const name = semi === -1 ? "" : text.slice(i + 1, semi);
+    const key = name.toLowerCase();
+    const named = name.length > 0 && name.length <= 10 ? NAMED_HTML_ENTITIES.get(key) : undefined;
+    if (named !== undefined) {
+      chars.push(named);
+      i = semi;
+      continue;
+    }
+    if (key === "amp") {
+      chars.push("&");
+      i = semi;
+      continue;
+    }
+    chars.push("&");
+  }
+  return chars.join("");
+}
+
+/**
+ * Visible text of an HTML fragment. Tags are removed by a scan, not a regexp,
+ * so `<script>` / `<style>` (any case, with attributes, or left unclosed) do
+ * not leak their contents.
+ * @param {string} html
+ */
+export function htmlToVisibleText(html) {
+  const source = String(html ?? "");
+  const chars = [];
+  let i = 0;
+  while (i < source.length) {
+    if (!isTagStart(source, i)) {
+      chars.push(source[i]);
+      i += 1;
+      continue;
+    }
+    if (isNamedTagAt(source, i, "script")) {
+      i = skipRawTextElement(source, i, "script");
+      chars.push(" ");
+      continue;
+    }
+    if (isNamedTagAt(source, i, "style")) {
+      i = skipRawTextElement(source, i, "style");
+      chars.push(" ");
+      continue;
+    }
+    i = skipTag(source, i);
+    chars.push(" ");
+  }
+  return decodeHtmlEntities(chars.join("")).replace(/\s+/g, " ").trim();
+}
+
 /**
  * @param {string} html
  */
 function textContent(html) {
-  return String(html ?? "")
-    .replace(/<script\b[\s\S]*?<\/script>/gi, " ")
-    .replace(/<style\b[\s\S]*?<\/style>/gi, " ")
-    .replace(/<[^>]+>/g, " ")
-    .replace(/&nbsp;/gi, " ")
-    .replace(/&amp;/gi, "&")
-    .replace(/&quot;/gi, '"')
-    .replace(/&#39;|&apos;/gi, "'")
-    .replace(/\s+/g, " ")
-    .trim();
+  return htmlToVisibleText(html);
 }
 
 /**
