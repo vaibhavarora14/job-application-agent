@@ -7,12 +7,12 @@
 import assert from 'node:assert/strict';
 import { spawn, spawnSync } from 'node:child_process';
 import { createServer } from 'node:http';
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { access, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
-import { possibleDuplicateError, skillErrorProperties } from '../scripts/job-application.mjs';
+import { ATTENTION_NOTIFY_TIMEOUT_MS, possibleDuplicateError, skillErrorProperties } from '../scripts/job-application.mjs';
 
 const script = fileURLToPath(new URL('../scripts/job-application.mjs', import.meta.url));
 
@@ -177,6 +177,9 @@ test('NEW REQUISITION CONFIRMED needs the candidate\'s explicit per-job approval
   const again = run(env, ['ledger', 'add', '--stdin'], { ...alias, duplicateOverride: 'NEW REQUISITION CONFIRMED' });
   assert.match(again.stderr, new RegExp(`Paused this job \\(attention ${paused[1]}\\)`));
   assert.equal(ok(env, ['attention', 'list']).count, 1, 'a second refusal reuses the open pause');
+  const reusedAttention = await readFile(join(directory, 'attention.ndjson'), 'utf8');
+  assert.equal(reusedAttention.trim().split('\n').length, 1, 'the same round does not append another attention event');
+  assert.equal(reusedAttention.includes('round-linked'), false);
 
   const standingWithoutPhrase = run(env, ['ledger', 'add', '--stdin'], alias);
   assert.match(standingWithoutPhrase.stderr, /Paused this job/);
@@ -241,4 +244,131 @@ test('a routine-auto duplicate pause emits application_paused with the existing 
   assert.ok(skillErrors.length >= 1);
   assert.equal(JSON.stringify(skillErrors).includes('Senior Backend Developer'), false);
   assert.equal(JSON.stringify(skillErrors).includes('Alias Co'), false);
+});
+
+test('a reused judgment pause from an earlier round counts in the current round', async (t) => {
+  const captured = [];
+  const server = createServer(async (request, response) => {
+    let raw = '';
+    for await (const chunk of request) raw += chunk;
+    captured.push(JSON.parse(raw));
+    response.setHeader('content-type', 'application/json');
+    response.end(JSON.stringify(request.url === '/v1/install'
+      ? { installationId: '00000000-0000-4000-8000-000000000001', token: 'synthetic-relay-token', expiresAt: '2099-01-01T00:00:00.000Z' }
+      : { accepted: true }));
+  });
+  await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+  t.after(() => new Promise((resolve) => server.close(resolve)));
+  const { directory, env } = await fixture(t, 'newreq-later-round');
+  env.JOB_APPLICATION_AGENT_TELEMETRY_URL = `http://127.0.0.1:${server.address().port}`;
+  await writeFile(join(env.JOB_APPLICATION_AGENT_STATE_DIR, 'telemetry.json'), JSON.stringify({
+    version: 1, enabled: true, disclosed: true, graceConsumed: true, installationEventPending: false, contactEnabled: false,
+    installationId: '00000000-0000-4000-8000-000000000001', token: 'synthetic-token', tokenExpiresAt: '2099-01-01T00:00:00.000Z',
+  }));
+  const roundA = JSON.parse((await runAsync(env, ['round', 'start', '--stdin'], { requestedCount: 1 })).stdout).roundId;
+  const original = entry({ id: 'alias-1', approval: 'APPROVE SUBMIT', company: 'Alias Co', role: 'Senior Backend Developer', url: 'https://jobs.lever.co/alias/1', employerJobId: 'alias:1', submittedAt: new Date(Date.now() - 2 * 86_400_000).toISOString() });
+  assert.equal((await runAsync(env, ['ledger', 'add', '--stdin'], original)).status, 0);
+  const alias = entry({ id: 'alias-2', company: 'Alias Co', role: 'Sr Backend Engineer', url: 'https://jobs.lever.co/alias/2', employerJobId: 'alias:2', approval: 'STANDING AUTHORIZATION', applicationChannel: 'lever' });
+  const firstPause = await runAsync(env, ['ledger', 'add', '--stdin'], alias);
+  assert.equal(firstPause.status, 1, firstPause.stderr);
+  const attentionId = firstPause.stderr.match(/attention (attention-[0-9a-f-]+)\)/)?.[1];
+  assert.ok(attentionId, firstPause.stderr);
+
+  const roundB = JSON.parse((await runAsync(env, ['round', 'start', '--stdin'], { requestedCount: 1 })).stdout).roundId;
+  assert.notEqual(roundB, roundA);
+  const scored = JSON.parse((await runAsync(env, ['score', '--stdin'], job({
+    company: 'Alias Co', title: 'Sr Backend Engineer', seniority: 'senior', url: alias.url, source: 'lever',
+  }))).stdout);
+  assert.equal(scored.decision, 'review');
+  const before = JSON.parse((await runAsync(env, ['round', 'status', roundB])).stdout);
+  assert.equal(before.blockedCount, 0);
+  // The open item from round A already counts as an outcome, so this round shows neither a blocker nor a started job until the retry links it.
+  assert.equal(before.startedWithoutOutcome.jobs.some((item) => item.url === alias.url), false);
+
+  const retry = await runAsync(env, ['ledger', 'add', '--stdin'], alias);
+  assert.equal(retry.status, 1, retry.stderr);
+  assert.match(retry.stderr, new RegExp(`Paused this job \\(attention ${attentionId}\\)`));
+  const statusB = JSON.parse((await runAsync(env, ['round', 'status', roundB])).stdout);
+  assert.equal(statusB.blockedCount, 1);
+  assert.equal(statusB.startedWithoutOutcome.jobs.some((item) => item.url === alias.url), false);
+  const statusA = JSON.parse((await runAsync(env, ['round', 'status', roundA])).stdout);
+  assert.equal(statusA.blockedCount, 1);
+  const listed = JSON.parse((await runAsync(env, ['attention', 'list'])).stdout);
+  assert.equal(listed.count, 1);
+  assert.equal(listed.items[0].id, attentionId);
+  assert.equal(listed.items[0].roundId, roundA);
+  assert.deepEqual(listed.items[0].roundIds, [roundA, roundB]);
+
+  const again = await runAsync(env, ['ledger', 'add', '--stdin'], alias);
+  assert.match(again.stderr, new RegExp(`Paused this job \\(attention ${attentionId}\\)`));
+  const lines = (await readFile(join(directory, 'attention.ndjson'), 'utf8')).trim().split('\n').map((line) => JSON.parse(line));
+  assert.equal(lines.filter((event) => event.type === 'opened').length, 1);
+  assert.deepEqual(lines.filter((event) => event.type === 'round-linked').map((event) => event.roundId), [roundB]);
+  assert.equal(JSON.stringify(lines).includes('Alias Co'), false);
+  assert.equal(JSON.stringify(lines).includes('Sr Backend Engineer'), false);
+
+  const paused = captured.filter((body) => body.event === 'application_paused');
+  assert.equal(paused.length, 1);
+  assert.deepEqual(Object.keys(paused[0].properties).sort(), ['ats', 'jobHash', 'reason', 'stage']);
+  assert.equal(paused[0].properties.reason, 'candidate-judgment');
+  assert.equal(captured.some((body) => body.event === 'round_linked' || body.event === 'round-linked'), false);
+});
+
+test('attention notify does not hold the applications lock', { skip: process.platform !== 'linux', timeout: 20_000 }, async (t) => {
+  let notifySeen;
+  const notifyArrived = new Promise((resolve) => { notifySeen = resolve; });
+  const server = createServer(async (request, response) => {
+    const chunks = [];
+    for await (const chunk of request) chunks.push(chunk);
+    notifySeen(Buffer.concat(chunks).toString('utf8'));
+    request.on('close', () => { if (!response.writableEnded) response.end(); });
+  });
+  await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+  t.after(() => new Promise((resolve) => server.close(resolve)));
+
+  const { directory, env } = await fixture(t, 'newreq-notify-lock');
+  const toolDirectory = await mkdtemp(join(tmpdir(), 'jaa-guards-secret-tool-'));
+  t.after(() => rm(toolDirectory, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 }));
+  const profileFile = join(toolDirectory, 'profile.json');
+  await writeFile(profileFile, JSON.stringify({ email: 'candidate@example.com', name: 'Test Candidate' }));
+  await writeFile(join(toolDirectory, 'secret-tool'), `#!/bin/sh\nif [ "$1" = "lookup" ]; then exec /bin/cat '${profileFile}'; fi\necho "unexpected secret-tool $1" >&2\nexit 3\n`, { mode: 0o755 });
+  env.PATH = `${toolDirectory}:${process.env.PATH ?? ''}`;
+  env.ATTENTION_NOTIFY_URL = `http://127.0.0.1:${server.address().port}/api/internal/attention-notify`;
+  env.ATTENTION_NOTIFY_SECRET = 'test-notify-secret';
+
+  assert.equal((await runAsync(env, ['round', 'start', '--stdin'], { requestedCount: 1 })).status, 0);
+  assert.equal((await runAsync(env, ['ledger', 'add', '--stdin'], entry({ id: 'alias-1', approval: 'APPROVE SUBMIT', company: 'Alias Co', role: 'Senior Backend Developer', url: 'https://jobs.lever.co/alias/1', employerJobId: 'alias:1', submittedAt: new Date(Date.now() - 2 * 86_400_000).toISOString() }))).status, 0);
+
+  let duplicateClosed = false;
+  const duplicate = new Promise((resolve) => {
+    const child = spawn(process.execPath, [script, 'ledger', 'add', '--stdin'], { env });
+    let stdout = '';
+    let stderr = '';
+    child.stdout.on('data', (chunk) => { stdout += chunk; });
+    child.stderr.on('data', (chunk) => { stderr += chunk; });
+    child.on('close', (status) => { duplicateClosed = true; resolve({ status, stdout, stderr }); });
+    child.stdin.end(JSON.stringify(entry({ id: 'alias-2', company: 'Alias Co', role: 'Sr Backend Engineer', url: 'https://jobs.lever.co/alias/2', employerJobId: 'alias:2', approval: 'STANDING AUTHORIZATION' })));
+  });
+  const body = await notifyArrived;
+  const receivedAt = Date.now();
+  assert.equal(duplicateClosed, false);
+  assert.equal(body.includes('candidate@example.com'), true);
+  assert.equal(body.includes('alias-2') || body.includes('jobs.lever.co/alias/2'), true);
+  await assert.rejects(access(join(directory, '.applications.lock')), { code: 'ENOENT' });
+
+  const otherStarted = Date.now();
+  const other = await runAsync(env, ['ledger', 'add', '--stdin'], entry({ id: 'other-1', approval: 'APPROVE SUBMIT', company: 'Other Co', role: 'Senior Product Engineer', url: 'https://jobs.lever.co/other/1', employerJobId: 'other:1' }));
+  assert.equal(other.status, 0, other.stderr);
+  assert.ok(Date.now() - otherStarted < 2_000, 'a second ledger add must finish while notify is still in flight');
+  assert.equal(duplicateClosed, false);
+
+  const blocked = await duplicate;
+  const waited = Date.now() - receivedAt;
+  assert.equal(blocked.status, 1, blocked.stderr);
+  assert.match(blocked.stderr, /Paused this job \(attention attention-/);
+  assert.match(blocked.stderr, /site notify request failed/);
+  assert.ok(waited >= ATTENTION_NOTIFY_TIMEOUT_MS - 1_000, `notify returned early after ${waited}ms`);
+  assert.ok(waited < ATTENTION_NOTIFY_TIMEOUT_MS + 3_000, `notify waited ${waited}ms`);
+  assert.equal(JSON.parse((await runAsync(env, ['attention', 'list'])).stdout).count, 1);
+  assert.equal(JSON.parse((await runAsync(env, ['ledger', 'review'])).stdout).submittedTotal, 2);
 });

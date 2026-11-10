@@ -2217,16 +2217,37 @@ async function latestOpenRoundId(dir) {
   return events.filter((event) => event.type === 'started' && event.roundId && !completed.has(event.roundId)).at(-1)?.roundId ?? null;
 }
 
+function attentionCoversRound(item, roundId) {
+  return item?.roundId === roundId || (Array.isArray(item?.roundIds) && item.roundIds.includes(roundId));
+}
+
+// Keep one open judgment item, and record that this round is also waiting on it.
+// The opened event stays as it was (its roundId is the round that created it). Telemetry
+// is not involved: this is an attention-queue event, not an analytics event.
+async function linkAttentionToRound(item, roundId) {
+  if (!item?.id || !roundId || attentionCoversRound(item, roundId)) return;
+  await appendPrivateEvent('attention', {
+    type: 'round-linked',
+    id: item.id,
+    roundId,
+    occurredAt: new Date().toISOString(),
+  });
+}
+
 // Unattended / routine-auto / STANDING AUTHORIZATION: record the pause instead of leaving the
 // agent to remember attention add. Company and role are notify-only and are not stored.
+// The email notify is returned for the caller to send after the applications lock drops.
 async function pauseUnattendedDuplicate(dir, entry) {
   await recordReviewPaused({ url: entry.url, company: entry.company, title: entry.role });
   const roundId = entry.roundId || await latestOpenRoundId(dir);
   if (!roundId) return { attentionId: null, item: null };
   const existing = replayAttention(await jsonLines(join(dir, 'attention.ndjson')))
     .find((item) => item.blocker === 'judgment' && item.url === entry.url);
-  if (existing) return { attentionId: existing.id, item: null };
-  const event = await attentionAdd({
+  if (existing) {
+    await linkAttentionToRound(existing, roundId);
+    return { attentionId: existing.id, item: null };
+  }
+  const added = await attentionAdd({
     roundId,
     applicationId: entry.id,
     url: entry.url,
@@ -2235,8 +2256,27 @@ async function pauseUnattendedDuplicate(dir, entry) {
     requiredActions: ['provide-judgment'],
     company: entry.company,
     role: entry.role,
-  });
-  return { attentionId: event.id, item: event, ats: entry.applicationChannel ?? entry.source };
+  }, { notify: false });
+  const { notifyContext, ...item } = added;
+  return {
+    attentionId: item.id,
+    item,
+    ats: entry.applicationChannel ?? entry.source,
+    notifyAfterLock: { event: item, context: notifyContext },
+  };
+}
+
+// The applications lock is already released. A slow notify endpoint must not fail the refusal.
+async function flushDuplicatePauseNotify(error) {
+  const pending = error?.duplicatePause?.notifyAfterLock;
+  if (!pending) return;
+  delete error.duplicatePause.notifyAfterLock;
+  try {
+    const notify = await attentionNotifyHook(pending.event, pending.context ?? {});
+    if (notify.attempted && error.duplicatePause.item) {
+      error.duplicatePause.item = { ...error.duplicatePause.item, notify };
+    }
+  } catch { /* the duplicate refusal still stands */ }
 }
 
 async function refusePossibleDuplicate(dir, entry, error) {
@@ -2255,7 +2295,8 @@ async function refusePossibleDuplicate(dir, entry, error) {
 
 async function ledgerAdd(entryInput, duplicateOverride, companyReapplyOverride, cloudIntent = null, { routineAuto = false } = {}) {
   const entry = validateLedgerEntry(entryInput);
-  return withStateLock('applications', async (dir) => {
+  try {
+    return await withStateLock('applications', async (dir) => {
     const file = join(dir, 'applications.ndjson');
     const entries = await jsonLines(file);
     const outcomes = await jsonLines(join(dir, 'outcomes.ndjson'));
@@ -2312,7 +2353,11 @@ async function ledgerAdd(entryInput, duplicateOverride, companyReapplyOverride, 
       }
     }
     return { recorded: storedEntry.id, ...(roundCount ? { roundCount } : {}), review: buildReview([...entries, storedEntry], outcomes, [], new Date(), await jsonLines(join(dir, 'delivery.ndjson'))), ...(cloudIntent ? { cloudIntent: cloudIntent.intentId } : {}) };
-  });
+    });
+  } catch (error) {
+    await flushDuplicatePauseNotify(error);
+    throw error;
+  }
 }
 
 async function appendCloudEvent(name, event) {
@@ -2570,9 +2615,17 @@ async function roundSource(input) {
 
 function replayAttention(events, roundId = null) {
   const active = new Map();
+  const linkedRounds = new Map();
   for (const event of events) {
     if (event.type === 'opened') active.set(event.id, event);
-    else if (event.type === 'resolved') active.delete(event.id);
+    else if (event.type === 'resolved') {
+      active.delete(event.id);
+      linkedRounds.delete(event.id);
+    } else if (event.type === 'round-linked' && typeof event.id === 'string' && typeof event.roundId === 'string') {
+      const rounds = linkedRounds.get(event.id) ?? [];
+      if (!rounds.includes(event.roundId)) rounds.push(event.roundId);
+      linkedRounds.set(event.id, rounds);
+    }
   }
   const priority = (blocker) => {
     if (['authentication', 'mfa', 'captcha'].includes(blocker)) return 0;
@@ -2580,7 +2633,11 @@ function replayAttention(events, roundId = null) {
     return 2;
   };
   return [...active.values()]
-    .filter((item) => roundId == null || item.roundId === roundId)
+    .map((item) => {
+      const extra = (linkedRounds.get(item.id) ?? []).filter((id) => id && id !== item.roundId);
+      return extra.length ? { ...item, roundIds: [item.roundId, ...extra] } : item;
+    })
+    .filter((item) => roundId == null || attentionCoversRound(item, roundId))
     .sort((a, b) => priority(a.blocker) - priority(b.blocker) || Date.parse(a.createdAt) - Date.parse(b.createdAt));
 }
 
@@ -2600,6 +2657,10 @@ async function attentionList(roundId = null) {
   return { count: items.length, items };
 }
 
+// The candidate-email POST. Callers that hold the applications lock must not await this:
+// ledgerAdd sends it only after that lock is released. The timeout bounds a hung endpoint.
+export const ATTENTION_NOTIFY_TIMEOUT_MS = 4_000;
+
 async function attentionNotifyHook(event, context = {}) {
   const notifyUrl = process.env.ATTENTION_NOTIFY_URL?.trim();
   const notifySecret = process.env.ATTENTION_NOTIFY_SECRET?.trim();
@@ -2617,6 +2678,7 @@ async function attentionNotifyHook(event, context = {}) {
   try {
     const response = await fetch(notifyUrl, {
       method: 'POST',
+      signal: AbortSignal.timeout(ATTENTION_NOTIFY_TIMEOUT_MS),
       headers: {
         authorization: `Bearer ${notifySecret}`,
         'content-type': 'application/json',
@@ -2642,8 +2704,9 @@ async function attentionNotifyHook(event, context = {}) {
     }
     return { attempted: true, ok: true, magicLinkUrl: body?.magicLinkUrl ?? null, emailId: body?.emailId ?? null };
   } catch (error) {
+    const timedOut = error?.name === 'TimeoutError' || error?.name === 'AbortError';
     console.error(`[attention-notify] site notify request failed: ${error instanceof Error ? error.message : 'unknown'}`);
-    return { attempted: true, ok: false, error: 'notify_request_failed' };
+    return { attempted: true, ok: false, error: timedOut ? 'notify_timeout' : 'notify_request_failed' };
   }
 }
 
@@ -2677,7 +2740,7 @@ function sessionBindingAttentionError(error) {
   return new Error(`attention session binding is invalid: ${code}.`);
 }
 
-async function attentionAdd(input) {
+async function attentionAdd(input, { notify = true } = {}) {
   const value = object(input, 'attention item');
   if (Object.hasOwn(value, 'answers')) {
     throw new Error(
@@ -2759,9 +2822,11 @@ async function attentionAdd(input) {
     sessionBinding = { path, binding: await writeSessionBindingFile(path, binding) };
   }
 
-  const notify = await attentionNotifyHook(event, { company, role, postingText });
+  const notifyContext = { company, role, postingText };
   const base = sessionBinding ? { ...event, sessionBinding } : event;
-  return notify.attempted ? { ...base, notify } : base;
+  if (!notify) return { ...base, notifyContext };
+  const notifyResult = await attentionNotifyHook(event, notifyContext);
+  return notifyResult.attempted ? { ...base, notify: notifyResult } : base;
 }
 
 async function attentionResolve(input) {
