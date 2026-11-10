@@ -1,15 +1,18 @@
 // Regression tests for two send-path guards:
-// 1. A job that `score` skipped or excluded can never be staged for review or recorded with
-//    `ledger add`, in any mode, even after a re-score with changed input.
+// 1. A job that `score` skipped or excluded can never be recorded with `ledger add`, in any mode,
+//    even after a re-score with changed input.
 // 2. NEW REQUISITION CONFIRMED is never enough on its own for a live send: `ledger add` still
-//    needs the candidate's batch-review approval, whatever the approval mode or autonomy grant.
+//    needs the candidate's explicit per-job approval. An unattended or routine-auto attempt pauses
+//    the job instead of sending it.
 import assert from 'node:assert/strict';
-import { execFileSync, spawnSync } from 'node:child_process';
-import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { spawn, spawnSync } from 'node:child_process';
+import { createServer } from 'node:http';
+import { access, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
+import { ATTENTION_NOTIFY_TIMEOUT_MS, possibleDuplicateError, skillErrorProperties } from '../scripts/job-application.mjs';
 
 const script = fileURLToPath(new URL('../scripts/job-application.mjs', import.meta.url));
 
@@ -103,30 +106,347 @@ test('a job scored without a URL is matched by company and role; other jobs stil
   assert.equal(recorded.recorded, 'fit-2');
 });
 
+test('possible-duplicate error names the earlier role and date after the telemetry prefix', () => {
+  const error = possibleDuplicateError({
+    reason: 'company-role',
+    possibleDuplicate: true,
+    match: {
+      role: 'Senior Backend Developer',
+      submittedAt: '2026-10-26T12:00:00.000Z',
+      company: 'Alias Co',
+      url: 'https://jobs.lever.co/alias/1',
+    },
+  });
+  assert.match(error.message, /it matches an earlier application at this company/);
+  assert.match(error.message, /different employer job ID or requisition number \(record it as employerJobId\)/);
+  assert.match(error.message, /review-each: fill the employer application page, stop before Submit/);
+  assert.match(error.message, /Do not build a review page/);
+  assert.match(error.message, /Unattended, routine-auto or STANDING AUTHORIZATION: do not submit and never pass the phrase on your own/);
+  assert.match(error.message, /pauses the job/);
+  assert.match(error.message, /Earlier application: Senior Backend Developer on 2026-10-26\.$/);
+  assert.ok(error.message.indexOf('Senior Backend Developer') > 160, 'role and date stay past the skill_error prefix');
+  assert.doesNotMatch(error.message, /Alias Co|jobs\.lever\.co|batch review/);
+  const sanitized = skillErrorProperties(error, 'check').sanitizedMessage;
+  assert.doesNotMatch(sanitized, /Senior Backend Developer|2026-10-26|Alias Co|lever\.co/);
+  assert.equal(sanitized.length <= 160, true);
+
+  const ambiguous = possibleDuplicateError({ reason: 'company-role', possibleDuplicate: true, match: null });
+  assert.match(ambiguous.message, /more than one earlier application at this company/);
+  assert.doesNotMatch(ambiguous.message, /Earlier application:/);
+
+  const hostile = possibleDuplicateError({
+    reason: 'company-role',
+    possibleDuplicate: true,
+    match: {
+      role: 'Senior\u001b[31m Backend\u001b[0m\u001b]0;pwn\u0007 Developer',
+      submittedAt: '2026-10-26T12:00:00.000Z',
+      company: 'Alias\u001b[2J Co',
+      url: 'https://jobs.lever.co/alias/1',
+    },
+  });
+  assert.match(hostile.message, /Earlier application: Senior Backend Developer on 2026-10-26\.$/);
+  assert.equal(hostile.message.includes('\u001b'), false);
+  assert.equal(hostile.message.includes('\u0007'), false);
+  assert.equal(hostile.message.includes('\u009b'), false);
+  assert.doesNotMatch(hostile.message, /Alias|pwn/);
+});
+
 test('NEW REQUISITION CONFIRMED needs the candidate\'s explicit per-job approval, even in routine-auto with a grant', async (t) => {
-  const { env } = await fixture(t, 'newreq');
+  const { directory, env } = await fixture(t, 'newreq');
   ok(env, ['autonomy', 'grant', '--stdin'], { mode: 'routine-auto' });
-  const original = entry({ id: 'alias-1', approval: 'APPROVE SUBMIT', company: 'Alias Co', role: 'Senior Backend Developer', url: 'https://jobs.lever.co/alias/1', employerJobId: 'alias:1', submittedAt: new Date(Date.now() - 2 * 86_400_000).toISOString() });
+  const round = ok(env, ['round', 'start', '--stdin'], { requestedCount: 1 });
+  const submittedAt = new Date(Date.now() - 2 * 86_400_000).toISOString();
+  const earlierDate = submittedAt.slice(0, 10);
+  const original = entry({ id: 'alias-1', approval: 'APPROVE SUBMIT', company: 'Alias Co', role: 'Senior Backend Developer', url: 'https://jobs.lever.co/alias/1', employerJobId: 'alias:1', submittedAt });
   ok(env, ['ledger', 'add', '--stdin'], original);
   const alias = entry({ id: 'alias-2', company: 'Alias Co', role: 'Sr Backend Engineer', url: 'https://jobs.lever.co/alias/2', employerJobId: 'alias:2' });
-
-  const unattended = run(env, ['ledger', 'add', '--stdin'], { ...alias, duplicateOverride: 'NEW REQUISITION CONFIRMED' });
-  assert.equal(unattended.status, 1);
-  assert.match(unattended.stderr, /NEW REQUISITION CONFIRMED needs the candidate's explicit approval of this job/);
-  // Legacy batch-review fields do not stand in for that approval.
-  const legacy = run(env, ['ledger', 'add', '--stdin'], { ...alias, duplicateOverride: 'NEW REQUISITION CONFIRMED', reviewBatchId: 'rb-20261101-00000000', reviewToken: 'rbt1.legacy.ignored' });
-  assert.equal(legacy.status, 1);
 
   const reviewed = { ...alias, approval: 'APPROVE SUBMIT' };
   const withoutPhrase = run(env, ['ledger', 'add', '--stdin'], reviewed);
   assert.equal(withoutPhrase.status, 1);
   assert.match(withoutPhrase.stderr, /NEW REQUISITION CONFIRMED/);
-  // #223: why it matched (role and date, no company or URL), what proves a new requisition, and the next step per mode.
-  assert.match(withoutPhrase.stderr, /it matches an earlier application at this company \(run ledger check with this company and role/);
-  assert.doesNotMatch(withoutPhrase.stderr, /Senior Backend Developer|\d{4}-\d{2}-\d{2}/, 'the earlier role and date stay out of error text (telemetry)');
-  assert.match(withoutPhrase.stderr, /different employer job ID or requisition number \(record it as employerJobId\)/);
-  assert.match(withoutPhrase.stderr, /review-each: tell the candidate it may duplicate the earlier one/);
-  assert.match(withoutPhrase.stderr, /never pass it on your own; queue the job with attention add \(blocker "judgment"\).*only after the candidate explicitly approves this job/);
-  assert.doesNotMatch(withoutPhrase.stderr, /Alias Co|jobs\.lever\.co/);
+  assert.match(withoutPhrase.stderr, new RegExp(`Earlier application: Senior Backend Developer on ${earlierDate}`));
+  assert.match(withoutPhrase.stderr, /stop before Submit/);
+  assert.doesNotMatch(withoutPhrase.stderr, /Paused this job/);
+  assert.doesNotMatch(withoutPhrase.stderr, /Alias Co|jobs\.lever\.co|batch review/);
+  assert.equal(ok(env, ['attention', 'list']).count, 0);
+
+  const unattended = run(env, ['ledger', 'add', '--stdin'], { ...alias, duplicateOverride: 'NEW REQUISITION CONFIRMED' });
+  assert.equal(unattended.status, 1);
+  assert.match(unattended.stderr, /NEW REQUISITION CONFIRMED needs the candidate's explicit approval of this job/);
+  assert.match(unattended.stderr, /filled employer page, stopped before Submit/);
+  assert.match(unattended.stderr, new RegExp(`Earlier application: Senior Backend Developer on ${earlierDate}`));
+  const paused = unattended.stderr.match(/Paused this job \(attention (attention-[0-9a-f-]+)\)/);
+  assert.ok(paused, unattended.stderr);
+  const attention = ok(env, ['attention', 'list']);
+  assert.equal(attention.count, 1);
+  assert.equal(attention.items[0].id, paused[1]);
+  assert.equal(attention.items[0].blocker, 'judgment');
+  assert.equal(attention.items[0].roundId, round.roundId);
+  assert.equal(attention.items[0].url, alias.url);
+  assert.deepEqual(attention.items[0].requiredActions, ['provide-judgment']);
+  const storedAttention = await readFile(join(directory, 'attention.ndjson'), 'utf8');
+  assert.equal(storedAttention.includes('Alias Co'), false);
+  assert.equal(storedAttention.includes('Senior Backend Developer'), false);
+  assert.equal(ok(env, ['ledger', 'review']).submittedTotal, 1, 'the duplicate was not recorded');
+
+  const again = run(env, ['ledger', 'add', '--stdin'], { ...alias, duplicateOverride: 'NEW REQUISITION CONFIRMED' });
+  assert.match(again.stderr, new RegExp(`Paused this job \\(attention ${paused[1]}\\)`));
+  assert.equal(ok(env, ['attention', 'list']).count, 1, 'a second refusal reuses the open pause');
+  const reusedAttention = await readFile(join(directory, 'attention.ndjson'), 'utf8');
+  assert.equal(reusedAttention.trim().split('\n').length, 1, 'the same round does not append another attention event');
+  assert.equal(reusedAttention.includes('round-linked'), false);
+
+  const standingWithoutPhrase = run(env, ['ledger', 'add', '--stdin'], alias);
+  assert.match(standingWithoutPhrase.stderr, /Paused this job/);
+  assert.equal(ok(env, ['attention', 'list']).count, 1);
+
+  // Legacy batch-review fields do not stand in for that approval, and do not open another pause.
+  const legacy = run(env, ['ledger', 'add', '--stdin'], { ...alias, duplicateOverride: 'NEW REQUISITION CONFIRMED', reviewBatchId: 'rb-20261101-00000000', reviewToken: 'rbt1.legacy.ignored' });
+  assert.equal(legacy.status, 1);
+  assert.equal(ok(env, ['attention', 'list']).count, 1);
+
   assert.equal(ok(env, ['ledger', 'add', '--stdin'], { ...reviewed, duplicateOverride: 'NEW REQUISITION CONFIRMED' }).recorded, 'alias-2');
+});
+
+function runAsync(env, args, input) {
+  return new Promise((resolve) => {
+    const child = spawn(process.execPath, [script, ...args], { env, stdio: ['pipe', 'pipe', 'pipe'] });
+    let stdout = '';
+    let stderr = '';
+    child.stdout.on('data', (chunk) => { stdout += chunk; });
+    child.stderr.on('data', (chunk) => { stderr += chunk; });
+    child.on('close', (status) => resolve({ status, stdout, stderr }));
+    child.stdin.end(input === undefined ? '' : JSON.stringify(input));
+  });
+}
+
+test('a routine-auto duplicate pause emits application_paused with the existing fields only', async (t) => {
+  const captured = [];
+  const server = createServer(async (request, response) => {
+    let raw = '';
+    for await (const chunk of request) raw += chunk;
+    captured.push(JSON.parse(raw));
+    response.setHeader('content-type', 'application/json');
+    response.end(JSON.stringify(request.url === '/v1/install'
+      ? { installationId: '00000000-0000-4000-8000-000000000001', token: 'synthetic-relay-token', expiresAt: '2099-01-01T00:00:00.000Z' }
+      : { accepted: true }));
+  });
+  await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+  t.after(() => new Promise((resolve) => server.close(resolve)));
+  const { env } = await fixture(t, 'newreq-telemetry');
+  env.JOB_APPLICATION_AGENT_TELEMETRY_URL = `http://127.0.0.1:${server.address().port}`;
+  await writeFile(join(env.JOB_APPLICATION_AGENT_STATE_DIR, 'telemetry.json'), JSON.stringify({
+    version: 1, enabled: true, disclosed: true, graceConsumed: true, installationEventPending: false, contactEnabled: false,
+    installationId: '00000000-0000-4000-8000-000000000001', token: 'synthetic-token', tokenExpiresAt: '2099-01-01T00:00:00.000Z',
+  }));
+  // spawn, not spawnSync: the relay server lives in this process and cannot accept
+  // connections while the event loop is blocked.
+  assert.equal((await runAsync(env, ['round', 'start', '--stdin'], { requestedCount: 1 })).status, 0);
+  assert.equal((await runAsync(env, ['ledger', 'add', '--stdin'], entry({ id: 'alias-1', approval: 'APPROVE SUBMIT', company: 'Alias Co', role: 'Senior Backend Developer', url: 'https://jobs.lever.co/alias/1', employerJobId: 'alias:1', submittedAt: new Date(Date.now() - 2 * 86_400_000).toISOString() }))).status, 0);
+  const blocked = await runAsync(env, ['ledger', 'add', '--stdin'], entry({ id: 'alias-2', company: 'Alias Co', role: 'Sr Backend Engineer', url: 'https://jobs.lever.co/alias/2', employerJobId: 'alias:2', approval: 'STANDING AUTHORIZATION', applicationChannel: 'lever' }));
+  assert.equal(blocked.status, 1, blocked.stderr);
+  const paused = captured.filter((body) => body.event === 'application_paused');
+  assert.equal(paused.length, 1);
+  assert.deepEqual(Object.keys(paused[0].properties).sort(), ['ats', 'jobHash', 'reason', 'stage']);
+  assert.equal(paused[0].properties.stage, 'submission');
+  assert.equal(paused[0].properties.reason, 'candidate-judgment');
+  assert.equal(paused[0].properties.ats, 'lever');
+  const serialized = JSON.stringify(paused[0]);
+  assert.equal(serialized.includes('Alias Co'), false);
+  assert.equal(serialized.includes('Senior Backend Developer'), false);
+  assert.equal(serialized.includes('jobs.lever.co'), false);
+  const skillErrors = captured.filter((body) => body.event === 'skill_error');
+  assert.ok(skillErrors.length >= 1);
+  assert.equal(JSON.stringify(skillErrors).includes('Senior Backend Developer'), false);
+  assert.equal(JSON.stringify(skillErrors).includes('Alias Co'), false);
+});
+
+test('a reused judgment pause from an earlier round counts in the current round', async (t) => {
+  const captured = [];
+  const server = createServer(async (request, response) => {
+    let raw = '';
+    for await (const chunk of request) raw += chunk;
+    captured.push(JSON.parse(raw));
+    response.setHeader('content-type', 'application/json');
+    response.end(JSON.stringify(request.url === '/v1/install'
+      ? { installationId: '00000000-0000-4000-8000-000000000001', token: 'synthetic-relay-token', expiresAt: '2099-01-01T00:00:00.000Z' }
+      : { accepted: true }));
+  });
+  await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+  t.after(() => new Promise((resolve) => server.close(resolve)));
+  const { directory, env } = await fixture(t, 'newreq-later-round');
+  env.JOB_APPLICATION_AGENT_TELEMETRY_URL = `http://127.0.0.1:${server.address().port}`;
+  await writeFile(join(env.JOB_APPLICATION_AGENT_STATE_DIR, 'telemetry.json'), JSON.stringify({
+    version: 1, enabled: true, disclosed: true, graceConsumed: true, installationEventPending: false, contactEnabled: false,
+    installationId: '00000000-0000-4000-8000-000000000001', token: 'synthetic-token', tokenExpiresAt: '2099-01-01T00:00:00.000Z',
+  }));
+  const roundA = JSON.parse((await runAsync(env, ['round', 'start', '--stdin'], { requestedCount: 1 })).stdout).roundId;
+  const original = entry({ id: 'alias-1', approval: 'APPROVE SUBMIT', company: 'Alias Co', role: 'Senior Backend Developer', url: 'https://jobs.lever.co/alias/1', employerJobId: 'alias:1', submittedAt: new Date(Date.now() - 2 * 86_400_000).toISOString() });
+  assert.equal((await runAsync(env, ['ledger', 'add', '--stdin'], original)).status, 0);
+  const alias = entry({ id: 'alias-2', company: 'Alias Co', role: 'Sr Backend Engineer', url: 'https://jobs.lever.co/alias/2', employerJobId: 'alias:2', approval: 'STANDING AUTHORIZATION', applicationChannel: 'lever' });
+  const firstPause = await runAsync(env, ['ledger', 'add', '--stdin'], alias);
+  assert.equal(firstPause.status, 1, firstPause.stderr);
+  const attentionId = firstPause.stderr.match(/attention (attention-[0-9a-f-]+)\)/)?.[1];
+  assert.ok(attentionId, firstPause.stderr);
+
+  const roundB = JSON.parse((await runAsync(env, ['round', 'start', '--stdin'], { requestedCount: 1 })).stdout).roundId;
+  assert.notEqual(roundB, roundA);
+  const scored = JSON.parse((await runAsync(env, ['score', '--stdin'], job({
+    company: 'Alias Co', title: 'Sr Backend Engineer', seniority: 'senior', url: alias.url, source: 'lever',
+  }))).stdout);
+  assert.equal(scored.decision, 'review');
+  const before = JSON.parse((await runAsync(env, ['round', 'status', roundB])).stdout);
+  assert.equal(before.blockedCount, 0);
+  // The open item from round A already counts as an outcome, so this round shows neither a blocker nor a started job until the retry links it.
+  assert.equal(before.startedWithoutOutcome.jobs.some((item) => item.url === alias.url), false);
+
+  const retry = await runAsync(env, ['ledger', 'add', '--stdin'], alias);
+  assert.equal(retry.status, 1, retry.stderr);
+  assert.match(retry.stderr, new RegExp(`Paused this job \\(attention ${attentionId}\\)`));
+  const statusB = JSON.parse((await runAsync(env, ['round', 'status', roundB])).stdout);
+  assert.equal(statusB.blockedCount, 1);
+  assert.equal(statusB.startedWithoutOutcome.jobs.some((item) => item.url === alias.url), false);
+  const statusA = JSON.parse((await runAsync(env, ['round', 'status', roundA])).stdout);
+  assert.equal(statusA.blockedCount, 1);
+  const listed = JSON.parse((await runAsync(env, ['attention', 'list'])).stdout);
+  assert.equal(listed.count, 1);
+  assert.equal(listed.items[0].id, attentionId);
+  assert.equal(listed.items[0].roundId, roundA);
+  assert.deepEqual(listed.items[0].roundIds, [roundA, roundB]);
+
+  const again = await runAsync(env, ['ledger', 'add', '--stdin'], alias);
+  assert.match(again.stderr, new RegExp(`Paused this job \\(attention ${attentionId}\\)`));
+  const lines = (await readFile(join(directory, 'attention.ndjson'), 'utf8')).trim().split('\n').map((line) => JSON.parse(line));
+  assert.equal(lines.filter((event) => event.type === 'opened').length, 1);
+  assert.deepEqual(lines.filter((event) => event.type === 'round-linked').map((event) => event.roundId), [roundB]);
+  assert.equal(JSON.stringify(lines).includes('Alias Co'), false);
+  assert.equal(JSON.stringify(lines).includes('Sr Backend Engineer'), false);
+
+  const paused = captured.filter((body) => body.event === 'application_paused');
+  assert.equal(paused.length, 1);
+  assert.deepEqual(Object.keys(paused[0].properties).sort(), ['ats', 'jobHash', 'reason', 'stage']);
+  assert.equal(paused[0].properties.reason, 'candidate-judgment');
+  assert.equal(captured.some((body) => body.event === 'round_linked' || body.event === 'round-linked'), false);
+});
+
+test('duplicate role and company text drop terminal controls before print or attention notify', { skip: process.platform !== 'linux' }, async (t) => {
+  let notifyBody = '';
+  const server = createServer(async (request, response) => {
+    const chunks = [];
+    for await (const chunk of request) chunks.push(chunk);
+    notifyBody = Buffer.concat(chunks).toString('utf8');
+    response.setHeader('content-type', 'application/json');
+    response.end('{}');
+  });
+  await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+  t.after(() => new Promise((resolve) => server.close(resolve)));
+
+  const { directory, env } = await fixture(t, 'newreq-controls');
+  const toolDirectory = await mkdtemp(join(tmpdir(), 'jaa-guards-secret-tool-'));
+  t.after(() => rm(toolDirectory, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 }));
+  const profileFile = join(toolDirectory, 'profile.json');
+  await writeFile(profileFile, JSON.stringify({ email: 'candidate@example.com', name: 'Test Candidate' }));
+  await writeFile(join(toolDirectory, 'secret-tool'), `#!/bin/sh\nif [ "$1" = "lookup" ]; then exec /bin/cat '${profileFile}'; fi\necho "unexpected secret-tool $1" >&2\nexit 3\n`, { mode: 0o755 });
+  env.PATH = `${toolDirectory}:${process.env.PATH ?? ''}`;
+  env.ATTENTION_NOTIFY_URL = `http://127.0.0.1:${server.address().port}/api/internal/attention-notify`;
+  env.ATTENTION_NOTIFY_SECRET = 'test-notify-secret';
+
+  const hostileRole = 'Senior\u001b[31m Backend\u001b[0m\u001b]0;pwn\u0007 Developer';
+  const hostileCompany = 'Alias\u001b[2J Co';
+  assert.equal((await runAsync(env, ['round', 'start', '--stdin'], { requestedCount: 1 })).status, 0);
+  const submittedAt = new Date(Date.now() - 2 * 86_400_000).toISOString();
+  assert.equal((await runAsync(env, ['ledger', 'add', '--stdin'], entry({
+    id: 'alias-1', approval: 'APPROVE SUBMIT', company: hostileCompany, role: hostileRole,
+    url: 'https://jobs.lever.co/alias/1', employerJobId: 'alias:1', submittedAt,
+  }))).status, 0);
+  const checkedResult = await runAsync(env, ['ledger', 'check', '--stdin'], {
+    company: hostileCompany, role: 'Sr Backend Engineer', url: 'https://jobs.lever.co/alias/2',
+  });
+  assert.equal(checkedResult.status, 0, checkedResult.stderr);
+  const checked = JSON.parse(checkedResult.stdout);
+  assert.equal(checked.possibleDuplicate, true);
+  assert.equal(checked.match.role, 'Senior Backend Developer');
+  assert.equal(checked.match.company, 'Alias Co');
+  assert.equal(JSON.stringify(checked).includes('\u001b'), false);
+  assert.equal(JSON.stringify(checked).includes('\u0007'), false);
+
+  const blocked = await runAsync(env, ['ledger', 'add', '--stdin'], entry({
+    id: 'alias-2', company: hostileCompany, role: 'Sr\u0007 Backend Engineer',
+    url: 'https://jobs.lever.co/alias/2', employerJobId: 'alias:2', approval: 'STANDING AUTHORIZATION',
+  }));
+  assert.equal(blocked.status, 1, blocked.stderr);
+  assert.match(blocked.stderr, /Earlier application: Senior Backend Developer on \d{4}-\d{2}-\d{2}/);
+  assert.equal(blocked.stderr.includes('\u001b'), false);
+  assert.equal(blocked.stderr.includes('\u0007'), false);
+  assert.equal(blocked.stderr.includes('pwn'), false);
+  const storedAttention = await readFile(join(directory, 'attention.ndjson'), 'utf8');
+  assert.equal(storedAttention.includes('\u001b'), false);
+  assert.equal(storedAttention.includes('\u0007'), false);
+  assert.equal(storedAttention.includes('Alias'), false);
+  const notified = JSON.parse(notifyBody);
+  assert.equal(notified.company, 'Alias Co');
+  assert.equal(notified.role, 'Sr Backend Engineer');
+  assert.equal(notifyBody.includes('\u001b'), false);
+  assert.equal(notifyBody.includes('\u0007'), false);
+  assert.equal(notifyBody.includes('pwn'), false);
+});
+
+test('attention notify does not hold the applications lock', { skip: process.platform !== 'linux', timeout: 20_000 }, async (t) => {
+  let notifySeen;
+  const notifyArrived = new Promise((resolve) => { notifySeen = resolve; });
+  const server = createServer(async (request, response) => {
+    const chunks = [];
+    for await (const chunk of request) chunks.push(chunk);
+    notifySeen(Buffer.concat(chunks).toString('utf8'));
+    request.on('close', () => { if (!response.writableEnded) response.end(); });
+  });
+  await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+  t.after(() => new Promise((resolve) => server.close(resolve)));
+
+  const { directory, env } = await fixture(t, 'newreq-notify-lock');
+  const toolDirectory = await mkdtemp(join(tmpdir(), 'jaa-guards-secret-tool-'));
+  t.after(() => rm(toolDirectory, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 }));
+  const profileFile = join(toolDirectory, 'profile.json');
+  await writeFile(profileFile, JSON.stringify({ email: 'candidate@example.com', name: 'Test Candidate' }));
+  await writeFile(join(toolDirectory, 'secret-tool'), `#!/bin/sh\nif [ "$1" = "lookup" ]; then exec /bin/cat '${profileFile}'; fi\necho "unexpected secret-tool $1" >&2\nexit 3\n`, { mode: 0o755 });
+  env.PATH = `${toolDirectory}:${process.env.PATH ?? ''}`;
+  env.ATTENTION_NOTIFY_URL = `http://127.0.0.1:${server.address().port}/api/internal/attention-notify`;
+  env.ATTENTION_NOTIFY_SECRET = 'test-notify-secret';
+
+  assert.equal((await runAsync(env, ['round', 'start', '--stdin'], { requestedCount: 1 })).status, 0);
+  assert.equal((await runAsync(env, ['ledger', 'add', '--stdin'], entry({ id: 'alias-1', approval: 'APPROVE SUBMIT', company: 'Alias Co', role: 'Senior Backend Developer', url: 'https://jobs.lever.co/alias/1', employerJobId: 'alias:1', submittedAt: new Date(Date.now() - 2 * 86_400_000).toISOString() }))).status, 0);
+
+  let duplicateClosed = false;
+  const duplicate = new Promise((resolve) => {
+    const child = spawn(process.execPath, [script, 'ledger', 'add', '--stdin'], { env });
+    let stdout = '';
+    let stderr = '';
+    child.stdout.on('data', (chunk) => { stdout += chunk; });
+    child.stderr.on('data', (chunk) => { stderr += chunk; });
+    child.on('close', (status) => { duplicateClosed = true; resolve({ status, stdout, stderr }); });
+    child.stdin.end(JSON.stringify(entry({ id: 'alias-2', company: 'Alias Co', role: 'Sr Backend Engineer', url: 'https://jobs.lever.co/alias/2', employerJobId: 'alias:2', approval: 'STANDING AUTHORIZATION' })));
+  });
+  const body = await notifyArrived;
+  const receivedAt = Date.now();
+  assert.equal(duplicateClosed, false);
+  assert.equal(body.includes('candidate@example.com'), true);
+  assert.equal(body.includes('alias-2') || body.includes('jobs.lever.co/alias/2'), true);
+  await assert.rejects(access(join(directory, '.applications.lock')), { code: 'ENOENT' });
+
+  const otherStarted = Date.now();
+  const other = await runAsync(env, ['ledger', 'add', '--stdin'], entry({ id: 'other-1', approval: 'APPROVE SUBMIT', company: 'Other Co', role: 'Senior Product Engineer', url: 'https://jobs.lever.co/other/1', employerJobId: 'other:1' }));
+  assert.equal(other.status, 0, other.stderr);
+  assert.ok(Date.now() - otherStarted < 2_000, 'a second ledger add must finish while notify is still in flight');
+  assert.equal(duplicateClosed, false);
+
+  const blocked = await duplicate;
+  const waited = Date.now() - receivedAt;
+  assert.equal(blocked.status, 1, blocked.stderr);
+  assert.match(blocked.stderr, /Paused this job \(attention attention-/);
+  assert.match(blocked.stderr, /site notify request failed/);
+  assert.ok(waited >= ATTENTION_NOTIFY_TIMEOUT_MS - 1_000, `notify returned early after ${waited}ms`);
+  assert.ok(waited < ATTENTION_NOTIFY_TIMEOUT_MS + 3_000, `notify waited ${waited}ms`);
+  assert.equal(JSON.parse((await runAsync(env, ['attention', 'list'])).stdout).count, 1);
+  assert.equal(JSON.parse((await runAsync(env, ['ledger', 'review'])).stdout).submittedTotal, 2);
 });

@@ -1899,13 +1899,20 @@ function isLiveApply(url) {
 }
 
 // Local-only gate evidence (see routine-gates.mjs). Never appended to cloud state or telemetry.
-async function appendRoundEvidence(event) {
+// One acquisition writes every line, so a lead batch does not lock once per lead.
+async function appendRoundEvidenceMany(events) {
+  if (!events.length) return [];
   return withStateLock('round-evidence', async (dir) => {
     const file = join(dir, ROUND_EVIDENCE_FILE);
-    await appendFile(file, `${JSON.stringify(event)}\n`, { mode: 0o600 });
+    await appendFile(file, events.map((event) => `${JSON.stringify(event)}\n`).join(''), { mode: 0o600 });
     await chmod(file, 0o600);
-    return event;
+    return events;
   });
+}
+
+async function appendRoundEvidence(event) {
+  await appendRoundEvidenceMany([event]);
+  return event;
 }
 
 async function roundEvidence(dir) {
@@ -2118,8 +2125,8 @@ function duplicateResult(entries, candidate, outcomes = [], now = new Date()) {
     : [];
   const companyApplications = sameCompanyEntries.slice(-20).map((entry) => ({
       id: entry.id,
-      company: entry.company,
-      role: entry.role,
+      company: terminalPlain(entry.company),
+      role: terminalPlain(entry.role),
       submittedAt: entry.submittedAt,
       ...(entry.employerJobId ? { employerJobId: entry.employerJobId } : {}),
     }));
@@ -2142,7 +2149,7 @@ function duplicateResult(entries, candidate, outcomes = [], now = new Date()) {
     duplicate: Boolean(hard),
     possibleDuplicate: Boolean(possible) || ambiguousCompanyRole,
     reason: hardReason ?? (possible || ambiguousCompanyRole ? 'company-role' : null),
-    match: match ? { id: match.id, company: match.company, role: match.role, submittedAt: match.submittedAt, url: match.url } : null,
+    match: match ? { id: match.id, company: terminalPlain(match.company), role: terminalPlain(match.role), submittedAt: match.submittedAt, url: match.url } : null,
     sameCompany: companyApplications.length > 0,
     companyApplications,
     companyReapply: {
@@ -2156,22 +2163,36 @@ function duplicateResult(entries, candidate, outcomes = [], now = new Date()) {
   };
 }
 
-// {"candidates": [...]} checks several jobs in one call (#219); a single candidate works as before.
+// A batch is a JSON array or a one-key wrapper. A single object stays a single object.
+function batchedStdin(input, { key, max, emptyError, onlyError }) {
+  if (Array.isArray(input)) {
+    if (input.length === 0 || input.length > max) throw new Error(emptyError);
+    return { batch: true, items: input };
+  }
+  if (input && typeof input === 'object' && Object.hasOwn(input, key)) {
+    if (Object.keys(input).length !== 1) throw new Error(onlyError);
+    if (!Array.isArray(input[key]) || input[key].length === 0 || input[key].length > max) throw new Error(emptyError);
+    return { batch: true, items: input[key] };
+  }
+  return { batch: false, items: [input] };
+}
+
+// A JSON array or {"candidates": [...]} checks several jobs in one call (#219). One candidate object is unchanged.
 export const MAX_LEDGER_CHECKS_PER_CALL = 50;
 async function ledgerCheck(candidate) {
-  const batch = candidate && typeof candidate === 'object' && !Array.isArray(candidate) && Object.hasOwn(candidate, 'candidates');
-  if (batch) {
-    if (Object.keys(candidate).length !== 1) throw new Error('ledger check with "candidates" takes only {"candidates": [...]}.');
-    if (!Array.isArray(candidate.candidates) || candidate.candidates.length === 0 || candidate.candidates.length > MAX_LEDGER_CHECKS_PER_CALL) {
-      throw new Error(`ledger check "candidates" must be an array of 1 to ${MAX_LEDGER_CHECKS_PER_CALL} jobs.`);
-    }
-  }
-  const normalized = (batch ? candidate.candidates : [candidate]).map((item, index) => {
+  const { batch, items } = batchedStdin(candidate, {
+    key: 'candidates',
+    max: MAX_LEDGER_CHECKS_PER_CALL,
+    emptyError: `ledger check "candidates" must be an array of 1 to ${MAX_LEDGER_CHECKS_PER_CALL} jobs.`,
+    onlyError: 'ledger check with "candidates" takes only {"candidates": [...]}.',
+  });
+  const normalized = items.map((item, index) => {
     try { return validateLedgerCheckCandidate(item); } catch (error) {
       if (batch) error.message = `candidates[${index}]: ${error.message}`;
       throw error;
     }
   });
+  // One read of the ledger for the whole call. Check does not take the applications lock; ledger add does.
   const dir = await ensureStateDir();
   const entries = await jsonLines(join(dir, 'applications.ndjson'));
   const outcomes = await jsonLines(join(dir, 'outcomes.ndjson'));
@@ -2180,31 +2201,159 @@ async function ledgerCheck(candidate) {
 }
 
 // What to do about a possible same-company role duplicate (#223): why it matched, what proves a
-// distinct requisition, and the next step per mode. Role and date only; no company or URL.
-export function possibleDuplicateError(duplicate) {
-  // The earlier application's role and date stay out of this text: thrown errors feed
-  // skill_error telemetry, so the agent reads them with ledger check instead.
-  const why = duplicate?.reason === 'company-role' && !duplicate?.match
+// distinct requisition, and the next step per mode. The earlier role and date are appended at the
+// end, after the text skill_error keeps (160 characters), and company and URL stay out: the agent
+// compares those with ledger check. No personal data.
+const DISTINCT_REQUISITION = 'Only pass duplicateOverride "NEW REQUISITION CONFIRMED" when the posting shows a different requisition: a different employer job ID or requisition number (record it as employerJobId), or a different team, level or location that the earlier role did not have. A repost of the same role is a duplicate; do not apply. ';
+
+function duplicateMatchWhy(duplicate) {
+  return duplicate?.reason === 'company-role' && !duplicate?.match
     ? 'it matches more than one earlier application at this company'
     : 'it matches an earlier application at this company';
-  return new Error(
+}
+
+// Drop ANSI/OSC sequences and other terminal controls before role or company text is printed
+// or attached to an attention item. A posting title must not rewrite the terminal.
+function terminalPlain(value) {
+  if (typeof value !== 'string') return '';
+  const withoutSequences = value
+    .replace(/\u001B\][\s\S]*?(?:\u0007|\u001B\\)/g, '')
+    .replace(/\u009D[\s\S]*?(?:\u0007|\u001B\\)/g, '')
+    .replace(/[\u001B\u009B][[\]()#;?]*(?:(?:(?:(?:;[-a-zA-Z\d/#&.:=?%@~_]+)*|[a-zA-Z\d]+(?:;[-a-zA-Z\d/#&.:=?%@~_]*)*)?\u0007)|(?:(?:\d{1,4}(?:;\d{0,4})*)?[\dA-PR-TZcf-nq-uy=><~]))/g, '');
+  return withoutSequences.replace(/[\u0000-\u001F\u007F-\u009F]/g, '').replace(/\s+/g, ' ').trim();
+}
+
+function earlierApplicationDetail(duplicate) {
+  const match = duplicate?.match;
+  if (!match || duplicate?.reason !== 'company-role') return '';
+  const role = terminalPlain(match.role);
+  const date = typeof match.submittedAt === 'string' ? /^(\d{4}-\d{2}-\d{2})/.exec(match.submittedAt)?.[1] : '';
+  if (!role || !date || role.length > 120 || /https?:|@|\bwww\./i.test(role)) return '';
+  return ` Earlier application: ${role} on ${date}.`;
+}
+
+function duplicateGuardError(message, duplicate) {
+  const earlierDetail = earlierApplicationDetail(duplicate);
+  const error = new Error(`${message}${earlierDetail}`);
+  error.earlierDetail = earlierDetail;
+  return error;
+}
+
+export function possibleDuplicateError(duplicate) {
+  const why = duplicateMatchWhy(duplicate);
+  return duplicateGuardError(
     `A possible same-company role duplicate requires NEW REQUISITION CONFIRMED: ${why} (run ledger check with this company and role to compare the earlier one). `
-    + 'Only pass duplicateOverride "NEW REQUISITION CONFIRMED" when the posting shows a different requisition: a different employer job ID or requisition number (record it as employerJobId), or a different team, level or location that the earlier role did not have. A repost of the same role is a duplicate; do not apply. '
-    + 'review-each: tell the candidate it may duplicate the earlier one and pass the phrase only after they explicitly approve this job in the conversation. '
-    + 'Unattended, routine-auto or STANDING AUTHORIZATION: never pass it on your own; queue the job with attention add (blocker "judgment") and continue with other jobs. It may be passed only after the candidate explicitly approves this job (then record it with approval "APPROVE SUBMIT").',
+    + DISTINCT_REQUISITION
+    + 'review-each: fill the employer application page, stop before Submit, tell the candidate it may duplicate the earlier one, and pass the phrase only after they approve this job in the conversation. Do not build a review page. '
+    + 'Unattended, routine-auto or STANDING AUTHORIZATION: do not submit and never pass the phrase on your own. This command pauses the job for the candidate (attention blocker "judgment"); continue with other jobs. Pass the phrase only after they review that filled page, stopped before Submit, and you record approval "APPROVE SUBMIT".',
+    duplicate,
   );
 }
 
-export function newRequisitionApprovalError() {
-  return new Error(
-    'NEW REQUISITION CONFIRMED needs the candidate\'s explicit approval of this job: tell them it may duplicate an earlier application, and record it with approval "APPROVE SUBMIT" only after they approve it in the conversation. '
-    + 'Unattended, routine-auto or STANDING AUTHORIZATION: never pass it on your own; queue the job with attention add (blocker "judgment") and continue with other jobs.',
+export function newRequisitionApprovalError(duplicate) {
+  return duplicateGuardError(
+    'NEW REQUISITION CONFIRMED needs the candidate\'s explicit approval of this job: tell them it may duplicate an earlier application, and record it with approval "APPROVE SUBMIT" only after they review the filled employer page, stopped before Submit, and approve it in the conversation. Do not build a review page. '
+    + 'Unattended, routine-auto or STANDING AUTHORIZATION: do not submit and never pass the phrase on your own. This command pauses the job (attention blocker "judgment"). Continue with other jobs.',
+    duplicate,
   );
+}
+
+function noteDuplicatePause(error, pause) {
+  error.duplicatePause = pause;
+  const detail = error.earlierDetail ?? '';
+  const base = detail && error.message.endsWith(detail) ? error.message.slice(0, -detail.length) : error.message;
+  const note = pause.attentionId
+    ? ` Paused this job (attention ${pause.attentionId}).`
+    : ' Paused this job locally; no open round, so no attention item was queued.';
+  error.message = `${base}${note}${detail}`;
+}
+
+async function latestOpenRoundId(dir) {
+  const events = await jsonLines(join(dir, 'rounds.ndjson'));
+  const completed = new Set(events.filter((event) => event.type === 'completed').map((event) => event.roundId));
+  return events.filter((event) => event.type === 'started' && event.roundId && !completed.has(event.roundId)).at(-1)?.roundId ?? null;
+}
+
+function attentionCoversRound(item, roundId) {
+  return item?.roundId === roundId || (Array.isArray(item?.roundIds) && item.roundIds.includes(roundId));
+}
+
+// Keep one open judgment item, and record that this round is also waiting on it.
+// The opened event stays as it was (its roundId is the round that created it). Telemetry
+// is not involved: this is an attention-queue event, not an analytics event.
+async function linkAttentionToRound(item, roundId) {
+  if (!item?.id || !roundId || attentionCoversRound(item, roundId)) return;
+  await appendPrivateEvent('attention', {
+    type: 'round-linked',
+    id: item.id,
+    roundId,
+    occurredAt: new Date().toISOString(),
+  });
+}
+
+// Unattended / routine-auto / STANDING AUTHORIZATION: record the pause instead of leaving the
+// agent to remember attention add. Company and role are notify-only and are not stored.
+// The email notify is returned for the caller to send after the applications lock drops.
+async function pauseUnattendedDuplicate(dir, entry) {
+  await recordReviewPaused({ url: entry.url, company: entry.company, title: entry.role });
+  const roundId = entry.roundId || await latestOpenRoundId(dir);
+  if (!roundId) return { attentionId: null, item: null };
+  const existing = replayAttention(await jsonLines(join(dir, 'attention.ndjson')))
+    .find((item) => item.blocker === 'judgment' && item.url === entry.url);
+  if (existing) {
+    await linkAttentionToRound(existing, roundId);
+    return { attentionId: existing.id, item: null };
+  }
+  const added = await attentionAdd({
+    roundId,
+    applicationId: entry.id,
+    url: entry.url,
+    stage: 'submission',
+    blocker: 'judgment',
+    requiredActions: ['provide-judgment'],
+    company: entry.company,
+    role: entry.role,
+  }, { notify: false });
+  const { notifyContext, ...item } = added;
+  return {
+    attentionId: item.id,
+    item,
+    ats: entry.applicationChannel ?? entry.source,
+    notifyAfterLock: { event: item, context: notifyContext },
+  };
+}
+
+// The applications lock is already released. A slow notify endpoint must not fail the refusal.
+async function flushDuplicatePauseNotify(error) {
+  const pending = error?.duplicatePause?.notifyAfterLock;
+  if (!pending) return;
+  delete error.duplicatePause.notifyAfterLock;
+  try {
+    const notify = await attentionNotifyHook(pending.event, pending.context ?? {});
+    if (notify.attempted && error.duplicatePause.item) {
+      error.duplicatePause.item = { ...error.duplicatePause.item, notify };
+    }
+  } catch { /* the duplicate refusal still stands */ }
+}
+
+async function refusePossibleDuplicate(dir, entry, error) {
+  if (!isPerJobApproval(entry)) {
+    try {
+      noteDuplicatePause(error, await pauseUnattendedDuplicate(dir, entry));
+    } catch {
+      // The duplicate refusal still stands when the pause itself fails.
+      const detail = error.earlierDetail ?? '';
+      const base = detail && error.message.endsWith(detail) ? error.message.slice(0, -detail.length) : error.message;
+      error.message = `${base} Pause failed; queue the job with attention add (blocker "judgment") and continue with other jobs.${detail}`;
+    }
+  }
+  throw error;
 }
 
 async function ledgerAdd(entryInput, duplicateOverride, companyReapplyOverride, cloudIntent = null, { routineAuto = false } = {}) {
   const entry = validateLedgerEntry(entryInput);
-  return withStateLock('applications', async (dir) => {
+  try {
+    return await withStateLock('applications', async (dir) => {
     const file = join(dir, 'applications.ndjson');
     const entries = await jsonLines(file);
     const outcomes = await jsonLines(join(dir, 'outcomes.ndjson'));
@@ -2216,10 +2365,11 @@ async function ledgerAdd(entryInput, duplicateOverride, companyReapplyOverride, 
     }
     const duplicate = duplicateResult(entries, entry, outcomes);
     if (duplicate.duplicate) throw new Error(`Hard duplicate blocked: matching ${duplicate.reason === 'employer-job-id' ? 'employer job ID or requisition' : duplicate.reason === 'url' ? 'canonical URL' : 'ledger ID'}.`);
-    if (duplicate.possibleDuplicate && duplicateOverride !== 'NEW REQUISITION CONFIRMED') throw possibleDuplicateError(duplicate);
+    if (duplicate.possibleDuplicate && duplicateOverride !== 'NEW REQUISITION CONFIRMED') await refusePossibleDuplicate(dir, entry, possibleDuplicateError(duplicate));
     // #172 without batch review: the phrase stands only with the candidate's explicit approval of
     // this one job ("APPROVE SUBMIT"), never on a standing or unattended authorization.
-    if (duplicate.possibleDuplicate && !isPerJobApproval(entry)) throw newRequisitionApprovalError();
+    // #223: that unattended refusal pauses the job (attention blocker "judgment").
+    if (duplicate.possibleDuplicate && !isPerJobApproval(entry)) await refusePossibleDuplicate(dir, entry, newRequisitionApprovalError(duplicate));
     if (!duplicate.possibleDuplicate && duplicate.companyReapply.decision === 'cooldown-active' && companyReapplyOverride !== COMPANY_REAPPLY_OVERRIDE) {
       throw new Error(`Company reapplication cooldown is active for ${COMPANY_REAPPLY_COOLDOWN_DAYS} full days; use ${COMPANY_REAPPLY_OVERRIDE} only with explicit candidate approval.`);
     }
@@ -2260,7 +2410,11 @@ async function ledgerAdd(entryInput, duplicateOverride, companyReapplyOverride, 
       }
     }
     return { recorded: storedEntry.id, ...(roundCount ? { roundCount } : {}), review: buildReview([...entries, storedEntry], outcomes, [], new Date(), await jsonLines(join(dir, 'delivery.ndjson'))), ...(cloudIntent ? { cloudIntent: cloudIntent.intentId } : {}) };
-  });
+    });
+  } catch (error) {
+    await flushDuplicatePauseNotify(error);
+    throw error;
+  }
 }
 
 async function appendCloudEvent(name, event) {
@@ -2325,19 +2479,18 @@ async function deliveryHistory(applicationId) {
   const events = (await jsonLines(join(dir, 'delivery.ndjson'))).filter(e => !applicationId || e.applicationId === applicationId);
   return { ...deliveryProjection(apps, events), events };
 }
-// One `round lead --stdin` call may carry a single lead, or {"leads": [...]} to record a whole
-// search's reviewed leads in one call (#219). Every lead is validated before any is written.
+// One `round lead --stdin` call may carry a single lead, a JSON array of leads, or {"leads": [...]}
+// (#219). Every lead is validated before any is written. The rounds lock and the evidence lock
+// are each taken once for the call.
 export const MAX_LEADS_PER_CALL = 100;
 async function recordLead(input) {
-  const batch = input && typeof input === 'object' && !Array.isArray(input) && Object.hasOwn(input, 'leads');
-  if (batch) {
-    const keys = Object.keys(input);
-    if (keys.length !== 1) throw new Error('round lead with "leads" takes only {"leads": [...]}.');
-    if (!Array.isArray(input.leads) || input.leads.length === 0 || input.leads.length > MAX_LEADS_PER_CALL) {
-      throw new Error(`round lead "leads" must be an array of 1 to ${MAX_LEADS_PER_CALL} leads.`);
-    }
-  }
-  const events = (batch ? input.leads : [input]).map((lead, index) => {
+  const { batch, items } = batchedStdin(input, {
+    key: 'leads',
+    max: MAX_LEADS_PER_CALL,
+    emptyError: `round lead "leads" must be an array of 1 to ${MAX_LEADS_PER_CALL} leads.`,
+    onlyError: 'round lead with "leads" takes only {"leads": [...]}.',
+  });
+  const events = items.map((lead, index) => {
     try {
       const event = validateLead(lead);
       knownDiscoverySourceId(event.sourceId, 'lead.sourceId');
@@ -2363,10 +2516,15 @@ async function recordLead(input) {
       }
     }
     const results = [];
-    for (const event of events) {
-      const result = await appendAccounting('discovery', event);
-      if (result.recorded) await appendRoundEvidence({ type: 'lead-recorded', roundId: event.roundId, sourceId: event.sourceId, leadId: event.id, at: new Date().toISOString() });
-      results.push(result);
+    const evidence = [];
+    try {
+      for (const event of events) {
+        const result = await appendAccounting('discovery', event);
+        if (result.recorded) evidence.push({ type: 'lead-recorded', roundId: event.roundId, sourceId: event.sourceId, leadId: event.id, at: new Date().toISOString() });
+        results.push(result);
+      }
+    } finally {
+      await appendRoundEvidenceMany(evidence);
     }
     if (!batch) return results[0];
     return { recordedCount: results.filter((result) => result.recorded).length, leadCount: results.length, results };
@@ -2400,7 +2558,7 @@ async function roundStart(input) {
     discoveryPolicy: { minSources: MIN_DISCOVERY_SOURCES, concentrationThresholdPercent: CONCENTRATION_THRESHOLD, communityFeedPullRequired: true, coverageMustPrecedeSubmissions: true },
     resumePreflight,
     blockers,
-    nextStep: `${blockers.length ? `Résumé upload is unavailable (${RESUME_UPLOAD_BLOCKER}): tell the candidate now; ATS forms that need a résumé will fail. ` : ''}Run sources jobs (the community job feed, required once per round), search at least 3 distinct relevant discovery sources, record each reviewed lead with round lead --stdin and each search or blocker with round source --stdin, and review round status before applying. Coverage recorded after the round's submissions does not count.`,
+    nextStep: `${blockers.length ? `Résumé upload is unavailable (${RESUME_UPLOAD_BLOCKER}): tell the candidate now; ATS forms that need a résumé will fail. ` : ''}Run sources jobs (the community job feed, required once per round), search at least 3 distinct relevant discovery sources, record this round's reviewed leads in one round lead --stdin call (a JSON array, or {"leads":[...]}), record its searches and blockers in one round source --stdin call (a JSON array, or {"sources":[...]}), and review round status before applying. Coverage recorded after the round's submissions does not count.`,
   };
 }
 
@@ -2451,7 +2609,7 @@ function discoverySummary(events, applications, completion, audit = null) {
   };
 }
 
-async function roundSource(input) {
+function normalizeSourceCoverage(input) {
   const value = object(input, 'source coverage');
   const allowed = new Set(['roundId', 'sourceId', 'status', 'reviewedCount', 'qualifiedCount', 'blocker', 'evidence', 'applicationIds']);
   for (const key of Object.keys(value)) if (!allowed.has(key)) throw new Error(`Unknown source coverage property: ${key}.`);
@@ -2464,63 +2622,117 @@ async function roundSource(input) {
   const evidence = string(value.evidence, 'coverage.evidence', 2000);
   const applicationIds = value.applicationIds == null ? [] : [...new Set(stringArray(value.applicationIds, 'coverage.applicationIds'))];
   if (applicationIds.length > 1000 || (status === 'blocked' && applicationIds.length)) throw new Error('Invalid coverage.applicationIds.');
-  const event = await withStateLock('rounds', async (dir) => {
-    const round = await roundStatus(roundId);
-    if (round.completed) throw new Error('Cannot record coverage for a completed round.');
-    const audit = discoveryProjection(await jsonLines(join(dir, 'discovery.ndjson')), { roundId: value.roundId });
-    const leads = audit.leads.filter(lead => lead.sourceId === sourceId);
-    const derivedReviewed = status === 'blocked' ? 0 : leads.length;
-    const derivedQualified = status === 'blocked' ? 0 : leads.filter(lead => !lead.conflict && lead.disposition === 'qualified').length;
-    const reviewedCount = round.discoveryPolicyVersion === 2 ? derivedReviewed : integer(value.reviewedCount, 'coverage.reviewedCount', 0, 10000);
-    const qualifiedCount = round.discoveryPolicyVersion === 2 ? derivedQualified : integer(value.qualifiedCount, 'coverage.qualifiedCount', 0, reviewedCount);
-    // Per-lead rounds derive counts from `round lead` records; passed counts are assertions that
-    // must match (a stale tally is rejected). Say what is recorded and how to fix the call.
-    if (round.discoveryPolicyVersion === 2 && ((value.reviewedCount != null && value.reviewedCount !== reviewedCount) || (value.qualifiedCount != null && value.qualifiedCount !== qualifiedCount))) {
-      throw new Error(`Source count assertions do not match recorded leads (recorded for this source: reviewed ${reviewedCount}, qualified ${qualifiedCount}). Record every reviewed lead with round lead --stdin before round source, or omit reviewedCount/qualifiedCount so they are derived.`);
+  return { value, sourceId, status, roundId, blocker, evidence, applicationIds };
+}
+
+async function buildSourceEvent(dir, prepared) {
+  const { value, sourceId, status, roundId, blocker, evidence, applicationIds } = prepared;
+  const round = await roundStatus(roundId);
+  if (round.completed) throw new Error('Cannot record coverage for a completed round.');
+  const audit = discoveryProjection(await jsonLines(join(dir, 'discovery.ndjson')), { roundId: value.roundId });
+  const leads = audit.leads.filter(lead => lead.sourceId === sourceId);
+  const derivedReviewed = status === 'blocked' ? 0 : leads.length;
+  const derivedQualified = status === 'blocked' ? 0 : leads.filter(lead => !lead.conflict && lead.disposition === 'qualified').length;
+  const reviewedCount = round.discoveryPolicyVersion === 2 ? derivedReviewed : integer(value.reviewedCount, 'coverage.reviewedCount', 0, 10000);
+  const qualifiedCount = round.discoveryPolicyVersion === 2 ? derivedQualified : integer(value.qualifiedCount, 'coverage.qualifiedCount', 0, reviewedCount);
+  // Per-lead rounds derive counts from `round lead` records; passed counts are assertions that
+  // must match (a stale tally is rejected). Say what is recorded and how to fix the call.
+  if (round.discoveryPolicyVersion === 2 && ((value.reviewedCount != null && value.reviewedCount !== reviewedCount) || (value.qualifiedCount != null && value.qualifiedCount !== qualifiedCount))) {
+    throw new Error(`Source count assertions do not match recorded leads (recorded for this source: reviewed ${reviewedCount}, qualified ${qualifiedCount}). Record every reviewed lead with round lead --stdin before round source, or omit reviewedCount/qualifiedCount so they are derived.`);
+  }
+  if (status === 'blocked' && (!SOURCE_BLOCKERS.has(blocker) || reviewedCount !== 0 || qualifiedCount !== 0)) throw new Error('Blocked sources require a documented blocker and zero counts.');
+  const evidenceLog = await roundEvidence(dir);
+  const gates = roundGatesRecord(evidenceLog, round.roundId);
+  if (gates) {
+    const pulls = feedPulls(evidenceLog, Date.parse(gates.at));
+    if (sourceId === COMMUNITY_FEED_SOURCE_ID && status === 'searched' && !pulls.some((pull) => pull.ok === true)) {
+      throw new Error(`Coverage refused: ${COMMUNITY_FEED_SOURCE_ID} is marked searched, but no successful \`sources jobs\` pull was recorded in this round. Run \`sources jobs\` and review its leads first. If that call failed, record the source as blocked with blocker access-unavailable (community feed unavailable).`);
     }
-    if (status === 'blocked' && (!SOURCE_BLOCKERS.has(blocker) || reviewedCount !== 0 || qualifiedCount !== 0)) throw new Error('Blocked sources require a documented blocker and zero counts.');
-    const evidence = await roundEvidence(dir);
-    const gates = roundGatesRecord(evidence, round.roundId);
-    if (gates) {
-      const pulls = feedPulls(evidence, Date.parse(gates.at));
-      if (sourceId === COMMUNITY_FEED_SOURCE_ID && status === 'searched' && !pulls.some((pull) => pull.ok === true)) {
-        throw new Error(`Coverage refused: ${COMMUNITY_FEED_SOURCE_ID} is marked searched, but no successful \`sources jobs\` pull was recorded in this round. Run \`sources jobs\` and review its leads first. If that call failed, record the source as blocked with blocker access-unavailable (community feed unavailable).`);
+    if (sourceId === COMMUNITY_FEED_SOURCE_ID && status === 'blocked' && (!pulls.some((pull) => pull.ok !== true) || !COMMUNITY_FEED_BLOCKERS.includes(blocker))) {
+      throw new Error(`Coverage refused: ${COMMUNITY_FEED_SOURCE_ID} can be recorded as blocked (community feed unavailable) only after a \`sources jobs\` call in this round failed, with blocker access-unavailable or site-error. Run \`sources jobs\` first; if it returns leads, review them and record the source as searched.`);
+    }
+    if (sourceId !== COMMUNITY_FEED_SOURCE_ID && status === 'searched' && !['recruiter-inbound', 'user-supplied-leads'].includes(sourceId)) {
+      if (!leads.length) {
+        throw new Error(`Coverage refused: ${sourceId} is marked searched, but no leads were recorded for it in this round. Record every reviewed lead with round lead --stdin before round source (an empty search is one lead with disposition "no-relevant-opening" and the search URL); a source you could not search is "blocked" with its blocker.`);
       }
-      if (sourceId === COMMUNITY_FEED_SOURCE_ID && status === 'blocked' && (!pulls.some((pull) => pull.ok !== true) || !COMMUNITY_FEED_BLOCKERS.includes(blocker))) {
-        throw new Error(`Coverage refused: ${COMMUNITY_FEED_SOURCE_ID} can be recorded as blocked (community feed unavailable) only after a \`sources jobs\` call in this round failed, with blocker access-unavailable or site-error. Run \`sources jobs\` first; if it returns leads, review them and record the source as searched.`);
-      }
-      if (sourceId !== COMMUNITY_FEED_SOURCE_ID && status === 'searched' && !['recruiter-inbound', 'user-supplied-leads'].includes(sourceId)) {
-        if (!leads.length) {
-          throw new Error(`Coverage refused: ${sourceId} is marked searched, but no leads were recorded for it in this round. Record every reviewed lead with round lead --stdin before round source (an empty search is one lead with disposition "no-relevant-opening" and the search URL); a source you could not search is "blocked" with its blocker.`);
-        }
-        // Leads recorded only after every submission so far are after-the-fact coverage.
-        const lastSubmissionAt = round.routineGates?.coverage?.lastSubmissionAt;
-        const earliest = leadTimesBySource(evidence, round.roundId, await jsonLines(join(dir, 'discovery.ndjson'))).get(sourceId)?.[0];
-        if (lastSubmissionAt && Number.isFinite(earliest) && earliest > Date.parse(lastSubmissionAt)) {
-          throw new Error(afterSubmissionCoverageMessage([sourceId], lastSubmissionAt));
-        }
+      // Leads recorded only after every submission so far are after-the-fact coverage.
+      const lastSubmissionAt = round.routineGates?.coverage?.lastSubmissionAt;
+      const earliest = leadTimesBySource(evidenceLog, round.roundId, await jsonLines(join(dir, 'discovery.ndjson'))).get(sourceId)?.[0];
+      if (lastSubmissionAt && Number.isFinite(earliest) && earliest > Date.parse(lastSubmissionAt)) {
+        throw new Error(afterSubmissionCoverageMessage([sourceId], lastSubmissionAt));
       }
     }
-    const applications = await jsonLines(join(dir, 'applications.ndjson'));
-    for (const id of applicationIds) {
-      const entry = applications.find((item) => item.id === id && item.roundId === round.roundId && item.status === 'submitted');
-      if (!entry || (entry.discoverySourceId && entry.discoverySourceId !== sourceId)) throw new Error('Coverage attribution must match a confirmed application in this round and its saved source.');
-    }
-    const event = { type: 'source-checked', roundId: round.roundId, sourceId, status, reviewedCount, qualifiedCount, evidence, applicationIds, ...(blocker ? { blocker } : {}), occurredAt: new Date().toISOString() };
-    const file = join(dir, 'rounds.ndjson');
-    await appendFile(file, `${JSON.stringify(event)}\n`, { mode: 0o600 });
-    await chmod(file, 0o600);
-    return event;
+  }
+  const applications = await jsonLines(join(dir, 'applications.ndjson'));
+  for (const id of applicationIds) {
+    const entry = applications.find((item) => item.id === id && item.roundId === round.roundId && item.status === 'submitted');
+    if (!entry || (entry.discoverySourceId && entry.discoverySourceId !== sourceId)) throw new Error('Coverage attribution must match a confirmed application in this round and its saved source.');
+  }
+  return { type: 'source-checked', roundId: round.roundId, sourceId, status, reviewedCount, qualifiedCount, evidence, applicationIds, ...(blocker ? { blocker } : {}), occurredAt: new Date().toISOString() };
+}
+
+// One coverage object, a JSON array, or {"sources": [...]} (#219). State checks for every report
+// finish before any report is written, under one rounds lock.
+export const MAX_SOURCES_PER_CALL = 50;
+async function roundSource(input) {
+  const { batch, items } = batchedStdin(input, {
+    key: 'sources',
+    max: MAX_SOURCES_PER_CALL,
+    emptyError: `round source "sources" must be an array of 1 to ${MAX_SOURCES_PER_CALL} coverage objects.`,
+    onlyError: 'round source with "sources" takes only {"sources": [...]}.',
   });
-  await appendCloudEvent('rounds', event);
-  return event;
+  const prepared = items.map((item, index) => {
+    try { return normalizeSourceCoverage(item); }
+    catch (error) {
+      if (batch) error.message = `sources[${index}]: ${error.message}`;
+      throw error;
+    }
+  });
+  const events = await withStateLock('rounds', async (dir) => {
+    const built = [];
+    for (const [index, item] of prepared.entries()) {
+      try { built.push(await buildSourceEvent(dir, item)); }
+      catch (error) {
+        if (batch) error.message = `sources[${index}]: ${error.message} No source in this call was recorded.`;
+        throw error;
+      }
+    }
+    const file = join(dir, 'rounds.ndjson');
+    await appendFile(file, built.map((event) => `${JSON.stringify(event)}\n`).join(''), { mode: 0o600 });
+    await chmod(file, 0o600);
+    return built;
+  });
+  for (const event of events) await appendCloudEvent('rounds', event);
+  if (!batch) return events[0];
+  return { recordedCount: events.length, sourceCount: events.length, results: events };
+}
+
+function sourceCheckedTelemetry(report) {
+  return {
+    event: 'source_checked',
+    properties: {
+      sourceId: report.sourceId.startsWith('community-') ? 'community' : report.sourceId,
+      status: report.status,
+      reviewedCount: report.reviewedCount,
+      qualifiedCount: report.qualifiedCount,
+      ...(report.blocker ? { blocker: report.blocker } : {}),
+    },
+  };
 }
 
 function replayAttention(events, roundId = null) {
   const active = new Map();
+  const linkedRounds = new Map();
   for (const event of events) {
     if (event.type === 'opened') active.set(event.id, event);
-    else if (event.type === 'resolved') active.delete(event.id);
+    else if (event.type === 'resolved') {
+      active.delete(event.id);
+      linkedRounds.delete(event.id);
+    } else if (event.type === 'round-linked' && typeof event.id === 'string' && typeof event.roundId === 'string') {
+      const rounds = linkedRounds.get(event.id) ?? [];
+      if (!rounds.includes(event.roundId)) rounds.push(event.roundId);
+      linkedRounds.set(event.id, rounds);
+    }
   }
   const priority = (blocker) => {
     if (['authentication', 'mfa', 'captcha'].includes(blocker)) return 0;
@@ -2528,7 +2740,11 @@ function replayAttention(events, roundId = null) {
     return 2;
   };
   return [...active.values()]
-    .filter((item) => roundId == null || item.roundId === roundId)
+    .map((item) => {
+      const extra = (linkedRounds.get(item.id) ?? []).filter((id) => id && id !== item.roundId);
+      return extra.length ? { ...item, roundIds: [item.roundId, ...extra] } : item;
+    })
+    .filter((item) => roundId == null || attentionCoversRound(item, roundId))
     .sort((a, b) => priority(a.blocker) - priority(b.blocker) || Date.parse(a.createdAt) - Date.parse(b.createdAt));
 }
 
@@ -2548,6 +2764,10 @@ async function attentionList(roundId = null) {
   return { count: items.length, items };
 }
 
+// The candidate-email POST. Callers that hold the applications lock must not await this:
+// ledgerAdd sends it only after that lock is released. The timeout bounds a hung endpoint.
+export const ATTENTION_NOTIFY_TIMEOUT_MS = 4_000;
+
 async function attentionNotifyHook(event, context = {}) {
   const notifyUrl = process.env.ATTENTION_NOTIFY_URL?.trim();
   const notifySecret = process.env.ATTENTION_NOTIFY_SECRET?.trim();
@@ -2565,6 +2785,7 @@ async function attentionNotifyHook(event, context = {}) {
   try {
     const response = await fetch(notifyUrl, {
       method: 'POST',
+      signal: AbortSignal.timeout(ATTENTION_NOTIFY_TIMEOUT_MS),
       headers: {
         authorization: `Bearer ${notifySecret}`,
         'content-type': 'application/json',
@@ -2590,8 +2811,9 @@ async function attentionNotifyHook(event, context = {}) {
     }
     return { attempted: true, ok: true, magicLinkUrl: body?.magicLinkUrl ?? null, emailId: body?.emailId ?? null };
   } catch (error) {
+    const timedOut = error?.name === 'TimeoutError' || error?.name === 'AbortError';
     console.error(`[attention-notify] site notify request failed: ${error instanceof Error ? error.message : 'unknown'}`);
-    return { attempted: true, ok: false, error: 'notify_request_failed' };
+    return { attempted: true, ok: false, error: timedOut ? 'notify_timeout' : 'notify_request_failed' };
   }
 }
 
@@ -2625,7 +2847,7 @@ function sessionBindingAttentionError(error) {
   return new Error(`attention session binding is invalid: ${code}.`);
 }
 
-async function attentionAdd(input) {
+async function attentionAdd(input, { notify = true } = {}) {
   const value = object(input, 'attention item');
   if (Object.hasOwn(value, 'answers')) {
     throw new Error(
@@ -2648,16 +2870,15 @@ async function attentionAdd(input) {
   const requiredActions = normalizeAttentionActions(value.requiredActions);
   if (requiredActions.length > 8 || requiredActions.some((item) => !REQUIRED_ACTIONS.has(item))) throw new Error('attention.requiredActions must contain only documented actions.');
   const applicationId = string(value.applicationId, 'attention.applicationId', 180);
-  let company = typeof value.company === 'string' ? value.company.trim() : '';
-  let role = typeof value.role === 'string' ? value.role.trim() : '';
-  if (!role && typeof value.title === 'string') role = value.title.trim();
+  let company = terminalPlain(value.company);
+  let role = terminalPlain(value.role) || terminalPlain(value.title);
   if (!company || !role) {
     try {
       const apps = await jsonLines(join(await ensureStateDir(), 'applications.ndjson'));
       const match = apps.find((entry) => entry.id === applicationId);
       if (match) {
-        company = company || String(match.company ?? '').trim();
-        role = role || String(match.role ?? match.title ?? '').trim();
+        company = company || terminalPlain(match.company);
+        role = role || terminalPlain(match.role ?? match.title);
       }
     } catch { /* best-effort context for notify only */ }
   }
@@ -2707,9 +2928,11 @@ async function attentionAdd(input) {
     sessionBinding = { path, binding: await writeSessionBindingFile(path, binding) };
   }
 
-  const notify = await attentionNotifyHook(event, { company, role, postingText });
+  const notifyContext = { company, role, postingText };
   const base = sessionBinding ? { ...event, sessionBinding } : event;
-  return notify.attempted ? { ...base, notify } : base;
+  if (!notify) return { ...base, notifyContext };
+  const notifyResult = await attentionNotifyHook(event, notifyContext);
+  return notifyResult.attempted ? { ...base, notify: notifyResult } : base;
 }
 
 async function attentionResolve(input) {
@@ -3233,7 +3456,15 @@ async function executeCommand([area, action, value], telemetry, session, communi
     });
     // reviewBatchId/reviewToken (3.8.0 to 3.8.5) are still accepted and ignored.
     const routineAuto = isLiveApply(entry.url) ? await isRoutineAutoSend(entry) : false;
-    result = await ledgerAdd(entry, input.duplicateOverride, input.companyReapplyOverride, input.cloudIntentId && input.cloudLeaseId ? { intentId: input.cloudIntentId, leaseId: input.cloudLeaseId } : null, { routineAuto });
+    try {
+      result = await ledgerAdd(entry, input.duplicateOverride, input.companyReapplyOverride, input.cloudIntentId && input.cloudLeaseId ? { intentId: input.cloudIntentId, leaseId: input.cloudLeaseId } : null, { routineAuto });
+    } catch (error) {
+      // Existing application_paused fields only (job hash, ATS, stage, reason). No new telemetry.
+      if (error?.duplicatePause?.item) {
+        await emitDomainEvent(telemetry, session, await telemetryApplicationPaused(error.duplicatePause.item, { ats: error.duplicatePause.ats }));
+      }
+      throw error;
+    }
     result.communityJob = await communityJobsSync(community, { limit: 1, applicationIds: [entry.id] });
     const fillTelemetryReview = telemetrySupplied ? await reviewRapidFireFillTelemetry(entry, input.telemetry) : null;
     if (fillTelemetryReview) result.fillTelemetryReview = fillTelemetryReview;
@@ -3271,11 +3502,8 @@ async function executeCommand([area, action, value], telemetry, session, communi
   else if (area === 'round' && action === 'leads') result = await leadHistory(value);
   else if (area === 'round' && action === 'source' && value === '--stdin') {
     result = await roundSource(await jsonStdin());
-    await emitDomainEvent(telemetry, session, { event: 'source_checked', properties: {
-      sourceId: result.sourceId.startsWith('community-') ? 'community' : result.sourceId,
-      status: result.status, reviewedCount: result.reviewedCount, qualifiedCount: result.qualifiedCount,
-      ...(result.blocker ? { blocker: result.blocker } : {}),
-    } });
+    const reports = result.sourceCount != null && Array.isArray(result.results) ? result.results : [result];
+    for (const report of reports) await emitDomainEvent(telemetry, session, sourceCheckedTelemetry(report));
   }
   else if (area === 'round' && action === 'status') result = await roundStatus(value ?? null);
   else if (area === 'round' && action === 'confirm' && value === '--stdin') result = await roundConfirm(await jsonStdin());
