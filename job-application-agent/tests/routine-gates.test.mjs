@@ -401,10 +401,15 @@ test('coverage evaluation and the submit-gate message are pure and local', () =>
   assert.match(routineSubmitGateMessage({ decision: 'skip' }, 'X'), /latest score decision is "skip"/);
 });
 
+test('score names the allowed role families when job.roleFamily is unknown (#255)', async (t) => {
+  const { env } = await fixture(t, 'role-family');
+  await refused(env, ['score', '--stdin'], job('family', { roleFamily: 'software-engineering' }), /Error: job\.roleFamily is invalid\. Allowed: frontend, backend, full-stack, product-engineering, ai-ml, platform, infrastructure, mobile, engineering-management, architecture, security, data, other\. Omit job\.roleFamily to use "other"\./);
+});
+
 test('round lead takes {"leads": [...]} in one call, validates all first, and source coverage accepts them (#219)', async (t) => {
   const { env } = await fixture(t, 'lead-batch');
   const { roundId } = await ok(env, ['round', 'start', '--stdin'], { requestedCount: 1 });
-  await refused(env, ['round', 'lead', '--stdin'], { leads: [lead(roundId, 'linkedin-jobs-feed', 'x'), { ...lead(roundId, 'linkedin-jobs-feed', 'y'), disposition: 'nope' }] }, /Error: leads\[1\]: Invalid lead disposition/);
+  await refused(env, ['round', 'lead', '--stdin'], { leads: [lead(roundId, 'linkedin-jobs-feed', 'x'), { ...lead(roundId, 'linkedin-jobs-feed', 'y'), disposition: 'nope' }] }, /Error: leads\[1\]: Invalid lead disposition\. Allowed: qualified, duplicate, no-relevant-opening, location-authorization-conflict, compensation-below-floor, seniority-mismatch, insufficient-must-have-coverage, closed-stale, blocked\./);
   assert.equal((await ok(env, ['round', 'leads', roundId])).history.length, 0, 'a bad lead in the batch records nothing');
   await refused(env, ['round', 'lead', '--stdin'], { leads: [lead(roundId, 'linkedin-jobs-feed', 'x'), lead(roundId, 'linkedin-jobs-feed', 'y', { supersedes: 'lead-that-does-not-exist' })] }, /Error: leads\[1\]: .*No lead in this call was recorded\./);
   assert.equal((await ok(env, ['round', 'leads', roundId])).history.length, 0, 'a bad reference later in the batch records nothing');
