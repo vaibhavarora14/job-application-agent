@@ -284,14 +284,29 @@
 
 .jTitle {
   grid-area: title;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 8px;
+  min-width: 0;
   font-size: 16px;
   line-height: 22px;
   font-weight: 600;
   color: var(--j-ink);
+}
+
+.jTitleText {
+  flex: 0 1 auto;
+  max-width: 100%;
+  min-width: 0;
   display: -webkit-box;
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
   overflow: hidden;
+}
+
+.jTitle .chip {
+  flex: none;
 }
 
 .jCo {
@@ -334,6 +349,7 @@
 .jFacts {
   grid-area: facts;
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 8px;
   margin-top: 4px;
@@ -365,6 +381,26 @@
   white-space: nowrap;
 }
 
+/* Quiet counterpart to the filled workplace chip: white, control-border, ink, blue check. */
+.chipReady {
+  background: var(--page);
+  border-color: var(--ctl);
+  color: var(--j-ink);
+  gap: 4px;
+}
+
+.readyMark {
+  width: 12px;
+  height: 12px;
+  flex: none;
+  color: var(--j-accent);
+}
+
+/* Narrow lists keep the chip in the tag row. The title copy appears once the row is wide. */
+.readyTitle {
+  display: none;
+}
+
 .chipPay {
   background: var(--pay-bg);
   border-color: var(--pay-bd);
@@ -394,6 +430,14 @@
   .jTitle {
     font-size: 15.5px;
     line-height: 21px;
+  }
+
+  .readyTitle {
+    display: inline-flex;
+  }
+
+  .readyTags {
+    display: none;
   }
 
   .jFacts {
@@ -955,6 +999,10 @@
 }
 
 .co {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
   margin: 6px 0 0;
   font-size: 17px;
   line-height: 24px;

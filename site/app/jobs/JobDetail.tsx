@@ -8,10 +8,10 @@ import {
   locationLabel,
   payRows,
 } from "../../lib/live-jobs.mjs";
-import { workplaceLabel } from "../../lib/jobs-board-query.mjs";
+import { isAgentReadyChannel, workplaceLabel } from "../../lib/jobs-board-query.mjs";
 import { buildApplyAgentPrompt, buildApplyCliCommand } from "../../lib/job-apply-copy.mjs";
 import { CopyButton } from "./CopyButton";
-import { JobRow } from "./JobRow";
+import { AgentReadyChip, JobRow } from "./JobRow";
 import { SiteFooter, SiteHeader } from "../components/SiteChrome";
 import styles from "./jobs.module.css";
 import type { BoardJob } from "./JobsBoard";
@@ -47,6 +47,14 @@ function ChevronIcon() {
       <path d="M5.5 8l4.5 4.5L14.5 8" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
     </svg>
   );
+}
+
+const READY_LEAD = "Your agent fills the application and waits for your OK.";
+const OTHER_HOST_LEAD = "Your agent fills what it can and waits for your OK. You may need to finish on the employer site.";
+
+function AgentReadyMark({ channel }: { channel: string }) {
+  if (!isAgentReadyChannel(channel)) return null;
+  return <AgentReadyChip />;
 }
 
 function employmentLabel(value: string | null | undefined) {
@@ -124,11 +132,12 @@ function Facts({ job }: { job: BoardJob }) {
 function ApplyCard({ job }: { job: BoardJob }) {
   const prompt = buildApplyAgentPrompt(job);
   const cli = buildApplyCliCommand(job.url);
+  const agentReady = isAgentReadyChannel(job.applicationChannel);
   return (
     <div className={styles.railCard}>
       <h2 className={styles.railTitle}>Apply with your agent</h2>
       <h2 className={styles.howTitle}>How applying works</h2>
-      <p className={styles.railLead}>Your agent fills the application and waits for your OK.</p>
+      <p className={styles.railLead}>{agentReady ? READY_LEAD : OTHER_HOST_LEAD}</p>
       <div className={styles.railActions}>
         <CopyButton
           value={prompt}
@@ -222,7 +231,7 @@ export function JobDetail({
           <>
             <section className={styles.dh}>
               <h1>{job.role}</h1>
-              <p className={styles.co}>{job.company}</p>
+              <p className={styles.co}>{job.company}<AgentReadyMark channel={job.applicationChannel} /></p>
             </section>
             <div className={styles.closed} role="status">
               <p className={styles.eT}>
@@ -249,7 +258,7 @@ export function JobDetail({
             <article className={styles.article}>
               <section className={styles.dh}>
                 <h1>{job.role}</h1>
-                <p className={styles.co}>{job.company}</p>
+                <p className={styles.co}>{job.company}<AgentReadyMark channel={job.applicationChannel} /></p>
                 {meta ? <p className={styles.meta}>{meta}</p> : null}
               </section>
               <Facts job={job} />
