@@ -284,14 +284,29 @@
 
 .jTitle {
   grid-area: title;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 8px;
+  min-width: 0;
   font-size: 16px;
   line-height: 22px;
   font-weight: 600;
   color: var(--j-ink);
+}
+
+.jTitleText {
+  flex: 0 1 auto;
+  max-width: 100%;
+  min-width: 0;
   display: -webkit-box;
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
   overflow: hidden;
+}
+
+.jTitle .chip {
+  flex: none;
 }
 
 .jCo {
@@ -955,6 +970,10 @@
 }
 
 .co {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
   margin: 6px 0 0;
   font-size: 17px;
   line-height: 24px;

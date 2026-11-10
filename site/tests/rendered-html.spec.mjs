@@ -402,14 +402,29 @@ test("publishes an indexable jobs board with shared site chrome", async () => {
     assert.match(html, /Include roles without listed pay/);
     assert.match(html, /Compared in USD</);
     assert.doesNotMatch(html, /monthly exchange rates|Only roles where the employer states a level/);
-    assert.doesNotMatch(html, /<legend>[^<]*(ATS|Source|Channel)/i);
+    assert.match(html, /<legend>ATS<\/legend>/);
+    assert.match(html, /<legend>ATS<\/legend>[\s\S]*?>Ashby</);
+    assert.match(html, /<legend>ATS<\/legend>[\s\S]*?>Greenhouse</);
+    assert.match(html, /<legend>ATS<\/legend>[\s\S]*?>Lever</);
+    assert.match(html, /<legend>ATS<\/legend>[\s\S]*?>Workable</);
+    assert.match(html, /<legend>ATS<\/legend>[\s\S]*?>Other</);
     // Honest pay: employer range with currency in the pay chip; nothing when pay is unknown.
     // The range sits in its own no-wrap span so it never splits; the suffix may wrap under it.
     assert.match(html, /class="_?chip[^"]*_?chipPay[^"]*"><span class="[^"]*payRange[^"]*">\$150K–\$235K<\/span> USD</);
     assert.doesNotMatch(html, /Pay not listed|Not listed/);
-    // At most 2 chips per role row.
+    // Workplace, pay, and Agent-ready. A role with no pay still has no pay chip.
+    const agentReadySlugs = new Set([
+      "example-labs-senior-backend-engineer-aaaaaaaaaaaaaaaa",
+      "example-pay-platform-engineer-payments-bbbbbbbbbbbbbbbb",
+      "example-mark-frontend-engineer-react-cccccccccccccccc",
+      "example-pay-design-engineer-ffffffffffffffff",
+    ]);
     for (const row of html.match(/<a[^>]+href="\/jobs\/[^"]+"[^>]*>[\s\S]*?<\/a>/g) ?? []) {
-      assert.ok((row.match(/class="_?chip[\s_"]/g) ?? []).length <= 2, row);
+      const slug = row.match(/href="\/jobs\/([^"]+)"/)?.[1] ?? "";
+      const chips = row.match(/class="_?chip[\s_"]/g) ?? [];
+      assert.ok(chips.length <= 3, row);
+      assert.equal(row.includes("Agent-ready"), agentReadySlugs.has(slug), slug);
+      if (slug.endsWith("aaaaaaaaaaaaaaaa")) assert.equal(row.includes("chipPay"), false, "no pay chip when pay is unknown");
     }
     assert.match(html, /Showing 5 of 5/);
     assert.doesNotMatch(html, /Show \d+ more/);
@@ -422,6 +437,16 @@ test("publishes an indexable jobs board with shared site chrome", async () => {
     const payOnly = await (await render("/jobs?nopay=0")).text();
     assert.match(payOnly, /2 roles match/);
     assert.doesNotMatch(payOnly, /Senior Backend Engineer/);
+
+    const workable = await (await render("/jobs?ats=workable")).text();
+    assert.match(workable, /1 role match/);
+    assert.match(workable, /Product Designer, Mobile/);
+    assert.match(workable, /aria-label="Remove filter Workable"/);
+    assert.doesNotMatch(workable, /Senior Backend Engineer|Platform Engineer, Payments/);
+
+    const otherAts = await (await render("/jobs?ats=other")).text();
+    assert.match(otherAts, /0 roles match/);
+    assert.match(otherAts, /“Other” rules out every match/);
 
     const zero = await (await render("/jobs?workplace=onsite")).text();
     assert.match(zero, /0 roles match/);
@@ -438,6 +463,8 @@ test("publishes an indexable jobs board with shared site chrome", async () => {
     assert.equal(closed.status, 200);
     const closedHtml = await closed.text();
     assert.match(closedHtml, /This role closed on/);
+    assert.match(closedHtml, /Agent-ready/);
+    assert.doesNotMatch(closedHtml, /you may need to finish on the employer site/);
     assert.match(closedHtml, /application\/ld\+json/);
     assert.match(closedHtml, /validThrough/);
     assert.doesNotMatch(closedHtml, /npx job-application-agent@latest install/);
@@ -456,6 +483,8 @@ test("publishes an indexable jobs board with shared site chrome", async () => {
     // Design P1: no helper line in the bar; one-line card lead; CLI folded into a quiet disclosure.
     assert.doesNotMatch(openHtml, /For Cursor, Claude Code or Codex/);
     assert.match(openHtml, /Your agent fills the application and waits for your OK\./);
+    assert.match(openHtml, />Agent-ready</);
+    assert.doesNotMatch(openHtml, /you may need to finish on the employer site/);
     assert.match(openHtml, /<summary>Preview the prompt/);
     assert.match(openHtml, /<summary>Prefer the terminal\?/);
     assert.doesNotMatch(openHtml, /<details[^>]* open/);
@@ -481,6 +510,8 @@ test("publishes an indexable jobs board with shared site chrome", async () => {
     const sixBands = await (await render("/jobs/example-health-product-designer-mobile-dddddddddddddddd")).text();
     assert.equal((sixBands.match(/class="_?payBandRange/g) ?? []).length, 4);
     assert.match(sixBands, /<a class="_?payBandMore[^"]*" href="https:\/\/apply\.workable\.com\/examplehealth\/j\/ABCDEF1234"[^>]*>\+2 more bands<\/a>/);
+    assert.doesNotMatch(sixBands, />Agent-ready</);
+    assert.match(sixBands, /The agent fills what it can; you may need to finish on the employer site\./);
     assert.doesNotMatch(sixBands, /total comp|£85K/);
     assert.doesNotMatch(openHtml, /\$49|Reserve for \$49|Reserve founding|Founding reservation|FOUNDING RESERVATION/i);
   } finally {
