@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- **CLI: a live `ledger add` without fill telemetry fails closed (#258).** An answers-only or empty live submit used to be recorded as `entryOrigin: "logged"` (`telemetrySupplied: false`), which hid whether the agent filled the form. That add is now refused and nothing is recorded. The error tells the caller to resend `telemetry.fieldsFilled`, `telemetry.resumeUploaded`, and `telemetry.resumeFieldPresent` when the form was seen, and not to invent counts. The honest exceptions stay: `profile_one_click` with `telemetry.profileResumeOnFile`, and an attended `thinSubmissionOverride` under `APPROVE SUBMIT`. Fixture and vendor-sandbox applies may still omit telemetry and stay `entryOrigin: "logged"`. Already-stored logged rows are not rewritten. No new telemetry events or properties.
+
 ## 3.8.6
 
 - **Batch review gate removed (owner decision, 5 Nov 2026).** Approval is again an explicit choice the candidate makes, as before 3.8.0. In `review-each` (the default) the agent fills the real application page on the employer's site, stops before Submit, and asks the candidate in chat; they look at the filled page in their own browser and confirm (or click Submit themselves). In `routine-auto` the candidate's standing permission (a `routine-auto` profile or autonomy grant) lets the agent submit routine applications with no approval step. There is no local review page, review batch or typed approval code any more.

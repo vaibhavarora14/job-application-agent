@@ -4,7 +4,7 @@
 // and sent jobs whose latest score was `ask` or `skip`.
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
-import { chmod, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { appendFile, chmod, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { createServer } from 'node:http';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -257,12 +257,15 @@ test('ledger add requires resumeFieldPresent (true, false or "unknown") whenever
     const result = await send(slug, { durationBucket: '2-5m', fieldsFilled: 6, resumeUploaded: false, resumeFieldPresent: value });
     assert.equal(result.status, 0, result.stderr);
   }
-  // An explicit upload implies the field; an after-the-fact log has no telemetry block to report on.
+  // An explicit upload implies the field. Answers without a telemetry block are refused for a live submit.
   assert.equal((await send('up', { durationBucket: '2-5m', fieldsFilled: 6, resumeUploaded: true })).status, 0);
   const logged = await send('log', undefined);
-  assert.equal(logged.status, 1, 'empty answers with no telemetry stay refused by the empty-submit guard');
+  assert.equal(logged.status, 1, 'empty answers with no telemetry stay refused');
+  assert.match(logged.stderr, /telemetry\.fieldsFilled/);
   const loggedEntry = entry('log2', { approval: 'APPROVE SUBMIT', telemetry: undefined, answers: { Email: 'filled', Resume: 'uploaded' } });
-  assert.equal((await run(env, ['ledger', 'add', '--stdin'], { ...loggedEntry })).status, 0);
+  const loggedAfter = await run(env, ['ledger', 'add', '--stdin'], { ...loggedEntry });
+  assert.equal(loggedAfter.status, 1);
+  assert.match(loggedAfter.stderr, /telemetry\.resumeFieldPresent/);
   const rows = (await readFile(join(directory, 'applications.ndjson'), 'utf8')).trim().split('\n').map((line) => JSON.parse(line));
   for (const row of rows) assert.equal('resumeFieldPresent' in row, false);
 });
@@ -306,20 +309,28 @@ test('under an autonomy grant a routine send is gated; the candidate\'s per-job 
 test('entryOrigin=logged entries do not count toward a gated round target without a per-job approval', async (t) => {
   const { directory, env } = await fixture(t, 'logged');
   const { roundId } = await ok(env, ['round', 'start', '--stdin'], { requestedCount: 2 });
-  for (const slug of ['l1', 'l2']) await ok(env, ['score', '--stdin'], job(slug));
-  const logged = (slug) => entry(slug, { roundId, telemetry: undefined, answers: { 'Full name': 'filled', Email: 'filled' } });
-  const first = await ok(env, ['ledger', 'add', '--stdin'], logged('l1'));
-  assert.equal(first.roundCount.counted, false);
-  assert.match(first.roundCount.reason, /entryOrigin=logged entries count toward a round target only with a per-job approval/);
+  // A new live add without telemetry is refused and records nothing.
+  const live = entry('l1', { roundId, telemetry: undefined, answers: { 'Full name': 'filled', Email: 'filled' } });
+  await refused(env, ['ledger', 'add', '--stdin'], live, /Nothing was recorded[\s\S]*telemetry\.fieldsFilled/);
+  assert.equal(await readFile(join(directory, 'applications.ndjson'), 'utf8').catch((error) => (error.code === 'ENOENT' ? '' : Promise.reject(error))), '');
+  // A row already stored as logged (older CLI) keeps that marker and still does not count
+  // toward the round unless it carries a per-job approval.
+  const historical = (slug, approval) => ({
+    ...entry(slug, { roundId, telemetry: undefined, answers: { 'Full name': 'filled', Email: 'filled' }, approval }),
+    applyKind: 'live', fillMetricsSource: 'answer_keys', telemetrySupplied: false, entryOrigin: 'logged',
+  });
+  await appendFile(join(directory, 'applications.ndjson'), `${JSON.stringify(historical('l1', 'STANDING AUTHORIZATION'))}\n`);
   let status = await ok(env, ['round', 'status', roundId]);
   assert.equal(status.confirmedCount, 0);
   assert.deepEqual(status.routineGates.uncountedLoggedApplicationIds, ['gate-l1']);
+  const stored = JSON.parse((await readFile(join(directory, 'applications.ndjson'), 'utf8')).trim());
+  assert.equal(stored.entryOrigin, 'logged');
   await refused(env, ['round', 'complete', '--stdin'], { roundId }, /1 entryOrigin=logged entry is not counted without a per-job approval/);
 
-  const second = await ok(env, ['ledger', 'add', '--stdin'], { ...logged('l2'), approval: 'APPROVE SUBMIT' });
-  assert.equal(second.roundCount, undefined);
+  await appendFile(join(directory, 'applications.ndjson'), `${JSON.stringify(historical('l2', 'APPROVE SUBMIT'))}\n`);
   status = await ok(env, ['round', 'status', roundId]);
   assert.equal(status.confirmedCount, 1);
+  assert.deepEqual(status.routineGates.uncountedLoggedApplicationIds, ['gate-l1']);
 });
 
 test('score stops retrying a job after 3 invalid-input failures and records it as blocked', async (t) => {
