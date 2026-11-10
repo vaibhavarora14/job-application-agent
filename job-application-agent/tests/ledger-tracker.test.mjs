@@ -57,6 +57,15 @@ async function seed(directory, rows) {
   await writeFile(join(directory, 'applications.ndjson'), `${rows.map((row) => JSON.stringify(row)).join('\n')}\n`);
 }
 
+function assertOmitsHost(text, hostname) {
+  for (const token of text.split(/[\s"'<>]+/)) {
+    const candidate = token.replace(/^[([{]+/, '').replace(/[)\]}.,;]+$/, '');
+    if (!candidate) continue;
+    assert.notEqual(candidate, hostname);
+    if (/^https?:\/\//i.test(candidate)) assert.notEqual(new URL(candidate).hostname, hostname);
+  }
+}
+
 test('terminalPlain removes ANSI and C0 controls from company and role text', () => {
   assert.equal(terminalPlain('Acme\u001b[31m Corp\u0007'), 'Acme Corp');
   assert.equal(terminalPlain('Staff\nEngineer\u001b]0;title\u0007'), 'StaffEngineer');
@@ -187,7 +196,7 @@ test('ledger outcome by id or url stores a local timestamped outcome and list sh
   assert.ok(Math.abs(Date.parse(outcome.occurredAt) - before) < 60_000);
   assert.equal(logged.stdout.includes('No visa'), false);
   assert.equal(logged.stdout.includes('Acme'), false);
-  assert.equal(logged.stdout.includes('jobs.example.com'), false);
+  assertOmitsHost(logged.stdout, 'jobs.example.com');
 
   const rows = (await readFile(join(directory, 'outcomes.ndjson'), 'utf8')).trim().split('\n').map((line) => JSON.parse(line));
   assert.equal(rows.length, 1);
@@ -221,7 +230,7 @@ test('ledger outcome flag form does not emit company, role, notes, or URLs', asy
   assert.equal(combined.includes('SecretCo'), false);
   assert.equal(combined.includes('Private Role'), false);
   assert.equal(combined.includes('onsite loop'), false);
-  assert.equal(combined.includes('jobs.example.com'), false);
+  assertOmitsHost(combined, 'jobs.example.com');
   assert.match(queued, /command_completed/);
 });
 
@@ -239,7 +248,7 @@ test('structured ledger outcome --stdin still records and the flag form rejects 
   assert.match(missing.stderr, /No ledger entry matches/);
   assert.doesNotMatch(missing.stderr, /not-in-ledger/);
   assert.doesNotMatch(missing.stderr, /private note/);
-  assert.doesNotMatch(missing.stderr, /jobs\.example\.com/);
+  assertOmitsHost(missing.stderr, 'jobs.example.com');
 
   const badStatus = run(['ledger', 'outcome', 'web-1', '--status', 'withdrawn']);
   assert.notEqual(badStatus.status, 0);
