@@ -215,25 +215,43 @@ export function checkApplyUrlAllowed(url, opts = {}) {
 }
 
 /**
- * Resolve ledger applyKind from URL (and optional explicit value).
+ * Resolve ledger applyKind from the URL allowlist.
+ * A caller-supplied `fixture` or `vendor-sandbox` is accepted only when the URL is
+ * already on that allowlist; the stored kind is the allowlist entry's kind, not the
+ * caller's label. Any other URL classified as non-live is rejected. An explicit
+ * `live` (or an omitted kind) does not reclassify an allowlisted URL.
  * @param {string | URL} url
  * @param {{ applyKind?: string, pageTitle?: string, allowlist?: ApplyAllowlistEntry[] }} [opts]
  * @returns {"fixture" | "vendor-sandbox" | "live"}
  */
 export function resolveApplyKind(url, opts = {}) {
+  let requested = null;
   if (opts.applyKind != null) {
-    const kind = String(opts.applyKind).toLowerCase();
-    if (!APPLY_KINDS.includes(kind)) throw new Error(`applyKind must be one of ${APPLY_KINDS.join(", ")}.`);
-    return /** @type {"fixture" | "vendor-sandbox" | "live"} */ (kind);
+    requested = String(opts.applyKind).toLowerCase();
+    if (!APPLY_KINDS.includes(requested)) throw new Error(`applyKind must be one of ${APPLY_KINDS.join(", ")}.`);
   }
-  const entry = findAllowlistedApply(url, opts);
-  return entry?.kind ?? "live";
+  const fromUrl = findAllowlistedApply(url, opts)?.kind ?? "live";
+  if ((requested === "fixture" || requested === "vendor-sandbox") && fromUrl === "live") {
+    throw new Error(
+      `entry.applyKind "${requested}" is invalid for a URL that is not on the fixture/vendor-sandbox allowlist. This URL is a live apply.`,
+    );
+  }
+  return /** @type {"fixture" | "vendor-sandbox" | "live"} */ (fromUrl);
 }
 
 /**
- * @param {{ applyKind?: string } | null | undefined} entry
+ * True only when the entry URL is on the fixture/vendor-sandbox allowlist.
+ * A caller-supplied applyKind is not consulted: a live URL labeled fixture or
+ * vendor-sandbox is still live, and an entry with no URL is not exempt.
+ * @param {{ url?: string } | null | undefined} entry
  */
 export function isFixtureOrSandboxApply(entry) {
-  const kind = entry?.applyKind ?? "live";
-  return kind === "fixture" || kind === "vendor-sandbox";
+  const url = entry?.url;
+  if (typeof url !== "string" || url.length === 0) return false;
+  try {
+    const kind = resolveApplyKind(url);
+    return kind === "fixture" || kind === "vendor-sandbox";
+  } catch {
+    return false;
+  }
 }

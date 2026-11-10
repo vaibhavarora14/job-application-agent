@@ -22,10 +22,10 @@ Start input: `{ "requestedCount": 30 }`. Complete input: `{ "roundId": "round-..
 
 ## Discovery coverage
 
-For new rounds (`discoveryPolicyVersion: 2`), order matters: first record every reviewed lead from a source with `round lead --stdin`, then report that source with `round source --stdin` **without** `reviewedCount`/`qualifiedCount`. The CLI derives the counts from the lead records; see [ACCOUNTING.md](ACCOUNTING.md) for lead fields, revisions, and delivery accounting. Passing counts is optional and they are treated as assertions: a count that does not match the recorded leads (for example, counts sent before the leads) is rejected, and the error reports the recorded totals. Only rounds started before per-lead accounting (legacy, unverified aggregate reports) require the counts.
+For new rounds (`discoveryPolicyVersion: 2`), order matters: first record every reviewed lead with one `round lead --stdin` call (a JSON array, or `{"leads": [ … ]}`), then report this round's sources with one `round source --stdin` call (a JSON array, or `{"sources": [ … ]}`) **without** `reviewedCount`/`qualifiedCount`. Do not call either command once per lead or once per source. The CLI derives the counts from the lead records; see [ACCOUNTING.md](ACCOUNTING.md) for lead fields, revisions, and delivery accounting. Passing counts is optional and they are treated as assertions: a count that does not match the recorded leads (for example, counts sent before the leads) is rejected, and the error reports the recorded totals. Only rounds started before per-lead accounting (legacy, unverified aggregate reports) require the counts.
 
 
-Before submitting, search at least three relevant independent sources from `sources list`, including alternatives to the last round's dominant source. Listing the catalog or browsing multiple jobs on one board is not source coverage. Record a report after each actual search or observed access blocker:
+Before submitting, search at least three relevant independent sources from `sources list`, including alternatives to the last round's dominant source. Listing the catalog or browsing multiple jobs on one board is not source coverage. Record one report per actual search or observed access blocker, and pass those reports together in one `round source --stdin` call. One report object still works:
 
 ```json
 {

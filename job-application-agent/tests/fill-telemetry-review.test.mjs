@@ -153,9 +153,10 @@ test('distinct telemetry and after-the-fact logged entries are not flagged', asy
   const cases = [
     ['a', { telemetry: { durationBucket: '1-2m', fieldsFilled: 6, shortAnswerCount: 6, resumeUploaded: false, resumeFieldPresent: false } }],
     ['bb', { telemetry: { durationBucket: '1-2m', fieldsFilled: 7, shortAnswerCount: 6, resumeUploaded: true, resumeFieldPresent: true } }],
-    // Logged after the fact: no telemetry block, so entryOrigin=logged and never part of the check.
-    ['ccc', { answers: { Email: 'filled', Phone: 'filled' } }],
-    ['dddd', { answers: { Email: 'filled', Phone: 'filled' } }],
+    // Fixture logged-after-the-fact rows: no telemetry block, so entryOrigin=logged and never part of the check.
+    // A live employer URL without telemetry is refused instead (see job-application.test.mjs).
+    ['ccc', { url: 'https://jobappagent.com/fixtures/greenhouse/', source: 'greenhouse', answers: { Email: 'filled', Phone: 'filled' } }],
+    ['dddd', { url: 'https://jobappagent.com/fixtures/lever/', source: 'lever', answers: { Email: 'filled', Phone: 'filled' } }],
   ];
   for (const [slug, extra] of cases) {
     const result = await runCli(['ledger', 'add', '--stdin'], entry(slug, extra), env);

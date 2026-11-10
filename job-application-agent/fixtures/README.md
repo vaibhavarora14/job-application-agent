@@ -49,7 +49,7 @@ Gate enforcement for resume→submit / prove scripts:
 
 ## Ledger marking
 
-Fixture / vendor-sandbox applies store `applyKind: "fixture"` or `"vendor-sandbox"` (equivalent to “source=fixture” for metrics). Those entries:
+Fixture / vendor-sandbox applies store `applyKind: "fixture"` or `"vendor-sandbox"` (equivalent to “source=fixture” for metrics). The kind is taken from this allowlist. A caller-supplied `fixture` or `vendor-sandbox` on any other URL is refused, and a mismatched label on an allowlisted URL is stored as the allowlist kind. Those entries:
 
 - are skipped for community job contribution
 - do not emit `application_submitted` usage telemetry

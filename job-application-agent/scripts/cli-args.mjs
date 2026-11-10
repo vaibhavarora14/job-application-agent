@@ -51,10 +51,13 @@ const ACTION_ALIASES = Object.freeze({
 });
 
 function parseInlineJson(value) {
-  if (typeof value !== 'string' || !value.trim().startsWith('{')) return undefined;
+  if (typeof value !== 'string') return undefined;
+  const trimmed = value.trim();
+  if (!trimmed.startsWith('{') && !trimmed.startsWith('[')) return undefined;
   try {
     const parsed = JSON.parse(value);
-    return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : undefined;
+    if (!parsed || typeof parsed !== 'object') return undefined;
+    return parsed;
   } catch {
     return undefined;
   }
@@ -66,7 +69,7 @@ function parseInlineJson(value) {
  * - `version` / `--version` print the CLI version;
  * - `--json` / `--pretty` are dropped (output is always JSON);
  * - `-` and `--stdin=` mean `--stdin`;
- * - an inline JSON object argument (`round lead '{"roundId":...}'`) is read as the stdin payload;
+ * - an inline JSON object or array argument (`round lead '{"roundId":...}'` or `round lead '[{...}]'`) is read as the stdin payload;
  * - `cloud lease acquire` → `cloud lease-acquire`, `cloud intent prepare` → `cloud intent-prepare`;
  * - small aliases such as `profile show` → `profile check`, `profile get <name>` → `profile field <name>`.
  */
@@ -99,7 +102,7 @@ export function normalizeCliArgs(input) {
 
 const USAGE_NOTES = Object.freeze({
   score: 'An unknown job.roleFamily, job.source, job.discoverySource, job.applicationChannel, job.seniority, job.workMode or must-have status is rejected with the allowed values. An omitted roleFamily defaults to other (references/SCHEMAS.md).',
-  round: 'An unknown lead disposition is rejected with the allowed values (references/ACCOUNTING.md).',
+  round: 'An unknown lead disposition is rejected with the allowed values (references/ACCOUNTING.md). round lead and round source also accept one JSON array.',
 });
 
 /** Usage text for `help` output: every area, or one area. */
@@ -110,7 +113,7 @@ export function usageFor(area) {
   }
   return {
     usage: Object.values(COMMAND_USAGE),
-    note: 'Run node scripts/job-application.mjs <area> help for one area. Commands marked --stdin read exactly one JSON object from standard input.',
+    note: 'Run node scripts/job-application.mjs <area> help for one area. Commands marked --stdin read one JSON object from standard input. round lead, round source, and ledger check also accept one JSON array.',
   };
 }
 

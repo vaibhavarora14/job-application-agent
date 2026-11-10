@@ -38,6 +38,9 @@ test('normalizeCliArgs handles help, version, no-op flags, stdin aliases and inl
   assert.deepEqual(inline.inlineJson, { requestedCount: 2 });
   // Documented forms are unchanged.
   assert.deepEqual(normalizeCliArgs(['round', 'lead', '--stdin']).args, ['round', 'lead', '--stdin']);
+  const inlineArray = normalizeCliArgs(['round', 'lead', '[{"roundId":"round-1"}]']);
+  assert.deepEqual(inlineArray.args, ['round', 'lead', '--stdin']);
+  assert.deepEqual(inlineArray.inlineJson, [{ roundId: 'round-1' }]);
   assert.deepEqual(normalizeCliArgs(['sources', 'list']).args, ['sources', 'list']);
 });
 
