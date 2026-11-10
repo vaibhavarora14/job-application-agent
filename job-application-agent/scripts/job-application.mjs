@@ -1899,13 +1899,20 @@ function isLiveApply(url) {
 }
 
 // Local-only gate evidence (see routine-gates.mjs). Never appended to cloud state or telemetry.
-async function appendRoundEvidence(event) {
+// One acquisition writes every line, so a lead batch does not lock once per lead.
+async function appendRoundEvidenceMany(events) {
+  if (!events.length) return [];
   return withStateLock('round-evidence', async (dir) => {
     const file = join(dir, ROUND_EVIDENCE_FILE);
-    await appendFile(file, `${JSON.stringify(event)}\n`, { mode: 0o600 });
+    await appendFile(file, events.map((event) => `${JSON.stringify(event)}\n`).join(''), { mode: 0o600 });
     await chmod(file, 0o600);
-    return event;
+    return events;
   });
+}
+
+async function appendRoundEvidence(event) {
+  await appendRoundEvidenceMany([event]);
+  return event;
 }
 
 async function roundEvidence(dir) {
@@ -2156,22 +2163,36 @@ function duplicateResult(entries, candidate, outcomes = [], now = new Date()) {
   };
 }
 
-// {"candidates": [...]} checks several jobs in one call (#219); a single candidate works as before.
+// A batch is a JSON array or a one-key wrapper. A single object stays a single object.
+function batchedStdin(input, { key, max, emptyError, onlyError }) {
+  if (Array.isArray(input)) {
+    if (input.length === 0 || input.length > max) throw new Error(emptyError);
+    return { batch: true, items: input };
+  }
+  if (input && typeof input === 'object' && Object.hasOwn(input, key)) {
+    if (Object.keys(input).length !== 1) throw new Error(onlyError);
+    if (!Array.isArray(input[key]) || input[key].length === 0 || input[key].length > max) throw new Error(emptyError);
+    return { batch: true, items: input[key] };
+  }
+  return { batch: false, items: [input] };
+}
+
+// A JSON array or {"candidates": [...]} checks several jobs in one call (#219). One candidate object is unchanged.
 export const MAX_LEDGER_CHECKS_PER_CALL = 50;
 async function ledgerCheck(candidate) {
-  const batch = candidate && typeof candidate === 'object' && !Array.isArray(candidate) && Object.hasOwn(candidate, 'candidates');
-  if (batch) {
-    if (Object.keys(candidate).length !== 1) throw new Error('ledger check with "candidates" takes only {"candidates": [...]}.');
-    if (!Array.isArray(candidate.candidates) || candidate.candidates.length === 0 || candidate.candidates.length > MAX_LEDGER_CHECKS_PER_CALL) {
-      throw new Error(`ledger check "candidates" must be an array of 1 to ${MAX_LEDGER_CHECKS_PER_CALL} jobs.`);
-    }
-  }
-  const normalized = (batch ? candidate.candidates : [candidate]).map((item, index) => {
+  const { batch, items } = batchedStdin(candidate, {
+    key: 'candidates',
+    max: MAX_LEDGER_CHECKS_PER_CALL,
+    emptyError: `ledger check "candidates" must be an array of 1 to ${MAX_LEDGER_CHECKS_PER_CALL} jobs.`,
+    onlyError: 'ledger check with "candidates" takes only {"candidates": [...]}.',
+  });
+  const normalized = items.map((item, index) => {
     try { return validateLedgerCheckCandidate(item); } catch (error) {
       if (batch) error.message = `candidates[${index}]: ${error.message}`;
       throw error;
     }
   });
+  // One read of the ledger for the whole call. Check does not take the applications lock; ledger add does.
   const dir = await ensureStateDir();
   const entries = await jsonLines(join(dir, 'applications.ndjson'));
   const outcomes = await jsonLines(join(dir, 'outcomes.ndjson'));
@@ -2325,19 +2346,18 @@ async function deliveryHistory(applicationId) {
   const events = (await jsonLines(join(dir, 'delivery.ndjson'))).filter(e => !applicationId || e.applicationId === applicationId);
   return { ...deliveryProjection(apps, events), events };
 }
-// One `round lead --stdin` call may carry a single lead, or {"leads": [...]} to record a whole
-// search's reviewed leads in one call (#219). Every lead is validated before any is written.
+// One `round lead --stdin` call may carry a single lead, a JSON array of leads, or {"leads": [...]}
+// (#219). Every lead is validated before any is written. The rounds lock and the evidence lock
+// are each taken once for the call.
 export const MAX_LEADS_PER_CALL = 100;
 async function recordLead(input) {
-  const batch = input && typeof input === 'object' && !Array.isArray(input) && Object.hasOwn(input, 'leads');
-  if (batch) {
-    const keys = Object.keys(input);
-    if (keys.length !== 1) throw new Error('round lead with "leads" takes only {"leads": [...]}.');
-    if (!Array.isArray(input.leads) || input.leads.length === 0 || input.leads.length > MAX_LEADS_PER_CALL) {
-      throw new Error(`round lead "leads" must be an array of 1 to ${MAX_LEADS_PER_CALL} leads.`);
-    }
-  }
-  const events = (batch ? input.leads : [input]).map((lead, index) => {
+  const { batch, items } = batchedStdin(input, {
+    key: 'leads',
+    max: MAX_LEADS_PER_CALL,
+    emptyError: `round lead "leads" must be an array of 1 to ${MAX_LEADS_PER_CALL} leads.`,
+    onlyError: 'round lead with "leads" takes only {"leads": [...]}.',
+  });
+  const events = items.map((lead, index) => {
     try {
       const event = validateLead(lead);
       knownDiscoverySourceId(event.sourceId, 'lead.sourceId');
@@ -2363,10 +2383,15 @@ async function recordLead(input) {
       }
     }
     const results = [];
-    for (const event of events) {
-      const result = await appendAccounting('discovery', event);
-      if (result.recorded) await appendRoundEvidence({ type: 'lead-recorded', roundId: event.roundId, sourceId: event.sourceId, leadId: event.id, at: new Date().toISOString() });
-      results.push(result);
+    const evidence = [];
+    try {
+      for (const event of events) {
+        const result = await appendAccounting('discovery', event);
+        if (result.recorded) evidence.push({ type: 'lead-recorded', roundId: event.roundId, sourceId: event.sourceId, leadId: event.id, at: new Date().toISOString() });
+        results.push(result);
+      }
+    } finally {
+      await appendRoundEvidenceMany(evidence);
     }
     if (!batch) return results[0];
     return { recordedCount: results.filter((result) => result.recorded).length, leadCount: results.length, results };
@@ -2400,7 +2425,7 @@ async function roundStart(input) {
     discoveryPolicy: { minSources: MIN_DISCOVERY_SOURCES, concentrationThresholdPercent: CONCENTRATION_THRESHOLD, communityFeedPullRequired: true, coverageMustPrecedeSubmissions: true },
     resumePreflight,
     blockers,
-    nextStep: `${blockers.length ? `Résumé upload is unavailable (${RESUME_UPLOAD_BLOCKER}): tell the candidate now; ATS forms that need a résumé will fail. ` : ''}Run sources jobs (the community job feed, required once per round), search at least 3 distinct relevant discovery sources, record each reviewed lead with round lead --stdin and each search or blocker with round source --stdin, and review round status before applying. Coverage recorded after the round's submissions does not count.`,
+    nextStep: `${blockers.length ? `Résumé upload is unavailable (${RESUME_UPLOAD_BLOCKER}): tell the candidate now; ATS forms that need a résumé will fail. ` : ''}Run sources jobs (the community job feed, required once per round), search at least 3 distinct relevant discovery sources, record this round's reviewed leads in one round lead --stdin call (a JSON array, or {"leads":[...]}), record its searches and blockers in one round source --stdin call (a JSON array, or {"sources":[...]}), and review round status before applying. Coverage recorded after the round's submissions does not count.`,
   };
 }
 
@@ -2451,7 +2476,7 @@ function discoverySummary(events, applications, completion, audit = null) {
   };
 }
 
-async function roundSource(input) {
+function normalizeSourceCoverage(input) {
   const value = object(input, 'source coverage');
   const allowed = new Set(['roundId', 'sourceId', 'status', 'reviewedCount', 'qualifiedCount', 'blocker', 'evidence', 'applicationIds']);
   for (const key of Object.keys(value)) if (!allowed.has(key)) throw new Error(`Unknown source coverage property: ${key}.`);
@@ -2464,56 +2489,102 @@ async function roundSource(input) {
   const evidence = string(value.evidence, 'coverage.evidence', 2000);
   const applicationIds = value.applicationIds == null ? [] : [...new Set(stringArray(value.applicationIds, 'coverage.applicationIds'))];
   if (applicationIds.length > 1000 || (status === 'blocked' && applicationIds.length)) throw new Error('Invalid coverage.applicationIds.');
-  const event = await withStateLock('rounds', async (dir) => {
-    const round = await roundStatus(roundId);
-    if (round.completed) throw new Error('Cannot record coverage for a completed round.');
-    const audit = discoveryProjection(await jsonLines(join(dir, 'discovery.ndjson')), { roundId: value.roundId });
-    const leads = audit.leads.filter(lead => lead.sourceId === sourceId);
-    const derivedReviewed = status === 'blocked' ? 0 : leads.length;
-    const derivedQualified = status === 'blocked' ? 0 : leads.filter(lead => !lead.conflict && lead.disposition === 'qualified').length;
-    const reviewedCount = round.discoveryPolicyVersion === 2 ? derivedReviewed : integer(value.reviewedCount, 'coverage.reviewedCount', 0, 10000);
-    const qualifiedCount = round.discoveryPolicyVersion === 2 ? derivedQualified : integer(value.qualifiedCount, 'coverage.qualifiedCount', 0, reviewedCount);
-    // Per-lead rounds derive counts from `round lead` records; passed counts are assertions that
-    // must match (a stale tally is rejected). Say what is recorded and how to fix the call.
-    if (round.discoveryPolicyVersion === 2 && ((value.reviewedCount != null && value.reviewedCount !== reviewedCount) || (value.qualifiedCount != null && value.qualifiedCount !== qualifiedCount))) {
-      throw new Error(`Source count assertions do not match recorded leads (recorded for this source: reviewed ${reviewedCount}, qualified ${qualifiedCount}). Record every reviewed lead with round lead --stdin before round source, or omit reviewedCount/qualifiedCount so they are derived.`);
+  return { value, sourceId, status, roundId, blocker, evidence, applicationIds };
+}
+
+async function buildSourceEvent(dir, prepared) {
+  const { value, sourceId, status, roundId, blocker, evidence, applicationIds } = prepared;
+  const round = await roundStatus(roundId);
+  if (round.completed) throw new Error('Cannot record coverage for a completed round.');
+  const audit = discoveryProjection(await jsonLines(join(dir, 'discovery.ndjson')), { roundId: value.roundId });
+  const leads = audit.leads.filter(lead => lead.sourceId === sourceId);
+  const derivedReviewed = status === 'blocked' ? 0 : leads.length;
+  const derivedQualified = status === 'blocked' ? 0 : leads.filter(lead => !lead.conflict && lead.disposition === 'qualified').length;
+  const reviewedCount = round.discoveryPolicyVersion === 2 ? derivedReviewed : integer(value.reviewedCount, 'coverage.reviewedCount', 0, 10000);
+  const qualifiedCount = round.discoveryPolicyVersion === 2 ? derivedQualified : integer(value.qualifiedCount, 'coverage.qualifiedCount', 0, reviewedCount);
+  // Per-lead rounds derive counts from `round lead` records; passed counts are assertions that
+  // must match (a stale tally is rejected). Say what is recorded and how to fix the call.
+  if (round.discoveryPolicyVersion === 2 && ((value.reviewedCount != null && value.reviewedCount !== reviewedCount) || (value.qualifiedCount != null && value.qualifiedCount !== qualifiedCount))) {
+    throw new Error(`Source count assertions do not match recorded leads (recorded for this source: reviewed ${reviewedCount}, qualified ${qualifiedCount}). Record every reviewed lead with round lead --stdin before round source, or omit reviewedCount/qualifiedCount so they are derived.`);
+  }
+  if (status === 'blocked' && (!SOURCE_BLOCKERS.has(blocker) || reviewedCount !== 0 || qualifiedCount !== 0)) throw new Error('Blocked sources require a documented blocker and zero counts.');
+  const evidenceLog = await roundEvidence(dir);
+  const gates = roundGatesRecord(evidenceLog, round.roundId);
+  if (gates) {
+    const pulls = feedPulls(evidenceLog, Date.parse(gates.at));
+    if (sourceId === COMMUNITY_FEED_SOURCE_ID && status === 'searched' && !pulls.some((pull) => pull.ok === true)) {
+      throw new Error(`Coverage refused: ${COMMUNITY_FEED_SOURCE_ID} is marked searched, but no successful \`sources jobs\` pull was recorded in this round. Run \`sources jobs\` and review its leads first. If that call failed, record the source as blocked with blocker access-unavailable (community feed unavailable).`);
     }
-    if (status === 'blocked' && (!SOURCE_BLOCKERS.has(blocker) || reviewedCount !== 0 || qualifiedCount !== 0)) throw new Error('Blocked sources require a documented blocker and zero counts.');
-    const evidence = await roundEvidence(dir);
-    const gates = roundGatesRecord(evidence, round.roundId);
-    if (gates) {
-      const pulls = feedPulls(evidence, Date.parse(gates.at));
-      if (sourceId === COMMUNITY_FEED_SOURCE_ID && status === 'searched' && !pulls.some((pull) => pull.ok === true)) {
-        throw new Error(`Coverage refused: ${COMMUNITY_FEED_SOURCE_ID} is marked searched, but no successful \`sources jobs\` pull was recorded in this round. Run \`sources jobs\` and review its leads first. If that call failed, record the source as blocked with blocker access-unavailable (community feed unavailable).`);
+    if (sourceId === COMMUNITY_FEED_SOURCE_ID && status === 'blocked' && (!pulls.some((pull) => pull.ok !== true) || !COMMUNITY_FEED_BLOCKERS.includes(blocker))) {
+      throw new Error(`Coverage refused: ${COMMUNITY_FEED_SOURCE_ID} can be recorded as blocked (community feed unavailable) only after a \`sources jobs\` call in this round failed, with blocker access-unavailable or site-error. Run \`sources jobs\` first; if it returns leads, review them and record the source as searched.`);
+    }
+    if (sourceId !== COMMUNITY_FEED_SOURCE_ID && status === 'searched' && !['recruiter-inbound', 'user-supplied-leads'].includes(sourceId)) {
+      if (!leads.length) {
+        throw new Error(`Coverage refused: ${sourceId} is marked searched, but no leads were recorded for it in this round. Record every reviewed lead with round lead --stdin before round source (an empty search is one lead with disposition "no-relevant-opening" and the search URL); a source you could not search is "blocked" with its blocker.`);
       }
-      if (sourceId === COMMUNITY_FEED_SOURCE_ID && status === 'blocked' && (!pulls.some((pull) => pull.ok !== true) || !COMMUNITY_FEED_BLOCKERS.includes(blocker))) {
-        throw new Error(`Coverage refused: ${COMMUNITY_FEED_SOURCE_ID} can be recorded as blocked (community feed unavailable) only after a \`sources jobs\` call in this round failed, with blocker access-unavailable or site-error. Run \`sources jobs\` first; if it returns leads, review them and record the source as searched.`);
-      }
-      if (sourceId !== COMMUNITY_FEED_SOURCE_ID && status === 'searched' && !['recruiter-inbound', 'user-supplied-leads'].includes(sourceId)) {
-        if (!leads.length) {
-          throw new Error(`Coverage refused: ${sourceId} is marked searched, but no leads were recorded for it in this round. Record every reviewed lead with round lead --stdin before round source (an empty search is one lead with disposition "no-relevant-opening" and the search URL); a source you could not search is "blocked" with its blocker.`);
-        }
-        // Leads recorded only after every submission so far are after-the-fact coverage.
-        const lastSubmissionAt = round.routineGates?.coverage?.lastSubmissionAt;
-        const earliest = leadTimesBySource(evidence, round.roundId, await jsonLines(join(dir, 'discovery.ndjson'))).get(sourceId)?.[0];
-        if (lastSubmissionAt && Number.isFinite(earliest) && earliest > Date.parse(lastSubmissionAt)) {
-          throw new Error(afterSubmissionCoverageMessage([sourceId], lastSubmissionAt));
-        }
+      // Leads recorded only after every submission so far are after-the-fact coverage.
+      const lastSubmissionAt = round.routineGates?.coverage?.lastSubmissionAt;
+      const earliest = leadTimesBySource(evidenceLog, round.roundId, await jsonLines(join(dir, 'discovery.ndjson'))).get(sourceId)?.[0];
+      if (lastSubmissionAt && Number.isFinite(earliest) && earliest > Date.parse(lastSubmissionAt)) {
+        throw new Error(afterSubmissionCoverageMessage([sourceId], lastSubmissionAt));
       }
     }
-    const applications = await jsonLines(join(dir, 'applications.ndjson'));
-    for (const id of applicationIds) {
-      const entry = applications.find((item) => item.id === id && item.roundId === round.roundId && item.status === 'submitted');
-      if (!entry || (entry.discoverySourceId && entry.discoverySourceId !== sourceId)) throw new Error('Coverage attribution must match a confirmed application in this round and its saved source.');
-    }
-    const event = { type: 'source-checked', roundId: round.roundId, sourceId, status, reviewedCount, qualifiedCount, evidence, applicationIds, ...(blocker ? { blocker } : {}), occurredAt: new Date().toISOString() };
-    const file = join(dir, 'rounds.ndjson');
-    await appendFile(file, `${JSON.stringify(event)}\n`, { mode: 0o600 });
-    await chmod(file, 0o600);
-    return event;
+  }
+  const applications = await jsonLines(join(dir, 'applications.ndjson'));
+  for (const id of applicationIds) {
+    const entry = applications.find((item) => item.id === id && item.roundId === round.roundId && item.status === 'submitted');
+    if (!entry || (entry.discoverySourceId && entry.discoverySourceId !== sourceId)) throw new Error('Coverage attribution must match a confirmed application in this round and its saved source.');
+  }
+  return { type: 'source-checked', roundId: round.roundId, sourceId, status, reviewedCount, qualifiedCount, evidence, applicationIds, ...(blocker ? { blocker } : {}), occurredAt: new Date().toISOString() };
+}
+
+// One coverage object, a JSON array, or {"sources": [...]} (#219). State checks for every report
+// finish before any report is written, under one rounds lock.
+export const MAX_SOURCES_PER_CALL = 50;
+async function roundSource(input) {
+  const { batch, items } = batchedStdin(input, {
+    key: 'sources',
+    max: MAX_SOURCES_PER_CALL,
+    emptyError: `round source "sources" must be an array of 1 to ${MAX_SOURCES_PER_CALL} coverage objects.`,
+    onlyError: 'round source with "sources" takes only {"sources": [...]}.',
   });
-  await appendCloudEvent('rounds', event);
-  return event;
+  const prepared = items.map((item, index) => {
+    try { return normalizeSourceCoverage(item); }
+    catch (error) {
+      if (batch) error.message = `sources[${index}]: ${error.message}`;
+      throw error;
+    }
+  });
+  const events = await withStateLock('rounds', async (dir) => {
+    const built = [];
+    for (const [index, item] of prepared.entries()) {
+      try { built.push(await buildSourceEvent(dir, item)); }
+      catch (error) {
+        if (batch) error.message = `sources[${index}]: ${error.message} No source in this call was recorded.`;
+        throw error;
+      }
+    }
+    const file = join(dir, 'rounds.ndjson');
+    await appendFile(file, built.map((event) => `${JSON.stringify(event)}\n`).join(''), { mode: 0o600 });
+    await chmod(file, 0o600);
+    return built;
+  });
+  for (const event of events) await appendCloudEvent('rounds', event);
+  if (!batch) return events[0];
+  return { recordedCount: events.length, sourceCount: events.length, results: events };
+}
+
+function sourceCheckedTelemetry(report) {
+  return {
+    event: 'source_checked',
+    properties: {
+      sourceId: report.sourceId.startsWith('community-') ? 'community' : report.sourceId,
+      status: report.status,
+      reviewedCount: report.reviewedCount,
+      qualifiedCount: report.qualifiedCount,
+      ...(report.blocker ? { blocker: report.blocker } : {}),
+    },
+  };
 }
 
 function replayAttention(events, roundId = null) {
@@ -3271,11 +3342,8 @@ async function executeCommand([area, action, value], telemetry, session, communi
   else if (area === 'round' && action === 'leads') result = await leadHistory(value);
   else if (area === 'round' && action === 'source' && value === '--stdin') {
     result = await roundSource(await jsonStdin());
-    await emitDomainEvent(telemetry, session, { event: 'source_checked', properties: {
-      sourceId: result.sourceId.startsWith('community-') ? 'community' : result.sourceId,
-      status: result.status, reviewedCount: result.reviewedCount, qualifiedCount: result.qualifiedCount,
-      ...(result.blocker ? { blocker: result.blocker } : {}),
-    } });
+    const reports = result.sourceCount != null && Array.isArray(result.results) ? result.results : [result];
+    for (const report of reports) await emitDomainEvent(telemetry, session, sourceCheckedTelemetry(report));
   }
   else if (area === 'round' && action === 'status') result = await roundStatus(value ?? null);
   else if (area === 'round' && action === 'confirm' && value === '--stdin') result = await roundConfirm(await jsonStdin());
