@@ -8,10 +8,11 @@ import * as Sentry from "@sentry/cloudflare";
 import {
   SITE_SENTRY_SERVICE,
   resolveSentryEnvironment,
+  shouldReportSiteSentryForUrl,
   siteSentryOptions,
 } from "./sentry-options.mjs";
 
-export { SITE_SENTRY_SERVICE, resolveSentryEnvironment, siteSentryOptions };
+export { SITE_SENTRY_SERVICE, resolveSentryEnvironment, shouldReportSiteSentryForUrl, siteSentryOptions };
 
 /**
  * Report a swallowed route error (e.g. checkout catch → 502).
@@ -30,6 +31,7 @@ export function captureRouteError(error, context) {
 /**
  * Report API responses that returned 5xx without an unhandled throw.
  * Skips when an event was already captured for this request (e.g. captureRouteError).
+ * Skips Cloudflare version-preview hosts; those share production bindings and must not page.
  * @param {Request} request
  * @param {Response} response
  */
@@ -37,6 +39,7 @@ export function captureApiServerError(request, response) {
   if (response.status < 500) return;
   const url = new URL(request.url);
   if (!url.pathname.startsWith("/api/")) return;
+  if (!shouldReportSiteSentryForUrl(url.href)) return;
   if (Sentry.lastEventId()) return;
 
   Sentry.withScope((scope) => {
