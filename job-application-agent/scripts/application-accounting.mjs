@@ -5,6 +5,11 @@ export const ACCOUNTING_CAPABILITY = 'application-accounting-v1';
 export const DISPOSITIONS = Object.freeze(['qualified', 'duplicate', 'no-relevant-opening', 'location-authorization-conflict', 'compensation-below-floor', 'seniority-mismatch', 'insufficient-must-have-coverage', 'closed-stale', 'blocked']);
 const DELIVERY_TYPES = ['receipt-confirmed', 'delivery-failed', 'correction', 'retry-confirmed'];
 const EVIDENCE_TYPES = ['employer-acknowledgement', 'final-delivery-failure', 'browser-confirmation', 'sent-email', 'ambiguous', 'delivery-delay'];
+const CORRECTION_STATUSES = ['receipt-confirmed', 'delivery-failed', 'unknown'];
+const DISCOVERY_EVENT_TYPES = ['lead-reviewed'];
+function invalidChoice(sentence, values) {
+  return new Error(`${sentence} Allowed: ${values.join(', ')}.`);
+}
 function required(value, name, max = 300) {
   if (typeof value !== 'string' || !value.trim() || value.length > max) throw new Error(`${name} must be nonempty text (maximum ${max}).`);
   return value;
@@ -50,13 +55,13 @@ export function validateDelivery(input) {
   const v = { ...input, version: 1 };
   if (input.version != null && input.version !== 1) throw new Error('Unsupported delivery version.');
   for (const name of ['applicationId','attemptId']) required(v[name], name);
-  if (!DELIVERY_TYPES.includes(v.type)) throw new Error('Invalid delivery type.');
-  if (!EVIDENCE_TYPES.includes(v.evidenceType)) throw new Error('Invalid evidenceType.');
+  if (!DELIVERY_TYPES.includes(v.type)) throw invalidChoice('Invalid delivery type.', DELIVERY_TYPES);
+  if (!EVIDENCE_TYPES.includes(v.evidenceType)) throw invalidChoice('Invalid evidenceType.', EVIDENCE_TYPES);
   required(v.evidence, 'evidence', 2000);
   v.occurredAt = date(v.occurredAt, 'occurredAt');
   if (v.messageRef != null) required(v.messageRef, 'messageRef', 500);
   if (v.type === 'correction') {
-    if (!['receipt-confirmed','delivery-failed','unknown'].includes(v.status)) throw new Error('Invalid correction status.');
+    if (!CORRECTION_STATUSES.includes(v.status)) throw invalidChoice('Invalid correction status.', CORRECTION_STATUSES);
     const refs = Array.isArray(v.supersedes) ? v.supersedes : [v.supersedes];
     if (!refs.length || refs.length > 100) throw new Error('Correction requires superseded event IDs.');
     refs.forEach(ref => required(ref,'supersedes'));
@@ -181,11 +186,11 @@ export function validateDeliveryReferences(event, applications, events, { prepar
 export function validateLead(input) {
   object(input,['version','type','id','roundId','sourceId','url','company','role','employerJobId','disposition','observedAt','evidence','applicationId','supersedes']);
   if (input.version != null && input.version !== 1) throw new Error('Unsupported discovery version.');
-  if (input.type != null && input.type !== 'lead-reviewed') throw new Error('Invalid discovery event type.');
+  if (input.type != null && !DISCOVERY_EVENT_TYPES.includes(input.type)) throw invalidChoice('Invalid discovery event type.', DISCOVERY_EVENT_TYPES);
   const v = { ...input, version: 1, type: 'lead-reviewed', url: canonicalUrl(input.url) };
   for (const key of ['roundId','sourceId','company']) required(v[key],key);
   for (const key of ['role','employerJobId','applicationId']) if(v[key] != null) required(v[key],key);
-  if (!DISPOSITIONS.includes(v.disposition)) throw new Error('Invalid lead disposition.');
+  if (!DISPOSITIONS.includes(v.disposition)) throw invalidChoice('Invalid lead disposition.', DISPOSITIONS);
   v.observedAt = leadObservedAt(v.observedAt);
   required(v.evidence,'evidence',2000);
   if (v.supersedes != null) {

@@ -48,6 +48,12 @@ const WORK_MODES = new Set(['remote', 'hybrid', 'onsite', 'unspecified']);
 const JOB_SENIORITIES = new Set(['junior', 'mid', 'senior', 'staff', 'principal', 'lead', 'manager', 'director', 'founding', 'unspecified']);
 const ROLE_FAMILIES = new Set(['frontend', 'backend', 'full-stack', 'product-engineering', 'ai-ml', 'platform', 'infrastructure', 'mobile', 'engineering-management', 'architecture', 'security', 'data', 'other']);
 const MUST_HAVE_STATUS = new Set(['met', 'partial', 'missing', 'unclear']);
+
+function invalidChoice(sentence, values, extra = '') {
+  const suffix = extra ? ` ${extra}` : '';
+  return new Error(`${sentence} Allowed: ${[...values].join(', ')}.${suffix}`);
+}
+
 const INTERVIEW_QUALITIES = new Set(['promising', 'viable', 'weak', 'dead']);
 const FAILURE_POINTS = new Set(['role-scope', 'company-problem', 'constraints', 'interviewer', 'process', 'unknown']);
 const APPROVALS = new Set(['APPROVE SUBMIT', 'STANDING AUTHORIZATION']);
@@ -204,9 +210,17 @@ export function commandCategory([area, action]) {
   return 'other';
 }
 
+// Closed-enum errors append " Allowed: a, b, c." so the caller can correct the value.
+// That catalog can contain words ("duplicate", "profile_one_click", "cloud") that would
+// otherwise change skill_error category, code or stage. Classification ignores the catalog
+// and still sees a later assessment-guard suffix, which is appended after it.
+function messageForErrorClass(message) {
+  return String(message).replace(/ Allowed:[\s\S]*?(?= Assessment guard:|$)/, '');
+}
+
 function telemetryStage(command, error) {
   if (isAssessmentGuardStop(error)) return 'assessment';
-  const message = String(error?.message ?? '');
+  const message = messageForErrorClass(error?.message ?? '');
   if (/^Usage:/i.test(message)) return 'application';
   if (/cloud|lease|intent/i.test(message)) return 'application';
   return ({
@@ -229,7 +243,7 @@ function telemetryStage(command, error) {
 
 export function telemetryErrorCategory(error) {
   if (typeof error?.telemetryErrorCategory === 'string') return error.telemetryErrorCategory;
-  const message = String(error?.message ?? '');
+  const message = messageForErrorClass(error?.message ?? '');
   if (/^Usage:/i.test(message)) return 'usage';
   if (/keychain|keyring|secret service|secret-tool|credential manager|dpapi|authentication|login|lease/i.test(message)) return 'auth';
   // Resume/PDF upload before generic http/network (export errors often include "HTTP").
@@ -244,7 +258,7 @@ export function telemetryErrorCategory(error) {
 
 export function telemetryErrorCode(error) {
   if (typeof error?.telemetryErrorCode === 'string') return error.telemetryErrorCode;
-  const message = String(error?.message ?? '');
+  const message = messageForErrorClass(error?.message ?? '');
   if (/^Usage:/i.test(message)) return 'invalid_input';
   if (/keychain|keyring|secret service|secret-tool|credential manager|dpapi|authentication|login/i.test(message)) return 'authentication_required';
   if (/No local cloud lease|lease is recorded|live lease/i.test(message)) return 'authentication_required';
@@ -1030,14 +1044,14 @@ export function scoreJob(input, target) {
   const seniority = string(job.seniority ?? 'unspecified', 'job.seniority', 40).toLowerCase();
   const roleFamily = string(job.roleFamily ?? 'other', 'job.roleFamily', 80).toLowerCase();
   const workMode = string(job.workMode ?? (job.remote === true ? 'remote' : 'unspecified'), 'job.workMode', 40).toLowerCase();
-  if (!SOURCES.has(source)) throw new Error('job.source is invalid.');
-  if (discoverySource != null && !DISCOVERY_SOURCES.has(discoverySource)) throw new Error('job.discoverySource is invalid.');
-  if (applicationChannel != null && !APPLICATION_CHANNELS.has(applicationChannel)) throw new Error('job.applicationChannel is invalid.');
+  if (!SOURCES.has(source)) throw invalidChoice('job.source is invalid.', SOURCES);
+  if (discoverySource != null && !DISCOVERY_SOURCES.has(discoverySource)) throw invalidChoice('job.discoverySource is invalid.', DISCOVERY_SOURCES);
+  if (applicationChannel != null && !APPLICATION_CHANNELS.has(applicationChannel)) throw invalidChoice('job.applicationChannel is invalid.', APPLICATION_CHANNELS);
   if (!ELIGIBILITY.has(eligibility)) throw new Error('job.eligibility must be eligible, unclear, or ineligible.');
   if (!POSTING_STATUS.has(postingStatus)) throw new Error('job.postingStatus must be active, closed, or unclear.');
-  if (!JOB_SENIORITIES.has(seniority)) throw new Error('job.seniority is invalid.');
-  if (!ROLE_FAMILIES.has(roleFamily)) throw new Error('job.roleFamily is invalid.');
-  if (!WORK_MODES.has(workMode)) throw new Error('job.workMode is invalid.');
+  if (!JOB_SENIORITIES.has(seniority)) throw invalidChoice('job.seniority is invalid.', JOB_SENIORITIES);
+  if (!ROLE_FAMILIES.has(roleFamily)) throw invalidChoice('job.roleFamily is invalid.', ROLE_FAMILIES, 'Omit job.roleFamily to use "other".');
+  if (!WORK_MODES.has(workMode)) throw invalidChoice('job.workMode is invalid.', WORK_MODES);
 
   const gates = [];
   const result = (decision, score, reasons, gaps, mustHaveCoverage = null, autoEligible = false) => ({ score, decision, autoEligible, mustHaveCoverage, gates, reasons, gaps });
@@ -1104,7 +1118,7 @@ export function scoreJob(input, target) {
   const mustHaves = job.mustHaves.map((item, index) => {
     const requirement = string(object(item, `job.mustHaves[${index}]`).requirement, `job.mustHaves[${index}].requirement`, 500);
     const status = string(item.status, `job.mustHaves[${index}].status`, 40).toLowerCase();
-    if (!MUST_HAVE_STATUS.has(status)) throw new Error(`job.mustHaves[${index}].status is invalid.`);
+    if (!MUST_HAVE_STATUS.has(status)) throw invalidChoice(`job.mustHaves[${index}].status is invalid.`, MUST_HAVE_STATUS);
     if (item.evidence != null) string(item.evidence, `job.mustHaves[${index}].evidence`, 2000);
     return { requirement, status };
   });

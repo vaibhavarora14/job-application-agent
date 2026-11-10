@@ -54,6 +54,11 @@ test('usage errors are area specific, keep the reason within the analytics bound
   // The fallback no longer looks like a cloud error for other areas.
   assert.doesNotMatch(usageError(['ledger', 'nope']).message, /cloud status/);
   assert.deepEqual(Object.keys(usageFor().usage).length, Object.keys(COMMAND_USAGE).length);
+  assert.match(usageFor('score').note, /roleFamily/);
+  assert.match(usageFor('score').note, /defaults to other/);
+  assert.match(usageFor('round').note, /disposition/);
+  assert.match(usageFor('round').note, /ACCOUNTING\.md/);
+  assert.equal(usageFor('ledger').note, undefined);
 });
 
 test('help and version exit 0 without touching state; usage errors stay nonzero', async (t) => {
