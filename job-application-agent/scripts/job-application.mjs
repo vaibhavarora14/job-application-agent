@@ -1420,9 +1420,15 @@ export function buildReview(entries, outcomeEntries = [], acknowledgements = [],
   const matureCanonicalOutcomes = [];
   const canonicalInterviewDetails = [];
   for (const [groupKey, group] of groups) {
-    const candidates = explicitOutcomes
-      ? group.flatMap((entry) => outcomesById.get(entry.id) ?? [])
-      : group.filter((entry) => ['interview', 'rejected', 'offer', 'withdrawn'].includes(entry.status));
+    // Tracker statuses (`response`, `closed`) are not review outcomes. They must not become the
+    // latest outcome, and they must not turn the outcome file on in a way that drops legacy
+    // row statuses (`interview` / `rejected` / `offer` / `withdrawn`) for applications that
+    // have no countable outcome record.
+    const isReviewOutcome = (entry) => ['interview', 'rejected', 'offer', 'withdrawn'].includes(entry.status);
+    const fileOutcomes = explicitOutcomes ? group.flatMap((entry) => outcomesById.get(entry.id) ?? []) : [];
+    const countableFile = fileOutcomes.filter(isReviewOutcome);
+    const legacyRows = group.filter(isReviewOutcome);
+    const candidates = explicitOutcomes ? (countableFile.length ? countableFile : legacyRows) : legacyRows;
     if (candidates.length) {
       const ordered = [...candidates].sort((a, b) => (Date.parse(b.occurredAt ?? 0) || 0) - (Date.parse(a.occurredAt ?? 0) || 0));
       const latest = ordered[0];
@@ -2214,7 +2220,7 @@ function duplicateMatchWhy(duplicate) {
 
 // Drop ANSI/OSC sequences and other terminal controls before role or company text is printed
 // or attached to an attention item. A posting title must not rewrite the terminal.
-function terminalPlain(value) {
+export function terminalPlain(value) {
   if (typeof value !== 'string') return '';
   const withoutSequences = value
     .replace(/\u001B\][\s\S]*?(?:\u0007|\u001B\\)/g, '')
@@ -3148,12 +3154,181 @@ async function frictionList() {
   return { count: items.length, items, prCandidates: items.filter((item) => item.qualifiesForPr) };
 }
 
+// Tracker statuses are a local view over ledger rows plus outcomes. They are not telemetry values.
+export const TRACKER_STATUSES = Object.freeze(['drafted', 'submitted', 'confirmed', 'response', 'closed']);
+const FLAG_OUTCOME_STATUSES = Object.freeze(['response', 'rejected', 'interview', 'offer', 'closed']);
+const STORED_OUTCOME_STATUSES = new Set(['interview', 'rejected', 'offer', 'withdrawn', 'response', 'closed']);
+const RESPONSE_OUTCOMES = new Set(['response', 'rejected', 'interview', 'offer']);
+const CLOSED_OUTCOMES = new Set(['closed', 'withdrawn']);
+// outcome_recorded still only accepts the original four. New tracker statuses stay on disk.
+const TELEMETRY_OUTCOME_STATUSES = new Set(['interview', 'rejected', 'offer', 'withdrawn']);
+
+function latestOutcomeFor(entry, outcomes) {
+  let best = null;
+  let bestTime = -Infinity;
+  let bestIndex = -1;
+  outcomes.forEach((outcome, index) => {
+    if (!outcome || outcome.id !== entry?.id || typeof outcome.status !== 'string') return;
+    const parsed = Date.parse(outcome.occurredAt);
+    const time = Number.isNaN(parsed) ? -Infinity : parsed;
+    if (time > bestTime || (time === bestTime && index > bestIndex)) {
+      best = outcome;
+      bestTime = time;
+      bestIndex = index;
+    }
+  });
+  return best;
+}
+
+export function trackerStatusFor(entry, outcomes = [], delivery = null) {
+  const latest = latestOutcomeFor(entry, outcomes);
+  if (latest && CLOSED_OUTCOMES.has(latest.status)) return 'closed';
+  if (latest && RESPONSE_OUTCOMES.has(latest.status)) return 'response';
+  if (String(entry?.status ?? '').toLowerCase() === 'drafted') return 'drafted';
+  // A verified final failure is not an in-flight submission. `submitted` means receipt still unknown.
+  if (delivery?.failed && !delivery.conflict) return 'closed';
+  if (delivery && delivery.counted && !delivery.receiptUnknown && !delivery.failed && !delivery.conflict) return 'confirmed';
+  return 'submitted';
+}
+
+function trackerDate(entry, outcomes) {
+  const latest = latestOutcomeFor(entry, outcomes);
+  const fromOutcome = latest && (CLOSED_OUTCOMES.has(latest.status) || RESPONSE_OUTCOMES.has(latest.status));
+  const raw = fromOutcome ? latest.occurredAt : entry?.submittedAt;
+  const parsed = Date.parse(raw);
+  return Number.isNaN(parsed) ? terminalPlain(raw ?? '') : new Date(parsed).toISOString();
+}
+
+function ledgerTrackerRows(applications, outcomes, deliveryEvents) {
+  const delivery = deliveryProjection(applications, deliveryEvents);
+  return applications.map((entry, index) => ({
+    id: terminalPlain(entry.id ?? ''),
+    company: terminalPlain(entry.company ?? ''),
+    role: terminalPlain(entry.role ?? ''),
+    status: trackerStatusFor(entry, outcomes, delivery.applications[index]),
+    date: trackerDate(entry, outcomes),
+    url: terminalPlain(entry.url ?? ''),
+  })).sort((left, right) => (Date.parse(right.date) || 0) - (Date.parse(left.date) || 0) || left.id.localeCompare(right.id));
+}
+
+export function formatLedgerList(result) {
+  if (!result.entries.length) return '';
+  return `${result.entries.map((row) => [row.status, row.date, row.company, row.role, row.id].join('\t')).join('\n')}\n`;
+}
+
+function readOption(args, index) {
+  const arg = args[index];
+  const equal = arg.indexOf('=');
+  if (equal !== -1) return { name: arg.slice(0, equal), value: arg.slice(equal + 1), next: index + 1 };
+  const value = args[index + 1];
+  if (value == null || value.startsWith('--')) throw new Error(`Usage (ledger, missing ${arg}).`);
+  return { name: arg, value, next: index + 2 };
+}
+
+function parseLedgerListArgs(args) {
+  let status = null;
+  let company = null;
+  for (let index = 2; index < args.length;) {
+    const arg = args[index];
+    if (arg === '--json') { index += 1; continue; }
+    if (arg === '--status' || arg.startsWith('--status=')) {
+      const read = readOption(args, index);
+      if (status) throw usageError(['ledger', 'list']);
+      status = read.value.trim().toLowerCase();
+      if (!TRACKER_STATUSES.includes(status)) throw new Error('Invalid tracker status. Allowed: drafted, submitted, confirmed, response, closed.');
+      index = read.next;
+      continue;
+    }
+    if (arg === '--company' || arg.startsWith('--company=')) {
+      const read = readOption(args, index);
+      if (company) throw usageError(['ledger', 'list']);
+      company = read.value.trim();
+      if (!company) throw new Error('Usage (ledger list, missing --company): ledger list [--status <status>] [--company <name>] [--json]');
+      index = read.next;
+      continue;
+    }
+    throw usageError(['ledger', 'list', arg]);
+  }
+  return { status, company };
+}
+
+function parseLedgerOutcomeFlags(args) {
+  let target = null;
+  let status = null;
+  let note = null;
+  for (let index = 2; index < args.length;) {
+    const arg = args[index];
+    if (arg === '--status' || arg.startsWith('--status=')) {
+      const read = readOption(args, index);
+      if (status) throw usageError(['ledger', 'outcome', '--status']);
+      status = read.value.trim().toLowerCase();
+      index = read.next;
+      continue;
+    }
+    if (arg === '--note' || arg.startsWith('--note=')) {
+      const read = readOption(args, index);
+      if (note != null) throw usageError(['ledger', 'outcome', '--note']);
+      note = read.value;
+      index = read.next;
+      continue;
+    }
+    if (arg.startsWith('--')) throw usageError(['ledger', 'outcome', arg]);
+    if (target) throw usageError(['ledger', 'outcome']);
+    target = arg;
+    index += 1;
+  }
+  if (!target) throw new Error('Usage (ledger outcome, missing application): ledger outcome <application-id-or-url> --status response|rejected|interview|offer|closed [--note <text>]');
+  if (!status) throw new Error('Usage (ledger outcome, missing --status): ledger outcome <application-id-or-url> --status response|rejected|interview|offer|closed [--note <text>]');
+  if (!FLAG_OUTCOME_STATUSES.includes(status)) throw new Error('Invalid outcome status. Allowed: response, rejected, interview, offer, closed.');
+  return { target, status, note };
+}
+
+function outcomeTargetUrl(value) {
+  try {
+    const url = new URL(value);
+    return url.protocol === 'http:' || url.protocol === 'https:';
+  } catch {
+    return false;
+  }
+}
+
+async function applicationForOutcomeTarget(target) {
+  const entries = await jsonLines(join(await ensureStateDir(), 'applications.ndjson'));
+  if (outcomeTargetUrl(target)) {
+    let normalized = null;
+    try { normalized = normalizeUrl(target); } catch { normalized = null; }
+    const matches = normalized ? entries.filter((entry) => {
+      try { return normalizeUrl(entry.url) === normalized; } catch { return false; }
+    }) : [];
+    if (matches.length > 1) throw new Error('That URL matches more than one ledger entry. Pass the application id from ledger list.');
+    if (matches.length === 1) return matches[0];
+    throw new Error('No ledger entry matches that application id or URL.');
+  }
+  const match = entries.find((entry) => entry.id === target);
+  if (!match) throw new Error('No ledger entry matches that application id or URL.');
+  return match;
+}
+
+async function ledgerList(filters) {
+  const dir = await ensureStateDir();
+  const applications = await jsonLines(join(dir, 'applications.ndjson'));
+  const outcomes = await jsonLines(join(dir, 'outcomes.ndjson'));
+  const rows = ledgerTrackerRows(applications, outcomes, await jsonLines(join(dir, 'delivery.ndjson')));
+  const company = filters.company?.toLowerCase() ?? null;
+  const entries = rows.filter((row) => {
+    if (filters.status && row.status !== filters.status) return false;
+    if (company && !row.company.toLowerCase().includes(company)) return false;
+    return true;
+  });
+  return { count: entries.length, entries };
+}
+
 async function ledgerOutcome(outcomeInput) {
   const input = object(outcomeInput, 'outcome');
   const allowed = new Set(['id', 'status', 'occurredAt', 'note', 'reasons', 'interviewQuality', 'failurePoint']);
   for (const key of Object.keys(input)) if (!allowed.has(key)) throw new Error(`Unknown outcome property: ${key}.`);
   const status = string(input.status, 'outcome.status', 40).toLowerCase();
-  if (!['interview', 'rejected', 'offer', 'withdrawn'].includes(status)) throw new Error('Invalid outcome status.');
+  if (!STORED_OUTCOME_STATUSES.has(status)) throw new Error('Invalid outcome status.');
   const occurredAt = string(input.occurredAt ?? new Date().toISOString(), 'outcome.occurredAt', 80);
   if (Number.isNaN(Date.parse(occurredAt))) throw new Error('outcome.occurredAt must be an ISO date.');
   const reasonCategories = new Set(['eligibility', 'closed-stale', 'level-compensation', 'must-have-gap', 'generic-resume-screen', 'interview-stage', 'unknown']);
@@ -3171,9 +3346,10 @@ async function ledgerOutcome(outcomeInput) {
   const failurePoint = input.failurePoint == null ? null : string(input.failurePoint, 'outcome.failurePoint', 40).toLowerCase();
   if (failurePoint != null && !FAILURE_POINTS.has(failurePoint)) throw new Error('outcome.failurePoint is invalid.');
   if (failurePoint != null && interviewQuality == null) throw new Error('outcome.failurePoint requires outcome.interviewQuality.');
+  const note = typeof input.note === 'string' ? terminalPlain(input.note).slice(0, 2000) : '';
   const event = {
     id: string(input.id, 'outcome.id', 180), status, occurredAt,
-    ...(typeof input.note === 'string' ? { note: input.note.slice(0, 2000) } : {}),
+    ...(note ? { note } : {}),
     ...(reasons.length ? { reasons } : {}),
     ...(interviewQuality ? { interviewQuality } : {}),
     ...(failurePoint ? { failurePoint } : {}),
@@ -3351,7 +3527,8 @@ async function emitDomainEvent(telemetry, session, event) {
   await telemetry.record(event, session);
 }
 
-async function executeCommand([area, action, value], telemetry, session, community) {
+async function executeCommand(argv, telemetry, session, community) {
+  const [area, action, value] = argv;
   let result;
   if (area === 'cloud') result = await cloudCommand(action, value);
   else if (area === 'profile' && action === 'set' && value === '--stdin') {
@@ -3485,9 +3662,17 @@ async function executeCommand([area, action, value], telemetry, session, communi
   } else if (area === 'ledger' && action === 'outcome' && value === '--stdin') {
     const outcome = await ledgerOutcome(await jsonStdin());
     result = outcome.result;
-    if (outcome.result.recorded && !outcome.result.enriched) {
+    if (outcome.result.recorded && !outcome.result.enriched && TELEMETRY_OUTCOME_STATUSES.has(outcome.event.status)) {
       await emitDomainEvent(telemetry, session, await outcomeTelemetry(outcome.application, outcome.event));
     }
+  } else if (area === 'ledger' && action === 'outcome') {
+    const parsed = parseLedgerOutcomeFlags(argv);
+    const application = await applicationForOutcomeTarget(parsed.target);
+    const outcome = await ledgerOutcome({ id: application.id, status: parsed.status, occurredAt: new Date().toISOString(), ...(parsed.note != null ? { note: parsed.note } : {}) });
+    // The flag form stays local. outcome_recorded requires company and title, so it is not emitted here.
+    result = { ...outcome.result, occurredAt: outcome.event.occurredAt };
+  } else if (area === 'ledger' && action === 'list') {
+    result = await ledgerList(parseLedgerListArgs(argv));
   } else if (area === 'ledger' && action === 'review') {
     result = await ledgerReview();
     await emitDomainEvent(telemetry, session, reviewTelemetry(result));
@@ -3622,6 +3807,10 @@ async function main(rawArgs) {
     const result = await executeCommand(args, telemetry, session, community);
     if (!(area === 'sources' || (area === 'ledger' && action === 'add'))) await communityJobsSync(community).catch(() => null);
     await telemetry.record({ event: 'command_completed', properties: { command, result: 'success', durationBucket: durationBucket(Date.now() - started) } }, session);
+    if (area === 'ledger' && action === 'list' && !args.includes('--json')) {
+      process.stdout.write(formatLedgerList(result));
+      return;
+    }
     return print(result);
   } catch (error) {
     // Repeated guard refusals are not new information; report only the first one of each stop.

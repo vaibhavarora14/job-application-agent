@@ -125,7 +125,7 @@ You choose how applications are sent, and the agent asks you up front:
 - **`review-each`** (default): the agent fills each application on the employer's own page and stops before Submit. You look at the filled page in your browser, then say go in chat (or click Submit yourself).
 - **`routine-auto`** (auto-apply): when you ask for it, the agent auto-applies for you under an opt-in standing grant you can revoke any time. It still stops for sign-in, CAPTCHA and anything it can't verify.
 
-There is no separate review page or approval code (3.8.0 to 3.8.5 had one; it was removed in 3.8.6).
+There is no separate review page or approval code (3.8.0 to 3.8.5 had one; it was removed in 3.8.6). Track applications in the terminal with `ledger list` (status and date; `--status`, `--company`, `--json`) and log a reply with `ledger outcome <application-id-or-url> --status response|rejected|interview|offer|closed`. Both stay on this machine.
 
 For durable autonomy across resumable or scheduled runs:
 

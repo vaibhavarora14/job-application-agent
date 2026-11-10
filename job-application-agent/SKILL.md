@@ -104,6 +104,8 @@ For batches, scheduled work, or resumable handoffs, read [references/RUNS.md](re
 
 - Keep `applications.ndjson` and `outcomes.ndjson` append-only. Never delete or rewrite historical rows.
 - Record outcomes with `ledger outcome --stdin`. Use structured rejection reasons and mark each as `explicit` or `inferred`. Do not treat an inference as a candidate fact.
+- List the local tracker with `ledger list`. Each line is status, date, company, role, and id. Status is `drafted`, `submitted` (receipt still unknown), `confirmed` (a recorded browser or receipt-confirmed send), `response` (latest outcome `response`, `rejected`, `interview`, or `offer`), or `closed` (latest outcome `closed` or `withdrawn`, or every delivery attempt failed). `response` and `closed` do not replace `interview`, `rejected`, `offer`, or `withdrawn` in `ledger review`, and they block a linked outreach handoff. Filter with `--status` and `--company`. Add `--json` for JSON. There is no review page.
+- Log one outcome with `ledger outcome <application-id-or-url> --status response|rejected|interview|offer|closed [--note "text"]`. It appends a local row with a timestamp. Keep using `--stdin` for reasons and interview quality. Do not send company, role, notes, or URLs in telemetry.
 - Run `ledger check` and `ledger outcome` as two separate CLI processes. Do not combine them in one invocation. When mail has company and role but no URL or id, look up the row with `ledger check` first; that hit is only a possible duplicate and includes the stored URL and id. Then pass the returned `match.id` to `ledger outcome`. If `match.id` is absent, stop and ask; do not guess among fuzzy company+role hits.
 - After an interview, optionally record `interviewQuality` (`promising`, `viable`, `weak`, or `dead`) and a bounded `failurePoint`. Keep free-form interview notes private.
 - Rely on idempotent outcome recording; identical events do not append rows or emit duplicate telemetry.
@@ -116,7 +118,7 @@ For batches, scheduled work, or resumable handoffs, read [references/RUNS.md](re
 
 ## Commands
 
-Run commands exactly as listed: `<area> <action>`, no extra flags. `--stdin` commands read one JSON value piped on standard input. `round lead`, `round source`, and `ledger check` accept one JSON array (`echo '[{...},{...}]' | node scripts/job-application.mjs round lead --stdin`) as well as one JSON object. If unsure, run `node scripts/job-application.mjs help` or `node scripts/job-application.mjs <area> help` instead of guessing; these print usage and are not recorded as errors.
+Run commands exactly as listed. `--stdin` commands read one JSON value piped on standard input (`echo '{...}' | node scripts/job-application.mjs round lead --stdin`). `round lead`, `round source`, and `ledger check` accept one JSON array as well as one JSON object. `ledger list` and `ledger outcome <application-id-or-url>` take the flags shown below. If unsure, run `node scripts/job-application.mjs help` or `node scripts/job-application.mjs <area> help` instead of guessing; these print usage and are not recorded as errors.
 
 ```text
 node scripts/job-application.mjs updates check
@@ -140,6 +142,8 @@ node scripts/job-application.mjs round leads [round-id]
 node scripts/job-application.mjs ledger check --stdin
 node scripts/job-application.mjs ledger add --stdin
 node scripts/job-application.mjs ledger outcome --stdin
+node scripts/job-application.mjs ledger outcome <application-id-or-url> --status response|rejected|interview|offer|closed [--note <text>]
+node scripts/job-application.mjs ledger list [--status drafted|submitted|confirmed|response|closed] [--company <name>] [--json]
 node scripts/job-application.mjs ledger review
 node scripts/job-application.mjs ledger review-ack --stdin
 node scripts/job-application.mjs autonomy grant --stdin

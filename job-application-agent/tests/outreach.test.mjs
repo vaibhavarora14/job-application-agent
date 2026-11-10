@@ -175,4 +175,6 @@ test('handoff retries recheck current linked application outcomes', () => {
   const input = handoff({ qualificationRevision: 2, draftRevision: 2 });
   state = mutateOutreach(state, 'handoff', input, context).state;
   assert.throws(() => mutateOutreach(state, 'handoff', input, { ...context, outcomes: [{ id: 'app-1', status: 'rejected' }] }), /hiring outcome/);
+  assert.throws(() => mutateOutreach(state, 'handoff', input, { ...context, outcomes: [{ id: 'app-1', status: 'response' }] }), /hiring outcome/);
+  assert.throws(() => mutateOutreach(state, 'handoff', input, { ...context, outcomes: [{ id: 'app-1', status: 'closed' }] }), /hiring outcome/);
 });
