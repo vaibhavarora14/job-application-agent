@@ -230,7 +230,7 @@ Use only documented stage/ATS values and a stable kebab-case code. Never include
 }
 ```
 
-Allowed outcomes: `interview`, `rejected`, `offer`, `withdrawn`.
+Allowed outcomes: `interview`, `rejected`, `offer`, `withdrawn`. `ledger outcome <application-id-or-url> --status response|rejected|interview|offer|closed [--note text]` also stores `response` and `closed` in the same local file, with `occurredAt` set to now. Those two statuses are for `ledger list` only and are not telemetry outcome values. `ledger list` reads the local ledger (optional `--status`, `--company`, and `--json`) and does not add an analytics event.
 
 Optional interview quality values: `promising`, `viable`, `weak`, `dead`. Optional failure points: `role-scope`, `company-problem`, `constraints`, `interviewer`, `process`, `unknown`. A failure point requires an interview quality. Free-form notes remain private and are never included in telemetry.
 

@@ -7,7 +7,7 @@ export const COMMAND_USAGE = Object.freeze({
   profile: 'profile set --stdin | migrate --stdin | check | field <name>',
   resume: 'resume import <google-doc-url-or-local-pdf> | path',
   score: 'score --stdin | guard | guard-reset',
-  ledger: 'ledger check|add|outcome|review-ack|delivery|retry --stdin | review | deliveries [application-id]',
+  ledger: 'ledger check|add|outcome|review-ack|delivery|retry --stdin | outcome <application-id-or-url> --status <status> [--note <text>] | list [--status <status>] [--company <name>] [--json] | review | deliveries [application-id]',
   autonomy: 'autonomy grant --stdin | status | preview | revoke',
   review: 'review <any> (removed in 3.8.6: a no-op that explains batch review is gone)',
   round: 'round start|lead|source|confirm|complete --stdin | status [round-id] | leads [round-id]',
@@ -41,7 +41,8 @@ const KNOWN_ACTIONS = new Set(Object.values(COMMAND_USAGE)
 
 const HELP = new Set(['help', '--help', '-h']);
 const VERSION = new Set(['version', '--version', '-v']);
-// Output is always JSON already; these flags are harmless no-ops agents often add.
+// Most commands already print JSON, so agents' extra `--json` / `--pretty` flags are no-ops.
+// `ledger list` is the exception: plain text unless `--json` is present, so that flag is kept.
 const NO_OP_FLAGS = new Set(['--json', '--pretty']);
 const ACTION_ALIASES = Object.freeze({
   profile: { show: 'check', status: 'check', get: 'field' },
@@ -71,7 +72,8 @@ function parseInlineJson(value) {
  * - small aliases such as `profile show` → `profile check`, `profile get <name>` → `profile field <name>`.
  */
 export function normalizeCliArgs(input) {
-  let args = [...input].filter((arg) => !NO_OP_FLAGS.has(arg));
+  const keepListJson = input[0] === 'ledger' && input[1] === 'list';
+  let args = [...input].filter((arg) => (arg === '--json' && keepListJson) || !NO_OP_FLAGS.has(arg));
   if (args.length === 0 || HELP.has(args[0])) return { args, help: args[1] && KNOWN_AREAS.includes(args[1]) ? args[1] : true };
   if (VERSION.has(args[0])) return { args, version: true };
   if (KNOWN_AREAS.includes(args[0]) && args.slice(1).some((arg) => HELP.has(arg))) return { args, help: args[0] };
@@ -126,7 +128,10 @@ export function usageError(args) {
   const knownAction = action && KNOWN_ACTIONS.has(action) ? action : null;
   let reason;
   let hint = '';
-  if (knownAction && STDIN_ACTIONS[area]?.includes(knownAction) && value !== '--stdin') {
+  if (area === 'ledger' && knownAction === 'outcome' && value !== '--stdin') {
+    reason = 'ledger outcome, missing --stdin or --status';
+    hint = ' Pipe one JSON object to --stdin, or pass an application id or URL with --status.';
+  } else if (knownAction && STDIN_ACTIONS[area]?.includes(knownAction) && value !== '--stdin') {
     reason = `${area} ${knownAction}, missing --stdin`;
     hint = ` Pipe one JSON object: echo '{...}' | node scripts/job-application.mjs ${area} ${knownAction} --stdin.`;
   } else if (knownAction) reason = `${area} ${knownAction}, unexpected arguments`;
