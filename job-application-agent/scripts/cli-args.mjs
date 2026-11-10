@@ -97,9 +97,17 @@ export function normalizeCliArgs(input) {
   return { args, ...(inlineJson !== undefined ? { inlineJson } : {}) };
 }
 
+const USAGE_NOTES = Object.freeze({
+  score: 'An unknown job.roleFamily, job.source, job.discoverySource, job.applicationChannel, job.seniority, job.workMode or must-have status is rejected with the allowed values. An omitted roleFamily defaults to other (references/SCHEMAS.md).',
+  round: 'An unknown lead disposition is rejected with the allowed values (references/ACCOUNTING.md).',
+});
+
 /** Usage text for `help` output: every area, or one area. */
 export function usageFor(area) {
-  if (area && Object.hasOwn(COMMAND_USAGE, area)) return { usage: [COMMAND_USAGE[area]] };
+  if (area && Object.hasOwn(COMMAND_USAGE, area)) {
+    const note = Object.hasOwn(USAGE_NOTES, area) ? USAGE_NOTES[area] : undefined;
+    return { usage: [COMMAND_USAGE[area]], ...(note ? { note } : {}) };
+  }
   return {
     usage: Object.values(COMMAND_USAGE),
     note: 'Run node scripts/job-application.mjs <area> help for one area. Commands marked --stdin read exactly one JSON object from standard input.',

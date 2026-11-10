@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { deliveryProjection, discoveryProjection } from '../scripts/application-accounting.mjs';
+import { deliveryProjection, discoveryProjection, validateDelivery, validateLead } from '../scripts/application-accounting.mjs';
 
 const occurredAt = '2026-09-13T10:00:00Z';
 
@@ -300,6 +300,18 @@ test('an identity correction cannot merge unrelated requisitions at the same com
   assert.equal(result.reviewedCount, 2);
   assert.equal(result.uniqueLeadCount, 2);
   assert.equal(result.conflicts.length, 0);
+});
+
+test('unknown lead and delivery enums name every allowed value (#255)', () => {
+  assert.throws(() => validateLead({ ...lead(), disposition: 'skipped' }), (error) => {
+    assert.equal(error.message, 'Invalid lead disposition. Allowed: qualified, duplicate, no-relevant-opening, location-authorization-conflict, compensation-below-floor, seniority-mismatch, insufficient-must-have-coverage, closed-stale, blocked.');
+    return true;
+  });
+  assert.throws(() => validateLead({ ...lead(), type: 'lead-skipped' }), /Invalid discovery event type\. Allowed: lead-reviewed\./);
+  const deliveryBase = { applicationId: 'application-1', attemptId: 'initial:application-1', occurredAt, evidence: 'Synthetic evidence.' };
+  assert.throws(() => validateDelivery({ ...deliveryBase, type: 'bounced', evidenceType: 'ambiguous' }), /Invalid delivery type\. Allowed: receipt-confirmed, delivery-failed, correction, retry-confirmed\./);
+  assert.throws(() => validateDelivery({ ...deliveryBase, type: 'delivery-failed', evidenceType: 'guessed-bounce' }), /Invalid evidenceType\. Allowed: employer-acknowledgement, final-delivery-failure, browser-confirmation, sent-email, ambiguous, delivery-delay\./);
+  assert.throws(() => validateDelivery({ ...deliveryBase, type: 'correction', evidenceType: 'ambiguous', status: 'maybe', supersedes: 'prior-event' }), /Invalid correction status\. Allowed: receipt-confirmed, delivery-failed, unknown\./);
 });
 
 test('forked identity enrichments remain one conflicted assessment in either order', () => {

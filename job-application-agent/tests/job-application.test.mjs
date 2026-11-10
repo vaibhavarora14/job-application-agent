@@ -34,6 +34,7 @@ import {
   telemetryApplicationSkipped,
   telemetryApplicationStarted,
   telemetryApplicationSubmitted,
+  skillErrorProperties,
   telemetryErrorCategory,
   telemetryErrorCode,
   telemetryJobAssessed,
@@ -43,6 +44,7 @@ import {
   validateProfile,
   validateSubmissionTelemetry,
 } from '../scripts/job-application.mjs';
+import { validateLead } from '../scripts/application-accounting.mjs';
 import { validateEvent } from '../scripts/telemetry-schema.mjs';
 
 const thinOverride = (note = 'Candidate confirmed in chat that this empty ATS accept is intentional') => ({
@@ -217,6 +219,55 @@ test('scores a matching role from candidate preferences', () => {
   assert.equal(result.mustHaveCoverage, 83);
   assert.ok(result.score >= 80);
   assert.equal(scoreJob({ ...matchingJob, discoverySourceId: 'community-abcdef1234567890' }, target).decision, 'review');
+});
+
+test('unknown score enums name every allowed value, and an omitted roleFamily still scores (#255)', () => {
+  const expectChoice = (overrides, message) => assert.throws(() => scoreJob({ ...matchingJob, ...overrides }, target), (error) => {
+    assert.equal(error.message, message);
+    return true;
+  });
+  expectChoice({ roleFamily: 'software-engineering' }, 'job.roleFamily is invalid. Allowed: frontend, backend, full-stack, product-engineering, ai-ml, platform, infrastructure, mobile, engineering-management, architecture, security, data, other. Omit job.roleFamily to use "other".');
+  expectChoice({ source: 'wellfound' }, 'job.source is invalid. Allowed: linkedin, greenhouse, lever, ashby, workable, comeet, workday, rippling, smartrecruiters, google-form, company, email, other.');
+  expectChoice({ discoverySource: 'recruiter' }, 'job.discoverySource is invalid. Allowed: direct-company, linkedin, x, yc, hacker-news, job-board, email, user-supplied, web-search, other.');
+  expectChoice({ applicationChannel: 'easy-apply' }, 'job.applicationChannel is invalid. Allowed: linkedin, greenhouse, lever, ashby, workable, comeet, workday, rippling, smartrecruiters, google-form, company, email, other, profile_one_click.');
+  expectChoice({ seniority: 'executive' }, 'job.seniority is invalid. Allowed: junior, mid, senior, staff, principal, lead, manager, director, founding, unspecified.');
+  expectChoice({ workMode: 'flexible' }, 'job.workMode is invalid. Allowed: remote, hybrid, onsite, unspecified.');
+  expectChoice({ mustHaves: [{ requirement: 'TypeScript', status: 'yes' }] }, 'job.mustHaves[0].status is invalid. Allowed: met, partial, missing, unclear.');
+  const omitted = scoreJob({ ...matchingJob, roleFamily: undefined }, target);
+  assert.equal(typeof omitted.decision, 'string');
+
+  const roleError = (() => { try { scoreJob({ ...matchingJob, roleFamily: 'software-engineering' }, target); } catch (error) { return error; } })();
+  const roleProps = skillErrorProperties(roleError, 'assess');
+  assert.equal(roleProps.errorCategory, 'validation');
+  assert.equal(roleProps.errorCode, 'invalid_input');
+  assert.equal(roleProps.stage, 'assessment');
+  assert.equal(roleProps.fieldLabel, 'job.roleFamily');
+  assert.deepEqual(Object.keys(roleProps).sort(), ['errorCategory', 'errorCode', 'fieldLabel', 'recoverable', 'sanitizedMessage', 'stage']);
+  roleError.message += ' Assessment guard: this job failed with invalid input 3 times and will not be submitted.';
+  const guarded = skillErrorProperties(roleError, 'assess');
+  assert.equal(guarded.errorCategory, 'submission');
+  assert.equal(guarded.errorCode, 'invalid_input');
+  assert.equal(guarded.stage, 'assessment');
+
+  const channelError = (() => { try { scoreJob({ ...matchingJob, applicationChannel: 'easy-apply' }, target); } catch (error) { return error; } })();
+  assert.equal(skillErrorProperties(channelError, 'assess').errorCategory, 'validation');
+  const catalog = new Error('job.roleFamily is invalid. Allowed: intent, cloud, lease, duplicate, profile_one_click.');
+  const catalogProps = skillErrorProperties(catalog, 'assess');
+  assert.equal(catalogProps.errorCategory, 'validation');
+  assert.equal(catalogProps.errorCode, 'invalid_input');
+  assert.equal(catalogProps.stage, 'assessment');
+  let dispositionError;
+  try {
+    validateLead({ version: 1, type: 'lead-reviewed', roundId: 'round-1', sourceId: 'direct', url: 'https://example.com/jobs/123', company: 'Example', disposition: 'skipped', evidence: 'Synthetic assessment.' });
+  } catch (error) { dispositionError = error; }
+  const dispositionProps = skillErrorProperties(dispositionError, 'round');
+  const previousDisposition = skillErrorProperties(new Error('Invalid lead disposition.'), 'round');
+  assert.equal(dispositionProps.errorCategory, previousDisposition.errorCategory);
+  assert.equal(dispositionProps.errorCode, previousDisposition.errorCode);
+  assert.equal(dispositionProps.stage, previousDisposition.stage);
+  assert.equal(dispositionProps.fieldLabel, previousDisposition.fieldLabel);
+  assert.equal(dispositionProps.errorCategory, 'validation');
+  assert.equal(dispositionProps.errorCode, 'invalid_input');
 });
 
 test('applies posting, eligibility, work-mode, seniority and evidence gates before auto-submit', () => {

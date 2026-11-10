@@ -77,7 +77,7 @@ Allowed sources: `linkedin`, `greenhouse`, `lever`, `ashby`, `workable`, `comeet
 
 `source` remains the backward-compatible application channel. New workflows should also supply `discoverySource` (`direct-company`, `linkedin`, `x`, `yc`, `hacker-news`, `job-board`, `email`, `user-supplied`, `web-search`, or `other`), the kebab-case `discoverySourceId` from [`SOURCES.json`](SOURCES.json) when known, and `applicationChannel` using the allowed `source` values.
 
-Allowed posting statuses: `active`, `closed`, `unclear`. Allowed eligibility: `eligible`, `unclear`, `ineligible`. Allowed seniority: `junior`, `mid`, `senior`, `staff`, `principal`, `lead`, `manager`, `director`, `founding`, `unspecified`. Allowed work modes: `remote`, `hybrid`, `onsite`, `unspecified`. Must-have statuses: `met`, `partial`, `missing`, `unclear`.
+Allowed posting statuses: `active`, `closed`, `unclear`. Allowed eligibility: `eligible`, `unclear`, `ineligible`. Allowed seniority: `junior`, `mid`, `senior`, `staff`, `principal`, `lead`, `manager`, `director`, `founding`, `unspecified`. Allowed work modes: `remote`, `hybrid`, `onsite`, `unspecified`. Allowed role families: `frontend`, `backend`, `full-stack`, `product-engineering`, `ai-ml`, `platform`, `infrastructure`, `mobile`, `engineering-management`, `architecture`, `security`, `data`, and `other`. An omitted `roleFamily` defaults to `other`. Must-have statuses: `met`, `partial`, `missing`, `unclear`.
 
 Assessment output retains `review`, `ask`, `skip`, and `exclude`, and adds `autoEligible`, `mustHaveCoverage`, and structured `gates`. `review` does not itself authorize submission.
 
