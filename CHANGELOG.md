@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- **CLI: possible same-company duplicates name the earlier role and pause routine-auto (#223).** `ledger add` still refuses a possible same-company role duplicate unless `duplicateOverride` is `NEW REQUISITION CONFIRMED` and `approval` is `APPROVE SUBMIT`. The error now names the earlier role and date (company and URL stay out; `ledger check` has them) after the 160 characters that `skill_error` keeps, says what proves a distinct requisition, and gives the next step. In `review-each`, fill the employer page and stop before Submit; there is no review page. In an unattended, `routine-auto` or `STANDING AUTHORIZATION` run the command pauses the job: it opens an attention item (blocker `judgment`, action `provide-judgment`) on the open round, or reuses one already open for that URL, and emits the existing `application_paused` event (`stage` `submission`, `reason` `candidate-judgment`). No new telemetry events or properties. Auto-apply stays opt-in.
+
 ## 3.8.6
 
 - **Batch review gate removed (owner decision, 5 Nov 2026).** Approval is again an explicit choice the candidate makes, as before 3.8.0. In `review-each` (the default) the agent fills the real application page on the employer's site, stops before Submit, and asks the candidate in chat; they look at the filled page in their own browser and confirm (or click Submit themselves). In `routine-auto` the candidate's standing permission (a `routine-auto` profile or autonomy grant) lets the agent submit routine applications with no approval step. There is no local review page, review batch or typed approval code any more.

@@ -2155,26 +2155,102 @@ async function ledgerCheck(candidate) {
 }
 
 // What to do about a possible same-company role duplicate (#223): why it matched, what proves a
-// distinct requisition, and the next step per mode. Role and date only; no company or URL.
-export function possibleDuplicateError(duplicate) {
-  // The earlier application's role and date stay out of this text: thrown errors feed
-  // skill_error telemetry, so the agent reads them with ledger check instead.
-  const why = duplicate?.reason === 'company-role' && !duplicate?.match
+// distinct requisition, and the next step per mode. The earlier role and date are appended at the
+// end, after the text skill_error keeps (160 characters), and company and URL stay out: the agent
+// compares those with ledger check. No personal data.
+const DISTINCT_REQUISITION = 'Only pass duplicateOverride "NEW REQUISITION CONFIRMED" when the posting shows a different requisition: a different employer job ID or requisition number (record it as employerJobId), or a different team, level or location that the earlier role did not have. A repost of the same role is a duplicate; do not apply. ';
+
+function duplicateMatchWhy(duplicate) {
+  return duplicate?.reason === 'company-role' && !duplicate?.match
     ? 'it matches more than one earlier application at this company'
     : 'it matches an earlier application at this company';
-  return new Error(
+}
+
+function earlierApplicationDetail(duplicate) {
+  const match = duplicate?.match;
+  if (!match || duplicate?.reason !== 'company-role') return '';
+  const role = typeof match.role === 'string' ? match.role.replace(/\s+/g, ' ').trim() : '';
+  const date = typeof match.submittedAt === 'string' ? /^(\d{4}-\d{2}-\d{2})/.exec(match.submittedAt)?.[1] : '';
+  if (!role || !date || role.length > 120 || /https?:|@|\bwww\./i.test(role)) return '';
+  return ` Earlier application: ${role} on ${date}.`;
+}
+
+function duplicateGuardError(message, duplicate) {
+  const earlierDetail = earlierApplicationDetail(duplicate);
+  const error = new Error(`${message}${earlierDetail}`);
+  error.earlierDetail = earlierDetail;
+  return error;
+}
+
+export function possibleDuplicateError(duplicate) {
+  const why = duplicateMatchWhy(duplicate);
+  return duplicateGuardError(
     `A possible same-company role duplicate requires NEW REQUISITION CONFIRMED: ${why} (run ledger check with this company and role to compare the earlier one). `
-    + 'Only pass duplicateOverride "NEW REQUISITION CONFIRMED" when the posting shows a different requisition: a different employer job ID or requisition number (record it as employerJobId), or a different team, level or location that the earlier role did not have. A repost of the same role is a duplicate; do not apply. '
-    + 'review-each: tell the candidate it may duplicate the earlier one and pass the phrase only after they explicitly approve this job in the conversation. '
-    + 'Unattended, routine-auto or STANDING AUTHORIZATION: never pass it on your own; queue the job with attention add (blocker "judgment") and continue with other jobs. It may be passed only after the candidate explicitly approves this job (then record it with approval "APPROVE SUBMIT").',
+    + DISTINCT_REQUISITION
+    + 'review-each: fill the employer application page, stop before Submit, tell the candidate it may duplicate the earlier one, and pass the phrase only after they approve this job in the conversation. Do not build a review page. '
+    + 'Unattended, routine-auto or STANDING AUTHORIZATION: do not submit and never pass the phrase on your own. This command pauses the job for the candidate (attention blocker "judgment"); continue with other jobs. Pass the phrase only after they review that filled page, stopped before Submit, and you record approval "APPROVE SUBMIT".',
+    duplicate,
   );
 }
 
-export function newRequisitionApprovalError() {
-  return new Error(
-    'NEW REQUISITION CONFIRMED needs the candidate\'s explicit approval of this job: tell them it may duplicate an earlier application, and record it with approval "APPROVE SUBMIT" only after they approve it in the conversation. '
-    + 'Unattended, routine-auto or STANDING AUTHORIZATION: never pass it on your own; queue the job with attention add (blocker "judgment") and continue with other jobs.',
+export function newRequisitionApprovalError(duplicate) {
+  return duplicateGuardError(
+    'NEW REQUISITION CONFIRMED needs the candidate\'s explicit approval of this job: tell them it may duplicate an earlier application, and record it with approval "APPROVE SUBMIT" only after they review the filled employer page, stopped before Submit, and approve it in the conversation. Do not build a review page. '
+    + 'Unattended, routine-auto or STANDING AUTHORIZATION: do not submit and never pass the phrase on your own. This command pauses the job (attention blocker "judgment"). Continue with other jobs.',
+    duplicate,
   );
+}
+
+function noteDuplicatePause(error, pause) {
+  error.duplicatePause = pause;
+  const detail = error.earlierDetail ?? '';
+  const base = detail && error.message.endsWith(detail) ? error.message.slice(0, -detail.length) : error.message;
+  const note = pause.attentionId
+    ? ` Paused this job (attention ${pause.attentionId}).`
+    : ' Paused this job locally; no open round, so no attention item was queued.';
+  error.message = `${base}${note}${detail}`;
+}
+
+async function latestOpenRoundId(dir) {
+  const events = await jsonLines(join(dir, 'rounds.ndjson'));
+  const completed = new Set(events.filter((event) => event.type === 'completed').map((event) => event.roundId));
+  return events.filter((event) => event.type === 'started' && event.roundId && !completed.has(event.roundId)).at(-1)?.roundId ?? null;
+}
+
+// Unattended / routine-auto / STANDING AUTHORIZATION: record the pause instead of leaving the
+// agent to remember attention add. Company and role are notify-only and are not stored.
+async function pauseUnattendedDuplicate(dir, entry) {
+  await recordReviewPaused({ url: entry.url, company: entry.company, title: entry.role });
+  const roundId = entry.roundId || await latestOpenRoundId(dir);
+  if (!roundId) return { attentionId: null, item: null };
+  const existing = replayAttention(await jsonLines(join(dir, 'attention.ndjson')))
+    .find((item) => item.blocker === 'judgment' && item.url === entry.url);
+  if (existing) return { attentionId: existing.id, item: null };
+  const event = await attentionAdd({
+    roundId,
+    applicationId: entry.id,
+    url: entry.url,
+    stage: 'submission',
+    blocker: 'judgment',
+    requiredActions: ['provide-judgment'],
+    company: entry.company,
+    role: entry.role,
+  });
+  return { attentionId: event.id, item: event, ats: entry.applicationChannel ?? entry.source };
+}
+
+async function refusePossibleDuplicate(dir, entry, error) {
+  if (!isPerJobApproval(entry)) {
+    try {
+      noteDuplicatePause(error, await pauseUnattendedDuplicate(dir, entry));
+    } catch {
+      // The duplicate refusal still stands when the pause itself fails.
+      const detail = error.earlierDetail ?? '';
+      const base = detail && error.message.endsWith(detail) ? error.message.slice(0, -detail.length) : error.message;
+      error.message = `${base} Pause failed; queue the job with attention add (blocker "judgment") and continue with other jobs.${detail}`;
+    }
+  }
+  throw error;
 }
 
 async function ledgerAdd(entryInput, duplicateOverride, companyReapplyOverride, cloudIntent = null, { routineAuto = false } = {}) {
@@ -2191,10 +2267,11 @@ async function ledgerAdd(entryInput, duplicateOverride, companyReapplyOverride, 
     }
     const duplicate = duplicateResult(entries, entry, outcomes);
     if (duplicate.duplicate) throw new Error(`Hard duplicate blocked: matching ${duplicate.reason === 'employer-job-id' ? 'employer job ID or requisition' : duplicate.reason === 'url' ? 'canonical URL' : 'ledger ID'}.`);
-    if (duplicate.possibleDuplicate && duplicateOverride !== 'NEW REQUISITION CONFIRMED') throw possibleDuplicateError(duplicate);
+    if (duplicate.possibleDuplicate && duplicateOverride !== 'NEW REQUISITION CONFIRMED') await refusePossibleDuplicate(dir, entry, possibleDuplicateError(duplicate));
     // #172 without batch review: the phrase stands only with the candidate's explicit approval of
     // this one job ("APPROVE SUBMIT"), never on a standing or unattended authorization.
-    if (duplicate.possibleDuplicate && !isPerJobApproval(entry)) throw newRequisitionApprovalError();
+    // #223: that unattended refusal pauses the job (attention blocker "judgment").
+    if (duplicate.possibleDuplicate && !isPerJobApproval(entry)) await refusePossibleDuplicate(dir, entry, newRequisitionApprovalError(duplicate));
     if (!duplicate.possibleDuplicate && duplicate.companyReapply.decision === 'cooldown-active' && companyReapplyOverride !== COMPANY_REAPPLY_OVERRIDE) {
       throw new Error(`Company reapplication cooldown is active for ${COMPANY_REAPPLY_COOLDOWN_DAYS} full days; use ${COMPANY_REAPPLY_OVERRIDE} only with explicit candidate approval.`);
     }
@@ -3205,7 +3282,15 @@ async function executeCommand([area, action, value], telemetry, session, communi
     });
     // reviewBatchId/reviewToken (3.8.0 to 3.8.5) are still accepted and ignored.
     const routineAuto = isLiveApply(entry.url) ? await isRoutineAutoSend(entry) : false;
-    result = await ledgerAdd(entry, input.duplicateOverride, input.companyReapplyOverride, input.cloudIntentId && input.cloudLeaseId ? { intentId: input.cloudIntentId, leaseId: input.cloudLeaseId } : null, { routineAuto });
+    try {
+      result = await ledgerAdd(entry, input.duplicateOverride, input.companyReapplyOverride, input.cloudIntentId && input.cloudLeaseId ? { intentId: input.cloudIntentId, leaseId: input.cloudLeaseId } : null, { routineAuto });
+    } catch (error) {
+      // Existing application_paused fields only (job hash, ATS, stage, reason). No new telemetry.
+      if (error?.duplicatePause?.item) {
+        await emitDomainEvent(telemetry, session, await telemetryApplicationPaused(error.duplicatePause.item, { ats: error.duplicatePause.ats }));
+      }
+      throw error;
+    }
     result.communityJob = await communityJobsSync(community, { limit: 1, applicationIds: [entry.id] });
     const fillTelemetryReview = telemetrySupplied ? await reviewRapidFireFillTelemetry(entry, input.telemetry) : null;
     if (fillTelemetryReview) result.fillTelemetryReview = fillTelemetryReview;
