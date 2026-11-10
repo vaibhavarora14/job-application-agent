@@ -33,6 +33,8 @@ const VIEW = { width: 800, height: 960 };
 const TYPE_DELAY_MS = 90;
 
 export const DEMO_CAPTION = 'Stopped before Submit';
+export const DEMO_META = 'Example Co · Remote · Example posting';
+export const CAPTION_HOLD_MS = 4000;
 export const DEMO_PROFILE = {
   first: 'Example',
   last: 'Person',
@@ -264,6 +266,11 @@ function assertDemoState(state, foreign) {
   if (state.href.includes('confirmation')) throw new Error('Submit was activated.');
   if (state.submitText !== 'Submit application') throw new Error('Submit button is not on the final frame.');
   if (state.linkedin !== '') throw new Error('LinkedIn was filled.');
+  if (state.badge !== '' || state.note !== '') throw new Error('Demo mode left prove copy on screen.');
+  if (state.meta !== DEMO_META) throw new Error('Demo subline was not the example posting.');
+  if (state.title !== 'Senior Software Engineer') throw new Error('Role title changed.');
+  if (state.cursorOnForm) throw new Error('Cursor still overlaps the form.');
+  if (CAPTION_HOLD_MS < 2000) throw new Error('Caption hold is under 2s.');
   const expected = {
     first: DEMO_PROFILE.first,
     last: DEMO_PROFILE.last,
@@ -328,7 +335,7 @@ async function record(browser, port, work, framesDir) {
     if (!isLocalFixtureRequest(url, port)) foreign.push(url);
   });
   try {
-    await page.goto(`${origin}fixtures/greenhouse/`, { waitUntil: 'load' });
+    await page.goto(`${origin}fixtures/greenhouse/?demo=1`, { waitUntil: 'load' });
     await page.addStyleTag({ content: DEMO_CSS });
     await fitFixture(page);
     const title = await page.locator('h1').boundingBox();
@@ -360,17 +367,16 @@ async function record(browser, port, work, framesDir) {
     await page.evaluate(() => {
       if (document.activeElement instanceof HTMLElement) document.activeElement.blur();
     });
-    const button = await page.locator('[data-testid="submit-application"]').boundingBox();
-    const resumeBox = await page.locator('#resume').boundingBox();
-    if (!button || !resumeBox) throw new Error('Resume field or Submit button is missing.');
-    const restX = resumeBox.x + 168;
-    const restY = resumeBox.y + resumeBox.height * 0.5;
-    if (restY > button.y - 24) throw new Error('Cursor rest would touch Submit.');
+    const form = await page.locator('#gh-apply').boundingBox();
+    if (!form) throw new Error('Form is missing.');
+    const restX = 12;
+    const restY = Math.round(form.y + 8);
+    if (restX + 22 >= form.x) throw new Error('Cursor rest would sit on the form.');
     await moveCursor(page, tape, restX, restY);
     const filled = await capture(page, tape, 1300);
     if (framesDir) await copyFile(filled, join(framesDir, 'filled-form.png'));
     await showCaption(page);
-    const stopped = await capture(page, tape, 4200);
+    const stopped = await capture(page, tape, CAPTION_HOLD_MS);
     if (framesDir) await copyFile(stopped, join(framesDir, 'stopped-before-submit.png'));
     const state = await page.evaluate(() => {
       const submit = document.querySelector('[data-testid="submit-application"]');
@@ -387,6 +393,15 @@ async function record(browser, port, work, framesDir) {
         linkedin: document.querySelector('#linkedin').value,
         submitText: submit ? submit.textContent.trim() : '',
         caption: document.querySelector('#demo-caption') ? document.querySelector('#demo-caption').textContent : '',
+        badge: document.querySelector('.badge') ? document.querySelector('.badge').textContent : '',
+        note: document.querySelector('.note') ? document.querySelector('.note').textContent : '',
+        meta: document.querySelector('.meta') ? document.querySelector('.meta').textContent : '',
+        title: document.querySelector('h1') ? document.querySelector('h1').textContent : '',
+        cursorOnForm: (() => {
+          const cursor = document.getElementById('demo-cursor').getBoundingClientRect();
+          const card = document.getElementById('gh-apply').getBoundingClientRect();
+          return cursor.right > card.left && cursor.left < card.right && cursor.bottom > card.top && cursor.top < card.bottom;
+        })(),
       };
     });
     assertDemoState(state, foreign);

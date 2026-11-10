@@ -4,7 +4,9 @@ import { fileURLToPath } from 'node:url';
 import test from 'node:test';
 
 import {
+  CAPTION_HOLD_MS,
   DEMO_CAPTION,
+  DEMO_META,
   DEMO_PROFILE,
   exampleResumePdf,
   isLocalFixtureRequest,
@@ -35,6 +37,24 @@ test('demo profile is the dummy example.test person and the caption is one line'
   assert.equal(DEMO_CAPTION, 'Stopped before Submit');
   assert.equal(DEMO_CAPTION.includes('\u2014') || DEMO_CAPTION.includes('\u2013'), false);
   assert.equal(DEMO_CAPTION.split('\n').length, 1);
+  assert.equal(CAPTION_HOLD_MS >= 2000, true);
+  assert.equal(DEMO_META.includes('\u2014') || DEMO_META.includes('\u2013'), false);
+});
+
+test('greenhouse fixture keeps prove copy unless demo=1', async () => {
+  const paths = [
+    new URL('../fixtures/greenhouse/index.html', import.meta.url),
+    new URL('../../site/public/fixtures/greenhouse/index.html', import.meta.url),
+  ];
+  for (const path of paths) {
+    const html = await readFile(fileURLToPath(path), 'utf8');
+    assert.equal(html.includes('JobAppAgent owned fixture · Greenhouse-shaped'), true);
+    assert.equal(html.includes('Fixture Co · Remote · Not a real employer posting'), true);
+    assert.equal(html.includes('This page is for prove/smoke/E2E only.'), true);
+    assert.equal(html.includes('Senior Software Engineer'), true);
+    assert.match(html, /get\("demo"\) === "1"/);
+    assert.equal(html.includes(DEMO_META), true);
+  }
 });
 
 test('demo resume file names only the dummy person', () => {
