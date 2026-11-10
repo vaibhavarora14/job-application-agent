@@ -2093,8 +2093,8 @@ function duplicateResult(entries, candidate, outcomes = [], now = new Date()) {
     : [];
   const companyApplications = sameCompanyEntries.slice(-20).map((entry) => ({
       id: entry.id,
-      company: entry.company,
-      role: entry.role,
+      company: terminalPlain(entry.company),
+      role: terminalPlain(entry.role),
       submittedAt: entry.submittedAt,
       ...(entry.employerJobId ? { employerJobId: entry.employerJobId } : {}),
     }));
@@ -2117,7 +2117,7 @@ function duplicateResult(entries, candidate, outcomes = [], now = new Date()) {
     duplicate: Boolean(hard),
     possibleDuplicate: Boolean(possible) || ambiguousCompanyRole,
     reason: hardReason ?? (possible || ambiguousCompanyRole ? 'company-role' : null),
-    match: match ? { id: match.id, company: match.company, role: match.role, submittedAt: match.submittedAt, url: match.url } : null,
+    match: match ? { id: match.id, company: terminalPlain(match.company), role: terminalPlain(match.role), submittedAt: match.submittedAt, url: match.url } : null,
     sameCompany: companyApplications.length > 0,
     companyApplications,
     companyReapply: {
@@ -2166,10 +2166,21 @@ function duplicateMatchWhy(duplicate) {
     : 'it matches an earlier application at this company';
 }
 
+// Drop ANSI/OSC sequences and other terminal controls before role or company text is printed
+// or attached to an attention item. A posting title must not rewrite the terminal.
+function terminalPlain(value) {
+  if (typeof value !== 'string') return '';
+  const withoutSequences = value
+    .replace(/\u001B\][\s\S]*?(?:\u0007|\u001B\\)/g, '')
+    .replace(/\u009D[\s\S]*?(?:\u0007|\u001B\\)/g, '')
+    .replace(/[\u001B\u009B][[\]()#;?]*(?:(?:(?:(?:;[-a-zA-Z\d/#&.:=?%@~_]+)*|[a-zA-Z\d]+(?:;[-a-zA-Z\d/#&.:=?%@~_]*)*)?\u0007)|(?:(?:\d{1,4}(?:;\d{0,4})*)?[\dA-PR-TZcf-nq-uy=><~]))/g, '');
+  return withoutSequences.replace(/[\u0000-\u001F\u007F-\u009F]/g, '').replace(/\s+/g, ' ').trim();
+}
+
 function earlierApplicationDetail(duplicate) {
   const match = duplicate?.match;
   if (!match || duplicate?.reason !== 'company-role') return '';
-  const role = typeof match.role === 'string' ? match.role.replace(/\s+/g, ' ').trim() : '';
+  const role = terminalPlain(match.role);
   const date = typeof match.submittedAt === 'string' ? /^(\d{4}-\d{2}-\d{2})/.exec(match.submittedAt)?.[1] : '';
   if (!role || !date || role.length > 120 || /https?:|@|\bwww\./i.test(role)) return '';
   return ` Earlier application: ${role} on ${date}.`;
@@ -2763,16 +2774,15 @@ async function attentionAdd(input, { notify = true } = {}) {
   const requiredActions = normalizeAttentionActions(value.requiredActions);
   if (requiredActions.length > 8 || requiredActions.some((item) => !REQUIRED_ACTIONS.has(item))) throw new Error('attention.requiredActions must contain only documented actions.');
   const applicationId = string(value.applicationId, 'attention.applicationId', 180);
-  let company = typeof value.company === 'string' ? value.company.trim() : '';
-  let role = typeof value.role === 'string' ? value.role.trim() : '';
-  if (!role && typeof value.title === 'string') role = value.title.trim();
+  let company = terminalPlain(value.company);
+  let role = terminalPlain(value.role) || terminalPlain(value.title);
   if (!company || !role) {
     try {
       const apps = await jsonLines(join(await ensureStateDir(), 'applications.ndjson'));
       const match = apps.find((entry) => entry.id === applicationId);
       if (match) {
-        company = company || String(match.company ?? '').trim();
-        role = role || String(match.role ?? match.title ?? '').trim();
+        company = company || terminalPlain(match.company);
+        role = role || terminalPlain(match.role ?? match.title);
       }
     } catch { /* best-effort context for notify only */ }
   }
