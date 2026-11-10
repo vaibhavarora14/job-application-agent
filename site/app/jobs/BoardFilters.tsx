@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import {
+  ATS_OPTIONS,
   LEVEL_OPTIONS,
   PAY_OPTIONS,
   POSTED_OPTIONS,
@@ -164,6 +165,16 @@ function FilterFields({
           {ROLE_OPTIONS.map((role) => (
             <Toggle key={role} on={value.role.includes(role)} onClick={() => set({ role: toggleIn(value.role, role) })}>
               {role}
+            </Toggle>
+          ))}
+        </div>
+      </fieldset>
+      <fieldset className={styles.fg}>
+        <legend>ATS</legend>
+        <div className={styles.tgs}>
+          {ATS_OPTIONS.map((option) => (
+            <Toggle key={option.value} on={value.ats.includes(option.value)} onClick={() => set({ ats: toggleIn(value.ats, option.value) })}>
+              {option.label}
             </Toggle>
           ))}
         </div>

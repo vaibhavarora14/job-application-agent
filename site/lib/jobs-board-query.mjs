@@ -35,27 +35,45 @@ export const POSTED_OPTIONS = Object.freeze([
   { value: 30, label: '30 days' },
 ]);
 export const ROLE_OPTIONS = Object.freeze(['Engineering', 'Data', 'Design', 'Product', 'Other']);
+/** ATS filter. "Other" is every channel that is not one of the four named hosts. */
+export const ATS_OPTIONS = Object.freeze([
+  { value: 'ashby', label: 'Ashby' },
+  { value: 'greenhouse', label: 'Greenhouse' },
+  { value: 'lever', label: 'Lever' },
+  { value: 'workable', label: 'Workable' },
+  { value: 'other', label: 'Other' },
+]);
 
 /** Query keys the board understands (anything else is ignored). */
-export const JOBS_QUERY_KEYS = Object.freeze(['workplace', 'loc', 'pay', 'nopay', 'level', 'posted', 'role', 'show', 'design']);
+export const JOBS_QUERY_KEYS = Object.freeze(['ats', 'workplace', 'loc', 'pay', 'nopay', 'level', 'posted', 'role', 'show', 'design']);
 
 const WORKPLACES = new Set(WORKPLACE_OPTIONS.map((o) => o.value));
 const LEVELS = new Set(LEVEL_OPTIONS.map((o) => o.value));
 const PAYS = new Set(PAY_OPTIONS.map((o) => o.value));
 const POSTEDS = new Set(POSTED_OPTIONS.map((o) => o.value));
 const ROLES = new Set(ROLE_OPTIONS);
+const ATS_VALUES = new Set(ATS_OPTIONS.map((o) => o.value));
+/** Named hosts in the ATS filter. Anything else, including a missing channel, is "other". */
+const NAMED_ATS = new Set(['ashby', 'greenhouse', 'lever', 'workable']);
+/** The agent submits end to end on these channels. Read from applicationChannel only. */
+const AGENT_READY_CHANNELS = new Set(['ashby', 'greenhouse', 'lever']);
 const DESIGN_STATES = new Set(['loading', 'error']);
+
+/** True when the job's ATS field is Greenhouse, Ashby, or Lever. */
+export function isAgentReadyChannel(channel) {
+  return AGENT_READY_CHANNELS.has(channel);
+}
 
 /**
  * @typedef {{
  *   workplace: string[], loc: string, pay: number, nopay: boolean,
- *   level: string[], posted: number, role: string[], show: number, design: string | null,
+ *   level: string[], posted: number, role: string[], ats: string[], show: number, design: string | null,
  * }} BoardQuery
  */
 
 /** @returns {BoardQuery} */
 export function emptyBoardQuery() {
-  return { workplace: [], loc: '', pay: 0, nopay: true, level: [], posted: 0, role: [], show: JOBS_PAGE_SIZE, design: null };
+  return { workplace: [], loc: '', pay: 0, nopay: true, level: [], posted: 0, role: [], ats: [], show: JOBS_PAGE_SIZE, design: null };
 }
 
 function first(value) {
@@ -89,6 +107,7 @@ export function parseBoardQuery(input) {
   query.workplace = list(get('workplace'), WORKPLACES);
   query.level = list(get('level'), LEVELS);
   query.role = list(get('role'), ROLES);
+  query.ats = list(get('ats'), ATS_VALUES);
   const loc = get('loc');
   if (typeof loc === 'string') query.loc = loc.trim().replace(/\s+/g, ' ').slice(0, 80);
   const pay = Number(get('pay'));
@@ -112,6 +131,7 @@ export function parseBoardQuery(input) {
  */
 export function boardQueryString(query, { keepShow = false, keepDesign = false } = {}) {
   const params = new URLSearchParams();
+  if (query.ats.length) params.set('ats', query.ats.join(','));
   if (query.level.length) params.set('level', query.level.join(','));
   if (query.loc) params.set('loc', query.loc);
   if (query.nopay === false) params.set('nopay', '0');
@@ -134,6 +154,7 @@ export function boardHref(query, options = {}) {
 export function activeFilterCount(query) {
   let n = 0;
   if (query.workplace.length) n++;
+  if (query.ats.length) n++;
   if (query.loc) n++;
   if (query.pay) n++;
   if (!query.nopay) n++;
@@ -168,6 +189,9 @@ export function activeFilterChips(query) {
   }
   for (const value of query.role) {
     chips.push({ key: `role:${value}`, label: value, query: without({ role: query.role.filter((v) => v !== value) }) });
+  }
+  for (const value of query.ats) {
+    chips.push({ key: `ats:${value}`, label: label(ATS_OPTIONS, value), query: without({ ats: query.ats.filter((v) => v !== value) }) });
   }
   return chips;
 }
@@ -229,8 +253,13 @@ export function shortPostedLabel(iso, now = Date.now()) {
   return format.format(date);
 }
 
+function atsBucket(channel) {
+  return NAMED_ATS.has(channel) ? channel : 'other';
+}
+
 function matches(job, query, now) {
   if (query.workplace.length && !query.workplace.includes(job.location?.workplace ?? '')) return false;
+  if (query.ats.length && !query.ats.includes(atsBucket(job.applicationChannel))) return false;
   if (query.level.length) {
     const level = job.location?.experienceLevel ?? '';
     const normalised = level === 'executive' ? 'staff' : level;

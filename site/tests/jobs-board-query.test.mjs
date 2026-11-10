@@ -10,6 +10,7 @@ import {
   countMatchingJobs,
   emptyBoardQuery,
   filterAndSortJobs,
+  isAgentReadyChannel,
   likelyZeroCause,
   parseBoardQuery,
   shortPostedLabel,
@@ -22,16 +23,16 @@ import { normalizeEdgeCacheSearch, isEdgeCacheableRequest, edgeCacheKey } from '
 
 const NOW = Date.parse('2026-10-28T12:00:00.000Z');
 let seq = 0;
-function job({ workplace = 'remote', label = 'Remote · India', salary = null, level = null, role = 'Software Engineer', postedAt = null, firstSeenAt = '2026-10-01T00:00:00.000Z', company = 'Acme' } = {}) {
+function job({ workplace = 'remote', label = 'Remote · India', salary = null, level = null, role = 'Software Engineer', postedAt = null, firstSeenAt = '2026-10-01T00:00:00.000Z', company = 'Acme', channel = 'ashby', url = null } = {}) {
   seq += 1;
   const id = seq.toString(16).padStart(16, '0');
   return {
     jobId: `community-job-${id}`,
     slug: `acme-${id}`,
-    url: `https://jobs.ashbyhq.com/acme/${id}`,
+    url: url ?? `https://jobs.ashbyhq.com/acme/${id}`,
     company,
     role,
-    applicationChannel: 'ashby',
+    applicationChannel: channel,
     firstSeenAt,
     lastSeenAt: '2026-10-27T00:00:00.000Z',
     lastCheckedAt: '2026-10-28T06:00:00.000Z',
@@ -52,7 +53,10 @@ test('parseBoardQuery validates values and round-trips through the canonical que
   assert.equal(q.show, 150, 'show rounds up to whole pages of 50');
   assert.equal(q.loc, 'Berlin Germany');
   assert.equal(q.design, 'error');
-  assert.equal('ats' in q, false, 'no ATS filter');
+  assert.deepEqual(q.ats, ['greenhouse']);
+  assert.deepEqual(parseBoardQuery(new URLSearchParams('ats=greenhouse,mars,Greenhouse')).ats, ['greenhouse']);
+  assert.deepEqual(parseBoardQuery(new URLSearchParams('ats=other')).ats, ['other']);
+  assert.deepEqual(emptyBoardQuery().ats, []);
   assert.deepEqual(parseBoardQuery(new URLSearchParams(boardQueryString(q, { keepShow: true, keepDesign: true }))), q);
   assert.equal(parseBoardQuery({ pay: '123', posted: '2' }).pay, 0);
   assert.equal(boardHref(emptyBoardQuery()), '/jobs');
@@ -101,6 +105,40 @@ test('salary filter compares in USD at monthly rates and keeps roles without pay
   assert.equal(countMatchingJobs(all, parseBoardQuery({ nopay: '0' }), NOW), 5, 'pay listed in any currency counts as listed');
 });
 
+test('ATS filter reads applicationChannel and does not infer the host from the URL', () => {
+  const greenhouseUrlOnly = job({ channel: 'company', url: 'https://boards.greenhouse.io/acme/jobs/1', role: 'URL looks like Greenhouse' });
+  const greenhouse = job({ channel: 'greenhouse', url: 'https://example.com/careers/1', role: 'Channel is Greenhouse' });
+  const lever = job({ channel: 'lever', url: 'https://jobs.example.com/2' });
+  const workable = job({ channel: 'workable' });
+  const workday = job({ channel: 'workday', url: 'https://jobs.ashbyhq.com/acme/not-ashby' });
+  const email = job({ channel: 'email' });
+  const all = [greenhouseUrlOnly, greenhouse, lever, workable, workday, email];
+
+  assert.equal(isAgentReadyChannel('greenhouse'), true);
+  assert.equal(isAgentReadyChannel('ashby'), true);
+  assert.equal(isAgentReadyChannel('lever'), true);
+  assert.equal(isAgentReadyChannel('workable'), false);
+  assert.equal(isAgentReadyChannel(greenhouseUrlOnly.applicationChannel), false);
+  assert.equal(isAgentReadyChannel(undefined), false);
+
+  assert.deepEqual(filterAndSortJobs(all, parseBoardQuery({ ats: 'greenhouse' }), NOW), [greenhouse]);
+  assert.deepEqual(filterAndSortJobs(all, parseBoardQuery({ ats: 'lever' }), NOW), [lever]);
+  assert.deepEqual(filterAndSortJobs(all, parseBoardQuery({ ats: 'workable' }), NOW), [workable]);
+  assert.deepEqual(
+    new Set(filterAndSortJobs(all, parseBoardQuery({ ats: 'other' }), NOW)),
+    new Set([greenhouseUrlOnly, workday, email]),
+  );
+  assert.deepEqual(
+    new Set(filterAndSortJobs(all, parseBoardQuery({ ats: 'greenhouse,other' }), NOW)),
+    new Set([greenhouse, greenhouseUrlOnly, workday, email]),
+  );
+
+  const selected = parseBoardQuery({ ats: 'greenhouse,other', workplace: 'remote' });
+  assert.equal(activeFilterCount(selected), 2);
+  assert.deepEqual(activeFilterChips(selected).map((chip) => chip.label), ['Remote', 'Greenhouse', 'Other']);
+  assert.equal(boardQueryString(selected), 'ats=greenhouse%2Cother&workplace=remote');
+});
+
 test('active chips, badge count and the zero-results cause', () => {
   const q = parseBoardQuery({ workplace: 'remote', pay: '200', nopay: '0', posted: '1' });
   assert.equal(activeFilterCount(q), 4);
@@ -143,7 +181,9 @@ test('edge cache keys only canonical /jobs filter queries', () => {
   );
   assert.notEqual(edgeCacheKey(page('/jobs?workplace=remote'), 'r').url, edgeCacheKey(page('/jobs'), 'r').url);
   assert.equal(isEdgeCacheableRequest(page('/jobs?pay=123')), false, 'invalid values bypass');
-  assert.equal(isEdgeCacheableRequest(page('/jobs?ats=greenhouse')), false, 'unknown keys bypass');
+  assert.equal(isEdgeCacheableRequest(page('/jobs?ats=greenhouse')), true, 'a valid ATS filter is cached');
+  assert.equal(normalizeEdgeCacheSearch('/jobs', new URLSearchParams('ats=lever,ashby')).toString(), 'ats=lever%2Cashby');
+  assert.equal(isEdgeCacheableRequest(page('/jobs?channel=greenhouse')), false, 'unknown keys bypass');
   assert.equal(isEdgeCacheableRequest(page('/api/jobs/count?workplace=remote')), true);
   assert.equal(isEdgeCacheableRequest(page('/jobs?workplace=remote', { headers: { RSC: '1' } })), false);
 });
