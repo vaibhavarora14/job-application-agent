@@ -4,7 +4,7 @@ Job Application Agent includes default-enabled, opt-out usage analytics. The pur
 
 The first eligible command displays a disclosure and may send that command's events immediately (including upgrades that previously had private state but no `telemetry.json`). Telemetry stays on unless the candidate has explicitly opted out via `telemetry disable`, a `telemetry.opt-out` file in the state directory, or `JOB_APPLICATION_AGENT_TELEMETRY_DISABLED=1` / `JOB_APPLICATION_AGENT_TELEMETRY=0`.
 
-Candidate name, email, phone, and résumé content are never included in analytics / PostHog event payloads.
+Candidate name, email, phone, and résumé content are never included in analytics / PostHog event payloads. Job-board saved-search emails are not telemetry events and are not sent to PostHog.
 
 Separately, the CLI may upsert the saved profile name and email into a private maintainer contact store (`POST /v1/contact`) once per install and again only when the value changes. Contact sharing is skipped when telemetry is opted out, and has its own opt-out (`telemetry contact disable`, `telemetry.contact.opt-out`, or `JOB_APPLICATION_AGENT_CONTACT_DISABLED=1`).
 

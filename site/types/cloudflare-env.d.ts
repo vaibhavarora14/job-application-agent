@@ -44,5 +44,9 @@ declare namespace Cloudflare {
     RESEND_FROM_EMAIL?: string;
     /** Support inbox for founding payment-succeeded ops alerts (default founders@jobappagent.com). */
     FOUNDING_SUPPORT_ALERT_EMAIL?: string;
+    /** Bearer for the saved-search digest. Unset disables the internal digest route. */
+    JOB_ALERTS_CRON_SECRET?: string;
+    /** From address for saved-search mail. Falls back to RESEND_FROM_EMAIL. */
+    JOB_ALERTS_FROM_EMAIL?: string;
   }
 }

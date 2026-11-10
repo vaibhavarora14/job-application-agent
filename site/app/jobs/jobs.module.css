@@ -1273,6 +1273,51 @@
   margin: 20px 0 0;
 }
 
+.save {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 16px;
+}
+
+.save .field {
+  flex: 1 1 200px;
+  min-width: 0;
+}
+
+.saveCadence {
+  display: flex;
+  gap: 8px;
+}
+
+.saveNote {
+  margin: 0 0 16px;
+  color: var(--j-body);
+  font-size: 15px;
+  line-height: 22px;
+}
+
+.saveErr {
+  flex-basis: 100%;
+  margin: 0;
+  color: var(--err);
+  font-size: 14px;
+  line-height: 20px;
+}
+
+@media (max-width: 640px) {
+  .save .field,
+  .save .btn,
+  .saveCadence {
+    flex: 1 1 100%;
+  }
+
+  .saveCadence .tg {
+    flex: 1;
+  }
+}
+
 @media (min-width: 1024px) {
   .back {
     margin-top: 16px;
