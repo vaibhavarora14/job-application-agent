@@ -2,7 +2,10 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   SITE_SENTRY_SERVICE,
+  SITE_WORKER_NAME,
+  isSiteVersionPreviewHost,
   resolveSentryEnvironment,
+  shouldReportSiteSentryForUrl,
   siteSentryOptions,
 } from "../lib/sentry-options.mjs";
 
@@ -33,6 +36,52 @@ test("siteSentryOptions omits release when SENTRY_RELEASE is unset", () => {
   });
   assert.ok(options);
   assert.equal("release" in options, false);
+});
+
+test("version-preview workers.dev hosts are not reported; production hosts are", () => {
+  const preview = "https://69892e0a-job-application-agent-site.varora1406.workers.dev/api/community-stats";
+  const alias = "https://staging-job-application-agent-site.varora1406.workers.dev/api/community-stats";
+  const mainWorker = "https://job-application-agent-site.varora1406.workers.dev/api/community-stats";
+  const apex = "https://jobappagent.com/api/community-stats";
+  const stats = "https://stats.jobappagent.com/api/community-stats";
+
+  assert.equal(isSiteVersionPreviewHost(preview), true);
+  assert.equal(isSiteVersionPreviewHost(alias), true);
+  assert.equal(isSiteVersionPreviewHost("69892E0A-job-application-agent-site.varora1406.workers.dev."), true);
+  assert.equal(shouldReportSiteSentryForUrl(preview), false);
+  assert.equal(shouldReportSiteSentryForUrl(alias), false);
+
+  assert.equal(isSiteVersionPreviewHost(mainWorker), false);
+  assert.equal(isSiteVersionPreviewHost(apex), false);
+  assert.equal(isSiteVersionPreviewHost("https://job-application-agent-site.evil.example/api/community-stats"), false);
+  assert.equal(isSiteVersionPreviewHost("https://69892e0a-other-worker.varora1406.workers.dev/api/community-stats"), false);
+  assert.equal(shouldReportSiteSentryForUrl(mainWorker), true);
+  assert.equal(shouldReportSiteSentryForUrl(apex), true);
+  assert.equal(shouldReportSiteSentryForUrl(stats), true);
+  assert.equal(shouldReportSiteSentryForUrl("http://localhost:3000/api/community-stats"), true);
+  assert.equal(shouldReportSiteSentryForUrl(undefined), true);
+  assert.equal(shouldReportSiteSentryForUrl(""), true);
+  assert.equal(shouldReportSiteSentryForUrl("not a url"), true);
+
+  const options = siteSentryOptions({
+    SENTRY_DSN: "https://examplePublicKey@o0.ingest.sentry.io/0",
+    PUBLIC_SITE_URL: "https://jobappagent.com",
+  });
+  assert.equal(options?.environment, "production");
+  const previewEvent = { request: { url: preview }, message: "API 503 GET /api/community-stats" };
+  const productionEvent = { request: { url: mainWorker }, message: "API 503 GET /api/community-stats" };
+  assert.equal(options?.beforeSend?.(previewEvent), null);
+  assert.equal(options?.beforeSend?.({ tags: { url: alias } }), null);
+  assert.equal(options?.beforeSend?.({ request: { url: "/api/community-stats" }, tags: { url: preview } }), null);
+  assert.equal(options?.beforeSend?.(productionEvent), productionEvent);
+  assert.equal(options?.beforeSend?.({ message: "no request url" })?.message, "no request url");
+});
+
+test("SITE_WORKER_NAME matches the site Worker name", async () => {
+  const { readFile } = await import("node:fs/promises");
+  const text = await readFile(new URL("../wrangler.jsonc", import.meta.url), "utf8");
+  const match = text.match(/"name"\s*:\s*"([^"]+)"/);
+  assert.equal(match?.[1], SITE_WORKER_NAME);
 });
 
 test("resolveSentryEnvironment prefers explicit override and parses hostnames", () => {

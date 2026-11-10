@@ -32,6 +32,7 @@ Source maps for Cloudflare Workers are **out of scope for P0** — release taggi
 - Other `/api/*` 5xx responses reported as messages when no exception was already captured
 - Tag: `service: site`
 - Release: git SHA when `SENTRY_RELEASE` is set on deploy
+- Cloudflare version and alias URLs (`<prefix>-job-application-agent-site.<account>.workers.dev`) are not sent. They inherit production bindings, including `PUBLIC_SITE_URL`, so they would otherwise be filed as production. `jobappagent.com`, `*.jobappagent.com`, and the main `job-application-agent-site.<account>.workers.dev` host still report real failures.
 
 ## Out of scope
 
