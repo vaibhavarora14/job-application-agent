@@ -90,7 +90,7 @@ function checkLinkedApplication(content, applications, outcomes) {
   const applicationId = content?.assessment.applicationId;
   if (!applicationId) return;
   check(applications.some(app => app.id === applicationId && app.status === 'submitted'), 'Linked application must still be verified');
-  check(!outcomes.some(outcome => outcome.id === applicationId && ['rejected', 'withdrawn', 'offer', 'interview'].includes(outcome.status)), 'Linked application already has a hiring outcome; review the conversation instead');
+  check(!outcomes.some(outcome => outcome.id === applicationId && ['rejected', 'withdrawn', 'offer', 'interview', 'response', 'closed'].includes(outcome.status)), 'Linked application already has a hiring outcome; review the conversation instead');
 }
 function resultFor(state, action, input, now) {
   if (action.startsWith('policy-')) return { enabled: state.meta.enabled, timezone: state.meta.timezone, recoveryBlocked: state.meta.recoveryBlocked, mode: 'draft-and-track' };

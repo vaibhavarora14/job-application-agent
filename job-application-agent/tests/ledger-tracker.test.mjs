@@ -6,7 +6,7 @@ import { join } from 'node:path';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
 import { normalizeCliArgs } from '../scripts/cli-args.mjs';
-import { stripPrintedText, trackerStatusFor } from '../scripts/job-application.mjs';
+import { buildReview, terminalPlain, trackerStatusFor } from '../scripts/job-application.mjs';
 
 const script = fileURLToPath(new URL('../scripts/job-application.mjs', import.meta.url));
 
@@ -57,10 +57,10 @@ async function seed(directory, rows) {
   await writeFile(join(directory, 'applications.ndjson'), `${rows.map((row) => JSON.stringify(row)).join('\n')}\n`);
 }
 
-test('stripPrintedText removes ANSI and C0 controls from company and role text', () => {
-  assert.equal(stripPrintedText('Acme\u001b[31m Corp\u0007'), 'Acme Corp');
-  assert.equal(stripPrintedText('Staff\nEngineer\u001b]0;title\u0007'), 'StaffEngineer');
-  assert.equal(stripPrintedText('ok'), 'ok');
+test('terminalPlain removes ANSI and C0 controls from company and role text', () => {
+  assert.equal(terminalPlain('Acme\u001b[31m Corp\u0007'), 'Acme Corp');
+  assert.equal(terminalPlain('Staff\nEngineer\u001b]0;title\u0007'), 'StaffEngineer');
+  assert.equal(terminalPlain('ok'), 'ok');
 });
 
 test('tracker status rolls outcomes up and keeps unconfirmed email as submitted', () => {
@@ -77,6 +77,22 @@ test('tracker status rolls outcomes up and keeps unconfirmed email as submitted'
   ], confirmed), 'closed');
   assert.equal(trackerStatusFor(web, [{ id: 'other', status: 'offer', occurredAt: '2026-05-01T00:00:00.000Z' }], confirmed), 'confirmed');
   assert.equal(trackerStatusFor(web, [{ id: 'web-1', status: 'withdrawn', occurredAt: '2026-05-01T00:00:00.000Z' }], confirmed), 'closed');
+  assert.equal(trackerStatusFor(entry({ id: 'mail-1', source: 'email' }), [], { counted: false, receiptUnknown: false, failed: true, conflict: false }), 'closed');
+});
+
+test('a tracker-only outcome does not drop legacy review counts', () => {
+  const legacy = {
+    id: 'legacy-1', company: 'Legacy Co', role: 'Engineer', url: 'https://jobs.example.com/legacy',
+    status: 'interview', submittedAt: '2026-01-01T00:00:00.000Z', source: 'company', score: 80,
+  };
+  const current = {
+    id: 'current-1', company: 'Current Co', role: 'Engineer', url: 'https://jobs.example.com/current',
+    status: 'submitted', submittedAt: '2026-02-01T00:00:00.000Z', source: 'company', score: 80,
+  };
+  const review = buildReview([legacy, current], [{ id: 'current-1', status: 'response', occurredAt: '2026-03-01T00:00:00.000Z' }]);
+  assert.equal(review.outcomeCounts.interview, 1);
+  const sameRow = buildReview([legacy], [{ id: 'legacy-1', status: 'closed', occurredAt: '2026-03-02T00:00:00.000Z' }]);
+  assert.equal(sameRow.outcomeCounts.interview, 1);
 });
 
 test('ledger list keeps --json and prints status plus date for every ledger row', async (t) => {

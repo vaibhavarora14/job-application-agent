@@ -154,6 +154,17 @@ test('every SKILL.md copy has an Untrusted content section that keeps the rule w
   }
 });
 
+test('every SKILL.md copy states the new-requisition decision rule and pauses routine-auto', async () => {
+  for (const copy of ALL_SKILL_COPIES) {
+    const skill = await readFile(new URL(copy, import.meta.url), 'utf8');
+    assert.match(skill, /Decision rule:/, copy);
+    assert.match(skill, /req 4512/, copy);
+    assert.match(skill, /pauses the job/, copy);
+    assert.match(skill, /judgment/, copy);
+    assert.doesNotMatch(skill, /batch review/, copy);
+  }
+});
+
 test('no SKILL.md copy tells the agent to run the updater on its own; it checks and tells the user', async () => {
   for (const copy of ALL_SKILL_COPIES) {
     const skill = await readFile(new URL(copy, import.meta.url), 'utf8');
