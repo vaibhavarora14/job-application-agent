@@ -16,7 +16,7 @@
 
 import { execFile, spawn } from 'node:child_process';
 import { realpathSync } from 'node:fs';
-import { copyFile, mkdir, mkdtemp, rm, stat, writeFile } from 'node:fs/promises';
+import { copyFile, mkdir, mkdtemp, rename, rm, stat, writeFile } from 'node:fs/promises';
 import { createServer } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
@@ -286,10 +286,23 @@ function assertDemoState(state, foreign) {
   }
 }
 
+async function publishGif(tempGif) {
+  await mkdir(join(root, 'docs'), { recursive: true });
+  const staged = join(root, 'docs', `.review-each-demo.${process.pid}.gif`);
+  try {
+    await copyFile(tempGif, staged);
+    await rename(staged, gifPath);
+  } catch (error) {
+    await rm(staged, { force: true });
+    throw error;
+  }
+}
+
 async function writeGif(tape) {
   const duration = tape.files.reduce((total, frame) => total + frame.duration, 0);
   if (!(duration >= 10 && duration <= 20)) throw new Error(`GIF duration ${duration.toFixed(2)}s is outside 10-20s.`);
   const listPath = join(tape.dir, 'frames.txt');
+  const tempGif = join(tape.dir, 'review-each-demo.gif');
   const lines = ['ffconcat version 1.0'];
   for (const frame of tape.files) {
     lines.push(`file '${frame.file}'`, `duration ${frame.duration.toFixed(3)}`);
@@ -304,12 +317,15 @@ async function writeGif(tape) {
   for (const filter of passes) {
     await execFileAsync('ffmpeg', [
       '-y', '-hide_banner', '-loglevel', 'error', '-f', 'concat', '-safe', '0', '-i', listPath,
-      '-vf', filter, '-loop', '0', gifPath,
+      '-vf', filter, '-loop', '0', tempGif,
     ], { timeout: 60000 });
-    bytes = (await stat(gifPath)).size;
-    if (bytes < MAX_GIF_BYTES) return { bytes, duration };
+    bytes = (await stat(tempGif)).size;
+    if (bytes < MAX_GIF_BYTES) {
+      await publishGif(tempGif);
+      return { bytes, duration };
+    }
   }
-  await rm(gifPath, { force: true });
+  await rm(tempGif, { force: true });
   throw new Error(`GIF is ${bytes} bytes, above the 3 MB limit.`);
 }
 
@@ -405,7 +421,6 @@ async function record(browser, port, work, framesDir) {
       };
     });
     assertDemoState(state, foreign);
-    await mkdir(join(root, 'docs'), { recursive: true });
     const encoded = await writeGif(tape);
     return { path: gifPath, ...encoded };
   } finally {
@@ -417,10 +432,12 @@ async function main() {
   const framesDir = framesDirFromArgs(process.argv.slice(2));
   if (framesDir) await mkdir(framesDir, { recursive: true });
   const port = await freePort();
-  const server = startFixtureServer(port);
-  const work = await mkdtemp(join(tmpdir(), 'review-each-demo-'));
+  let server;
+  let work;
   let browser;
   try {
+    work = await mkdtemp(join(tmpdir(), 'review-each-demo-'));
+    server = startFixtureServer(port);
     await waitForFixture(port, server);
     browser = await launchChrome();
     const gif = await record(browser, port, work, framesDir);
@@ -428,7 +445,7 @@ async function main() {
   } finally {
     if (browser) await browser.close();
     await stopServer(server);
-    await rm(work, { recursive: true, force: true });
+    if (work) await rm(work, { recursive: true, force: true });
   }
 }
 
