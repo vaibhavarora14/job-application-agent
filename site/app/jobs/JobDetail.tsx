@@ -11,7 +11,7 @@ import {
 import { isAgentReadyChannel, workplaceLabel } from "../../lib/jobs-board-query.mjs";
 import { buildApplyAgentPrompt, buildApplyCliCommand } from "../../lib/job-apply-copy.mjs";
 import { CopyButton } from "./CopyButton";
-import { JobRow } from "./JobRow";
+import { AgentReadyChip, JobRow } from "./JobRow";
 import { SiteFooter, SiteHeader } from "../components/SiteChrome";
 import styles from "./jobs.module.css";
 import type { BoardJob } from "./JobsBoard";
@@ -49,11 +49,12 @@ function ChevronIcon() {
   );
 }
 
-const OTHER_HOST_NOTE = "The agent fills what it can; you may need to finish on the employer site.";
+const READY_LEAD = "Your agent fills the application and waits for your OK.";
+const OTHER_HOST_LEAD = "Your agent fills what it can and waits for your OK. You may need to finish on the employer site.";
 
 function AgentReadyMark({ channel }: { channel: string }) {
   if (!isAgentReadyChannel(channel)) return null;
-  return <span className={styles.chip}>Agent-ready</span>;
+  return <AgentReadyChip />;
 }
 
 function employmentLabel(value: string | null | undefined) {
@@ -136,8 +137,7 @@ function ApplyCard({ job }: { job: BoardJob }) {
     <div className={styles.railCard}>
       <h2 className={styles.railTitle}>Apply with your agent</h2>
       <h2 className={styles.howTitle}>How applying works</h2>
-      <p className={styles.railLead}>Your agent fills the application and waits for your OK.</p>
-      {agentReady ? null : <p className={styles.railLead}>{OTHER_HOST_NOTE}</p>}
+      <p className={styles.railLead}>{agentReady ? READY_LEAD : OTHER_HOST_LEAD}</p>
       <div className={styles.railActions}>
         <CopyButton
           value={prompt}

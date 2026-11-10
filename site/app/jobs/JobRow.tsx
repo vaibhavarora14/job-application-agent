@@ -17,10 +17,23 @@ function PayChip({ label }: { label: string }) {
   );
 }
 
+/** Outline chip for Greenhouse, Ashby, and Lever. `place` picks the list slot; omit it on the role page. */
+export function AgentReadyChip({ place }: { place?: "title" | "tags" }) {
+  const slot = place === "title" ? styles.readyTitle : place === "tags" ? styles.readyTags : "";
+  return (
+    <span className={`${styles.chip} ${styles.chipReady}${slot ? ` ${slot}` : ""}`}>
+      <svg viewBox="0 0 16 16" aria-hidden="true" className={styles.readyMark}>
+        <path d="M3.5 8.2 6.4 11 12.5 4.5" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
+      </svg>
+      Agent-ready
+    </span>
+  );
+}
+
 /**
  * One role as a single link. Stacks as a card on narrow lists and becomes a
  * ~64px row (title/company · location · workplace · pay · posted) at 840px+.
- * Chips: workplace, pay, and Agent-ready when the ATS field is Greenhouse, Ashby, or Lever.
+ * Agent-ready sits in the tag row on narrow lists and beside the title once the row is wide.
  * No pay → no pay chip and no placeholder text.
  */
 export function JobRow({ job, now }: { job: BoardJob; now: number }) {
@@ -33,13 +46,14 @@ export function JobRow({ job, now }: { job: BoardJob; now: number }) {
     <Link href={`/jobs/${job.slug}`} className={styles.job}>
       <span className={styles.jTitle}>
         <span className={styles.jTitleText}>{job.role}</span>
-        {agentReady ? <span className={styles.chip}>Agent-ready</span> : null}
+        {agentReady ? <AgentReadyChip place="title" /> : null}
       </span>
       <span className={styles.jCo}>{job.company}</span>
       {place ? <span className={styles.jLoc}>{place}</span> : <span className={styles.jLocEmpty} aria-hidden="true" />}
-      {workplace || pay ? (
+      {workplace || pay || agentReady ? (
         <span className={styles.jFacts}>
           <span className={styles.jWork}>{workplace ? <span className={styles.chip}>{workplace}</span> : null}</span>
+          {agentReady ? <AgentReadyChip place="tags" /> : null}
           <span className={styles.jPay}>{pay ? <PayChip label={pay} /> : null}</span>
         </span>
       ) : null}
