@@ -48,7 +48,7 @@ commit populated environment files.
 
 ### Sentry (error monitoring)
 
-The site Worker uses [`@sentry/cloudflare`](https://docs.sentry.io/platforms/javascript/guides/cloudflare/) with tag `service: site`. Unhandled exceptions are captured automatically. Swallowed money-path failures (`/api/checkout`, `/api/checkout/status`, `/api/webhooks/dodo`) call `captureException`, and other `/api/*` 5xx responses are reported as messages. Deploys stamp `SENTRY_RELEASE` from `GITHUB_SHA` so Issues are release-tagged. Worker source maps are out of scope for P0 — see [`docs/SENTRY.md`](docs/SENTRY.md).
+The site Worker uses [`@sentry/cloudflare`](https://docs.sentry.io/platforms/javascript/guides/cloudflare/) with tag `service: site`. Unhandled exceptions are captured automatically. Swallowed money-path failures (`/api/checkout`, `/api/checkout/status`, `/api/webhooks/dodo`) call `captureException`, and other `/api/*` 5xx responses are reported as messages. Version-preview `*.workers.dev` hosts (`<prefix>-job-application-agent-site.<account>.workers.dev`) are not reported; `jobappagent.com` and the main site Worker host still are. Deploys stamp `SENTRY_RELEASE` from `GITHUB_SHA` so Issues are release-tagged. Worker source maps are out of scope for P0 — see [`docs/SENTRY.md`](docs/SENTRY.md).
 
 Set the DSN as a Wrangler secret (never commit the value):
 
@@ -64,7 +64,7 @@ npx wrangler secret put SENTRY_ENVIRONMENT --config wrangler.jsonc
 # or a non-secret var in the Cloudflare dashboard
 ```
 
-**Verify:** after deploy with the secret set, force a controlled 5xx (for example briefly unset `DODO_PAYMENTS_API_KEY` and `POST /api/checkout`, or throw once in a throwaway preview). Confirm an Issue appears in the shared Sentry project (org `jobappagent`) tagged `service:site` with the deploy release SHA. Clear/restore the secret after the test. Leave `SENTRY_DSN` unset locally to keep Sentry disabled.
+**Verify:** after deploy with the secret set, force a controlled 5xx on the production Worker host or `jobappagent.com` (for example briefly unset `DODO_PAYMENTS_API_KEY` and `POST /api/checkout`). Confirm an Issue appears in the shared Sentry project (org `jobappagent`) tagged `service:site` with the deploy release SHA. A version-preview `*.workers.dev` URL will not create that Issue. Clear/restore the secret after the test. Leave `SENTRY_DSN` unset locally to keep Sentry disabled.
 
 Do not add Sentry to the npm skill / agent client — privacy posture forbids shipping raw agent errors.
 
