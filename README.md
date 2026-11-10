@@ -25,7 +25,7 @@ npx skills add vaibhavarora14/job-application-agent
 
 JobAppAgent (Job Application Agent) is an [Agent Skill](https://agentskills.io/specification) that helps a coding agent discover, evaluate, complete, and track your own job applications. It uses one verified résumé, checks eligibility and duplicates, and records only confirmed submissions.
 
-<!-- demo-video: embed goes here after approval -->
+![Review-each fills the local Greenhouse fixture and stops before Submit](docs/review-each-demo.gif)
 
 ## Try it on one job
 
