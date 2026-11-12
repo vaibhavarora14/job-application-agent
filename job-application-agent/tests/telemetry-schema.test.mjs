@@ -1,9 +1,11 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
+import { INSTALL_SOURCES } from '../scripts/install-source.mjs';
 import {
   canonicalizeJobUrl,
   createTelemetryEnvelope,
+  INSTALL_SOURCE_VALUES,
   jobIdentity,
   validateEvent,
   validateTelemetryEnvelope,
@@ -149,6 +151,33 @@ test('application_submitted accepts optional Boolean profileOneClick and stays v
   }
   // Only application_submitted gains the key.
   assert.throws(() => validateEvent({ event: 'application_started', properties: { jobHash: 'a'.repeat(64), ats: 'ashby', approvalMode: 'review-each', requiredFieldCount: 3, resumeRequired: true, coverLetterRequired: false, referralPresent: false, profileOneClick: true } }), /profileOneClick|unknown/i);
+});
+
+test('install source is an optional envelope enum and rejects paths, names, and cache without npx', () => {
+  assert.deepEqual(INSTALL_SOURCE_VALUES, INSTALL_SOURCES);
+  const base = {
+    installationId: '11111111-1111-4111-8111-111111111111',
+    token: 'signed-token',
+    skillVersion: '3.8.6',
+    event: 'command_completed',
+    properties: { command: 'search', result: 'success', durationBucket: '1-5s' },
+  };
+  const plain = createTelemetryEnvelope(base);
+  assert.equal('installSource' in plain, false);
+  assert.equal('installCache' in plain, false);
+  for (const installSource of INSTALL_SOURCE_VALUES) {
+    const envelope = validateTelemetryEnvelope({ ...base, schemaVersion: 1, installSource });
+    assert.equal(envelope.installSource, installSource);
+    assert.equal('installCache' in envelope, false);
+  }
+  const pinned = validateTelemetryEnvelope({ ...base, schemaVersion: 1, installSource: 'npx-pinned', installCache: 'cached' });
+  assert.equal(pinned.installCache, 'cached');
+  for (const installSource of ['/home/Alex/.npm/_npx/abc', 'Alex@example.com', 'npx job-application-agent@3.8.4', 'personal-user/fork']) {
+    assert.throws(() => createTelemetryEnvelope({ ...base, installSource }), /installSource/);
+  }
+  assert.throws(() => createTelemetryEnvelope({ ...base, installSource: 'copied-tree', installCache: 'fresh' }), /installCache/);
+  assert.throws(() => createTelemetryEnvelope({ ...base, installCache: 'cached' }), /installCache/);
+  assert.throws(() => validateTelemetryEnvelope({ ...base, schemaVersion: 1, installSource: 'npx-latest', cachePath: '/tmp/cache' }), /unknown/i);
 });
 
 test('keeps interview-learning telemetry bounded and rejects free-form notes', () => {

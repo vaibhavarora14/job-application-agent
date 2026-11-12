@@ -512,7 +512,14 @@ test('a queued event the relay rejects with 400 is quarantined with a local warn
   t.after(() => rm(directory, { recursive: true, force: true }));
   const relay = selectiveRelay();
   let stderr = '';
-  const client = new TelemetryClient({ stateDir: directory, endpoint: 'https://relay.example.com', fetch: relay.fetch, stderr: (value) => { stderr += value; }, timeoutMs: 50 });
+  const client = new TelemetryClient({
+    stateDir: directory,
+    endpoint: 'https://relay.example.com',
+    fetch: relay.fetch,
+    stderr: (value) => { stderr += value; },
+    timeoutMs: 50,
+    installOrigin: { installSource: 'copied-tree' },
+  });
   await client.beginCommand('apply');
   await writeFile(join(directory, 'telemetry-queue.ndjson'), [
     queueLine(submittedEvent('f')),
@@ -524,7 +531,11 @@ test('a queued event the relay rejects with 400 is quarantined with a local warn
   await client.beginCommand('apply');
 
   const delivered = relay.events().map((body) => body.properties.jobHash[0]);
-  assert.deepEqual(delivered, ['f', 'a', 'b', 'c'], 'every queued item attempted once, in order');
+  // The poison event is invalid_event, so it is sent once with installSource and once without.
+  assert.deepEqual(delivered, ['f', 'f', 'a', 'b', 'c'], 'poison is retried once without install source; the rest send once');
+  const poison = relay.events().filter((body) => body.properties.jobHash === POISON_HASH);
+  assert.equal(poison[0].installSource, 'copied-tree');
+  assert.equal('installSource' in poison[1], false);
   assert.deepEqual(await readLines(join(directory, 'telemetry-queue.ndjson')), [], 'queue fully drained');
   const quarantined = await readLines(join(directory, 'telemetry-quarantine.ndjson'));
   assert.equal(quarantined.length, 1);
@@ -678,6 +689,62 @@ test('generic CI=true alone keeps production telemetry (agent runtimes often exp
   assert.equal(defaultTelemetryEndpoint({ CI: 'true' }, CLI_ARGV), PRODUCTION_TELEMETRY_ENDPOINT);
   assert.equal(defaultTelemetryEndpoint({ CI: '1' }, CLI_ARGV), PRODUCTION_TELEMETRY_ENDPOINT);
   assert.equal(defaultSourceCommunityEndpoint({ CI: 'true' }, CLI_ARGV), PRODUCTION_TELEMETRY_ENDPOINT);
+});
+
+test('later events carry the recorded install source and a strict relay gets one retry without it', async (t) => {
+  const directory = await mkdtemp(join(tmpdir(), 'telemetry-install-source-'));
+  t.after(() => rm(directory, { recursive: true, force: true }));
+  const requests = [];
+  const fetch = async (url, options = {}) => {
+    const body = options.body ? JSON.parse(options.body) : null;
+    requests.push({ url, body });
+    if (String(url).endsWith('/v1/install')) return Response.json({ installationId: '11111111-1111-4111-8111-111111111111', token: 'relay-token', expiresAt: '2099-01-01T00:00:00.000Z' });
+    if (body?.installSource) return Response.json({ error: 'invalid_event' }, { status: 400 });
+    return Response.json({ accepted: true, eventId: '22222222-2222-4222-8222-222222222222' }, { status: 202 });
+  };
+  const client = new TelemetryClient({
+    stateDir: directory,
+    endpoint: 'https://relay.example.com',
+    fetch,
+    stderr: () => {},
+    installOrigin: { installSource: 'npx-pinned', installCache: 'cached', cachePath: '/home/Alex/.npm/_npx/secret' },
+  });
+  const session = await client.beginCommand('search');
+  assert.equal((await client.record({ event: 'installation_started', properties: { osFamily: 'windows', nodeMajor: 24, submissionMode: 'unconfigured' } }, session)).sent, true);
+  assert.equal((await client.record({ event: 'command_completed', properties: { command: 'search', result: 'success', durationBucket: '1-5s' } }, session)).sent, true);
+  const events = requests.filter((request) => String(request.url).endsWith('/v1/events')).map((request) => request.body);
+  assert.deepEqual(events.map((body) => body.event), ['installation_started', 'installation_started', 'command_completed', 'command_completed']);
+  assert.deepEqual(events.filter((body) => body.installSource).map((body) => [body.installSource, body.installCache]), [
+    ['npx-pinned', 'cached'],
+    ['npx-pinned', 'cached'],
+  ]);
+  assert.equal(events.filter((body) => !('installSource' in body) && !('installCache' in body)).length, 2);
+  const wire = JSON.stringify(events);
+  assert.equal(wire.includes('/home/'), false);
+  assert.equal(wire.includes('Alex'), false);
+  assert.equal(wire.includes('cachePath'), false);
+
+  const dropped = new TelemetryClient({
+    stateDir: directory,
+    endpoint: 'https://relay.example.com',
+    fetch: async (url) => {
+      if (String(url).endsWith('/v1/install')) return Response.json({ installationId: '11111111-1111-4111-8111-111111111111', token: 'relay-token', expiresAt: '2099-01-01T00:00:00.000Z' });
+      return Response.json({ accepted: true }, { status: 202 });
+    },
+    stderr: () => {},
+    installOrigin: { installSource: '/home/Alex/.agents/skills/job-application-agent', installCache: 'fresh' },
+  });
+  const captured = [];
+  dropped.fetch = async (url, options = {}) => {
+    const body = options.body ? JSON.parse(options.body) : null;
+    captured.push(body);
+    if (String(url).endsWith('/v1/install')) return Response.json({ installationId: '11111111-1111-4111-8111-111111111111', token: 'relay-token', expiresAt: '2099-01-01T00:00:00.000Z' });
+    return Response.json({ accepted: true }, { status: 202 });
+  };
+  assert.equal((await dropped.record({ event: 'command_completed', properties: { command: 'search', result: 'success', durationBucket: 'under-1s' } }, await dropped.beginCommand('search'))).sent, true);
+  const sent = captured.find((body) => body?.event === 'command_completed');
+  assert.equal('installSource' in sent, false);
+  assert.equal(JSON.stringify(sent).includes('Alex'), false);
 });
 
 test('a CLI process spawned without NODE_TEST_CONTEXT inside GitHub Actions resolves a dead local relay', () => {

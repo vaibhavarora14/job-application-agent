@@ -1,7 +1,9 @@
 import { createHash } from 'node:crypto';
 import { chmod, mkdir, readFile, readdir, rename, unlink, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
+import { publicInstallOrigin, resolveSkillInstallOrigin } from './install-source.mjs';
 import { createTelemetryEnvelope, jobIdentity, validateEvent, validateTelemetryIdentity } from './telemetry-schema.mjs';
 import { SKILL_VERSION } from './version.mjs';
 
@@ -219,6 +221,7 @@ export class TelemetryClient {
     readIdentity = () => undefined,
     debug = (value) => { if (process.env.JOB_APPLICATION_AGENT_TELEMETRY_DEBUG) process.stderr.write(value); },
     env = process.env,
+    installOrigin,
   } = {}) {
     this.stateDir = stateDir;
     this.endpoint = endpoint.replace(/\/$/, '');
@@ -229,6 +232,7 @@ export class TelemetryClient {
     this.readIdentity = readIdentity;
     this.debug = debug;
     this.env = env;
+    this.installOriginOption = installOrigin;
   }
 
   get configPath() { return join(this.stateDir, CONFIG_FILE); }
@@ -664,6 +668,38 @@ export class TelemetryClient {
     }
   }
 
+  async resolveInstallOrigin() {
+    if (this.installOriginReady) return this.installOrigin;
+    this.installOriginReady = true;
+    try {
+      const detected = this.installOriginOption !== undefined
+        ? this.installOriginOption
+        : await resolveSkillInstallOrigin({
+          scriptPath: fileURLToPath(import.meta.url),
+          packageVersion: SKILL_VERSION,
+          env: this.env,
+        });
+      this.installOrigin = publicInstallOrigin(detected);
+    } catch {
+      this.installOrigin = {};
+    }
+    return this.installOrigin;
+  }
+
+  postEvent(credentials, event, origin) {
+    return this.fetchWithRetry(`${this.endpoint}/v1/events`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(createTelemetryEnvelope({
+        installationId: credentials.installationId,
+        token: credentials.token,
+        event,
+        skillVersion: SKILL_VERSION,
+        ...origin,
+      })),
+    });
+  }
+
   async sendValidated(rawEvent, session, config, { queueOnFailure = true } = {}) {
     let event = relayCompatibleEvent(rawEvent);
     try {
@@ -688,30 +724,20 @@ export class TelemetryClient {
       }
 
       let next = await this.credentials(config);
-      const payload = createTelemetryEnvelope({ installationId: next.installationId, token: next.token, event, skillVersion: SKILL_VERSION });
-      let response = await this.fetchWithRetry(`${this.endpoint}/v1/events`, {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify(payload),
-      });
+      const origin = await this.resolveInstallOrigin();
+      let response = await this.postEvent(next, event, origin);
       if (response.status === 401) {
         next = { ...next, tokenExpiresAt: null };
         next = await this.credentials(next);
-        response = await this.fetchWithRetry(`${this.endpoint}/v1/events`, {
-          method: 'POST',
-          headers: { 'content-type': 'application/json' },
-          body: JSON.stringify(createTelemetryEnvelope({ installationId: next.installationId, token: next.token, event, skillVersion: SKILL_VERSION })),
-        });
+        response = await this.postEvent(next, event, origin);
       }
-      if (response.status === 400) {
+      if (response.status === 400 && (await relayErrorCode(response)) === 'invalid_event') {
         const legacy = withoutProfileOneClick(event);
-        if (legacy && (await relayErrorCode(response)) === 'invalid_event') {
-          event = legacy;
-          response = await this.fetchWithRetry(`${this.endpoint}/v1/events`, {
-            method: 'POST',
-            headers: { 'content-type': 'application/json' },
-            body: JSON.stringify(createTelemetryEnvelope({ installationId: next.installationId, token: next.token, event, skillVersion: SKILL_VERSION })),
-          });
+        // A relay that predates installSource/installCache (or profileOneClick) rejects the
+        // whole event. Resend once without those fields so the event is still counted.
+        if (legacy || Object.keys(origin).length > 0) {
+          event = legacy ?? event;
+          response = await this.postEvent(next, event, {});
         }
       }
       if (!response.ok) {
