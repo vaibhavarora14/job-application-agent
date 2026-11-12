@@ -879,6 +879,29 @@ test('event endpoint strips identity fields, rejects malformed payloads, and rat
   assert.equal(limited.status, 429);
 });
 
+test('install source is forwarded to PostHog and a path is rejected', async () => {
+  const bindings = env();
+  const installationId = '11111111-1111-4111-8111-111111111111';
+  const token = await createToken(installationId, bindings.SIGNING_SECRET);
+  const base = { schemaVersion: 1, skillVersion: '3.8.6', installationId, token, event: 'command_completed', properties: { command: 'search', result: 'success', durationBucket: 'under-1s' } };
+  const send = (extra) => worker.fetch(new Request('https://relay.example.com/v1/events', { method: 'POST', body: JSON.stringify({ ...base, ...extra }) }), bindings);
+  assert.equal((await send({})).status, 202);
+  assert.equal('installSource' in bindings.captured.at(-1).body.properties, false);
+  assert.equal((await send({ installSource: 'npx-pinned', installCache: 'cached' })).status, 202);
+  assert.equal(bindings.captured.at(-1).body.properties.installSource, 'npx-pinned');
+  assert.equal(bindings.captured.at(-1).body.properties.installCache, 'cached');
+  assert.equal(bindings.captured.at(-1).body.properties.skillVersion, '3.8.6');
+  assert.equal((await send({ installSource: 'copied-tree' })).status, 202);
+  assert.equal(bindings.captured.at(-1).body.properties.installSource, 'copied-tree');
+  assert.equal('installCache' in bindings.captured.at(-1).body.properties, false);
+  const before = bindings.captured.length;
+  assert.equal((await send({ installSource: '/home/Alex/.npm/_npx/0123456789abcdef' })).status, 400);
+  assert.equal((await send({ installSource: 'npx-latest', installCache: '/tmp/cache' })).status, 400);
+  assert.equal((await send({ installSource: 'copied-tree', installCache: 'fresh' })).status, 400);
+  assert.equal(bindings.captured.length, before);
+  assert.equal(JSON.stringify(bindings.captured).includes('Alex'), false);
+});
+
 test('legacy identity envelopes (3.7.2 and earlier) are accepted with identity stripped, never forwarded', async () => {
   const bindings = env();
   const stored = [];

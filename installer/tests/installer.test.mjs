@@ -4,6 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
 
+import { npxCacheKey } from '../../job-application-agent/scripts/install-source.mjs';
 import {
   CONFIG_FILENAME,
   installSkill,
@@ -126,6 +127,32 @@ test('copies the skill into an existing vendor skills directory and skips missin
   assert.equal(await readFile(path.join(cursorSkills, 'job-application-agent', 'SKILL.md'), 'utf8'), '# Version one\n');
   await assert.rejects(stat(path.join(f.homeDir, '.claude', 'skills')), { code: 'ENOENT' });
   await assert.rejects(stat(path.join(f.homeDir, '.codex', 'skills')), { code: 'ENOENT' });
+});
+
+test('records whether this tree came from npx @latest or a pinned version, and not the cache path', async () => {
+  const f = await fixture();
+  const pinnedRoot = path.join(f.root, 'npm', '_npx', npxCacheKey('job-application-agent@3.0.0'), 'node_modules', 'job-application-agent');
+  await mkdir(path.join(pinnedRoot, 'job-application-agent', 'scripts'), { recursive: true });
+  await writeFile(path.join(pinnedRoot, 'package.json'), JSON.stringify({ name: 'job-application-agent', version: '3.0.0' }));
+  await writeFile(path.join(pinnedRoot, 'job-application-agent', 'SKILL.md'), '# pinned\n');
+  await writeFile(path.join(pinnedRoot, 'job-application-agent', 'scripts', 'job-application.mjs'), 'export {};\n');
+  const pinned = await installSkill({ packageRoot: pinnedRoot, packageVersion: '3.0.0', homeDir: f.homeDir, agentHome: f.agentHome, platform: 'test', scheduler: false });
+  assert.equal(pinned.installSource, 'npx-pinned');
+  assert.equal(JSON.stringify(pinned).includes(pinnedRoot), false);
+  assert.equal(JSON.stringify(pinned).includes('_npx'), false);
+
+  const latestRoot = path.join(f.root, 'npm', '_npx', npxCacheKey('job-application-agent@latest'), 'node_modules', 'job-application-agent');
+  await mkdir(path.join(latestRoot, 'job-application-agent', 'scripts'), { recursive: true });
+  await writeFile(path.join(latestRoot, 'package.json'), JSON.stringify({ name: 'job-application-agent', version: '3.1.0' }));
+  await writeFile(path.join(latestRoot, 'job-application-agent', 'SKILL.md'), '# latest\n');
+  await writeFile(path.join(latestRoot, 'job-application-agent', 'scripts', 'job-application.mjs'), 'export {};\n');
+  const updated = await updateSkill({ packageRoot: latestRoot, packageVersion: '3.1.0', homeDir: f.homeDir, agentHome: f.agentHome, platform: 'test', scheduler: false });
+  assert.equal(updated.installSource, 'npx-latest');
+  assert.equal(updated.installedVersion, '3.1.0');
+  assert.equal(JSON.stringify(updated).includes(latestRoot), false);
+  const stored = JSON.parse(await readFile(path.join(f.agentHome, 'job-application-agent', CONFIG_FILENAME), 'utf8'));
+  assert.equal(stored.installSource, 'npx-latest');
+  if (stored.installCache !== undefined) assert.equal(stored.installCache, 'fresh');
 });
 
 test('migrates a previous Codex skill and install.json into ~/.agents without deleting the old files', async () => {
