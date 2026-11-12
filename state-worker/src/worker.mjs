@@ -1,26 +1,11 @@
 import { ACCOUNTING_CAPABILITY, accountingApplicationKey, canonicalUrl, deliveryProjection, validateDelivery, validateDeliveryReferences, validateLead, validateLeadReferences, stableJson } from '../../job-application-agent/scripts/application-accounting.mjs';
 import { createHash, timingSafeEqual } from "node:crypto";
 import { createBackup } from "./backup.mjs";
+import { ALLOWED_FILES } from "./names.mjs";
 import { outreachAvailable, outreachRoute } from './outreach.mjs';
 import { OUTREACH_CAPABILITY } from '../../job-application-agent/scripts/outreach-domain.mjs';
 
-export const ALLOWLIST = new Set([
-  "resume.pdf",
-  "resume.json",
-  "applications.ndjson",
-  "outcomes.ndjson",
-  "attention.ndjson",
-  "rounds.ndjson",
-  "friction.ndjson",
-  "community-job-contribution-receipts.ndjson",
-  "source-contribution-receipts.ndjson",
-  "source-suggestions.ndjson",
-  "autonomy.json",
-  "review-policy.json",
-  "postal-address.json",
-  "source-sharing.json",
-  "telemetry.json",
-]);
+export const ALLOWLIST = new Set(ALLOWED_FILES);
 
 export const LEDGER_SUFFIX = ".ndjson";
 
@@ -855,18 +840,23 @@ export default {
     return handleRequest(request, env);
   },
   async scheduled(_controller, env) {
-    const bucket = stateBucket(env);
-    if (!env.DB || !bucket) return;
-    const generatedAt = new Date().toISOString();
-    const bytes = Buffer.from(JSON.stringify(await createBackup(env.DB, generatedAt)));
-    const date = generatedAt.slice(0, 10);
-    const objectKey = `backups/${date}.json`;
-    const hash = sha256Hex(bytes);
-    await bucket.put(objectKey, bytes, { customMetadata: { sha256: hash, expiresAt: new Date(Date.now() + 30 * 86_400_000).toISOString() } });
-    await env.DB.prepare("INSERT OR REPLACE INTO exports (export_id, object_key, sha256, created_at, expires_at, created_by) VALUES (?, ?, ?, ?, ?, 'system')")
-      .bind(`daily-${date}`, objectKey, hash, generatedAt, new Date(Date.now() + 30 * 86_400_000).toISOString()).run();
-    const expired = await env.DB.prepare("SELECT export_id, object_key FROM exports WHERE expires_at < ?").bind(generatedAt).all();
-    for (const item of expired.results) await bucket.delete(item.object_key);
-    await env.DB.prepare("DELETE FROM exports WHERE expires_at < ?").bind(generatedAt).run();
+    try {
+      const bucket = stateBucket(env);
+      if (!env.DB || !bucket) return;
+      const generatedAt = new Date().toISOString();
+      const bytes = Buffer.from(JSON.stringify(await createBackup(env.DB, generatedAt)));
+      const date = generatedAt.slice(0, 10);
+      const objectKey = `backups/${date}.json`;
+      const hash = sha256Hex(bytes);
+      await bucket.put(objectKey, bytes, { customMetadata: { sha256: hash, expiresAt: new Date(Date.now() + 30 * 86_400_000).toISOString() } });
+      await env.DB.prepare("INSERT OR REPLACE INTO exports (export_id, object_key, sha256, created_at, expires_at, created_by) VALUES (?, ?, ?, ?, ?, 'system')")
+        .bind(`daily-${date}`, objectKey, hash, generatedAt, new Date(Date.now() + 30 * 86_400_000).toISOString()).run();
+      const expired = await env.DB.prepare("SELECT export_id, object_key FROM exports WHERE expires_at < ?").bind(generatedAt).all();
+      for (const item of expired.results) await bucket.delete(item.object_key);
+      await env.DB.prepare("DELETE FROM exports WHERE expires_at < ?").bind(generatedAt).run();
+    } catch (error) {
+      const errorName = error instanceof Error && typeof error.name === "string" && error.name.length > 0 ? error.name : "Error";
+      console.log(JSON.stringify({ kind: "backup", ok: false, error: errorName }));
+    }
   },
 };
