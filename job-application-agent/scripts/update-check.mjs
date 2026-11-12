@@ -2,10 +2,17 @@
 // Reads the latest published version from the public npm registry and reports it.
 // It never downloads, installs, or runs anything; the agent tells the user and
 // waits for them to ask for an update. No profile, ledger, or identity data is sent.
-import { readFile, writeFile, rename, chmod } from 'node:fs/promises';
+import { existsSync } from 'node:fs';
+import { chmod, readFile, rename, writeFile } from 'node:fs/promises';
 import os from 'node:os';
-import path from 'node:path';
 
+import {
+  FIRST_JOB_PROMPTED_VERSION,
+  firstJobPrompt,
+  isCopiedSkillDirectory,
+  managedInstallConfigPath,
+  managedRuntimeStatus,
+} from './managed-runtime.mjs';
 import { SKILL_VERSION } from './version.mjs';
 
 export const NPM_LATEST_URL = 'https://registry.npmjs.org/job-application-agent/latest';
@@ -34,8 +41,7 @@ export function compareVersions(a, b) {
 }
 
 export function installConfigPath(env = process.env, homeDir = os.homedir()) {
-  const agentHome = env.JOB_APPLICATION_AGENT_HOME || path.join(homeDir, '.agents');
-  return path.join(agentHome, 'job-application-agent', 'install.json');
+  return managedInstallConfigPath(env, homeDir);
 }
 
 async function readInstallConfig(configPath) {
@@ -47,9 +53,9 @@ async function readInstallConfig(configPath) {
   }
 }
 
-async function markNoticeShown(configPath, config) {
+async function writeInstallConfig(configPath, config) {
   const temp = `${configPath}.${process.pid}.tmp`;
-  await writeFile(temp, `${JSON.stringify({ ...config, autoUpdateNoticeShown: true }, null, 2)}\n`, { mode: 0o600 });
+  await writeFile(temp, `${JSON.stringify(config, null, 2)}\n`, { mode: 0o600 });
   await chmod(temp, 0o600).catch(() => {});
   await rename(temp, configPath);
 }
@@ -75,20 +81,34 @@ export async function checkForUpdate({
   homeDir = os.homedir(),
   fetchImpl = globalThis.fetch,
   timeoutMs = 5000,
+  copiedSkill = false,
+  scriptFile,
+  existsImpl = existsSync,
 } = {}) {
   const configPath = installConfigPath(env, homeDir);
-  const config = await readInstallConfig(configPath);
+  let config = await readInstallConfig(configPath);
   const automaticUpdates = config?.installed === true && config.automaticUpdates === true;
+  const skillOnly = copiedSkill === true || (typeof scriptFile === 'string' && isCopiedSkillDirectory(scriptFile, existsImpl));
   const result = {
     currentVersion,
     automaticUpdates,
     updateCommand: UPDATE_COMMAND,
     instruction: 'Tell the user about an available update and ask before running the update command. Never update automatically.',
   };
+  let dirty = false;
   if (automaticUpdates && config.autoUpdateNoticeShown !== true) {
     result.notice = AUTO_UPDATE_NOTICE;
-    await markNoticeShown(configPath, config).catch(() => {});
+    config = { ...config, autoUpdateNoticeShown: true };
+    dirty = true;
   }
+  if (config?.installed === true && config[FIRST_JOB_PROMPTED_VERSION] !== currentVersion) {
+    const previous = typeof config[FIRST_JOB_PROMPTED_VERSION] === 'string' ? config[FIRST_JOB_PROMPTED_VERSION] : null;
+    result.firstJob = firstJobPrompt(currentVersion, previous);
+    config = { ...config, [FIRST_JOB_PROMPTED_VERSION]: currentVersion };
+    dirty = true;
+  }
+  if (skillOnly && config?.installed !== true) result.managedRuntime = managedRuntimeStatus();
+  if (dirty && config) await writeInstallConfig(configPath, config).catch(() => {});
   if (String(env.JOB_APPLICATION_AGENT_NO_UPDATE_CHECK ?? '').trim() === '1') {
     return { ...result, checked: false, reason: 'disabled' };
   }

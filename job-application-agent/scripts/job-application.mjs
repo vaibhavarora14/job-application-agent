@@ -5,6 +5,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { appendFile, chmod, mkdir, open, readFile, rename, stat, unlink, writeFile } from 'node:fs/promises';
 import { homedir, platform, userInfo } from 'node:os';
 import { basename, join, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { isEntrypoint } from './entrypoint.mjs';
 
 import { ACCOUNTING_CAPABILITY, accountingApplicationKey, canonicalUrl, deliveryProjection, discoveryProjection, validateDelivery, validateDeliveryReferences, validateLead, validateLeadReferences, stableJson } from './application-accounting.mjs';
@@ -13,6 +14,7 @@ import { SourceCommunityClient } from './source-community-client.mjs';
 import { normalizeCommunityJob, normalizeCommunitySource } from './source-community-schema.mjs';
 import { SKILL_VERSION, TelemetryClient } from './telemetry-client.mjs';
 import { normalizeCliArgs, usageError, usageFor } from './cli-args.mjs';
+import { assessApplyRefusal } from './managed-runtime.mjs';
 import { jobIdentity, sanitizeTelemetryErrorMessage, sanitizeTelemetryFieldLabel } from './telemetry-schema.mjs';
 import { CloudStateClient, defaultCloudConfigPath, enableCloudUpdateGuard, saveCloudConfig } from './cloud-state-client.mjs';
 import {
@@ -37,6 +39,7 @@ import {
   resumePreflightRecord, roundGatesRecord, routineSubmitGateMessage,
 } from './routine-gates.mjs';
 
+const SCRIPT_FILE = fileURLToPath(import.meta.url);
 const SOURCES = new Set(['linkedin', 'greenhouse', 'lever', 'ashby', 'workable', 'comeet', 'workday', 'rippling', 'smartrecruiters', 'google-form', 'company', 'email', 'other']);
 /** Ledger applicationChannel values: ATS sources plus honest one-click profile applies (not a community job-board channel). */
 const APPLICATION_CHANNELS = new Set([...SOURCES, 'profile_one_click']);
@@ -3529,6 +3532,8 @@ async function emitDomainEvent(telemetry, session, event) {
 
 async function executeCommand(argv, telemetry, session, community) {
   const [area, action, value] = argv;
+  const runtimeRefusal = assessApplyRefusal({ scriptFile: SCRIPT_FILE });
+  if (runtimeRefusal && (area === 'score' || (area === 'ledger' && action === 'add'))) throw new Error(runtimeRefusal);
   let result;
   if (area === 'cloud') result = await cloudCommand(action, value);
   else if (area === 'profile' && action === 'set' && value === '--stdin') {
@@ -3771,7 +3776,7 @@ async function main(rawArgs) {
   if (area === 'updates') {
     if (action === 'check' && args.length === 2) {
       const { checkForUpdate } = await import('./update-check.mjs');
-      return print(await checkForUpdate());
+      return print(await checkForUpdate({ scriptFile: SCRIPT_FILE }));
     }
     throw usageError(['updates', action]);
   }
