@@ -4,6 +4,7 @@ import path from 'node:path';
 import { createRequire } from 'node:module';
 
 import { classifyPackageRoot, publicInstallOrigin, VENDOR_SKILL_DIRS } from '../../job-application-agent/scripts/install-source.mjs';
+import { FIRST_JOB_PROMPTED_VERSION } from '../../job-application-agent/scripts/managed-runtime.mjs';
 import { installScheduler, removeScheduler } from './scheduler.mjs';
 
 export const CONFIG_FILENAME = 'install.json';
@@ -196,6 +197,7 @@ export async function installSkill({
     updatedAt: new Date().toISOString(),
     capabilities,
     ...(prior.requiredCapabilities ? { requiredCapabilities: prior.requiredCapabilities } : {}),
+    ...(typeof prior[FIRST_JOB_PROMPTED_VERSION] === 'string' ? { [FIRST_JOB_PROMPTED_VERSION]: prior[FIRST_JOB_PROMPTED_VERSION] } : {}),
   };
   await writeConfig(paths.configPath, config);
   await syncVendorSkillCopies({ homeDir, sourceSkillDir: paths.target });
