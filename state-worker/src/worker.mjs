@@ -857,6 +857,9 @@ export default {
     } catch (error) {
       const errorName = error instanceof Error && typeof error.name === "string" && error.name.length > 0 ? error.name : "Error";
       console.log(JSON.stringify({ kind: "backup", ok: false, error: errorName }));
+      const failure = new Error(errorName);
+      failure.name = errorName;
+      throw failure;
     }
   },
 };

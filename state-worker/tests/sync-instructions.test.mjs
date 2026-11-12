@@ -94,24 +94,34 @@ test('scheduled backup failure logs kind, ok, and the error name', async () => {
   try {
     const failure = new Error(`backup write failed ${secret}`);
     failure.name = 'BackupWriteError';
-    await worker.scheduled({}, {
-      DB: {
-        prepare() {
-          throw failure;
+    await assert.rejects(
+      () => worker.scheduled({}, {
+        DB: {
+          prepare() {
+            throw failure;
+          },
         },
+        STATE_KV: {
+          getWithMetadata() {
+            throw new Error(`kv read ${secret}`);
+          },
+          put() {
+            throw new Error(`kv write ${secret}`);
+          },
+          delete() {
+            throw new Error(`kv delete ${secret}`);
+          },
+        },
+      }),
+      (error) => {
+        assert.equal(error.name, 'BackupWriteError');
+        assert.equal(error.message, 'BackupWriteError');
+        assert.equal(error.cause, undefined);
+        assert.equal(String(error.stack).includes(secret), false);
+        assert.equal(String(error.message).includes(secret), false);
+        return true;
       },
-      STATE_KV: {
-        getWithMetadata() {
-          throw new Error(`kv read ${secret}`);
-        },
-        put() {
-          throw new Error(`kv write ${secret}`);
-        },
-        delete() {
-          throw new Error(`kv delete ${secret}`);
-        },
-      },
-    });
+    );
   } finally {
     console.log = original;
   }
