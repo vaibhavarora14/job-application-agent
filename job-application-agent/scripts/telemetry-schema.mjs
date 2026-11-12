@@ -38,6 +38,15 @@ const GAP_TAGS = values('role_family', 'seniority', 'skills', 'industry', 'locat
 const DISCOVERY_SOURCE_KEYS = values('direct-company-careers', 'linkedin-jobs-feed', 'x-hiring-feed', 'yc-work-at-a-startup', 'yc-company-directory', 'hacker-news-who-is-hiring', 'we-work-remotely', 'a16z-build-jobs', 'engg-space', 'js-guru-jobs', 'linux-careers', 'indeed', 'recruiter-inbound', 'user-supplied-leads', 'community');
 const DISCOVERY_BLOCKERS = values('login', 'mfa', 'captcha', 'site-error', 'access-unavailable');
 const CONCENTRATION_REASONS = values('stronger-fit', 'alternatives-exhausted', 'access-blocked', 'candidate-directed');
+// Envelope fields, not event properties. Keep in lockstep with install-source.mjs INSTALL_SOURCES.
+export const INSTALL_SOURCE_VALUES = [
+  'npx-latest', 'npx-name', 'npx-pinned', 'npx-other', 'npm-global', 'npm-local', 'local-checkout', 'unpacked-package',
+  'skill-add', 'skill-add-pinned', 'skill-add-local', 'skill-add-other', 'clawhub', 'clawhub-other',
+  'managed-unrecorded', 'stale-copy', 'copied-tree', 'unknown',
+];
+const INSTALL_SOURCES = values(...INSTALL_SOURCE_VALUES);
+const NPX_INSTALL_SOURCES = values('npx-latest', 'npx-name', 'npx-pinned', 'npx-other');
+const INSTALL_CACHES = values('fresh', 'cached');
 
 const text = (max, identitySafe = false) => ({ kind: 'text', max, identitySafe });
 const integer = (min, max) => ({ kind: 'integer', min, max });
@@ -267,21 +276,36 @@ export function validateTelemetryIdentity(input) {
   return identity;
 }
 
-export function createTelemetryEnvelope({ installationId, token, event, properties, skillVersion, identity }) {
+function installOriginFields(input) {
+  const origin = {};
+  if (input.installSource !== undefined) {
+    if (typeof input.installSource !== 'string' || !INSTALL_SOURCES.has(input.installSource)) throw new Error('installSource is invalid.');
+    origin.installSource = input.installSource;
+  }
+  if (input.installCache !== undefined) {
+    if (typeof input.installCache !== 'string' || !INSTALL_CACHES.has(input.installCache)) throw new Error('installCache is invalid.');
+    if (!NPX_INSTALL_SOURCES.has(origin.installSource)) throw new Error('installCache requires an npx installSource.');
+    origin.installCache = input.installCache;
+  }
+  return origin;
+}
+
+export function createTelemetryEnvelope({ installationId, token, event, properties, skillVersion, identity, installSource, installCache }) {
   if (!UUID.test(installationId)) throw new Error('installationId must be an anonymous UUID.');
   if (typeof token !== 'string' || token.length < 8 || token.length > 2048) throw new Error('token is invalid.');
   if (typeof skillVersion !== 'string' || !VERSION.test(skillVersion)) throw new Error('skillVersion is invalid.');
   // Identity envelopes are rejected; analytics never carry candidate name/email.
   if (identity !== undefined) throw new Error('Unknown telemetry envelope property: identity.');
+  const origin = installOriginFields({ installSource, installCache });
   const safe = validateEvent(typeof event === 'string' ? { event, properties } : event);
-  const envelope = { schemaVersion: TELEMETRY_SCHEMA_VERSION, skillVersion, installationId, token, ...safe };
+  const envelope = { schemaVersion: TELEMETRY_SCHEMA_VERSION, skillVersion, installationId, token, ...origin, ...safe };
   if (new TextEncoder().encode(JSON.stringify(envelope)).length > TELEMETRY_MAX_BYTES) throw new Error('Telemetry payload exceeds 4 KB.');
   return envelope;
 }
 
 export function validateTelemetryEnvelope(input) {
   if (!input || Array.isArray(input) || typeof input !== 'object') throw new Error('Telemetry payload must be an object.');
-  const allowed = new Set(['schemaVersion', 'skillVersion', 'installationId', 'token', 'event', 'properties']);
+  const allowed = new Set(['schemaVersion', 'skillVersion', 'installationId', 'token', 'event', 'properties', 'installSource', 'installCache']);
   for (const key of Object.keys(input)) if (!allowed.has(key)) throw new Error(`Unknown telemetry envelope property: ${key}.`);
   if (input.schemaVersion !== TELEMETRY_SCHEMA_VERSION) throw new Error('Unsupported telemetry schema version.');
   return createTelemetryEnvelope(input);

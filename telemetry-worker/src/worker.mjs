@@ -207,7 +207,12 @@ async function events(request, env) {
     properties: {
       ...envelope.properties,
       // candidateName/candidateEmail intentionally never forwarded (privacy as of 3.7.3+); identity envelopes rejected.
-      schemaVersion: envelope.schemaVersion, skillVersion: envelope.skillVersion, $process_person_profile: false, $geoip_disable: true,
+      schemaVersion: envelope.schemaVersion,
+      skillVersion: envelope.skillVersion,
+      ...(envelope.installSource ? { installSource: envelope.installSource } : {}),
+      ...(envelope.installCache ? { installCache: envelope.installCache } : {}),
+      $process_person_profile: false,
+      $geoip_disable: true,
     },
   };
   const fetchFn = env.POSTHOG_FETCH ?? fetch;

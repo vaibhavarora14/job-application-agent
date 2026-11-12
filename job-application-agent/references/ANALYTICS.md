@@ -56,6 +56,34 @@ Local attention details and friction evidence are never transmitted. Analytics m
 
 Company and title values are bounded and rejected when they resemble an email, phone number, URL, LinkedIn profile, or GitHub profile.
 
+How the running skill tree was obtained is recorded as two optional envelope fields, `installSource` and `installCache`. They are closed enums. They are not event `properties`, and they never include a file path, npm cache directory, cache key, registry URL, git remote, repository owner, ref, or version specifier. The relay copies them onto the PostHog event next to `skillVersion`, so later events for the same install can be filtered without joining back to `installation_started`. Clients that predate the fields omit them. A relay that has not been updated yet rejects an envelope that includes them; the CLI resends that one event without the fields so the event is still counted. Deploy this relay change before publishing a CLI that sends the fields.
+
+`installSource` values:
+
+| Value | Meaning |
+|---|---|
+| `npx-latest` | `npx` or `npm exec` of `job-application-agent@latest`. The npm cache directory key matches that specifier, including the automatic updater's `--package=job-application-agent@latest`. |
+| `npx-name` | `npx job-application-agent` with no version. |
+| `npx-pinned` | `npx` of the exact version that ran, for example `@3.8.4` when that build is 3.8.4. The specifier text is not sent. |
+| `npx-other` | An npx cache entry for some other specifier: a range, another dist-tag, a git URL, or more than one package. |
+| `npm-global` / `npm-local` | A normal global npm install, or a dependency of another project. The original specifier is not recoverable. |
+| `local-checkout` | A git checkout of this package. |
+| `unpacked-package` | The package directory with no `.git` and no npm install layout. |
+| `skill-add` | A skills CLI lock for the official GitHub repository with no pinned ref. |
+| `skill-add-pinned` | The same lock with a non-default ref (tag, commit, or branch). The ref is not sent. |
+| `skill-add-local` | The skills CLI installed a local directory. The path is not sent. |
+| `skill-add-other` | The skills CLI installed any other source, such as a fork or a third-party copy. The source string is not sent. |
+| `clawhub` | ClawHub or OpenClaw origin metadata for the official skill slug, with no owner or the official owner. |
+| `clawhub-other` | ClawHub metadata for a different slug or owner, or a ClawHub directory that is not the official skill. Owner, slug, and registry URL are not sent. |
+| `managed-unrecorded` | `install.json` records this version, but an older installer did not store a source. This is not treated as `@latest`. |
+| `stale-copy` | The process is running from the managed skill path, but `install.json`'s version is not this build. |
+| `copied-tree` | A skill folder with no installer record and no skills-lock or ClawHub marker. |
+| `unknown` | The installer ran and none of the layouts above matched. |
+
+`installCache` is `fresh` or `cached` and is sent only with an `npx-*` source, and only when the package directory has a real creation time. `fresh` means that creation time was within 3 minutes before the installer process started. `cached` means the npx directory was already there. The field is omitted when the filesystem does not report a creation time, so a missing `installCache` is not evidence of a cache hit.
+
+The npm installer writes the enums into `install.json`. Later commands replay that record when they are running the managed skill tree, or a vendor copy of the same version. An in-tree `.clawhub` or `.clawdhub` origin wins over `install.json`, because the installer never writes that directory. A skills-lock entry wins when its timestamp is newer than `install.json`, or when there is no installer record. A skill folder that is not the managed install is classified from its own markers and does not inherit another tree's `install.json`. A global skills lock does not label an unrelated copied folder.
+
 ## Event schema
 
 | Event | Structured properties |
@@ -75,7 +103,7 @@ Company and title values are bounded and rejected when they resemble an email, p
 | `review_generated` | Canonical unique-submission and outcome counts, review-due Boolean |
 | `skill_error` | Stable error code, workflow stage, recoverable Boolean; optional ATS/job hash, `errorCategory`, sanitized message, field label |
 
-Only documented enums, bounded numbers, Booleans, bounded company/title/country strings, and documented tag arrays are accepted. Client and relay both reject unknown properties. Payloads are limited to 4 KB.
+Only documented enums, bounded numbers, Booleans, bounded company/title/country strings, and documented tag arrays are accepted. Client and relay both reject unknown properties. The install-source fields above are envelope fields, not properties, and are rejected unless they are one of the documented enums. Payloads are limited to 4 KB.
 
 `ledger add` accepts `telemetry.durationMs` or `telemetry.startedAt`/`endedAt` so `application_submitted` can report a real per-application duration bucket. When those are absent, the CLI uses a locally remembered `application_started` timestamp for the same job hash when available. If the job never got an `application_started` time, it falls back to the earliest local `score` time for that job (the private `review-started.json` and `assessment-decisions.json`, matched by URL first, and by company + role only for a job scored without a URL), measured to the moment of `ledger add`; this is a coarse bucket from scoring to submit, the same span `application_started` would measure. The fallback emits and records no `application_started`, so a job is never counted as started twice, and it adds no property (the relay schema is unchanged). With no local time at all it sends `durationBucket: "unknown"` (never a fabricated `under-1s`). Pass `telemetry.fieldsFilled` and `telemetry.resumeUploaded` on every live confirm (counts and Booleans only; `otpVerified`, `profileResumeOnFile`, and `resumeFieldPresent` are also allowed). Both `fieldsFilled` and `resumeUploaded` must be explicit. The CLI does not infer a missing one from answer keys, and `resumeFieldPresent` does not stand in for `resumeUploaded`. A partial block is refused on a live apply and is not recorded with `telemetrySupplied: true`. Set `telemetry.resumeFieldPresent` from the live form: `true` if it had a résumé/CV upload field, `false` if it had none, `"unknown"` when you never saw the form (the CLI refuses a telemetry block without the key, and sends nothing for `"unknown"`, so the relay schema is unchanged); an explicit `resumeUploaded: true` implies `true`, and answer-key heuristics never fill it in. Unknown non-PII keys are stripped with a warning; PII keys hard-fail. If the agent omits the telemetry block entirely with no answers, analytics send `fieldsFilled`/`shortAnswerCount`/`resumeUploaded` as `null` with `telemetrySupplied: false` and `fillMetricsSource: "empty"` rather than fake zeros. A live `ledger add` with no fill telemetry is refused before anything is recorded, whether `answers` are empty or present. The error names `telemetry.fieldsFilled`, `telemetry.resumeUploaded`, and `telemetry.resumeFieldPresent` (when the form was seen) and tells the caller to resend that block from this session's fill. Do not invent the counts. The only live exceptions are the honest `profile_one_click` + `telemetry.profileResumeOnFile` path and an attended `thinSubmissionOverride` object (with a unique per-job `candidateConfirmation`) under `APPROVE SUBMIT`; both still send their own telemetry. Fixture and vendor-sandbox applies may still omit telemetry: answers then use answer-key counts with `fillMetricsSource: "answer_keys"` and `telemetrySupplied: false`, and the private ledger row is marked `entryOrigin: "logged"` (logged after the fact, not agent-filled, excluded from agent fill-quality / thin-submit metrics). `entryOrigin` is derived by the CLI and never taken from the `ledger add` input. The property is unchanged and still accepted for older events; no new event fields are added. `0` fields with no résumé are still rejected for live `ledger add` unless one of those two exceptions applies. `application_submitted` also carries `profileOneClick` (`true` only for that honest one-click path, otherwise `false`; a Boolean, never the job URL, employer, résumé contents or file names). The relay must be deployed with the key before a CLI that sends it is published; if a relay that predates it answers `invalid_event`, the CLI resends that event once without `profileOneClick` so the submission is still counted. `application_submitted` includes `thinSubmissionOverrideUsed: true` only when the override was used (absent means `false`; never the confirmation note). Because the relay rejects unknown properties, new optional keys such as `resumeFieldPresent` ship in the relay before any CLI release that sends them.
 
@@ -96,4 +124,4 @@ Command categories map CLI areas accurately: `ledger add` → `apply`; `ledger c
 
 ## Release ordering
 
-Deploy the relay (which rejects unused `identity` envelope fields) before or with the CLI release. Existing schema-v1 envelopes without identity remain valid. Then release the CLI and updated disclosures together.
+Deploy the relay (which rejects unused `identity` envelope fields, and which accepts the optional `installSource` and `installCache` envelope fields) before or with the CLI release. Existing schema-v1 envelopes without those fields remain valid. Then release the CLI and updated disclosures together. Do not publish the CLI first: until the relay is deployed, each event is rejected once and resent without the new fields.

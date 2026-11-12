@@ -3,11 +3,12 @@ import os from 'node:os';
 import path from 'node:path';
 import { createRequire } from 'node:module';
 
+import { classifyPackageRoot, publicInstallOrigin, VENDOR_SKILL_DIRS } from '../../job-application-agent/scripts/install-source.mjs';
 import { installScheduler, removeScheduler } from './scheduler.mjs';
 
 export const CONFIG_FILENAME = 'install.json';
 export const SKILL_NAME = 'job-application-agent';
-export const VENDOR_SKILL_DIRS = ['.codex/skills', '.claude/skills', '.cursor/skills', '.copilot/skills', '.gemini/skills'];
+export { VENDOR_SKILL_DIRS };
 
 export function resolveAgentHome(homeDir = os.homedir()) {
   return process.env.JOB_APPLICATION_AGENT_HOME || path.join(homeDir, '.agents');
@@ -175,9 +176,18 @@ export async function installSkill({
     throw error;
   }
 
+  let installOrigin = { installSource: 'unknown' };
+  try {
+    installOrigin = publicInstallOrigin(await classifyPackageRoot(packageRoot, { packageVersion }));
+    if (!installOrigin.installSource) installOrigin = { installSource: 'unknown' };
+  } catch {
+    installOrigin = { installSource: 'unknown' };
+  }
   const config = {
     installed: true,
     installedVersion: packageVersion,
+    installSource: installOrigin.installSource,
+    ...(installOrigin.installCache ? { installCache: installOrigin.installCache } : {}),
     // New installs are notify-only: automatic installation is an explicit opt-in
     // (`updates enable`). Existing installs keep whatever they already had.
     automaticUpdates: prior.installed ? prior.automaticUpdates === true : false,
