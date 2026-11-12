@@ -2618,6 +2618,17 @@ function discoverySummary(events, applications, completion, audit = null) {
   };
 }
 
+function leadMatchesApplication(lead, app, events) {
+  return !lead.conflict
+    && lead.disposition === 'qualified'
+    && lead.applicationId === app.id
+    && lead.sourceId === (app.discoverySourceId ?? events.filter(e => e.type === 'source-checked' && e.applicationIds?.includes(app.id)).at(-1)?.sourceId)
+    && (normalizedText(lead.company) === normalizedText(app.company)
+      && (lead.employerJobId && app.employerJobId
+        ? lead.employerJobId.toLowerCase() === app.employerJobId.toLowerCase()
+        : canonicalUrl(lead.url) === canonicalUrl(app.url)));
+}
+
 function normalizeSourceCoverage(input) {
   const value = object(input, 'source coverage');
   const allowed = new Set(['roundId', 'sourceId', 'status', 'reviewedCount', 'qualifiedCount', 'blocker', 'evidence', 'applicationIds']);
@@ -2998,7 +3009,7 @@ async function roundStatus(roundId = null) {
   const completion = events.find((event) => event.type === 'completed' && event.roundId === id);
   const discovery = { ...discoverySummary(events.filter((event) => event.roundId === id), effectiveApplications, completion, audit),
     ...(audit ? { reviewedCount: audit.reviewedCount, qualifiedCount: audit.qualifiedCount, uniqueLeadCount: audit.uniqueLeadCount, dispositionCounts: audit.dispositionCounts, conflicts: audit.conflicts,
-      missingLeadApplicationIds: effectiveApplications.filter(app => !audit.leads.some(lead => !lead.conflict && lead.disposition === 'qualified' && lead.applicationId === app.id && lead.sourceId === (app.discoverySourceId ?? events.filter(e => e.type === 'source-checked' && e.applicationIds?.includes(app.id)).at(-1)?.sourceId) && (normalizedText(lead.company) === normalizedText(app.company) && (lead.employerJobId && app.employerJobId ? lead.employerJobId.toLowerCase() === app.employerJobId.toLowerCase() : canonicalUrl(lead.url) === canonicalUrl(app.url))))).map(app => app.id) } : { accounting: 'legacy-unverified' }) };
+      missingLeadApplicationIds: effectiveApplications.filter(app => !audit.leads.some(lead => leadMatchesApplication(lead, app, events))).map(app => app.id) } : { accounting: 'legacy-unverified' }) };
   let routineGates = null;
   if (gates) {
     const submitTimes = new Map(evidence.filter((item) => item.type === 'submit-recorded' && item.roundId === id).map((item) => [item.applicationId, item.at]));
