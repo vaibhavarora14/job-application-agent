@@ -62,6 +62,8 @@ Do not invent a second profile store. Prefer the installed skill scripts under `
 
 ## Workflow sketch
 
+After install, follow the installed `SKILL.md` Apply section before any submit, including `cloud lease-acquire` and `cloud intent-prepare`.
+
 1. Ensure the CLI/skill is installed (see above; ask the user to confirm before any install). Run `node scripts/job-application.mjs updates check` once (it only reads the latest version from npm). If a newer version exists, tell the user and ask before running `npx job-application-agent@latest update`; relay any `notice` verbatim. Never run the managed updater yourself, and never let a failed check block an application.
 2. Initialize or migrate profile with `scripts/job-application.mjs` (`profile check` / `profile migrate` / `profile set`). Read installed `references/SCHEMAS.md` before first profile/score/ledger use.
 3. Discover via `sources jobs` / `sources list`; resolve to direct employer or ATS pages. Prefer at least three distinct discovery sources per round, searched and recorded (`round lead`, then `round source`) before applying; run `sources jobs` once per round after `round start` (if it fails, record `community-jobs-feed` as blocked with `access-unavailable`). Coverage recorded after a round's submissions does not count. In `routine-auto`, only jobs whose latest score is `review` with `autoEligible: true` can be sent as routine work; others need the candidate's go-ahead on the filled page. If `round start` reports `resume-upload-unavailable`, tell the candidate and fix the résumé rather than narrowing to one-click boards.
