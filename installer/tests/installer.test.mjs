@@ -162,3 +162,15 @@ test('migrates a previous Codex skill and install.json into ~/.agents without de
   assert.equal(await readFile(path.join(legacySkill, 'SKILL.md'), 'utf8'), '# Version one\n');
   assert.match(await readFile(path.join(legacyManager, CONFIG_FILENAME), 'utf8'), /2\.0\.4/);
 });
+
+test('an update keeps firstJobPromptedVersion from the previous install', async () => {
+  const f = await fixture();
+  await installSkill({ packageRoot: f.packageRoot, packageVersion: '3.8.5', homeDir: f.homeDir, agentHome: f.agentHome, platform: 'test', scheduler: false });
+  const configPath = path.join(f.agentHome, 'job-application-agent', CONFIG_FILENAME);
+  const config = JSON.parse(await readFile(configPath, 'utf8'));
+  await writeFile(configPath, `${JSON.stringify({ ...config, firstJobPromptedVersion: '3.8.5' }, null, 2)}\n`);
+
+  const updated = await updateSkill({ packageRoot: f.packageRoot, packageVersion: '3.8.6', homeDir: f.homeDir, agentHome: f.agentHome, platform: 'test', scheduler: false });
+  assert.equal(updated.firstJobPromptedVersion, '3.8.5');
+  assert.equal(updated.installedVersion, '3.8.6');
+});

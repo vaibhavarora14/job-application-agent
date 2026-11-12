@@ -176,3 +176,20 @@ test('no SKILL.md copy tells the agent to run the updater on its own; it checks 
     assert.match(skill, /Never run the managed updater/i, copy);
   }
 });
+
+test('every SKILL.md copy requires the managed runtime before assess or apply and one review-each first job', async () => {
+  for (const copy of ALL_SKILL_COPIES) {
+    const skill = await readFile(new URL(copy, import.meta.url), 'utf8');
+    assert.match(skill, /npx job-application-agent@latest install/, copy);
+    assert.match(skill, /same machine as the browser/, copy);
+    assert.match(skill, /ClawHub/, copy);
+    assert.match(skill, /copied skill directory/, copy);
+    assert.match(skill, /firstJob/, copy);
+    assert.match(skill, /https:\/\/jobappagent\.com\/jobs/, copy);
+    assert.match(skill, /review-each/, copy);
+    assert.match(skill, /Do not auto-submit/, copy);
+    assert.match(skill, /Do not invent fill counts/, copy);
+  }
+  const canonical = await readFile(new URL('../SKILL.md', import.meta.url), 'utf8');
+  assert.match(canonical, /`score` emits `application_started` for `review`/);
+});
