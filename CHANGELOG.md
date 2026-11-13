@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- **Job pages publish street and postal code on JobPosting JSON-LD only when the employer stated them (#276).** `baseSalary` stays limited to employer-stated base pay (no estimate, OTE, or total comp). `jobLocation.address` now includes Ashby `streetAddress` and `postalCode` when those fields are present, and still omits `streetAddress`, `postalCode`, and `addressRegion` when the role has no such fact. Remote roles stay `TELECOMMUTE` with a country requirement and no invented office. The `/jobs` listing does not gain JobPosting markup. No pricing, CTA, or deploy change.
+
 ## 3.8.7 — 12 Nov 2026
 
 - **CLI: a skill-only install cannot assess or apply until the managed runtime is installed, and a fresh install or skillVersion upgrade prompts one review-each job (#270).** `npx skills add`, ClawHub, and a copied skill directory leave the skill folder without `install.json`. From that copy, `score` and `ledger add` are refused and tell the agent to run `npx job-application-agent@latest install` on the same machine as the browser. `updates check` returns `managedRuntime` in that case. After a managed install, or when `firstJobPromptedVersion` differs from the running skill version, `updates check` returns `firstJob` once: one live role from https://jobappagent.com/jobs or one employer URL, in `review-each`, recorded only after visible confirmation. It does not auto-submit, does not invent fill counts, and does not change `application_started`. The repo checkout and the npm package tree are not treated as a copied skill. No new telemetry events or properties. No site, pricing, or SKU change.

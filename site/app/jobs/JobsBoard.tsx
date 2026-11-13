@@ -29,7 +29,7 @@ export type BoardJob = {
     cities?: string[];
     countries?: string[];
     countryCodes?: string[];
-    places?: { locality?: string; region?: string; country: string }[];
+    places?: { locality?: string; region?: string; postalCode?: string; streetAddress?: string; country: string }[];
     workplace?: string;
     employmentType?: string | null;
     experienceLevel?: string | null;
