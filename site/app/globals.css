@@ -171,10 +171,6 @@ button, input { font: inherit; }
 .founder-note blockquote p { margin: 0 0 .8rem; color: var(--text); font-size: 1rem; line-height: 1.65; }
 .founder-note figcaption { color: var(--muted); font-size: .875rem; font-weight: 600; }
 
-.launch-countdown { overflow: hidden; border: 1px solid var(--line); border-radius: .75rem; background: var(--surface); color: var(--ink); }
-.launch-countdown-heading { padding: 1.6rem 1.7rem 1.4rem; display: flex; align-items: start; justify-content: space-between; gap: 1rem; border-bottom: 1px solid var(--line); }
-.launch-countdown .eyebrow { color: var(--accent-text); }
-.launch-countdown h2 { max-width: 22rem; margin: .55rem 0 0; font-family: var(--font-display), serif; font-size: clamp(1.6rem, 2.6vw, 2.1rem); font-weight: 400; line-height: 1.1; letter-spacing: -.025em; }
 .launch-state { flex: 0 0 auto; padding: .45rem .75rem; border: 1px solid var(--accent-line); border-radius: 999px; background: var(--accent-soft); color: var(--accent-deep); font: 700 .75rem/1.2 var(--font-body), sans-serif; letter-spacing: .04em; }
 .launch-state i { width: .48rem; height: .48rem; margin-right: .5rem; border-radius: 50%; display: inline-block; background: var(--accent); box-shadow: 0 0 0 .25rem rgb(37 99 235 / 15%); animation: launch-pulse 2s ease-out infinite; }
 .launch-target { margin: 0 1.7rem; padding: 1.2rem 0; display: flex; align-items: center; justify-content: space-between; gap: 1rem; border-bottom: 1px solid var(--line); font: 500 .875rem/1.5 var(--font-body), sans-serif; }
@@ -364,7 +360,6 @@ footer a:hover { color: var(--ink); }
   .hero h1 { font-size: clamp(2.5rem, 11vw, 3.4rem); }
   .hero-actions { display: grid; }
   .hero-actions .button { width: 100%; }
-  .launch-countdown-heading { align-items: start; flex-direction: column; }
   .launch-target { align-items: start; flex-direction: column; }
   .launch-soft-timing { text-align: left; }
   .proof-heading { align-items: start; flex-direction: column; }
