@@ -18,8 +18,6 @@ export const CLOUD_STREAM_FILES = Object.freeze({
 const CLOUD_DOCUMENT_FILES = Object.freeze({
   profile: 'cloud-profile-cache.json',
   autonomy: 'autonomy.json',
-  'review-policy': 'review-policy.json',
-  'postal-address': 'postal-address.json',
 });
 
 const FORBIDDEN_KEYS = /^(password|passwd|cookie|cookies|mfa|mfaCode|totp|ssn|passport|aadhaar|governmentId|governmentID|nationalId|sessionCookie|browserCookies|credential|credentials)$/i;
@@ -438,8 +436,4 @@ function multisetDifference(values, otherCounts) {
 export async function readCachedCloudProfile(stateDir) {
   try { return JSON.parse(await readFile(join(stateDir, 'cloud-profile-cache.json'), 'utf8')); }
   catch (error) { if (error.code === 'ENOENT') return null; throw error; }
-}
-
-export function cloudDocumentFile(name) {
-  return CLOUD_DOCUMENT_FILES[name] ?? null;
 }
