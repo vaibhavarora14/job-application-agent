@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "collectedAt": "2026-10-28T10:57:09.801Z",
+  "collectedAt": "2026-11-14T10:25:14.562Z",
   "snapshotCount": 1626,
   "unresolved": [
     {
@@ -123,6 +123,13 @@
       "reason": "HTTP 404"
     },
     {
+      "jobId": "community-job-05596bac29e1dfa9",
+      "url": "https://job-boards.greenhouse.io/enterpret/jobs/7821474003",
+      "company": "Enterpret",
+      "role": "Principal Engineer, Core Product (Bengaluru)",
+      "reason": "HTTP 404"
+    },
+    {
       "jobId": "community-job-055d9933a493e647",
       "url": "https://www.linkedin.com/jobs/view/4459210777",
       "company": "Kake",
@@ -179,6 +186,13 @@
       "reason": "Needs page inspection / unsupported ATS"
     },
     {
+      "jobId": "community-job-07200d67c8b7f575",
+      "url": "https://job-boards.greenhouse.io/cloudflare/jobs/8168623",
+      "company": "Cloudflare",
+      "role": "Software Engineer - Platforms & Productivity",
+      "reason": "HTTP 404"
+    },
+    {
       "jobId": "community-job-072cbe79500c9789",
       "url": "https://jobs.ashbyhq.com/primeintellect/c074bdd9-bee2-4ee9-ae03-aa8f7537682c/application",
       "company": "Prime Intellect",
@@ -212,6 +226,13 @@
       "company": "Medsynaptic",
       "role": "Senior Full Stack Developer (React + Python)",
       "reason": "Needs page inspection / unsupported ATS"
+    },
+    {
+      "jobId": "community-job-07c6ee6da8e270ba",
+      "url": "https://jobs.ashbyhq.com/serval/d7fb089c-db8a-4877-a5f3-73a09e67f54b",
+      "company": "Serval",
+      "role": "Software Engineer Intern (Backend)",
+      "reason": "No exact matching structured location"
     },
     {
       "jobId": "community-job-085f1599f862c83f",
@@ -253,7 +274,7 @@
       "url": "https://jobs.ashbyhq.com/umbrel/dc4ce904-4340-4fe0-b2c0-eacfa970bcb3",
       "company": "Umbrel",
       "role": "Senior Frontend Engineer",
-      "reason": "No exact matching structured location"
+      "reason": "HTTP 404"
     },
     {
       "jobId": "community-job-09e791ad5354b6f0",
@@ -282,6 +303,13 @@
       "company": "Chainguard",
       "role": "Senior Software Engineer (AI CICD)",
       "reason": "HTTP 404"
+    },
+    {
+      "jobId": "community-job-0a3f33902c4a1392",
+      "url": "https://jobs.ashbyhq.com/dedalus-labs/fab1accf-2b21-453b-869f-a08759fa605c",
+      "company": "Dedalus Labs",
+      "role": "Infrastructure Engineer Intern",
+      "reason": "No exact matching structured location"
     },
     {
       "jobId": "community-job-0a55aeefc4ada985",
@@ -317,6 +345,13 @@
       "company": "Humwork",
       "role": "Founding Engineer",
       "reason": "Needs page inspection / unsupported ATS"
+    },
+    {
+      "jobId": "community-job-0b8e21f114badc49",
+      "url": "https://job-boards.greenhouse.io/sezzle/jobs/7775223003",
+      "company": "Sezzle",
+      "role": "Senior Software Engineer (India)",
+      "reason": "HTTP 404"
     },
     {
       "jobId": "community-job-0bd35087aed7081c",
@@ -368,18 +403,18 @@
       "reason": "Needs page inspection / unsupported ATS"
     },
     {
-      "jobId": "community-job-0decef7051012869",
-      "url": "https://jobs.ashbyhq.com/protege/fca52e03-9e9d-4dcd-bda8-c27dbdd0e0a4",
-      "company": "Protege",
-      "role": "Forward Deployed Engineer, Healthcare",
-      "reason": "No exact matching structured location"
-    },
-    {
       "jobId": "community-job-0ed431dadfb4fcd3",
       "url": "https://alice.io/positions/position-0f_e64",
       "company": "Alice",
       "role": "GenAI Safety Analyst",
       "reason": "Needs page inspection / unsupported ATS"
+    },
+    {
+      "jobId": "community-job-0f1436f3cdb729e0",
+      "url": "https://jobs.ashbyhq.com/whitecircle/d2c5f461-55d2-4c20-97a6-41a0fa0b51e9",
+      "company": "White Circle",
+      "role": "AI Red Team Engineer",
+      "reason": "No exact matching structured location"
     },
     {
       "jobId": "community-job-0f57805fb8c7be23",
@@ -407,7 +442,14 @@
       "url": "https://jobs.ashbyhq.com/umbrel/4d78d631-9f0a-4bc6-bba6-2cb43ebe4c2e",
       "company": "Umbrel",
       "role": "Senior Full-Stack Engineer",
-      "reason": "No exact matching structured location"
+      "reason": "HTTP 404"
+    },
+    {
+      "jobId": "community-job-104013bde98aa07a",
+      "url": "https://job-boards.greenhouse.io/gitlab/jobs/8826920002",
+      "company": "GitLab",
+      "role": "Senior Frontend Engineer",
+      "reason": "HTTP 404"
     },
     {
       "jobId": "community-job-109216ccdfc5609a",
@@ -452,6 +494,13 @@
       "reason": "Needs page inspection / unsupported ATS"
     },
     {
+      "jobId": "community-job-116425a72a998a10",
+      "url": "https://jobs.ashbyhq.com/n8n/ea8efc33-c7b8-4b88-826c-3dca17c3aa47",
+      "company": "n8n",
+      "role": "Staff Core Platform Engineer",
+      "reason": "No exact matching structured location"
+    },
+    {
       "jobId": "community-job-1197b5abf577237e",
       "url": "https://jobs.ashbyhq.com/cowboyspace/9c2cbc34-422e-4954-affe-fcdf9097c725",
       "company": "Cowboy Space",
@@ -494,6 +543,13 @@
       "reason": "Needs page inspection / unsupported ATS"
     },
     {
+      "jobId": "community-job-12f6f7c94f1071ea",
+      "url": "https://jobs.ashbyhq.com/persona.ai/1e8d195c-e28e-423d-a06a-9eeb401ed4fc",
+      "company": "Persona AI",
+      "role": "Robotics Software Internship, Manipulation (Summer 2027)",
+      "reason": "No exact matching structured location"
+    },
+    {
       "jobId": "community-job-131dd736448d29cd",
       "url": "https://jobs.needle.so/delvo/180978da-1e68-4aeb-b5d3-2166f14e0cf2",
       "company": "Delvo",
@@ -527,6 +583,13 @@
       "company": "Reddit",
       "role": "Senior Machine Learning Engineer",
       "reason": "Needs page inspection / unsupported ATS"
+    },
+    {
+      "jobId": "community-job-13f7b69203b89abe",
+      "url": "https://jobs.ashbyhq.com/ashby/751768c6-8d97-4e91-a57d-6b85ce4b5a37",
+      "company": "Ashby",
+      "role": "Senior Product Engineer - Americas",
+      "reason": "No exact matching structured location"
     },
     {
       "jobId": "community-job-14578cb433422829",
@@ -599,11 +662,25 @@
       "reason": "Needs page inspection / unsupported ATS"
     },
     {
+      "jobId": "community-job-1632b6a99da884e6",
+      "url": "https://jobs.ashbyhq.com/pantograph/48064974-4e27-4bb7-ba11-31d1390e5e74",
+      "company": "Pantograph",
+      "role": "Software Engineer",
+      "reason": "No exact matching structured location"
+    },
+    {
       "jobId": "community-job-16e6b14eaded1601",
       "url": "https://jobs.ashbyhq.com/forus/82e10191-232e-4e8d-9c5e-cb82940cdfc7",
       "company": "Forus",
       "role": "Engineering Intern (Fall '26 & Spring/Summer '27), New York",
       "reason": "No exact matching structured location"
+    },
+    {
+      "jobId": "community-job-16ea5cacad91cf0b",
+      "url": "https://job-boards.greenhouse.io/platformscience/jobs/7493142003",
+      "company": "Platform Science",
+      "role": "Senior Fullstack Software Engineer - React & Node.js",
+      "reason": "HTTP 404"
     },
     {
       "jobId": "community-job-16f41e549673e2e2",
@@ -680,7 +757,7 @@
       "url": "https://job-boards.eu.greenhouse.io/finnapp/jobs/4761813101",
       "company": "FINN",
       "role": "Lead Software Engineer - Frontend",
-      "reason": "No exact matching structured location"
+      "reason": "HTTP 404"
     },
     {
       "jobId": "community-job-19ae61c8bdfffc47",
@@ -702,6 +779,13 @@
       "company": "NoMoBo",
       "role": "Senior Full Stack Developer",
       "reason": "Needs page inspection / unsupported ATS"
+    },
+    {
+      "jobId": "community-job-1a2f151760d4aa20",
+      "url": "https://jobs.lever.co/veepee/e90e4df5-66b1-49b4-a233-c0b70d323fcf/apply",
+      "company": "Veepee",
+      "role": "Software Engineer Go, Rust or Scala (Infrastructure - Foundation) - Freelance (H/F/X)",
+      "reason": "HTTP 404"
     },
     {
       "jobId": "community-job-1a52906536a93cbe",
@@ -732,10 +816,24 @@
       "reason": "No exact matching structured location"
     },
     {
+      "jobId": "community-job-1af4e81a6d06a00d",
+      "url": "https://jobs.ashbyhq.com/railway/4856389c-44d8-4635-ba51-5fc1b8a49ca8",
+      "company": "Railway",
+      "role": "Senior Infra Engineer Observability",
+      "reason": "No exact matching structured location"
+    },
+    {
       "jobId": "community-job-1b0ca5b2eb94b2f0",
       "url": "https://jobs.ashbyhq.com/misfitsandmachines/d67330a5-a44a-44ec-afc8-a12e6d906cbe",
       "company": "Misfits & Machines",
       "role": "Head of Growth & Marketing",
+      "reason": "No exact matching structured location"
+    },
+    {
+      "jobId": "community-job-1b542245080c23e8",
+      "url": "https://jobs.ashbyhq.com/perplexity/8a976851-9bef-4b07-8d36-567fa9540aef",
+      "company": "Perplexity",
+      "role": "Member of Technical Staff (AI Inference Engineer)",
       "reason": "No exact matching structured location"
     },
     {
@@ -765,6 +863,13 @@
       "company": "KrissDevHub",
       "role": "Backend Engineer (Node.js)",
       "reason": "Needs page inspection / unsupported ATS"
+    },
+    {
+      "jobId": "community-job-1c6bbfde0c87b2e0",
+      "url": "https://jobs.ashbyhq.com/gigaml/16876587-6ea6-4312-bf38-f62de6941626",
+      "company": "Giga",
+      "role": "Staff Backend Engineer",
+      "reason": "No exact matching structured location"
     },
     {
       "jobId": "community-job-1cede1ea8db58347",
@@ -816,11 +921,25 @@
       "reason": "Needs page inspection / unsupported ATS"
     },
     {
+      "jobId": "community-job-1f12a7e7f20fadce",
+      "url": "https://jobs.ashbyhq.com/pinecone/7ef089cb-a721-4ad8-a6d0-c390e64991d2/application",
+      "company": "Pinecone",
+      "role": "Senior/Staff Software Engineer, Search & Retrieval Infrastructure",
+      "reason": "No exact matching structured location"
+    },
+    {
       "jobId": "community-job-1f18d72ce19482b7",
       "url": "https://remoteok.com/remote-jobs/remote-prompt-writer-yo-it-consulting-1131902",
       "company": "YO IT Consulting",
       "role": "Prompt Writer",
       "reason": "Needs page inspection / unsupported ATS"
+    },
+    {
+      "jobId": "community-job-1f1d48aa5bb5aaaf",
+      "url": "https://job-boards.greenhouse.io/mongodb/jobs/7590644",
+      "company": "MongoDB",
+      "role": "Senior Software Engineer",
+      "reason": "HTTP 404"
     },
     {
       "jobId": "community-job-1f24cd269cd8d48f",
@@ -865,6 +984,13 @@
       "reason": "Needs page inspection / unsupported ATS"
     },
     {
+      "jobId": "community-job-1fbaeb864f0ac6c1",
+      "url": "https://jobs.ashbyhq.com/StandardBots/51cb68d4-4825-49a2-b7fe-35d5fef4cc00/application",
+      "company": "Standard Bots",
+      "role": "Senior Software Engineer, Full-Stack",
+      "reason": "No exact matching structured location"
+    },
+    {
       "jobId": "community-job-1fc2c07648957b85",
       "url": "https://clarioclinical.wd1.myworkdayjobs.com/en-US/clarioclinical_careers/job/Bangalore,-India/Associate-Data-Scientist_R17201-1",
       "company": "Clario",
@@ -877,6 +1003,13 @@
       "company": "Empire Assets",
       "role": "Junior Crypto Analyst & Trader",
       "reason": "Needs page inspection / unsupported ATS"
+    },
+    {
+      "jobId": "community-job-1ff0c7d071f78e1a",
+      "url": "https://job-boards.greenhouse.io/ethoslife/jobs/8161491002",
+      "company": "Ethos Life",
+      "role": "Senior Fullstack Engineer",
+      "reason": "HTTP 404"
     },
     {
       "jobId": "community-job-20089400389a5639",
@@ -1124,6 +1257,13 @@
       "reason": "No exact matching structured location"
     },
     {
+      "jobId": "community-job-28c63bce192ca678",
+      "url": "https://job-boards.greenhouse.io/zetaglobal/jobs/5816366004",
+      "company": "Zeta Global",
+      "role": "Senior Software Engineer",
+      "reason": "HTTP 404"
+    },
+    {
       "jobId": "community-job-290de3fd5540bff8",
       "url": "https://rellode.com/careers.html",
       "company": "Rellode",
@@ -1271,17 +1411,17 @@
       "reason": "Needs page inspection / unsupported ATS"
     },
     {
+      "jobId": "community-job-2ef844444f8c38d9",
+      "url": "https://job-boards.greenhouse.io/dscout/jobs/4370258009",
+      "company": "Dscout",
+      "role": "Applied AI Engineer - India",
+      "reason": "HTTP 404"
+    },
+    {
       "jobId": "community-job-2f5858b658558258",
       "url": "https://jobs.ashbyhq.com/leap/70e11698-f1dc-456a-8b87-5152d3edc0e6",
       "company": "Leap",
       "role": "Founding Software Engineer",
-      "reason": "No exact matching structured location"
-    },
-    {
-      "jobId": "community-job-2f7863f437367eb8",
-      "url": "https://jobs.ashbyhq.com/magentic/13f5cf7d-2da6-49d8-85a8-72f6b215b81c",
-      "company": "Magentic",
-      "role": "AI Product Engineer",
       "reason": "No exact matching structured location"
     },
     {
@@ -1313,6 +1453,13 @@
       "reason": "Needs page inspection / unsupported ATS"
     },
     {
+      "jobId": "community-job-30cb9f31de2fea2a",
+      "url": "https://jobs.ashbyhq.com/owner/fc0836f0-a4f2-437f-b438-5774e0021fbc",
+      "company": "Owner.com",
+      "role": "Senior Software Engineer, RestX",
+      "reason": "No exact matching structured location"
+    },
+    {
       "jobId": "community-job-30cc8a861d8e0fe2",
       "url": "https://www.linkedin.com/jobs/view/4463521291",
       "company": "MathCo",
@@ -1332,6 +1479,13 @@
       "company": "Omilia",
       "role": "IT Infrastructure Administrator",
       "reason": "Needs page inspection / unsupported ATS"
+    },
+    {
+      "jobId": "community-job-31bb513c530e855e",
+      "url": "https://jobs.ashbyhq.com/OpenAI/28cd6fe2-4096-426b-8b08-52a66458e2c6",
+      "company": "OpenAI",
+      "role": "Applied AI Architect",
+      "reason": "No exact matching structured location"
     },
     {
       "jobId": "community-job-31cc223ed1b39d99",
@@ -1369,6 +1523,20 @@
       "reason": "Needs page inspection / unsupported ATS"
     },
     {
+      "jobId": "community-job-325ed99654889712",
+      "url": "https://job-boards.greenhouse.io/mongodb/jobs/8071475",
+      "company": "MongoDB",
+      "role": "Lead, Platform Engineering",
+      "reason": "No exact matching structured location"
+    },
+    {
+      "jobId": "community-job-326795ca80328d1f",
+      "url": "https://jobs.ashbyhq.com/persona.ai/ed9a7425-9798-471e-b46a-fefd59570630",
+      "company": "Persona AI",
+      "role": "Machine Learning Internship, Manipulation (Spring 2027)",
+      "reason": "No exact matching structured location"
+    },
+    {
       "jobId": "community-job-329903f83b00fae0",
       "url": "https://yojan.online/careers/apply",
       "company": "Yojan Online Services",
@@ -1390,6 +1558,13 @@
       "reason": "Needs page inspection / unsupported ATS"
     },
     {
+      "jobId": "community-job-32cfa01e66e97477",
+      "url": "https://job-boards.greenhouse.io/gitlab/jobs/8565469002",
+      "company": "GitLab",
+      "role": "Senior AI Engineer",
+      "reason": "HTTP 404"
+    },
+    {
       "jobId": "community-job-32e17bc41b2a914f",
       "url": "https://remoteok.com/remote-jobs/remote-full-stack-developer-elite-worldgroup-inc-1135288",
       "company": "Elite Worldgroup Inc.",
@@ -1402,6 +1577,13 @@
       "company": "Job&Talent",
       "role": "GRC Senior Analyst",
       "reason": "HTTP 404"
+    },
+    {
+      "jobId": "community-job-33687875249169ed",
+      "url": "https://jobs.ashbyhq.com/doppel/bae7bcc9-afff-4f50-91e4-2c8d3580cd23",
+      "company": "Doppel",
+      "role": "Forward Deployed Engineer (Remote)",
+      "reason": "No exact matching structured location"
     },
     {
       "jobId": "community-job-33952ee74c72c18e",
@@ -1453,6 +1635,20 @@
       "reason": "Needs page inspection / unsupported ATS"
     },
     {
+      "jobId": "community-job-34764053efa12248",
+      "url": "https://jobs.ashbyhq.com/etched/6f23713f-5409-45b7-aae8-adb8710cdbc3",
+      "company": "Etched",
+      "role": "Inference Intern",
+      "reason": "No exact matching structured location"
+    },
+    {
+      "jobId": "community-job-34dbd85187d8a002",
+      "url": "https://jobs.ashbyhq.com/firetiger/7acf0768-f10d-4650-bcfc-12ed6e5d7cfc",
+      "company": "Firetiger",
+      "role": "Product Engineer - Intern/Co-op, San Francisco",
+      "reason": "HTTP 404"
+    },
+    {
       "jobId": "community-job-34e593d12478b1f9",
       "url": "https://reddit.com/careers/7511679",
       "company": "Reddit",
@@ -1486,6 +1682,13 @@
       "company": "PT Sant Group Indonesia",
       "role": "Fullstack Developer",
       "reason": "Needs page inspection / unsupported ATS"
+    },
+    {
+      "jobId": "community-job-358235dac3f29205",
+      "url": "https://jobs.ashbyhq.com/etched/27e5bd6b-9357-45f0-9e79-cfa2bf4eeba8",
+      "company": "Etched",
+      "role": "Chip Simulation Software Intern",
+      "reason": "No exact matching structured location"
     },
     {
       "jobId": "community-job-358f0ada61a020a5",
@@ -1563,6 +1766,13 @@
       "company": "PT. GDC Multi Sarana",
       "role": "Back End Developer",
       "reason": "Needs page inspection / unsupported ATS"
+    },
+    {
+      "jobId": "community-job-372c37f47d02e5ae",
+      "url": "https://jobs.ashbyhq.com/railway/541836a1-6d3f-47bf-845f-5f48fe547568",
+      "company": "Railway",
+      "role": "Infra Engineer Datacenters",
+      "reason": "No exact matching structured location"
     },
     {
       "jobId": "community-job-37b32ebbe904bba8",
@@ -1719,11 +1929,25 @@
       "reason": "Needs page inspection / unsupported ATS"
     },
     {
+      "jobId": "community-job-3c7ca9290773cbdb",
+      "url": "https://job-boards.eu.greenhouse.io/proton/jobs/4555348101",
+      "company": "Proton",
+      "role": "Head of Growth",
+      "reason": "HTTP 404"
+    },
+    {
       "jobId": "community-job-3c8462800dc6c77a",
       "url": "https://swiftguest.com/careers/senior-fullstack-engineer",
       "company": "SwiftGuest",
       "role": "Senior Full-Stack Engineer",
       "reason": "Needs page inspection / unsupported ATS"
+    },
+    {
+      "jobId": "community-job-3cbe4ca5f05f2e26",
+      "url": "https://jobs.ashbyhq.com/notion/e66c6658-9e65-4c58-8db2-844628b6e8f8",
+      "company": "Notion",
+      "role": "Software Engineer Intern (Winter 2027)",
+      "reason": "No exact matching structured location"
     },
     {
       "jobId": "community-job-3cc4010974ab8735",
@@ -1752,6 +1976,13 @@
       "company": "Rubrik",
       "role": "Software Engineering Winter Internship (Jan-May 2027)",
       "reason": "Needs page inspection / unsupported ATS"
+    },
+    {
+      "jobId": "community-job-3e02ab895ca94d29",
+      "url": "https://jobs.ashbyhq.com/astra/6664545a-652e-477e-be12-9a7e8d32f06b",
+      "company": "Astra",
+      "role": "Senior Fullstack Engineer",
+      "reason": "No exact matching structured location"
     },
     {
       "jobId": "community-job-3e22797f02e19046",
@@ -1810,6 +2041,13 @@
       "reason": "HTTP 404"
     },
     {
+      "jobId": "community-job-4081adc36cfebfb2",
+      "url": "https://jobs.ashbyhq.com/clickhouse/0a9ffa59-e779-4836-b475-1536c3f5ede2",
+      "company": "ClickHouse",
+      "role": "Senior Software Engineer - Cloud Partner Integrations",
+      "reason": "No exact matching structured location"
+    },
+    {
       "jobId": "community-job-40a438160eb363d2",
       "url": "https://id.jobstreet.com/job/94133988",
       "company": "PT Reksa Finance",
@@ -1836,6 +2074,13 @@
       "company": "Reddit",
       "role": "Senior Staff ML Systems Ads Platform",
       "reason": "Needs page inspection / unsupported ATS"
+    },
+    {
+      "jobId": "community-job-41123af42dcd7fd8",
+      "url": "https://jobs.ashbyhq.com/Coder/e75e3ee8-6bc2-49fb-91aa-f398c0fc2630",
+      "company": "Coder",
+      "role": "Staff Software Engineer (Agentic Engineering)",
+      "reason": "No exact matching structured location"
     },
     {
       "jobId": "community-job-4132db11b91eb8a7",
@@ -1908,6 +2153,13 @@
       "reason": "Needs page inspection / unsupported ATS"
     },
     {
+      "jobId": "community-job-428d59f81fabeb3e",
+      "url": "https://jobs.ashbyhq.com/tensorwave/e10b179f-c569-46ff-a0d9-01d20f731d30/application",
+      "company": "TensorWave",
+      "role": "Software Engineer (Back-end)",
+      "reason": "No exact matching structured location"
+    },
+    {
       "jobId": "community-job-42eeb0785d0c0f13",
       "url": "https://jobs.ashbyhq.com/elevenlabs/c6fc071f-c80e-4d3b-921a-3ec02a2ad25d/application",
       "company": "ElevenLabs",
@@ -1957,11 +2209,25 @@
       "reason": "Needs page inspection / unsupported ATS"
     },
     {
+      "jobId": "community-job-44b9d06aa444205c",
+      "url": "https://jobs.ashbyhq.com/sequence/2451747b-8e57-47a8-be71-9e7b80e9906e",
+      "company": "Sequence",
+      "role": "Product Engineer - London",
+      "reason": "No exact matching structured location"
+    },
+    {
       "jobId": "community-job-44dce76bf9c76128",
       "url": "https://job-boards.greenhouse.io/everlaw/jobs/4705236006",
       "company": "Everlaw",
       "role": "Software Engineer I",
       "reason": "HTTP 404"
+    },
+    {
+      "jobId": "community-job-44f20bca6d9ba449",
+      "url": "https://jobs.ashbyhq.com/mistral.ai/d1887bfd-8d44-46d6-b253-cadc1b1aeb11",
+      "company": "Mistral AI",
+      "role": "Applied AI Engineer, Fullstack Software Engineer - EMEA",
+      "reason": "No exact matching structured location"
     },
     {
       "jobId": "community-job-457d567c9b75ba89",
@@ -2139,6 +2405,13 @@
       "reason": "Needs page inspection / unsupported ATS"
     },
     {
+      "jobId": "community-job-4b2737ba8d61935b",
+      "url": "https://jobs.ashbyhq.com/mercor/88e8c31f-8197-4948-8d8c-ff3ceee367ce",
+      "company": "Mercor",
+      "role": "Enterprise AI Lead",
+      "reason": "No exact matching structured location"
+    },
+    {
       "jobId": "community-job-4b29068e621d2583",
       "url": "https://jobs.ashbyhq.com/vanta/dbd4e02c-0c6c-4031-a658-f57e88ec9943",
       "company": "Vanta",
@@ -2195,11 +2468,18 @@
       "reason": "Needs page inspection / unsupported ATS"
     },
     {
+      "jobId": "community-job-4d469d70f433ab9e",
+      "url": "https://jobs.ashbyhq.com/simplestudy/6d4e68d2-8dcf-4c71-9e43-fdba0b24f577",
+      "company": "SimpleStudy",
+      "role": "Senior Full-Stack Engineer",
+      "reason": "No exact matching structured location"
+    },
+    {
       "jobId": "community-job-4d5388164d8f8b0a",
       "url": "https://jobs.ashbyhq.com/beaconsoftware/dadb4654-dc89-4bc2-ae32-7d226423fb7d",
       "company": "Beacon Software",
       "role": "Forward Deployed Engineer",
-      "reason": "No exact matching structured location"
+      "reason": "HTTP 404"
     },
     {
       "jobId": "community-job-4d90299c1ddebc11",
@@ -2220,7 +2500,7 @@
       "url": "https://jobs.ashbyhq.com/hilberts/400dfa15-6f14-40f5-8cb5-4c01f2c59dce",
       "company": "Hilberts",
       "role": "AI Engineer - Core",
-      "reason": "No exact matching structured location"
+      "reason": "HTTP 404"
     },
     {
       "jobId": "community-job-4dc9b696b89c082f",
@@ -2276,7 +2556,7 @@
       "url": "https://jobs.ashbyhq.com/umbrel/45cec93b-3f48-4e5c-a67d-79bea0d3dee8",
       "company": "Umbrel",
       "role": "Lead Native App Engineer",
-      "reason": "No exact matching structured location"
+      "reason": "HTTP 404"
     },
     {
       "jobId": "community-job-4f8e43c38228669e",
@@ -2284,6 +2564,13 @@
       "company": "PT. Cubiconia Kanaya Pratama",
       "role": "Developer",
       "reason": "Needs page inspection / unsupported ATS"
+    },
+    {
+      "jobId": "community-job-4f98201f68c38282",
+      "url": "https://jobs.ashbyhq.com/lumin-digital/07b453f7-8fb3-4687-963f-e7a12cc2da08/application",
+      "company": "Lumin Digital",
+      "role": "Senior Software Engineer for AI",
+      "reason": "No exact matching structured location"
     },
     {
       "jobId": "community-job-4fc904ad0bf907b1",
@@ -2335,6 +2622,13 @@
       "reason": "Needs page inspection / unsupported ATS"
     },
     {
+      "jobId": "community-job-50d5b338ad89c56c",
+      "url": "https://jobs.ashbyhq.com/afterquery/f9055979-9c2d-4b5d-a0ec-f248205b1d16",
+      "company": "AfterQuery",
+      "role": "Software Engineer - Platform/Applied AI (Fullstack)",
+      "reason": "No exact matching structured location"
+    },
+    {
       "jobId": "community-job-50ea3ee5476bcc81",
       "url": "https://jobs.ashbyhq.com/bjakcareer/91d0229f-45ce-4b89-b60c-de7cae4408c5",
       "company": "Bjak",
@@ -2384,6 +2678,13 @@
       "reason": "Needs page inspection / unsupported ATS"
     },
     {
+      "jobId": "community-job-51b780d54a0e2932",
+      "url": "https://jobs.ashbyhq.com/orb/38eddf8e-8e9d-4b82-a0b5-d08d186f1671/application",
+      "company": "Orb",
+      "role": "Software Engineer, Pricing Lifecycle",
+      "reason": "No exact matching structured location"
+    },
+    {
       "jobId": "community-job-51bf45c316f2a58b",
       "url": "https://jobs.ashbyhq.com/nylas/ca299fcc-9829-43f2-9bf9-429917e6869f",
       "company": "Nylas",
@@ -2410,6 +2711,13 @@
       "company": "LaunchStacks",
       "role": "Senior Full-Stack TypeScript Engineer",
       "reason": "Needs page inspection / unsupported ATS"
+    },
+    {
+      "jobId": "community-job-529b729b2f6b6d54",
+      "url": "https://jobs.ashbyhq.com/zilch/49133830-8f2b-477e-b6fa-a5a567287a42",
+      "company": "Zilch",
+      "role": "Performance Marketing Lead",
+      "reason": "No exact matching structured location"
     },
     {
       "jobId": "community-job-529fdeabd82ad4b1",
@@ -2489,6 +2797,20 @@
       "reason": "HTTP 404"
     },
     {
+      "jobId": "community-job-54cbf0523e05cbde",
+      "url": "https://jobs.ashbyhq.com/Browserbase/7724fbe3-6a27-4418-9705-2dcc40751a16/application",
+      "company": "Browserbase",
+      "role": "Software Engineer (Agent Platform)",
+      "reason": "No exact matching structured location"
+    },
+    {
+      "jobId": "community-job-550b6f6f90bd0d7e",
+      "url": "https://jobs.ashbyhq.com/ashby/3b9b0141-86e7-46b2-b6b4-ed039b84cdc4",
+      "company": "Ashby",
+      "role": "Senior Software Engineer, Product Engineering - EU",
+      "reason": "No exact matching structured location"
+    },
+    {
       "jobId": "community-job-55762931a1acfb2c",
       "url": "https://au.seek.com/job/94214457",
       "company": "Trilogy Care Pty Ltd",
@@ -2559,13 +2881,6 @@
       "reason": "Needs page inspection / unsupported ATS"
     },
     {
-      "jobId": "community-job-588d0b2beaa73ab8",
-      "url": "https://job-boards.greenhouse.io/togetherai/jobs/5217063007",
-      "company": "Together AI",
-      "role": "Senior Software Engineer — Infra Agent Systems Remote India",
-      "reason": "HTTP 404"
-    },
-    {
       "jobId": "community-job-58b8614862e6d725",
       "url": "https://job-boards.greenhouse.io/gemini/jobs/8214272",
       "company": "Gemini",
@@ -2599,6 +2914,13 @@
       "company": "IXL Learning",
       "role": "Software Engineer, New Grad",
       "reason": "Needs page inspection / unsupported ATS"
+    },
+    {
+      "jobId": "community-job-5a22925f9ceaf4a5",
+      "url": "https://jobs.ashbyhq.com/pear-vc/4ecca650-ccbe-45eb-911d-211e877812ca",
+      "company": "Oodle",
+      "role": "Founding Engineer - Frontend",
+      "reason": "No exact matching structured location"
     },
     {
       "jobId": "community-job-5a2a42c386ad33f0",
@@ -2671,11 +2993,32 @@
       "reason": "No exact matching structured location"
     },
     {
+      "jobId": "community-job-5be8c07c59f32bbf",
+      "url": "https://jobs.ashbyhq.com/railway/5f51771e-339f-49f9-8da2-e3c7179c7bad",
+      "company": "Railway",
+      "role": "Senior Product Engineer Scalability",
+      "reason": "No exact matching structured location"
+    },
+    {
       "jobId": "community-job-5c0243cb178f10f8",
       "url": "https://mergify.com/careers/staff-software-engineer",
       "company": "Mergify",
       "role": "Staff Software Engineer",
       "reason": "Needs page inspection / unsupported ATS"
+    },
+    {
+      "jobId": "community-job-5c24e5961aa4176e",
+      "url": "https://jobs.ashbyhq.com/openai/894ce80d-c587-4ef0-92d2-b16deb9a06b9",
+      "company": "OpenAI",
+      "role": "Data Scientist, Cybersecurity",
+      "reason": "No exact matching structured location"
+    },
+    {
+      "jobId": "community-job-5c397e1bf60d9634",
+      "url": "https://jobs.ashbyhq.com/galvany/eaabca42-a1dc-4da3-ad6a-d00f3aaac6ce",
+      "company": "GALVANY",
+      "role": "(Senior) Backend Engineer (m/w/d)",
+      "reason": "No exact matching structured location"
     },
     {
       "jobId": "community-job-5c419e057c2b990c",
@@ -2783,6 +3126,13 @@
       "reason": "Needs page inspection / unsupported ATS"
     },
     {
+      "jobId": "community-job-5eebb04d6e25095e",
+      "url": "https://job-boards.greenhouse.io/vercel/jobs/6181759004",
+      "company": "Vercel",
+      "role": "Software Engineering Intern - Summer '27 (Hybrid San Francisco)",
+      "reason": "HTTP 404"
+    },
+    {
       "jobId": "community-job-5fd6d1fd9de9d677",
       "url": "https://www.hirist.tech/j/rebel-foods-software-development-engineer-iii-backend-developer-nodejs-1666636",
       "company": "Rebel Foods",
@@ -2809,6 +3159,13 @@
       "company": "Centra",
       "role": "Senior Data Engineer - Product",
       "reason": "Needs page inspection / unsupported ATS"
+    },
+    {
+      "jobId": "community-job-6072781cecfb84cc",
+      "url": "https://jobs.lever.co/gohighlevel/8529412e-dd5e-4e04-b0af-0c980f16c623/apply",
+      "company": "HighLevel",
+      "role": "Software Development Engineer III - Workflow AI",
+      "reason": "No exact matching structured location"
     },
     {
       "jobId": "community-job-60dca93368fbe035",
@@ -2888,18 +3245,18 @@
       "reason": "Needs page inspection / unsupported ATS"
     },
     {
+      "jobId": "community-job-639f0bcb56d3397b",
+      "url": "https://jobs.ashbyhq.com/owner/baeafc3e-ad41-4ae7-b9bb-1c793e27418b",
+      "company": "Owner.com",
+      "role": "Senior Software Engineer, Mobile Platform - Guest App (Remote, United States)",
+      "reason": "No exact matching structured location"
+    },
+    {
       "jobId": "community-job-63bb42f1970afda4",
       "url": "https://remoteok.com/remote-jobs/remote-senior-developer-experience-engineer-galaxy-1130758",
       "company": "Galaxy",
       "role": "Senior Developer Experience Engineer",
       "reason": "Needs page inspection / unsupported ATS"
-    },
-    {
-      "jobId": "community-job-63e649c54d172ff5",
-      "url": "https://jobs.ashbyhq.com/constructor/bdc3ed45-16f8-4e57-8d4c-a29a99729a4f",
-      "company": "Constructor",
-      "role": "FullStack Engineer - Prospect UI Solutions",
-      "reason": "No exact matching structured location"
     },
     {
       "jobId": "community-job-64148d0124e4bb6b",
@@ -2993,6 +3350,13 @@
       "reason": "No exact matching structured location"
     },
     {
+      "jobId": "community-job-664eb2de8d20715d",
+      "url": "https://jobs.ashbyhq.com/signoz/bb540719-7344-4e98-88b9-92446d58f437",
+      "company": "SigNoz",
+      "role": "Senior Software Engineer - Frontend",
+      "reason": "No exact matching structured location"
+    },
+    {
       "jobId": "community-job-667023f3b0004502",
       "url": "https://au.seek.com/job/94030405",
       "company": "Raion Group Pty Ltd",
@@ -3014,6 +3378,13 @@
       "reason": "No exact matching structured location"
     },
     {
+      "jobId": "community-job-6746b80bfd1a99ab",
+      "url": "https://jobs.ashbyhq.com/augustus/bd9bb1b4-9f01-4215-9fa5-e40a64dc087b/application",
+      "company": "Augustus",
+      "role": "US Founding Engineer",
+      "reason": "No exact matching structured location"
+    },
+    {
       "jobId": "community-job-67a0d1292513c3fa",
       "url": "https://www.hirist.tech/j/innovapptive-lead-full-stack-developer-mean-mern-stack-1666202",
       "company": "Innovapptive",
@@ -3026,6 +3397,13 @@
       "company": "Lobster",
       "role": "Senior Software Engineer - Java",
       "reason": "Needs page inspection / unsupported ATS"
+    },
+    {
+      "jobId": "community-job-67e6297664f0c4c8",
+      "url": "https://jobs.ashbyhq.com/tensorwave/31e9b0a4-d5fe-4227-9714-1d0885cbe2b7",
+      "company": "TensorWave",
+      "role": "Software Engineer (Front-End)",
+      "reason": "No exact matching structured location"
     },
     {
       "jobId": "community-job-67ed8cf803fe902e",
@@ -3047,6 +3425,13 @@
       "company": "Intellias",
       "role": "Senior Full-Stack Engineer (React + Node.js)",
       "reason": "Needs page inspection / unsupported ATS"
+    },
+    {
+      "jobId": "community-job-68777d2019c74009",
+      "url": "https://jobs.ashbyhq.com/Keyrock/d8f0c7ad-a6e5-45b3-913a-430eb4a21f4f",
+      "company": "Keyrock",
+      "role": "Head of Marketing (Director)",
+      "reason": "No exact matching structured location"
     },
     {
       "jobId": "community-job-6894dbab4e4cf3ee",
@@ -3119,6 +3504,13 @@
       "reason": "HTTP 404"
     },
     {
+      "jobId": "community-job-6a959ca56f241d89",
+      "url": "https://jobs.ashbyhq.com/speakeasy/df5263bd-c529-4563-9d93-136a5d5b1dd5",
+      "company": "Speakeasy",
+      "role": "Product Engineer - AI Control Plane",
+      "reason": "No exact matching structured location"
+    },
+    {
       "jobId": "community-job-6ac3133a78c2d30d",
       "url": "https://www.sarvam.ai/careers/jobs/36f89b00-2010-4d23-aae3-17a2f53d9eaa",
       "company": "Sarvam AI",
@@ -3133,11 +3525,25 @@
       "reason": "Needs page inspection / unsupported ATS"
     },
     {
+      "jobId": "community-job-6ae6be1b9016675d",
+      "url": "https://jobs.ashbyhq.com/distyl/46728319-c47a-48c8-bbfb-af0d9bff2ea2",
+      "company": "Distyl AI",
+      "role": "AI Engineer",
+      "reason": "No exact matching structured location"
+    },
+    {
       "jobId": "community-job-6afd193367215e20",
       "url": "https://id.jobstreet.com/id/job/94069123",
       "company": "PT. LYG Garment Indonesia",
       "role": "IT Support",
       "reason": "Needs page inspection / unsupported ATS"
+    },
+    {
+      "jobId": "community-job-6afdd604f689ea15",
+      "url": "https://jobs.ashbyhq.com/persona.ai/fd514a3f-4138-48d5-9862-05ff74a4ca08",
+      "company": "Persona AI",
+      "role": "Autonomy Software Engineering Internship, World Modeling (Summer 2027)",
+      "reason": "No exact matching structured location"
     },
     {
       "jobId": "community-job-6b1dc720f48639b2",
@@ -3187,6 +3593,13 @@
       "company": "Xtrastaff",
       "role": "Senior Full-Stack Engineer",
       "reason": "Needs page inspection / unsupported ATS"
+    },
+    {
+      "jobId": "community-job-6c5f960f6e8a4f34",
+      "url": "https://jobs.ashbyhq.com/g2/0ea59abf-fcb1-4750-bc55-0998e3beb84a/application",
+      "company": "G2",
+      "role": "Senior Software Engineer, Full-Stack",
+      "reason": "No exact matching structured location"
     },
     {
       "jobId": "community-job-6d02423ae20b336c",
@@ -3252,13 +3665,6 @@
       "reason": "Needs page inspection / unsupported ATS"
     },
     {
-      "jobId": "community-job-6e2c2cd4d8f8dd45",
-      "url": "https://jobs.ashbyhq.com/reducto/66e1299c-aaa9-4bee-b326-26afbd8b86ea",
-      "company": "Reducto",
-      "role": "Backend/AI Engineer",
-      "reason": "No exact matching structured location"
-    },
-    {
       "jobId": "community-job-6e5ed8a6b55ed337",
       "url": "https://www.linkedin.com/jobs/view/4464469052",
       "company": "CRESSOFT CONSULTANCY LIMITED",
@@ -3313,6 +3719,13 @@
       "company": "Blue Yonder",
       "role": "Full Stack Developer",
       "reason": "Needs page inspection / unsupported ATS"
+    },
+    {
+      "jobId": "community-job-70df7d323a693384",
+      "url": "https://apply.workable.com/unitary/j/A01F1A4001",
+      "company": "Unitary",
+      "role": "Machine Learning Engineer - Customer Solutions",
+      "reason": "HTTP 404"
     },
     {
       "jobId": "community-job-70ed920a31a4f25f",
@@ -3448,6 +3861,13 @@
       "reason": "No exact matching structured location"
     },
     {
+      "jobId": "community-job-7306d4f64a575c93",
+      "url": "https://jobs.ashbyhq.com/deepgram/4a873ede-8555-42ae-9ddc-ac89afdd7278/application",
+      "company": "Deepgram",
+      "role": "Software Engineer, Voice Agents & AI",
+      "reason": "No exact matching structured location"
+    },
+    {
       "jobId": "community-job-7317a23915b8ff92",
       "url": "https://jpmc.fa.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX_1001/jobs/preview/210784365",
       "company": "JPMorgan Chase",
@@ -3509,6 +3929,13 @@
       "company": "Nexvora Technologies",
       "role": "Senior React Native Developer",
       "reason": "Needs page inspection / unsupported ATS"
+    },
+    {
+      "jobId": "community-job-74bc1dbe5e06a124",
+      "url": "https://jobs.ashbyhq.com/hang/70f319e5-d44e-4f89-9b7f-47906c1547a7",
+      "company": "Hang",
+      "role": "Front End Software Engineer (React/NextJS)",
+      "reason": "No exact matching structured location"
     },
     {
       "jobId": "community-job-7550449c0d82aade",
@@ -3600,6 +4027,13 @@
       "company": "PT Moda Global Maritim",
       "role": "IT Support",
       "reason": "Needs page inspection / unsupported ATS"
+    },
+    {
+      "jobId": "community-job-7881bd428b829a2f",
+      "url": "https://jobs.lever.co/gohighlevel/4ec92bca-2593-4081-85fb-c8288147939d/apply",
+      "company": "HighLevel",
+      "role": "Software Development Engineer III - Conversations",
+      "reason": "No exact matching structured location"
     },
     {
       "jobId": "community-job-78a48dfba4f7f845",
@@ -3700,6 +4134,13 @@
       "reason": "No exact matching structured location"
     },
     {
+      "jobId": "community-job-7b75efb6a14c784d",
+      "url": "https://jobs.ashbyhq.com/k-id/18619df2-45d8-4732-8815-9a340d498d48",
+      "company": "k-ID",
+      "role": "Engineering Internship Program 2026, Singapore",
+      "reason": "No exact matching structured location"
+    },
+    {
       "jobId": "community-job-7b8336367fb4c04d",
       "url": "https://id.jobstreet.com/job/94130746",
       "company": "PT Container Maritime Activities",
@@ -3711,7 +4152,7 @@
       "url": "https://job-boards.greenhouse.io/ngrokinc/jobs/6004356004",
       "company": "ngrok",
       "role": "Full-stack Software Engineer III/Senior, AI Gateway",
-      "reason": "HTTP 404"
+      "reason": "No exact matching structured location"
     },
     {
       "jobId": "community-job-7bcb79860c0eb9ea",
@@ -3735,6 +4176,13 @@
       "reason": "No exact matching structured location"
     },
     {
+      "jobId": "community-job-7cfb5a9266870732",
+      "url": "https://jobs.ashbyhq.com/augustus/478ab7de-4f1c-4ce3-8929-526498bbee84",
+      "company": "Augustus",
+      "role": "(Senior) Software Engineer",
+      "reason": "No exact matching structured location"
+    },
+    {
       "jobId": "community-job-7d00a5f9f9c1380c",
       "url": "https://job-boards.greenhouse.io/flexport/jobs/7311883",
       "company": "Flexport",
@@ -3754,6 +4202,13 @@
       "company": "ThoughtSpot",
       "role": "Staff Software Engineer",
       "reason": "Needs page inspection / unsupported ATS"
+    },
+    {
+      "jobId": "community-job-7d80d9f4e15fceb3",
+      "url": "https://jobs.ashbyhq.com/ashby/c3c7125d-7883-4dff-a2bf-f5a55de4a364/application",
+      "company": "Ashby",
+      "role": "Staff Software Engineer, Product Engineering - EU",
+      "reason": "No exact matching structured location"
     },
     {
       "jobId": "community-job-7d860bc94bf4743b",
@@ -3819,6 +4274,13 @@
       "reason": "No exact matching structured location"
     },
     {
+      "jobId": "community-job-7f9a938ed71948a4",
+      "url": "https://jobs.ashbyhq.com/omnea/1adfb275-0882-4b2e-9044-2b735a5d2e2d",
+      "company": "Omnea",
+      "role": "Product Engineer",
+      "reason": "No exact matching structured location"
+    },
+    {
       "jobId": "community-job-7fb3cd03ccc58ba8",
       "url": "https://ultralytics.jobs.personio.com/job/1874062",
       "company": "Ultralytics",
@@ -3859,6 +4321,13 @@
       "company": "Gratyo Global Awards Winning Practical Business Coaching Company",
       "role": "Web Developer",
       "reason": "Needs page inspection / unsupported ATS"
+    },
+    {
+      "jobId": "community-job-808b8ce33221da0e",
+      "url": "https://jobs.ashbyhq.com/sierra/d77487f9-bab3-44c6-be18-744e7125c8b3/application",
+      "company": "Sierra",
+      "role": "Software Engineer, Platform",
+      "reason": "No exact matching structured location"
     },
     {
       "jobId": "community-job-80b3fc9ca0db6c9e",
@@ -4043,6 +4512,20 @@
       "reason": "Needs page inspection / unsupported ATS"
     },
     {
+      "jobId": "community-job-85a355e55ee0c767",
+      "url": "https://jobs.ashbyhq.com/primeintellect/fb497090-0336-45b2-b802-9d34d8758d06",
+      "company": "Prime Intellect",
+      "role": "Member of Technical Staff - Security",
+      "reason": "No exact matching structured location"
+    },
+    {
+      "jobId": "community-job-85f32ec38be7642d",
+      "url": "https://jobs.ashbyhq.com/tempo/55dd46d0-4492-4bd1-a627-e3f8b2cd0972",
+      "company": "Tempo",
+      "role": "Frontend Engineer (React Native)",
+      "reason": "HTTP 404"
+    },
+    {
       "jobId": "community-job-8683b9cd55eafa6d",
       "url": "https://www.linkedin.com/jobs/view/4464428756",
       "company": "Luxoft",
@@ -4092,6 +4575,13 @@
       "reason": "Needs page inspection / unsupported ATS"
     },
     {
+      "jobId": "community-job-883c1aee48b3e770",
+      "url": "https://jobs.ashbyhq.com/prior-labs/bd4fe067-0e99-4268-b5ad-d1f8e36c6976",
+      "company": "Prior Labs",
+      "role": "ML Engineer, Infrastructure",
+      "reason": "No exact matching structured location"
+    },
+    {
       "jobId": "community-job-883e6f819dc2993b",
       "url": "https://www.janestreet.com/join-jane-street/position/8576931002",
       "company": "Jane Street",
@@ -4125,6 +4615,13 @@
       "company": "Pancaran Group",
       "role": "RPA Developer Junior",
       "reason": "Needs page inspection / unsupported ATS"
+    },
+    {
+      "jobId": "community-job-891b88b3ee88f49f",
+      "url": "https://jobs.ashbyhq.com/nooks/b51656f9-b35c-42e5-9b1b-5f4d68b050b9/application",
+      "company": "Nooks",
+      "role": "Senior Software Engineer, Agent Studio",
+      "reason": "No exact matching structured location"
     },
     {
       "jobId": "community-job-896ed0cc5686c920",
@@ -4181,6 +4678,20 @@
       "company": "UNIQA Insurance Group AG",
       "role": "Studentische:r Mitarbeiter:in Mitversicherung & Prozessoptimierung (m/w/d)",
       "reason": "Needs page inspection / unsupported ATS"
+    },
+    {
+      "jobId": "community-job-8b477027b148bd3c",
+      "url": "https://jobs.ashbyhq.com/spector-ai/68127883-4e2f-432b-95b2-e90335200b7c/application",
+      "company": "Spector.ai",
+      "role": "Fullstack Software Engineer",
+      "reason": "No exact matching structured location"
+    },
+    {
+      "jobId": "community-job-8b566a50eef074d5",
+      "url": "https://jobs.ashbyhq.com/perk/7d0aeaa8-1251-40fe-9847-b141bd926d93",
+      "company": "Perk",
+      "role": "Staff Software Engineer - Flights",
+      "reason": "No exact matching structured location"
     },
     {
       "jobId": "community-job-8b5a010af58b108b",
@@ -4274,6 +4785,13 @@
       "reason": "Needs page inspection / unsupported ATS"
     },
     {
+      "jobId": "community-job-8e09a215a3ad62d3",
+      "url": "https://job-boards.greenhouse.io/vercel/jobs/6181755004",
+      "company": "Vercel",
+      "role": "Software Engineering Intern - Winter '27 (Hybrid San Francisco)",
+      "reason": "HTTP 404"
+    },
+    {
       "jobId": "community-job-8e2edc8493b27353",
       "url": "https://www.amazon.jobs/en/jobs/10462523/business-analyst-whs-data",
       "company": "Amazon",
@@ -4349,6 +4867,13 @@
       "company": "Tafkiro",
       "role": "Senior Full-Stack Engineer — Platform",
       "reason": "Needs page inspection / unsupported ATS"
+    },
+    {
+      "jobId": "community-job-912b5d7bf42985c6",
+      "url": "https://jobs.ashbyhq.com/endgame/a4395505-64e4-4b92-ba60-66dd44115499/application",
+      "company": "Endgame",
+      "role": "Principal Software Engineer",
+      "reason": "No exact matching structured location"
     },
     {
       "jobId": "community-job-9155bd6be88b6e78",
@@ -4449,6 +4974,13 @@
       "reason": "Needs page inspection / unsupported ATS"
     },
     {
+      "jobId": "community-job-9579927289803b0c",
+      "url": "https://jobs.ashbyhq.com/ashby/0f5dbf59-687b-4d88-88a7-73ee0a66b48d",
+      "company": "Ashby",
+      "role": "Staff Platform Engineer - Americas",
+      "reason": "No exact matching structured location"
+    },
+    {
       "jobId": "community-job-95950bcaa923e20d",
       "url": "https://jobs.micro1.ai/post/cf633740-7783-442e-881b-bbad6912770b",
       "company": "micro1",
@@ -4498,6 +5030,13 @@
       "reason": "No exact matching structured location"
     },
     {
+      "jobId": "community-job-96e37fb85cdb360c",
+      "url": "https://jobs.ashbyhq.com/playpowerlabs/ab9231e8-3e3f-41c4-aff2-ff769241a1c7",
+      "company": "PlayPower Labs",
+      "role": "Senior Software Engineer",
+      "reason": "No exact matching structured location"
+    },
+    {
       "jobId": "community-job-9742d12dc39deb52",
       "url": "https://jobs.ashbyhq.com/confido/69c0e572-b2f4-442f-beb8-1240155c629e",
       "company": "Confido",
@@ -4519,6 +5058,13 @@
       "reason": "Needs page inspection / unsupported ATS"
     },
     {
+      "jobId": "community-job-97ce0d13e5bbb83f",
+      "url": "https://jobs.ashbyhq.com/railway/25d8444a-47dc-4084-ae56-29a0f0b19b74",
+      "company": "Railway",
+      "role": "Senior Platform Engineer Storage",
+      "reason": "No exact matching structured location"
+    },
+    {
       "jobId": "community-job-981fae1426e1cee1",
       "url": "https://job-boards.greenhouse.io/robinhood/jobs/8123225",
       "company": "Robinhood",
@@ -4533,11 +5079,25 @@
       "reason": "Needs page inspection / unsupported ATS"
     },
     {
+      "jobId": "community-job-986e3afccbd4674f",
+      "url": "https://jobs.ashbyhq.com/Modal/a4b8b2b6-5d0c-4ba6-9256-b84be84fb79e",
+      "company": "Modal",
+      "role": "Member of Technical Staff - Product (Backend)",
+      "reason": "No exact matching structured location"
+    },
+    {
       "jobId": "community-job-9871ee799b674c7c",
       "url": "https://www.hirist.tech/j/edas-senior-full-stack-engineer-nodejs-reactjs-1669618",
       "company": "eDAS",
       "role": "Senior Full Stack Engineer - Node.js/React.js",
       "reason": "Needs page inspection / unsupported ATS"
+    },
+    {
+      "jobId": "community-job-98ad2b1761adca54",
+      "url": "https://job-boards.greenhouse.io/druva/jobs/8640266002",
+      "company": "Druva",
+      "role": "Senior Staff Software Engineer (Cloud Infrastructure)",
+      "reason": "HTTP 404"
     },
     {
       "jobId": "community-job-98d02de9648a0d0a",
@@ -4551,6 +5111,13 @@
       "url": "https://jobs.ashbyhq.com/Atolio/09c923c0-c965-417b-a7ef-14baf16a033c",
       "company": "Atolio",
       "role": "Senior Backend Software Engineer",
+      "reason": "No exact matching structured location"
+    },
+    {
+      "jobId": "community-job-9900f6c47e6deb86",
+      "url": "https://jobs.ashbyhq.com/vic.ai/dd90e14e-01b4-455c-aab4-7ee314ecfa72",
+      "company": "Vic.ai",
+      "role": "Backend Engineer - AI Integrations",
       "reason": "No exact matching structured location"
     },
     {
@@ -4589,6 +5156,13 @@
       "reason": "No exact matching structured location"
     },
     {
+      "jobId": "community-job-9b08d436fcc4ec15",
+      "url": "https://job-boards.greenhouse.io/doctolib/jobs/7749352003",
+      "company": "Doctolib",
+      "role": "Principal Machine Learning Engineer - Applied AI & LLMs (x/f/m)",
+      "reason": "HTTP 404"
+    },
+    {
       "jobId": "community-job-9b7502b6a45ade9e",
       "url": "https://id.jobstreet.com/id/job/94325140",
       "company": "CV Jaya Abadi",
@@ -4608,6 +5182,13 @@
       "company": "[TEST] On-Demand",
       "role": "Software Developer",
       "reason": "Needs page inspection / unsupported ATS"
+    },
+    {
+      "jobId": "community-job-9b864d8d62cb2c48",
+      "url": "https://jobs.ashbyhq.com/Lovable/cfef6fe1-e0c9-4139-8618-b51bfb1dc683",
+      "company": "Lovable",
+      "role": "Data Platform Engineer",
+      "reason": "No exact matching structured location"
     },
     {
       "jobId": "community-job-9bd23a410d052035",
@@ -4642,6 +5223,13 @@
       "url": "https://job-boards.greenhouse.io/lightningai/jobs/6045023003",
       "company": "Lightning AI",
       "role": "Research Engineer, AI/ML Systems",
+      "reason": "HTTP 404"
+    },
+    {
+      "jobId": "community-job-9df31b0333748a2e",
+      "url": "https://apply.workable.com/abtrace/j/76A54FF0CE",
+      "company": "Abtrace",
+      "role": "Product Designer / Senior Product Designer",
       "reason": "HTTP 404"
     },
     {
@@ -4680,11 +5268,25 @@
       "reason": "Needs page inspection / unsupported ATS"
     },
     {
+      "jobId": "community-job-9f3a00da256db3d9",
+      "url": "https://job-boards.greenhouse.io/techgrovebybanyansoftware/jobs/5175887007",
+      "company": "TechGrove by Banyan Software",
+      "role": "Principal AI Engineer",
+      "reason": "HTTP 404"
+    },
+    {
       "jobId": "community-job-9f7b9ef46b6073b8",
       "url": "https://db.wd3.myworkdayjobs.com/DBWebsite/job/Pune---Margarpatta/Backend-Engineer--AS_R0427212",
       "company": "Deutsche Bank",
       "role": "Backend Engineer, AS",
       "reason": "Needs page inspection / unsupported ATS"
+    },
+    {
+      "jobId": "community-job-9f8e90f0a5e2d235",
+      "url": "https://jobs.ashbyhq.com/trust-wallet/72c2f324-d2d7-4037-b3a8-d9afb25dbe18",
+      "company": "Trust Wallet",
+      "role": "Design Engineer",
+      "reason": "No exact matching structured location"
     },
     {
       "jobId": "community-job-9fcfee45b70fba9d",
@@ -4754,7 +5356,7 @@
       "url": "https://jobs.lever.co/ppro/935d9b14-80a4-45ac-b44a-6207546111b3",
       "company": "PPRO",
       "role": "Senior Software Engineer - Cash Flow (Java, Spring, AWS)",
-      "reason": "The operation was aborted due to timeout"
+      "reason": "HTTP 404"
     },
     {
       "jobId": "community-job-a1207aa1349685e0",
@@ -4804,6 +5406,13 @@
       "company": "Solve Intelligence",
       "role": "Full-Stack Engineer (Front-End Leaning)",
       "reason": "Needs page inspection / unsupported ATS"
+    },
+    {
+      "jobId": "community-job-a342cda686eb1809",
+      "url": "https://job-boards.greenhouse.io/strike/jobs/6191942004",
+      "company": "Strike",
+      "role": "Head of Marketing",
+      "reason": "HTTP 404"
     },
     {
       "jobId": "community-job-a36ef7ee7a1395c7",
@@ -4862,6 +5471,13 @@
       "reason": "Needs page inspection / unsupported ATS"
     },
     {
+      "jobId": "community-job-a50dc8d5c408115f",
+      "url": "https://jobs.ashbyhq.com/neuroscale/75c76981-cb3c-4d1b-9138-737561302048",
+      "company": "Neuroscale AI",
+      "role": "Founding Staff Software Engineer - Python/FastAPI",
+      "reason": "No exact matching structured location"
+    },
+    {
       "jobId": "community-job-a55309fdb8010828",
       "url": "https://remoteok.com/remote-jobs/remote-nuclear-engineer-iii-nuclear-safety-analysis-deep-fission-inc-1131560",
       "company": "Deep Fission, Inc",
@@ -4881,6 +5497,13 @@
       "company": "LuxHyper",
       "role": "Senior Full-Stack Engineer",
       "reason": "Needs page inspection / unsupported ATS"
+    },
+    {
+      "jobId": "community-job-a63aa2d0af2e077b",
+      "url": "https://jobs.eu.lever.co/pnlfin/08d589e7-dcc5-4eea-8145-99e01c621c91",
+      "company": "Finom",
+      "role": "Senior Product Designer, Credit & Cards",
+      "reason": "No exact matching structured location"
     },
     {
       "jobId": "community-job-a651b20db3233798",
@@ -5156,6 +5779,13 @@
       "reason": "Needs page inspection / unsupported ATS"
     },
     {
+      "jobId": "community-job-ada38ffdcbb5dc0c",
+      "url": "https://jobs.ashbyhq.com/afterquery/ae665a77-b88d-418e-941a-6c3da870f052",
+      "company": "AfterQuery",
+      "role": "Research Engineer",
+      "reason": "No exact matching structured location"
+    },
+    {
       "jobId": "community-job-adece80dd9b8b52c",
       "url": "https://careers.pentland.com/jobs/8199913-vp-marketing-canterbury",
       "company": "Pentland Brands",
@@ -5175,6 +5805,13 @@
       "company": "Bjak",
       "role": "Chief Marketing Officer",
       "reason": "Response too large"
+    },
+    {
+      "jobId": "community-job-aec0102dbf6e9943",
+      "url": "https://jobs.ashbyhq.com/runpod/b64a3935-931a-4b7f-9899-7ebe152164c5",
+      "company": "Runpod",
+      "role": "Software Engineer (Full-Stack)",
+      "reason": "No exact matching structured location"
     },
     {
       "jobId": "community-job-aedfd340148ffad2",
@@ -5240,6 +5877,13 @@
       "reason": "Needs page inspection / unsupported ATS"
     },
     {
+      "jobId": "community-job-af9bafd939e0a009",
+      "url": "https://jobs.ashbyhq.com/Fonio/d1515436-dbb0-4724-9ddf-e886ea6f5b82",
+      "company": "Fonio.ai",
+      "role": "Senior Fullstack Engineer",
+      "reason": "No exact matching structured location"
+    },
+    {
       "jobId": "community-job-afb2c4c7db58b4de",
       "url": "https://au.seek.com/job/94304887",
       "company": "Just Digital People (recruiter; Australian NFP client undisclosed)",
@@ -5258,7 +5902,7 @@
       "url": "https://jobs.lever.co/sitetracker/b3dfbd67-1e33-47d7-9ca0-abe80f162888",
       "company": "Sitetracker",
       "role": "Senior Software Engineer - AI",
-      "reason": "No exact matching structured location"
+      "reason": "HTTP 404"
     },
     {
       "jobId": "community-job-b04863b8bc47f2e1",
@@ -5387,6 +6031,27 @@
       "reason": "Needs page inspection / unsupported ATS"
     },
     {
+      "jobId": "community-job-b5681fcd60085b11",
+      "url": "https://jobs.ashbyhq.com/ampersand/ffa4a2b4-7b64-4b82-9e46-edb45144fca2",
+      "company": "Ampersand",
+      "role": "Forward Deployed Engineer",
+      "reason": "No exact matching structured location"
+    },
+    {
+      "jobId": "community-job-b5eb474328fc618f",
+      "url": "https://jobs.ashbyhq.com/teya/c7476cb7-a068-4e92-86fa-d5e42649aae1",
+      "company": "Teya",
+      "role": "Head of Performance Marketing",
+      "reason": "No exact matching structured location"
+    },
+    {
+      "jobId": "community-job-b5ef36839b71fbfa",
+      "url": "https://apply.workable.com/c-the-signs/j/39975BCCE7",
+      "company": "C the Signs",
+      "role": "Senior Product Designer",
+      "reason": "HTTP 404"
+    },
+    {
       "jobId": "community-job-b5f6ada4dce76575",
       "url": "https://www.hirist.tech/j/backend-developer-nodejs-nestjs-1665229",
       "company": "Inypeople Technology",
@@ -5436,6 +6101,13 @@
       "reason": "HTTP 404"
     },
     {
+      "jobId": "community-job-b71937157dc32604",
+      "url": "https://jobs.ashbyhq.com/omnea/ef8ef388-4473-41b1-bfc5-60be8e42e817/application",
+      "company": "Omnea",
+      "role": "Performance Marketing Lead",
+      "reason": "No exact matching structured location"
+    },
+    {
       "jobId": "community-job-b7199dd2cb460733",
       "url": "https://reddit.com/careers/7964461",
       "company": "Reddit",
@@ -5457,6 +6129,13 @@
       "reason": "Needs page inspection / unsupported ATS"
     },
     {
+      "jobId": "community-job-b75082f4166b64ce",
+      "url": "https://jobs.ashbyhq.com/ramp/4e64ab86-4e30-403b-b1b9-41dc052570ce",
+      "company": "Ramp",
+      "role": "Software Engineer, Frontend",
+      "reason": "No exact matching structured location"
+    },
+    {
       "jobId": "community-job-b766c1a113d546c2",
       "url": "https://ats.rippling.com/en-GB/hostie/jobs/d546e8cf-c7a1-4ddb-9797-68809e4ee1c7/apply",
       "company": "Hostie",
@@ -5476,6 +6155,13 @@
       "company": "Sticker Mule",
       "role": "AI agent engineer",
       "reason": "Needs page inspection / unsupported ATS"
+    },
+    {
+      "jobId": "community-job-b89a492009226c3f",
+      "url": "https://jobs.ashbyhq.com/coinflow/ee29c28c-8869-42c9-8285-c8678ab37613",
+      "company": "Coinflow Labs",
+      "role": "Go-to-Market Lead (Europe)",
+      "reason": "No exact matching structured location"
     },
     {
       "jobId": "community-job-b8fdd4a411bc9362",
@@ -5517,7 +6203,7 @@
       "url": "https://job-boards.greenhouse.io/pay2dc/jobs/4671610006",
       "company": "PayPay India",
       "role": "Frontend Engineer",
-      "reason": "No exact matching structured location"
+      "reason": "HTTP 404"
     },
     {
       "jobId": "community-job-b9f9ba081f2bc7ec",
@@ -5546,6 +6232,13 @@
       "company": "Fujitsu Technology Solutions",
       "role": "Data & AI Presales Engineer",
       "reason": "Needs page inspection / unsupported ATS"
+    },
+    {
+      "jobId": "community-job-bb060d4798f4615c",
+      "url": "https://jobs.lever.co/shyftlabs/f1b358fc-3b63-4f84-82d5-62e72cb0a2b8",
+      "company": "ShyftLabs",
+      "role": "Data Engineer",
+      "reason": "HTTP 404"
     },
     {
       "jobId": "community-job-bba6b495d522036f",
@@ -5650,6 +6343,13 @@
       "url": "https://job-boards.greenhouse.io/gitlab/jobs/8522265002",
       "company": "GitLab",
       "role": "Staff Forward Deployed Engineer, Agentic SDLC - (EMEA Only)",
+      "reason": "HTTP 404"
+    },
+    {
+      "jobId": "community-job-bf55baa7952ceca0",
+      "url": "https://jobs.ashbyhq.com/coperniq/2791caa3-e47a-44a6-a01a-c8d069c28c64",
+      "company": "Coperniq Inc.",
+      "role": "Senior Full-Stack Engineer",
       "reason": "No exact matching structured location"
     },
     {
@@ -5672,6 +6372,13 @@
       "company": "Clio",
       "role": "Product Marketing Manager, Financial Services",
       "reason": "Needs page inspection / unsupported ATS"
+    },
+    {
+      "jobId": "community-job-bfbf299a2dcb661f",
+      "url": "https://jobs.ashbyhq.com/faculty/188ecaba-2f9c-4a15-a86b-dc2f369f03bd",
+      "company": "Faculty",
+      "role": "Research Scientist - AI Safety",
+      "reason": "No exact matching structured location"
     },
     {
       "jobId": "community-job-c0e18cf8f3a1025f",
@@ -5702,6 +6409,13 @@
       "reason": "Needs page inspection / unsupported ATS"
     },
     {
+      "jobId": "community-job-c1d31796d41c51ea",
+      "url": "https://jobs.ashbyhq.com/e2b/49a87668-9f2a-40dc-bfc3-b262aca62b39",
+      "company": "E2B",
+      "role": "Product Engineer - Backend Developer",
+      "reason": "No exact matching structured location"
+    },
+    {
       "jobId": "community-job-c1f54126f23d8b3c",
       "url": "https://jobs.ashbyhq.com/pika/8dab8b44-71cd-4ed9-a598-34111d534ac1/application",
       "company": "Pika",
@@ -5714,6 +6428,13 @@
       "company": "Bolna",
       "role": "Founding Backend / AI Engineer",
       "reason": "Needs page inspection / unsupported ATS"
+    },
+    {
+      "jobId": "community-job-c279d55cf506b3f6",
+      "url": "https://jobs.ashbyhq.com/teya/c1b4fc86-dd37-468f-b8dc-75dc5afee08b",
+      "company": "Teya",
+      "role": "Growth Leader (Loyverse Pay)",
+      "reason": "No exact matching structured location"
     },
     {
       "jobId": "community-job-c2a1803954d5772c",
@@ -5749,6 +6470,13 @@
       "company": "Commonwealth Bank",
       "role": "Senior Software Engineer - Full Stack, Unloan (REQ251571)",
       "reason": "Needs page inspection / unsupported ATS"
+    },
+    {
+      "jobId": "community-job-c346f17011d5e0aa",
+      "url": "https://jobs.ashbyhq.com/symmetry/0fba1d57-6c6d-49d1-a029-74b7f2532bc1/application",
+      "company": "Symmetry AI",
+      "role": "Senior Full Stack Engineer",
+      "reason": "No exact matching structured location"
     },
     {
       "jobId": "community-job-c34d0e07cafefe22",
@@ -5793,6 +6521,13 @@
       "reason": "Needs page inspection / unsupported ATS"
     },
     {
+      "jobId": "community-job-c58e191fa67692b3",
+      "url": "https://jobs.ashbyhq.com/valerie-group/085f4876-2ab1-441d-8e05-b1249c3350a4/application",
+      "company": "Valerie Group",
+      "role": "Senior Fullstack Developer",
+      "reason": "No exact matching structured location"
+    },
+    {
       "jobId": "community-job-c6622c4e079e0153",
       "url": "https://jobs.ashbyhq.com/furtherai/ca17de3e-f9a6-46a4-9b2b-c39c69de4ce8/application",
       "company": "FurtherAI",
@@ -5835,11 +6570,25 @@
       "reason": "Needs page inspection / unsupported ATS"
     },
     {
+      "jobId": "community-job-c78ccd7be31566ab",
+      "url": "https://job-boards.greenhouse.io/kalepa/jobs/5995682004",
+      "company": "Kalepa",
+      "role": "Staff Backend Engineer Core Product",
+      "reason": "No exact matching structured location"
+    },
+    {
       "jobId": "community-job-c7fa4687c1e349af",
       "url": "https://jobs.workable.com/view/cYUaEcVjUmTm9h5iDiQoS7/remote-ai-security-governance-consultant-in-spain-at-plain-concepts",
       "company": "Plain Concepts",
       "role": "AI Security Governance Consultant",
       "reason": "Needs page inspection / unsupported ATS"
+    },
+    {
+      "jobId": "community-job-c80ca1c082dce86e",
+      "url": "https://job-boards.greenhouse.io/taxbit/jobs/6111141004",
+      "company": "TaxBit",
+      "role": "Agentic AI Engineer",
+      "reason": "HTTP 404"
     },
     {
       "jobId": "community-job-c82116c03d367382",
@@ -5986,7 +6735,7 @@
       "url": "https://jobs.ashbyhq.com/beaconsoftware/2452d342-a069-4eda-adbe-9df296808ca1/application",
       "company": "Beacon Software",
       "role": "Software Engineering Intern (Fall 2026 co-op)",
-      "reason": "No exact matching structured location"
+      "reason": "HTTP 404"
     },
     {
       "jobId": "community-job-cc2f18e3e01b3728",
@@ -6001,6 +6750,13 @@
       "company": "develop",
       "role": "Back End Developer",
       "reason": "Needs page inspection / unsupported ATS"
+    },
+    {
+      "jobId": "community-job-cc7844fd163fe530",
+      "url": "https://jobs.ashbyhq.com/sequence/22fac603-460a-45b4-9f61-6e99f3d5989d",
+      "company": "Sequence",
+      "role": "Senior Product Engineer (Frontend) - NYC",
+      "reason": "No exact matching structured location"
     },
     {
       "jobId": "community-job-cc89d7d5d6a1d6f3",
@@ -6136,11 +6892,25 @@
       "reason": "Needs page inspection / unsupported ATS"
     },
     {
+      "jobId": "community-job-d1e2fdd9ef2e1020",
+      "url": "https://jobs.ashbyhq.com/hcompany/51dddf0f-756a-42e6-8f87-dc87a3a79544",
+      "company": "H Company",
+      "role": "Research Engineer / Scientist, Post-training - Paris",
+      "reason": "No exact matching structured location"
+    },
+    {
       "jobId": "community-job-d248e2c825749df6",
       "url": "https://www.truecaller.com/careers/jobs/8045044",
       "company": "Truecaller",
       "role": "Data Engineer",
       "reason": "Needs page inspection / unsupported ATS"
+    },
+    {
+      "jobId": "community-job-d2a3e62574144e8f",
+      "url": "https://jobs.lever.co/crypto/ff3dc7ba-662e-4e49-82c2-e6143bb93712",
+      "company": "Crypto.com",
+      "role": "Social Media Manager",
+      "reason": "HTTP 404"
     },
     {
       "jobId": "community-job-d3522b1d4491008a",
@@ -6210,7 +6980,7 @@
       "url": "https://jobs.ashbyhq.com/rifa/373b664c-86e9-4a82-9280-d011b375e9d7",
       "company": "Rifa AI",
       "role": "Senior Platform Engineer",
-      "reason": "No exact matching structured location"
+      "reason": "HTTP 404"
     },
     {
       "jobId": "community-job-d61d3ea6fc7c24dc",
@@ -6353,6 +7123,13 @@
       "reason": "Needs page inspection / unsupported ATS"
     },
     {
+      "jobId": "community-job-dee9b531bea09744",
+      "url": "https://job-boards.greenhouse.io/opp-center/jobs/7815457",
+      "company": "Flatiron Health",
+      "role": "Software Engineer",
+      "reason": "HTTP 404"
+    },
+    {
       "jobId": "community-job-df049ae4fa3ae9bd",
       "url": "https://id.jobstreet.com/id/job/94569767",
       "company": "PT SMART,Tbk",
@@ -6402,11 +7179,25 @@
       "reason": "Needs page inspection / unsupported ATS"
     },
     {
+      "jobId": "community-job-e0bd0c490f13827d",
+      "url": "https://jobs.ashbyhq.com/SigNoz/bb540719-7344-4e98-88b9-92446d58f437",
+      "company": "SigNoz",
+      "role": "Senior Software Engineer - Frontend",
+      "reason": "No exact matching structured location"
+    },
+    {
       "jobId": "community-job-e0ee899c70ea402b",
       "url": "https://forces.ca/en/career/engineer-officer/",
       "company": "Canadian Armed Forces | Forces armÃ©es canadiennes",
       "role": "Engineer Officer",
       "reason": "Needs page inspection / unsupported ATS"
+    },
+    {
+      "jobId": "community-job-e17cbc56660c5871",
+      "url": "https://job-boards.greenhouse.io/wikimedia/jobs/8140060",
+      "company": "Wikimedia Foundation",
+      "role": "Lead Product Manager, Security",
+      "reason": "HTTP 404"
     },
     {
       "jobId": "community-job-e192dcb97727402f",
@@ -6430,6 +7221,13 @@
       "reason": "Needs page inspection / unsupported ATS"
     },
     {
+      "jobId": "community-job-e20faa0322a92cbc",
+      "url": "https://jobs.ashbyhq.com/arcadeai/01ee7cc9-74b4-4082-ba03-4f7fce6b6f92",
+      "company": "Arcade AI",
+      "role": "AI Engineer",
+      "reason": "No exact matching structured location"
+    },
+    {
       "jobId": "community-job-e24cf4abb1792ba5",
       "url": "https://job-boards.greenhouse.io/alphasense/jobs/8462858002",
       "company": "AlphaSense",
@@ -6451,11 +7249,32 @@
       "reason": "Needs page inspection / unsupported ATS"
     },
     {
+      "jobId": "community-job-e32fe42750fad43d",
+      "url": "https://jobs.ashbyhq.com/deepnote/7f49b6e5-9135-4087-83ce-b6de767de479",
+      "company": "Deepnote",
+      "role": "Senior Full Stack Engineer",
+      "reason": "No exact matching structured location"
+    },
+    {
+      "jobId": "community-job-e3327ec7c21bb600",
+      "url": "https://jobs.lever.co/laminarprojects/35e06941-39db-4163-b880-0f1d029dbbc9",
+      "company": "Laminar Projects",
+      "role": "Vigilant IT Security Manager - Portugal (Remote)",
+      "reason": "HTTP 404"
+    },
+    {
       "jobId": "community-job-e383416c0c7e78c2",
       "url": "https://jobs.micro1.ai/post/21b6f2ad-63a8-47d4-9fd7-31667bf3dbb1",
       "company": "micro1",
       "role": "Senior AI Trainer",
       "reason": "Needs page inspection / unsupported ATS"
+    },
+    {
+      "jobId": "community-job-e3cdf9f929dcbb8c",
+      "url": "https://job-boards.greenhouse.io/kikoff/jobs/4393822009",
+      "company": "Kikoff",
+      "role": "Software Engineer - Recent Grad",
+      "reason": "HTTP 404"
     },
     {
       "jobId": "community-job-e3f15f7b57c139d1",
@@ -6507,6 +7326,20 @@
       "reason": "Needs page inspection / unsupported ATS"
     },
     {
+      "jobId": "community-job-e45ccbd6fe304807",
+      "url": "https://jobs.ashbyhq.com/ready/d7ada023-ac2b-42bb-8196-0836f97d6440",
+      "company": "Ready",
+      "role": "Senior Data Engineer",
+      "reason": "No exact matching structured location"
+    },
+    {
+      "jobId": "community-job-e472fa10cdd1bd7a",
+      "url": "https://jobs.ashbyhq.com/elevenlabs/c7d59014-b918-4c15-ae33-79f5c9f2cf9f/application",
+      "company": "ElevenLabs",
+      "role": "Full-Stack Engineer (Back-End Leaning)",
+      "reason": "No exact matching structured location"
+    },
+    {
       "jobId": "community-job-e47ee5316a947f1d",
       "url": "https://jobs.micro1.ai/post/d508f012-9a01-4eea-aace-be68f48fbdf2",
       "company": "micro1",
@@ -6525,7 +7358,7 @@
       "url": "https://job-boards.eu.greenhouse.io/creativefabrica/jobs/4955689101",
       "company": "Creative Fabrica",
       "role": "Senior Backend Engineer Studio AI",
-      "reason": "No exact matching structured location"
+      "reason": "HTTP 404"
     },
     {
       "jobId": "community-job-e49f601b509319ca",
@@ -6560,6 +7393,13 @@
       "url": "https://jobs.ashbyhq.com/umbrel/cbcc73d1-aef2-4e79-b356-fecf5b225103",
       "company": "Umbrel",
       "role": "Senior Backend Engineer",
+      "reason": "HTTP 404"
+    },
+    {
+      "jobId": "community-job-e569dbd867f22267",
+      "url": "https://jobs.ashbyhq.com/radiant/9259f0d9-dd5c-46fc-85b0-d3dc2e9a71fd/application",
+      "company": "Radiant",
+      "role": "Director, Technical Product Marketing",
       "reason": "No exact matching structured location"
     },
     {
@@ -6638,6 +7478,13 @@
       "company": "Softr",
       "role": "Senior Growth Marketer (Demand Gen)",
       "reason": "Needs page inspection / unsupported ATS"
+    },
+    {
+      "jobId": "community-job-e869c5b329e07eba",
+      "url": "https://jobs.lever.co/gohighlevel/aa1ac843-c6a4-471f-8783-de8089e9d325/apply",
+      "company": "HighLevel",
+      "role": "Software Development Engineer III (Fullstack) - Workflows",
+      "reason": "No exact matching structured location"
     },
     {
       "jobId": "community-job-e8cc19f4b5832ffc",
@@ -6731,6 +7578,13 @@
       "reason": "Needs page inspection / unsupported ATS"
     },
     {
+      "jobId": "community-job-ebf2e1d6c57ccdd0",
+      "url": "https://jobs.ashbyhq.com/railway/b8072f95-043f-404d-a313-f0bdf8dd3c81",
+      "company": "Railway",
+      "role": "Infrastructure Engineer",
+      "reason": "No exact matching structured location"
+    },
+    {
       "jobId": "community-job-ec17d5ebf77d97fb",
       "url": "https://www.menteeai.org/careers/full-stack-ai-engineer",
       "company": "MenteE AI",
@@ -6756,6 +7610,13 @@
       "url": "https://jobs.ashbyhq.com/certifyos/9482275b-ac03-450d-90dc-be8440bf48f5",
       "company": "CertifyOS",
       "role": "Staff Application Engineer",
+      "reason": "No exact matching structured location"
+    },
+    {
+      "jobId": "community-job-ed581daaebe10373",
+      "url": "https://jobs.ashbyhq.com/openai/87989505-81e5-4513-bba0-5f00bb064216",
+      "company": "OpenAI",
+      "role": "Partner AI Deployment Engineer - AWS",
       "reason": "No exact matching structured location"
     },
     {
@@ -6812,6 +7673,13 @@
       "url": "https://jobs.ashbyhq.com/n8n/c9fc97fa-a473-4133-b3cb-502785649ecd",
       "company": "n8n",
       "role": "Forward Deployed Engineer - EMEA",
+      "reason": "No exact matching structured location"
+    },
+    {
+      "jobId": "community-job-f05e243681f19050",
+      "url": "https://jobs.ashbyhq.com/etched/f02e8035-7dc9-4b0c-aab7-75bbb4e975b8",
+      "company": "Etched",
+      "role": "Performance Tools Intern",
       "reason": "No exact matching structured location"
     },
     {
@@ -6878,6 +7746,13 @@
       "reason": "No exact matching structured location"
     },
     {
+      "jobId": "community-job-f31214521d2e2cba",
+      "url": "https://jobs.ashbyhq.com/tandem-health/63dd3066-aa8e-4bcf-a723-bbddd119a8ff",
+      "company": "Tandem Health",
+      "role": "Analytics Engineer",
+      "reason": "No exact matching structured location"
+    },
+    {
       "jobId": "community-job-f34841cc794046e2",
       "url": "https://remoteok.com/remote-jobs/remote-cloud-enablement-engineer-us-quanata-1131488",
       "company": "Quanata",
@@ -6941,6 +7816,13 @@
       "reason": "Needs page inspection / unsupported ATS"
     },
     {
+      "jobId": "community-job-f4897ff48901f78c",
+      "url": "https://jobs.ashbyhq.com/aiprise/9c802ad6-6599-4552-8cf6-ca164eac26d5",
+      "company": "Aiprise",
+      "role": "Security Architect (Bangalore, India)",
+      "reason": "No exact matching structured location"
+    },
+    {
       "jobId": "community-job-f4c0b42ed1ce651f",
       "url": "https://stripe.com/careers/listing/staff-engineer-support-experiences/8162185",
       "company": "Stripe",
@@ -6953,6 +7835,13 @@
       "company": "Delvo",
       "role": "Forward Deployed Engineer",
       "reason": "Needs page inspection / unsupported ATS"
+    },
+    {
+      "jobId": "community-job-f4d5832c441982c5",
+      "url": "https://job-boards.greenhouse.io/openzeppelin/jobs/7985565003",
+      "company": "OpenZeppelin",
+      "role": "Head of IT & Security",
+      "reason": "HTTP 404"
     },
     {
       "jobId": "community-job-f4e95e9826530180",
@@ -6976,6 +7865,13 @@
       "reason": "Needs page inspection / unsupported ATS"
     },
     {
+      "jobId": "community-job-f58492ddc41ac7bf",
+      "url": "https://jobs.ashbyhq.com/vanta/be485e4d-d874-41fa-9de8-34102977d34e",
+      "company": "Vanta",
+      "role": "Product Marketing Lead - EMEA",
+      "reason": "No exact matching structured location"
+    },
+    {
       "jobId": "community-job-f5d64eaf5ccbfa85",
       "url": "https://www.coinbase.com/careers/positions/7891045?gh_jid=7891045",
       "company": "Coinbase",
@@ -6983,11 +7879,25 @@
       "reason": "Needs page inspection / unsupported ATS"
     },
     {
+      "jobId": "community-job-f5f9d1ce5101c45c",
+      "url": "https://jobs.ashbyhq.com/exa/98a8bab6-4cbf-4d39-a5a7-0867addc4086",
+      "company": "Exa",
+      "role": "Software Engineer, Full Stack",
+      "reason": "No exact matching structured location"
+    },
+    {
       "jobId": "community-job-f68ecd9230f79d7d",
       "url": "https://www.mindfoundry.ai/about-us/careers?gh_jid=7746675003",
       "company": "Mind Foundry",
       "role": "Machine Learning Engineer",
       "reason": "Needs page inspection / unsupported ATS"
+    },
+    {
+      "jobId": "community-job-f69caadced4dee8b",
+      "url": "https://job-boards.greenhouse.io/affirm/jobs/7812982003",
+      "company": "Affirm",
+      "role": "Senior Software Engineer, Affirm Bank",
+      "reason": "HTTP 404"
     },
     {
       "jobId": "community-job-f6c0031d74f48874",
@@ -7029,7 +7939,7 @@
       "url": "https://jobs.lever.co/saga-xyz/6f4e2b80-c18f-4f62-b61b-da67d257b828",
       "company": "Saga",
       "role": "Senior AI Engineer",
-      "reason": "The operation was aborted due to timeout"
+      "reason": "HTTP 404"
     },
     {
       "jobId": "community-job-f7d8564da1653c0f",
@@ -7093,6 +8003,13 @@
       "company": "CareerVillage.org",
       "role": "Frontend Engineer",
       "reason": "Needs page inspection / unsupported ATS"
+    },
+    {
+      "jobId": "community-job-f985cef57fdb0885",
+      "url": "https://jobs.ashbyhq.com/notion/49bdf081-6e20-4323-8c73-6d6b19544ff5",
+      "company": "Notion",
+      "role": "Software Engineer, Developer Experience",
+      "reason": "No exact matching structured location"
     },
     {
       "jobId": "community-job-f9ebdce8bb06dd30",
@@ -7169,6 +8086,13 @@
       "url": "https://job-boards.eu.greenhouse.io/dwelly/jobs/4939185101",
       "company": "Dwelly",
       "role": "Product Designer",
+      "reason": "HTTP 404"
+    },
+    {
+      "jobId": "community-job-fbcf90ab63505d2d",
+      "url": "https://jobs.ashbyhq.com/ashby/6a15668c-3f98-4404-8f1f-927cddfc5af7",
+      "company": "Ashby",
+      "role": "Staff Product Engineer - Americas",
       "reason": "No exact matching structured location"
     },
     {
@@ -7212,6 +8136,13 @@
       "company": "CyberCreek Solutions",
       "role": "Full-Stack Web Developer",
       "reason": "Needs page inspection / unsupported ATS"
+    },
+    {
+      "jobId": "community-job-fd8ca385f6d27f03",
+      "url": "https://jobs.ashbyhq.com/Linear/0c7c2e26-0a98-42cf-a47c-9a3999fb513b",
+      "company": "Linear",
+      "role": "Product Engineer",
+      "reason": "No exact matching structured location"
     },
     {
       "jobId": "community-job-fe643c1647fbad5a",
