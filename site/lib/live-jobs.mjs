@@ -341,6 +341,34 @@ export function postedDate(job, now = Date.now()) {
 
 const SALARY_UNITS = { year: 'YEAR', month: 'MONTH', week: 'WEEK', day: 'DAY', hour: 'HOUR' };
 
+/** PostalAddress text the source stated. Blank, markup, and control characters are left out. */
+function statedAddressPart(value) {
+  if (typeof value !== 'string') return '';
+  const text = value.trim();
+  if (!text || text.length > 240 || /[<>]/.test(text)) return '';
+  for (const char of text) {
+    if (char.charCodeAt(0) < 32) return '';
+  }
+  return text;
+}
+
+/**
+ * Google JobPosting address: addressCountry is required to emit jobLocation.
+ * streetAddress, addressLocality, addressRegion, and postalCode are included only when stated.
+ */
+function jobLocationAddress(place) {
+  const address = { '@type': 'PostalAddress', addressCountry: place.country };
+  const streetAddress = statedAddressPart(place.streetAddress);
+  const locality = statedAddressPart(place.locality);
+  const region = statedAddressPart(place.region);
+  const postalCode = statedAddressPart(place.postalCode);
+  if (streetAddress) address.streetAddress = streetAddress;
+  if (locality) address.addressLocality = locality;
+  if (region) address.addressRegion = region;
+  if (postalCode) address.postalCode = postalCode;
+  return address;
+}
+
 /** Employer-stated pay only (never an estimate); the same label is visible on the detail page. */
 export function employerSalary(job) {
   const salary = job?.location?.salary;
@@ -426,17 +454,12 @@ export function jobPostingJsonLd(job, { siteUrl = 'https://jobappagent.com' } = 
     posting.applicantLocationRequirements = requirements.length === 1 ? requirements[0] : requirements;
   } else if (!remote) {
     const physical = places.length > 0 ? places : codes.map((country) => ({ country }));
-    const jobLocations = physical.slice(0, 10).map((place) => {
-      const address = { '@type': 'PostalAddress', addressCountry: place.country };
-      if (typeof place.locality === 'string' && place.locality) address.addressLocality = place.locality;
-      if (typeof place.region === 'string' && place.region) address.addressRegion = place.region;
-      return { '@type': 'Place', address };
-    });
+    const jobLocations = physical.slice(0, 10).map((place) => ({ '@type': 'Place', address: jobLocationAddress(place) }));
     if (jobLocations.length) posting.jobLocation = jobLocations.length === 1 ? jobLocations[0] : jobLocations;
   }
 
   const salary = employerSalary(job);
-  // baseSalary is base pay only: OTE / total-compensation figures stay on the page (labelled) but out of it.
+  // baseSalary only when the employer stated base pay. No estimate, OTE, total-comp, or invented figure.
   if (salary && (salary.kind ?? 'base') === 'base') {
     posting.baseSalary = {
       '@type': 'MonetaryAmount',
