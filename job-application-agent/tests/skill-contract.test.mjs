@@ -193,3 +193,53 @@ test('every SKILL.md copy requires the managed runtime before assess or apply an
   const canonical = await readFile(new URL('../SKILL.md', import.meta.url), 'utf8');
   assert.match(canonical, /`score` emits `application_started` for `review`/);
 });
+
+test('registry skill keeps outreach, accounting, LLM assist, and the canonical score guard', async () => {
+  const canonical = await readFile(new URL('../SKILL.md', import.meta.url), 'utf8');
+  const registry = await readFile(new URL('../../skills/job-application-agent/SKILL.md', import.meta.url), 'utf8');
+  const required = [
+    /## Optional outreach companion/,
+    /## Accounting/,
+    /## Optional LLM assist/,
+    /FREE_AI\.md/,
+    /does not call Free\.ai/i,
+    /optionally filtered with `regions`, `roleFamilies`, `kinds`, `requiresSession`/,
+    /no-relevant-opening/,
+    /communityFeedUnavailable: true/,
+    /never back-fill searches after applying/,
+    /missingDescription: true/,
+    /scoringNote/,
+    /latest `score` decision is `review`/,
+    /Assessment guard stop/,
+    /JOB_APPLICATION_AGENT_MAX_ASSESSMENTS/,
+    /do not retry, work around it, or run `score guard-reset` yourself/,
+  ];
+  for (const copy of [canonical, registry]) {
+    for (const phrase of required) assert.match(copy, phrase);
+  }
+});
+
+test('plugin skill follows the installed Apply section before submit', async () => {
+  const plugin = await readFile(new URL('../../plugins/job-application-agent/skills/job-application-agent/SKILL.md', import.meta.url), 'utf8');
+  assert.match(plugin, /follow the installed `SKILL\.md` Apply section before any submit/);
+  assert.match(plugin, /cloud lease-acquire/);
+  assert.match(plugin, /cloud intent-prepare/);
+});
+
+test('share prompt installs the managed runtime and does not invent a command set', async () => {
+  const prompt = await readFile(new URL('../../SHARE_PROMPT.md', import.meta.url), 'utf8');
+  const readme = await readFile(new URL('../../README.md', import.meta.url), 'utf8');
+  assert.match(prompt, /npx job-application-agent@latest install/);
+  assert.match(prompt, /scripts\/job-application\.mjs/);
+  assert.match(prompt, /Do not keep a second ledger/);
+  assert.match(prompt, /Follow the installed `SKILL\.md`/);
+  assert.doesNotMatch(prompt, /without installing/i);
+  assert.doesNotMatch(prompt, /Support these commands/);
+  assert.doesNotMatch(prompt, /`search jobs`/);
+  assert.doesNotMatch(prompt, /`apply <URL>`/);
+  assert.doesNotMatch(prompt, /apply all relevant jobs/);
+  assert.doesNotMatch(prompt, /`run a round of/);
+  assert.match(readme, /SHARE_PROMPT\.md/);
+  assert.match(readme, /npx job-application-agent@latest install/);
+  assert.doesNotMatch(readme, /without installing/i);
+});
