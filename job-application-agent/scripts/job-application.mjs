@@ -3807,7 +3807,9 @@ async function main(rawArgs) {
   if (area === 'updates') {
     if (action === 'check' && args.length === 2) {
       const { checkForUpdate } = await import('./update-check.mjs');
-      return print(await checkForUpdate({ scriptFile: SCRIPT_FILE }));
+      const result = await checkForUpdate({ scriptFile: SCRIPT_FILE });
+      if (typeof result.nudge === 'string' && result.nudge.length > 0) process.stderr.write(`${result.nudge}\n`);
+      return print(result);
     }
     throw usageError(['updates', action]);
   }

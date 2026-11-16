@@ -190,7 +190,7 @@ Rounds require recorded attempts across at least three distinct discovery source
 
 The installer places the skill at `~/.agents/skills/job-application-agent`. Compatible vendor skill directories are also supported when they already exist.
 
-New installs are notify-only: at the start of a workflow the agent runs `updates check`, which only reads the latest version from npm, and tells you when a newer version exists. Nothing is installed until you ask. Automatic background updates (at login and hourly) are an explicit opt-in with `updates enable`. Installs that already had automatic updates on keep them and show a one-time notice explaining how to keep or turn them off.
+New installs are notify-only: at the start of a workflow the agent runs `updates check`, which only reads the latest version from npm, caches a successful result for a day, and caches a failed check for about an hour. When this install is behind, it shows one line with the exact upgrade command (`npx job-application-agent@latest update`). Nothing is installed until you ask. An offline, timed-out, or declined check does not stop the workflow. Automatic background updates (at login and hourly) are an explicit opt-in with `updates enable`. Installs that already had automatic updates on keep them and show a one-time notice explaining how to keep or turn them off.
 
 ```bash
 npx job-application-agent@latest status

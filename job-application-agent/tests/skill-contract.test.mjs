@@ -174,6 +174,9 @@ test('no SKILL.md copy tells the agent to run the updater on its own; it checks 
     assert.match(skill, /updates check/, copy);
     assert.match(skill, /ask (whether to update|before running)/i, copy);
     assert.match(skill, /Never run the managed updater/i, copy);
+    assert.match(skill, /`nudge`/, copy);
+    assert.match(skill, /show that one line to the user verbatim/i, copy);
+    assert.match(skill, /never let a failed, skipped, or declined check block/i, copy);
   }
 });
 
