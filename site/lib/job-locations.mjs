@@ -423,20 +423,28 @@ function addressPlace(postalAddress, fallbackLabel) {
   const place = { country };
   const locality = label(postalAddress?.addressLocality);
   const region = label(postalAddress?.addressRegion);
+  const postalCode = label(postalAddress?.postalCode);
+  const streetAddress = label(postalAddress?.streetAddress);
   if (locality) place.locality = locality;
   if (region) place.region = region;
+  if (postalCode) place.postalCode = postalCode;
+  if (streetAddress) place.streetAddress = streetAddress;
   return [place];
+}
+
+function placeHasDetail(place) {
+  return Boolean(place.locality || place.region || place.postalCode || place.streetAddress);
 }
 
 function uniquePlaces(places) {
   const seen = new Set();
   const out = [];
   // A bare-country place adds nothing when a more specific place in that country exists.
-  const specific = new Set(places.filter((place) => place?.country && (place.locality || place.region)).map((place) => place.country));
+  const specific = new Set(places.filter((place) => place?.country && placeHasDetail(place)).map((place) => place.country));
   for (const place of places) {
     if (!place?.country) continue;
-    if (!place.locality && !place.region && specific.has(place.country)) continue;
-    const key = `${place.locality ?? ''}|${place.region ?? ''}|${place.country}`;
+    if (!placeHasDetail(place) && specific.has(place.country)) continue;
+    const key = `${place.locality ?? ''}|${place.region ?? ''}|${place.postalCode ?? ''}|${place.streetAddress ?? ''}|${place.country}`;
     if (seen.has(key)) continue;
     seen.add(key);
     out.push(place);

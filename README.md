@@ -263,7 +263,7 @@ See [`ANALYTICS.md`](job-application-agent/references/ANALYTICS.md) for the even
 npm test
 ```
 
-GitHub Actions validates the skill and runs the same test suite on every pull request. See [`CONTRIBUTING.md`](CONTRIBUTING.md) for the full local verification and review contract. To try the workflow without installing, paste [`SHARE_PROMPT.md`](SHARE_PROMPT.md) into a new agent chat.
+GitHub Actions validates the skill and runs the same test suite on every pull request. See [`CONTRIBUTING.md`](CONTRIBUTING.md) for the full local verification and review contract. [`SHARE_PROMPT.md`](SHARE_PROMPT.md) is a paste-in prompt that starts with `npx job-application-agent@latest install` and then uses `scripts/job-application.mjs`.
 
 ## ⚖️ Responsible use
 

@@ -387,3 +387,74 @@ test('pay bands: CSS keeps the name muted and the range bold and unsplittable', 
   assert.match(rule('payBandMore'), /color:\s*var\(--j-muted\)/);
   assert.doesNotMatch(rule('payBand'), /nowrap/);
 });
+
+test('JSON-LD emits baseSalary and address subfields only when the source stated them', () => {
+  const salary = { min: 130000, max: 195000, annualMin: 130000, annualMax: 195000, currency: 'USD', period: 'year', kind: 'base', label: '$130K–$195K USD', isEstimated: false, source: 'employer' };
+  const job = {
+    ...base,
+    url: 'https://jobs.ashbyhq.com/acme/addr',
+    location: {
+      label: 'Detroit, MI', cities: ['Detroit'], countries: [], countryCodes: ['US'], workplace: 'onsite',
+      places: [
+        { locality: 'Detroit', region: 'MI', country: 'US', postalCode: '48201', streetAddress: '555 Clancy St' },
+        { locality: 'Austin', region: 'TX', country: 'US' },
+      ],
+      salary, employmentType: null,
+    },
+  };
+  const ld = jobPostingJsonLd(job);
+  assert.deepEqual(ld.jobLocation, [
+    { '@type': 'Place', address: { '@type': 'PostalAddress', addressCountry: 'US', streetAddress: '555 Clancy St', addressLocality: 'Detroit', addressRegion: 'MI', postalCode: '48201' } },
+    { '@type': 'Place', address: { '@type': 'PostalAddress', addressCountry: 'US', addressLocality: 'Austin', addressRegion: 'TX' } },
+  ]);
+  assert.equal(ld.jobLocation[1].address.postalCode, undefined);
+  assert.equal(ld.jobLocation[1].address.streetAddress, undefined);
+  assert.deepEqual(ld.baseSalary, { '@type': 'MonetaryAmount', currency: 'USD', value: { '@type': 'QuantitativeValue', minValue: 130000, maxValue: 195000, unitText: 'YEAR' } });
+
+  const countryOnly = jobPostingJsonLd({ ...job, location: { ...job.location, places: [{ country: 'US' }], salary: null } });
+  assert.deepEqual(countryOnly.jobLocation.address, { '@type': 'PostalAddress', addressCountry: 'US' });
+  assert.equal(countryOnly.baseSalary, undefined);
+
+  const dirty = jobPostingJsonLd({
+    ...job,
+    location: {
+      ...job.location,
+      salary: { ...salary, isEstimated: true },
+      places: [{ country: 'US', locality: '  ', region: 'TX', postalCode: '48\n201', streetAddress: '<script>555</script>' }],
+    },
+  });
+  assert.deepEqual(dirty.jobLocation.address, { '@type': 'PostalAddress', addressCountry: 'US', addressRegion: 'TX' });
+  assert.equal(dirty.baseSalary, undefined);
+
+  const remote = jobPostingJsonLd({ ...job, location: { ...job.location, workplace: 'remote' } });
+  assert.equal(remote.jobLocation, undefined);
+  assert.equal(remote.jobLocationType, 'TELECOMMUTE');
+  assert.equal(remote.baseSalary.value.minValue, 130000);
+});
+
+test('Ashby postalAddress keeps street and postal code, and drops blanks', () => {
+  const job = { ...base, url: 'https://jobs.ashbyhq.com/acme/addr' };
+  const postal = (address) => ({ address: { postalAddress: address } });
+  const data = { jobs: [{
+    id: 'addr', title: 'Software Engineer', jobUrl: job.url, location: 'Santa Monica', workplaceType: 'OnSite',
+    ...postal({ addressCountry: 'United States', addressRegion: 'California', addressLocality: 'Santa Monica', postalCode: '90401', streetAddress: '1335 4th Street, Third Floor' }),
+    secondaryLocations: [
+      { location: 'Brooklyn', ...postal({ addressCountry: 'US', addressRegion: 'New York', addressLocality: 'Brooklyn', postalCode: '11249', streetAddress: '10 Grand St' }) },
+      { location: 'Lehi', ...postal({ addressCountry: 'US', addressRegion: 'Utah ', addressLocality: 'Lehi ', postalCode: '   ', streetAddress: '<b>2701 N Thanksgiving Way</b>' }) },
+    ],
+  }] };
+  const result = extractLocation(job, data, now);
+  assert.deepEqual(result.places, [
+    { country: 'US', locality: 'Santa Monica', region: 'California', postalCode: '90401', streetAddress: '1335 4th Street, Third Floor' },
+    { country: 'US', locality: 'Brooklyn', region: 'New York', postalCode: '11249', streetAddress: '10 Grand St' },
+    { country: 'US', locality: 'Lehi', region: 'Utah' },
+  ]);
+  const ld = jobPostingJsonLd({ ...job, location: { ...result, workplace: 'onsite', salary: null } });
+  assert.equal(ld.baseSalary, undefined);
+  assert.equal(ld.jobLocation[0].address.postalCode, '90401');
+  assert.equal(ld.jobLocation[0].address.streetAddress, '1335 4th Street, Third Floor');
+  assert.equal(ld.jobLocation[0].address.addressRegion, 'California');
+  assert.equal(ld.jobLocation[2].address.postalCode, undefined);
+  assert.equal(ld.jobLocation[2].address.streetAddress, undefined);
+  assert.equal(ld.jobLocation[2].address.addressRegion, 'Utah');
+});
