@@ -44,26 +44,51 @@ Use `scripts/job-application.mjs` for private state and deterministic checks. Re
 
 Never store passwords, MFA codes, government IDs, demographic data, CAPTCHA answers, browser session data, or inferred candidate facts.
 
+## Optional outreach companion
+
+For candidate-requested outreach drafting or tracking, read
+[references/OUTREACH.md](references/OUTREACH.md). V1 is opt-in, draft-and-track
+only: qualify evidence, draft truthful text, obtain exact draft selection, hand
+copyable text to the candidate for manual sending, and record actual observations.
+Do not automate LinkedIn/X access or messaging. Existing application autonomy
+does not enable this module. Outreach commands bypass analytics and community
+transmissions; do not run updater/telemetry/community commands as part of an
+outreach-only workflow. Keep drafting and sending separate from ATS forms.
+A `sent-verified` outreach counts toward the active application round the same
+way a confirmed apply does, unless that company is already a confirmed apply on
+the same round. Clear does not un-confirm. A later `not-sent` or `failed`
+delivery correction does. Never classify a proposed screen as scheduled. No scheduled
+follow-up is created.
+
+## Accounting
+
+Read [references/ACCOUNTING.md](references/ACCOUNTING.md) before recording delivery evidence, recovery attempts, or per-lead discovery. For new rounds, record reviewed leads with one `round lead --stdin` call before one `round source --stdin` call. Do not call either once per lead or once per source. Pipe a JSON array of the reviewed leads (required on each: `roundId`, `sourceId`, `url`, `company`, `disposition`, `evidence`; `observedAt` is an ISO 8601 UTC time and defaults to now; up to 100), or the same array as `{"leads": [ … ]}`. Then pipe one JSON array of this round's source reports (or `{"sources": [ … ]}`, up to 50) and omit `reviewedCount`/`qualifiedCount` so totals are derived. A batch is validated before anything is written. Check the jobs you are about to apply to in one `ledger check --stdin` call: a JSON array, or `{"candidates": [ … ]}` (up to 50). A single object is still accepted for each of these commands. Don't poll `round status`: read it after recording coverage, before applying, and before `round complete`. Email access is optional: visible browser success counts, verified email sends count with receipt unknown, and matched final delivery failures correct effective totals. A sent-verified outreach counts toward the same round `confirmedCount` unless that company already has a counted apply. Preserve historical events and use explicit corrections for conflicts.
+
 ## Discover and assess
 
 Read [references/SOURCES.md](references/SOURCES.md) before the first discovery pass in a workflow.
 
-1. Run `sources jobs` for recently confirmed direct job links and `sources list` (optionally filtered) for the highest-signal packaged and maintainer-reviewed discovery sources. Resolve every lead to the direct employer or ATS page.
-   For each round, select at least three distinct relevant discovery sources before applying. Search across them before working deeply through one feed; include alternatives to the previous round's dominant source. Record every reviewed lead in one `round lead --stdin` JSON array, then this round's searches (including zero suitable results) and access blockers in one `round source --stdin` JSON array; `round source` refuses `searched` without them, `community-jobs-feed` needs a recorded `sources jobs` pull (one per round, before its submissions; if the call fails record it as blocked with `access-unavailable`), and coverage recorded only after a round's submissions does not count. Two YC views count as one network; recruiter inboxes and user-supplied links supplement discovery but do not satisfy the three-source minimum. Do not claim that listing the catalog means a board was searched. Keep a blocked source in the report and continue to accessible alternatives.
+1. Run `sources jobs` for recently confirmed direct job links and `sources list` (optionally filtered with `regions`, `roleFamilies`, `kinds`, `requiresSession`; no text query) for the highest-signal packaged and maintainer-reviewed discovery sources. Resolve every lead to the direct employer or ATS page.
+   For each round, select at least three distinct relevant discovery sources before applying. Search across them before working deeply through one feed; include alternatives to the previous round's dominant source. Record every reviewed lead in one `round lead --stdin` JSON array, then this round's searches (including zero suitable results) and access blockers in one `round source --stdin` JSON array. The CLI verifies this: in rounds started since this check, `round source` refuses `status: "searched"` unless that source has recorded `round lead` entries (an empty search is one lead with disposition `no-relevant-opening`), and `community-jobs-feed` needs a recorded `sources jobs` pull. Every round needs one `sources jobs` pull after `round start` and before its submissions; if that call itself fails (`communityFeedUnavailable: true`), record `{"sourceId":"community-jobs-feed","status":"blocked","blocker":"access-unavailable"}`. Coverage recorded only after the round's submissions does not count, and `round complete` refuses it, so never back-fill searches after applying. Two YC views count as one network; recruiter inboxes and user-supplied links supplement discovery but do not satisfy the three-source minimum. Do not claim that listing the catalog means a board was searched. Keep a blocked source in the report and continue to accessible alternatives.
 2. Attribute the lead with coarse `discoverySource`, stable packaged or community `discoverySourceId` when known, and independent `applicationChannel`. Treat a one-off user link as `user-supplied`. Whenever a user or agent discovers a repeatable public board, feed, directory, or careers index that is not already listed, run `sources suggest --stdin`; the CLI contributes its sanitized metadata by default unless community sharing has been disabled.
 3. Verify the application channel immediately before assessment. Mark it `active`, `closed`, or `unclear`.
 4. Classify eligibility only after checking residence, location, work authorization, sponsorship, schedule, and employment type.
 5. Extract explicit seniority, experience range, work mode, locations, comparable published salary maximum, and all must-have requirements.
 6. Classify each must-have as `met`, `partial`, `missing`, or `unclear`. Attach private, resume-backed evidence for `met` and `partial`; never invent evidence.
-7. Run `score --stdin`. Apply the returned gate decision before considering the score:
+7. Run `score --stdin` only with the posting's full text in `job.description`. Feed rows from `sources jobs` have none (see its `scoringNote`); open the posting first. If `score` answers `missingDescription: true` (`scored: false`), fetch the posting and score once with its text; never re-run `score` without it. Apply the returned gate decision before considering the score:
    - `exclude`: closed or stale channel, explicit ineligibility, excluded company/location, or incompatible work mode.
    - `ask`: unclear posting status, eligibility, authorization, location/work mode, seniority, or requirement evidence.
    - `skip`: explicit non-target seniority, comparable compensation below the configured floor, insufficient must-have coverage, or score below the manual-review floor. A `skip` or `exclude` is final for that job in every mode: never fill, submit or record it; `ledger add` refuses it.
    - `review`: a candidate to prepare: in `review-each` fill it and stop before Submit for the candidate's go-ahead; in `routine-auto` it may be sent as routine work when it is `autoEligible`.
-8. Treat `autoEligible: true` as necessary but not sufficient for a `routine-auto` send. A `STANDING AUTHORIZATION` `ledger add` is refused unless that job's latest `score` is `review` with `autoEligible: true`; `ask`, manual-review and unscored jobs need the candidate's explicit go-ahead for that job on its filled page (then `APPROVE SUBMIT`). It requires all gates to pass, exact Senior/Staff alignment, score at least 80, at least 70% evidenced must-have coverage, and no material experience-range mismatch.
+8. Treat `autoEligible: true` as necessary but not sufficient for a `routine-auto` send. A `STANDING AUTHORIZATION` `ledger add` is refused unless that job's latest `score` decision is `review` with `autoEligible: true`; `ask`, manual-review and unscored jobs need the candidate's explicit go-ahead for that job on its filled page (then `APPROVE SUBMIT`). It requires all gates to pass, exact Senior/Staff alignment, score at least 80, at least 70% evidenced must-have coverage, and no material experience-range mismatch.
 9. Keep scores from 70 through 79 in manual review. Do not send a job as routine work when must-have analysis is absent or uncertain.
+10. Score each job once per run. Never loop or script `score` over a whole feed, and never re-score a job to get a different answer; an `ask` result needs a fact from the candidate, not another score call. `score` has a local guard: identical repeat input returns the earlier result (`repeatAssessment: true`), a job is refused after 3 attempts, new assessments are capped per run (default 200 per 6 hours, `JOB_APPLICATION_AGENT_MAX_ASSESSMENTS`), after 5 invalid-input failures in a row it backs off and then refuses, and a job whose own input fails 3 times (with backoff between tries) is blocked and recorded as skipped (`invalid-input-retries`). When `score` prints `Assessment guard stop`, stop the run immediately, fix what the message names, and tell the user; do not retry, work around it, or run `score guard-reset` yourself. `score guard` shows the counters.
 
 Do not lower seniority, compensation, location, work mode, or evidence thresholds to increase volume. Unknown compensation does not exclude a role; pause if the application asks the candidate to state or accept compensation.
+
+## Optional LLM assist
+
+When the host agent supports a custom OpenAI-compatible base URL and API key, you may use Free.ai for text assists (JD parse, score rationale, short drafts). Read [references/FREE_AI.md](references/FREE_AI.md). The skill CLI does not call Free.ai. Deterministic commands (`score`, `ledger check`, leases, intents) remain authoritative. Free.ai is not the hosted browser-apply path or the Antigravity/Codex default executor.
 
 ## Apply
 

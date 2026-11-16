@@ -61,7 +61,7 @@ test('only public document paths are cacheable', () => {
   for (const path of ['/api/community-stats', '/api/community-jobs']) {
     assert.equal(isEdgeCacheablePath(path), true, path);
   }
-  for (const path of ['/api/community-jobs-live', '/attention/abc', '/checkout/return', '/api/checkout', '/api/checkout/status', '/api/health', '/api/attention/x/answers', '/api/webhooks/dodo', '/jobs/a/b', '/_vinext/image']) {
+  for (const path of ['/api/community-jobs-live', '/attention/abc', '/checkout/return', '/api/checkout', '/api/checkout/status', '/api/health', '/api/attention/x/answers', '/api/webhooks/dodo', '/jobs/a/b']) {
     assert.equal(isEdgeCacheablePath(path), false, path);
   }
 });

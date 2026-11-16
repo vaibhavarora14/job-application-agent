@@ -1,1 +1,1 @@
-export const SKILL_VERSION = '3.8.7';
+export const SKILL_VERSION = '3.8.8';

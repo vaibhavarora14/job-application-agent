@@ -89,8 +89,9 @@ jobs:
         env:
           SITE_WORKER_URL: https://job-application-agent-site.varora1406.workers.dev
       - name: Alert if jobs liveness is stale (>26h)
-        # Soft-fail visibility on deploy: exits non-zero so the deploy job fails when
-        # the newest published lastCheckedAt is missing or older than 26 hours.
+        # Fails this deploy job when the feed is stale. The step has no
+        # continue-on-error: a missing, invalid, or older-than-26-hour
+        # newestLastCheckedAt exits non-zero and fails the job.
         env:
           TELEMETRY_PRODUCTION_URL: https://job-application-agent-telemetry.varora1406.workers.dev
         run: |

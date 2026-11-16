@@ -48,11 +48,6 @@ export function sentVerifiedFromOutreachItems(items = []) {
   });
 }
 
-export function sentVerifiedFromOutreachState(state, now = new Date().toISOString()) {
-  if (!state?.opportunities) return [];
-  return sentVerifiedFromOutreachItems(Object.keys(state.opportunities).map((id) => readOutreach(state, 'show', { id }, now)));
-}
-
 /**
  * "Application round was not found." with what was looked up, the recent rounds in this state
  * folder and the next command (#218). Round IDs are local random IDs; no job or candidate data.
