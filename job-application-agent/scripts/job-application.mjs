@@ -3504,16 +3504,36 @@ function reviewTelemetry(review) {
   };
 }
 
-function roundCompletedTelemetry(round) {
+// Skip/exclude rows in assessment-skips.json whose `at` is inside [startedAt, completedAt].
+// Blocked rows live in the same file and are not skips. A missing or unreadable file counts as 0.
+function skipsInsideRound(skips, startedAt, completedAt) {
+  const from = Date.parse(startedAt);
+  const to = Date.parse(completedAt);
+  if (!Number.isFinite(from) || !Number.isFinite(to)) return 0;
+  const jobs = skips?.jobs;
+  if (!jobs || typeof jobs !== 'object' || Array.isArray(jobs)) return 0;
+  let count = 0;
+  for (const record of Object.values(jobs)) {
+    if (!record || typeof record !== 'object' || Array.isArray(record)) continue;
+    if (record.decision !== 'skip' && record.decision !== 'exclude') continue;
+    const at = Date.parse(record.at);
+    if (Number.isFinite(at) && at >= from && at <= to) count += 1;
+  }
+  return count;
+}
+
+export async function roundCompletedTelemetry(round) {
   const applicationCount = round.applyConfirmationCount ?? round.effectiveSubmissionCount ?? 0;
+  const skips = await readPrivateJson(join(stateDir(), ASSESSMENT_SKIPS_FILE), null).catch(() => null);
   return {
     event: 'round_completed',
     properties: {
       requestedCount: round.requestedCount,
       submittedCount: applicationCount,
       assessedCount: applicationCount,
-      skippedCount: 0,
+      skippedCount: skipsInsideRound(skips, round.startedAt, round.completedAt),
       pausedCount: round.blockedCount,
+      // Nothing records round errors today, so this stays 0.
       errorCount: 0,
       durationBucket: durationBucket(Math.max(0, Date.parse(round.completedAt) - Date.parse(round.startedAt))),
       attemptedSourceCount: round.discovery.attemptedSourceCount,
@@ -3699,7 +3719,7 @@ async function executeCommand(argv, telemetry, session, community) {
   else if (area === 'round' && action === 'confirm' && value === '--stdin') result = await roundConfirm(await jsonStdin());
   else if (area === 'round' && action === 'complete' && value === '--stdin') {
     result = await roundComplete(await jsonStdin());
-    if (result.completionRecorded) await emitDomainEvent(telemetry, session, roundCompletedTelemetry(result));
+    if (result.completionRecorded) await emitDomainEvent(telemetry, session, await roundCompletedTelemetry(result));
   } else if (area === 'sources' && action === 'list' && value == null) {
     await syncAllCommunityData(community);
     result = await sourcesList({}, await community.list());
