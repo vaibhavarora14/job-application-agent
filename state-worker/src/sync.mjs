@@ -110,7 +110,7 @@ export async function loadConfig({ env = process.env, home = homedir(), path } =
   try {
     raw = await readFile(configPath, 'utf8');
   } catch (error) {
-    if (error.code === 'ENOENT') throw new Error(`Cloud config missing at ${configPath}. Run: node state-worker/bin/sync.mjs enable --url <url> --token <token>`);
+    if (error.code === 'ENOENT') throw new Error(`Cloud config missing at ${configPath}. Run: node state-worker/sync.mjs enable --url <url> --token <token>`);
     throw error;
   }
   const parsed = JSON.parse(raw);
@@ -501,7 +501,7 @@ export async function runSync(argv = process.argv.slice(2), {
       stdout.write(formatStatus(report));
       return 0;
     }
-    throw usageError('Usage: node state-worker/bin/sync.mjs enable|push|pull|status [--url <https-url>] [--token <token>] [--dir <state-dir>]');
+    throw usageError('Usage: node state-worker/sync.mjs enable|push|pull|status [--url <https-url>] [--token <token>] [--dir <state-dir>]');
   } catch (error) {
     stderr.write(`${error.message}\n`);
     return Number.isInteger(error.exitCode) ? error.exitCode : 1;
