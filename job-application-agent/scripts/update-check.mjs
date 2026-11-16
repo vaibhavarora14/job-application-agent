@@ -1,10 +1,12 @@
 // Notify-only update check for the installed skill.
 // Reads the latest published version from the public npm registry and reports it.
-// It never downloads, installs, or runs anything; the agent tells the user and
-// waits for them to ask for an update. No profile, ledger, or identity data is sent.
+// A registry read, successful or failed, is cached for 24 hours. The check never
+// downloads, installs, or runs anything, and a timeout or network failure returns
+// quietly instead of failing the command. No profile, ledger, or identity data is sent.
 import { existsSync } from 'node:fs';
-import { chmod, readFile, rename, writeFile } from 'node:fs/promises';
+import { chmod, mkdir, readFile, rename, writeFile } from 'node:fs/promises';
 import os from 'node:os';
+import { dirname, join } from 'node:path';
 
 import {
   FIRST_JOB_PROMPTED_VERSION,
@@ -25,6 +27,13 @@ export const AUTO_UPDATE_NOTICE = [
 ].join('\n');
 
 const SEMVER = /^(\d+)\.(\d+)\.(\d+)(?:-([0-9A-Za-z.-]+))?$/;
+const UPDATE_CHECK_TTL_MS = 24 * 60 * 60 * 1000;
+
+export function upgradeNudge(currentVersion, latestVersion) {
+  const current = String(currentVersion ?? '').replace(/[\r\n]/g, '').trim();
+  const latest = String(latestVersion ?? '').replace(/[\r\n]/g, '').trim();
+  return `job-application-agent ${current} is behind ${latest}. Upgrade with: ${UPDATE_COMMAND}`;
+}
 
 export function compareVersions(a, b) {
   const left = SEMVER.exec(String(a ?? ''));
@@ -60,18 +69,77 @@ async function writeInstallConfig(configPath, config) {
   await rename(temp, configPath);
 }
 
-async function latestVersion({ fetchImpl, url, timeoutMs }) {
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), timeoutMs);
+function updateCheckCachePath(env, homeDir) {
+  return join(dirname(installConfigPath(env, homeDir)), 'update-check.json');
+}
+
+async function readUpdateCache(cachePath) {
   try {
-    const response = await fetchImpl(url, { headers: { accept: 'application/json' }, signal: controller.signal });
-    if (!response.ok) return null;
-    const body = await response.json();
-    return typeof body?.version === 'string' && SEMVER.test(body.version) ? body.version : null;
+    const value = JSON.parse(await readFile(cachePath, 'utf8'));
+    return value && typeof value === 'object' && !Array.isArray(value) ? value : null;
   } catch {
     return null;
+  }
+}
+
+async function writeUpdateCache(cachePath, cache) {
+  await mkdir(dirname(cachePath), { recursive: true });
+  const temp = `${cachePath}.${process.pid}.tmp`;
+  await writeFile(temp, `${JSON.stringify(cache)}\n`, { mode: 0o600 });
+  await chmod(temp, 0o600).catch(() => {});
+  await rename(temp, cachePath);
+}
+
+function freshUpdateCache(cache, nowMs) {
+  if (!cache || (cache.ok !== true && cache.ok !== false)) return false;
+  if (cache.ok === true && (typeof cache.latestVersion !== 'string' || !SEMVER.test(cache.latestVersion))) return false;
+  const checkedAt = Date.parse(cache.checkedAt);
+  if (!Number.isFinite(checkedAt) || !Number.isFinite(nowMs)) return false;
+  const age = nowMs - checkedAt;
+  return age >= 0 && age < UPDATE_CHECK_TTL_MS;
+}
+
+function checkedAtStamp(nowMs) {
+  const date = new Date(nowMs);
+  return Number.isFinite(date.getTime()) ? date.toISOString() : new Date().toISOString();
+}
+
+function versionFields(result, latest) {
+  const updateAvailable = compareVersions(latest, result.currentVersion) === 1;
+  return {
+    ...result,
+    checked: true,
+    latestVersion: latest,
+    updateAvailable,
+    ...(updateAvailable ? { nudge: upgradeNudge(result.currentVersion, latest) } : {}),
+  };
+}
+
+async function latestVersion({ fetchImpl, url, timeoutMs }) {
+  const controller = new AbortController();
+  let timer;
+  const attempt = (async () => {
+    try {
+      const response = await fetchImpl(url, { headers: { accept: 'application/json' }, signal: controller.signal });
+      if (!response?.ok) return null;
+      const body = await response.json();
+      return typeof body?.version === 'string' && SEMVER.test(body.version) ? body.version : null;
+    } catch {
+      return null;
+    }
+  })();
+  // A fetch that ignores the abort still loses the race, so a stuck registry cannot hold the command open.
+  const timeout = new Promise((resolve) => {
+    timer = setTimeout(() => {
+      controller.abort();
+      resolve(null);
+    }, timeoutMs);
+  });
+  try {
+    return await Promise.race([attempt, timeout]);
   } finally {
     clearTimeout(timer);
+    controller.abort();
   }
 }
 
@@ -84,6 +152,7 @@ export async function checkForUpdate({
   copiedSkill = false,
   scriptFile,
   existsImpl = existsSync,
+  now = Date.now,
 } = {}) {
   const configPath = installConfigPath(env, homeDir);
   let config = await readInstallConfig(configPath);
@@ -93,7 +162,7 @@ export async function checkForUpdate({
     currentVersion,
     automaticUpdates,
     updateCommand: UPDATE_COMMAND,
-    instruction: 'Tell the user about an available update and ask before running the update command. Never update automatically.',
+    instruction: 'When nudge is present, show that exact line to the user and ask before running the update command. Never update automatically, and never let a failed check block the run.',
   };
   let dirty = false;
   if (automaticUpdates && config.autoUpdateNoticeShown !== true) {
@@ -117,9 +186,20 @@ export async function checkForUpdate({
   if (env.JAA_TEST === '1' && !env.JOB_APPLICATION_AGENT_UPDATE_CHECK_URL) {
     return { ...result, checked: false, reason: 'test-run' };
   }
+  const nowMs = typeof now === 'function' ? Number(now()) : Number.NaN;
+  const cachePath = updateCheckCachePath(env, homeDir);
+  const cache = await readUpdateCache(cachePath);
+  if (freshUpdateCache(cache, nowMs)) {
+    if (cache.ok === true) return { ...versionFields(result, cache.latestVersion), cached: true };
+    return { ...result, checked: false, reason: 'unavailable', cached: true };
+  }
   if (typeof fetchImpl !== 'function') return { ...result, checked: false, reason: 'unavailable' };
   const latest = await latestVersion({ fetchImpl, url, timeoutMs });
-  if (!latest) return { ...result, checked: false, reason: 'unavailable' };
-  const order = compareVersions(latest, currentVersion);
-  return { ...result, checked: true, latestVersion: latest, updateAvailable: order === 1 };
+  const checkedAt = checkedAtStamp(nowMs);
+  if (!latest) {
+    await writeUpdateCache(cachePath, { checkedAt, ok: false }).catch(() => {});
+    return { ...result, checked: false, reason: 'unavailable' };
+  }
+  await writeUpdateCache(cachePath, { checkedAt, ok: true, latestVersion: latest }).catch(() => {});
+  return { ...versionFields(result, latest), cached: false };
 }
