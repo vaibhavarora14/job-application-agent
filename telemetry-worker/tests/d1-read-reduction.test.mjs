@@ -102,7 +102,9 @@ sqliteTest('public lifetime summary matches prior aggregate values and increment
   const db = createMemoryD1();
   await applyMigrations(db);
   const secret = 'test-signing-secret-with-sufficient-length';
-  const now = new Date('2026-10-14T12:00:00.000Z');
+  // refreshActiveInstallations30d counts against SQLite's real clock
+  // (datetime('now', '-30 days')), so a fixed date falls out of the window.
+  const now = new Date(Date.now() - 24 * 60 * 60 * 1000);
 
   await recordPublicAggregate(db, {
     installationId: '11111111-1111-4111-8111-111111111111',
