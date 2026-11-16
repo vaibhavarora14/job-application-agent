@@ -2,7 +2,7 @@
 
 ## Unreleased
 
-- **CLI: `updates check` nudges when this install is behind the published npm version (#274).** The check still only reads the public registry and never installs or runs an update. When the installed version is older, the JSON includes a one-line `nudge` with the exact `npx job-application-agent@latest update` command, and the CLI prints that same line to stderr. The registry result, including a failed check, is cached for 24 hours so a workflow does not call npm more than once a day. Offline, timeout, and HTTP failures return quietly and do not fail the command. `JOB_APPLICATION_AGENT_NO_UPDATE_CHECK=1` still skips the check and the nudge. SKILL.md tells the agent to show the nudge verbatim and to ask before updating. No version bump, telemetry, pricing, or site change.
+- **CLI: `updates check` nudges when this install is behind the published npm version (#274).** The check still only reads the public registry and never installs or runs an update. When the installed version is older, the JSON includes a one-line `nudge` with the exact `npx job-application-agent@latest update` command, and the CLI prints that same line to stderr. A successful registry result is cached for 24 hours so a workflow does not call npm more than once a day. A failed check is cached for about an hour. Offline, timeout, and HTTP failures return quietly and do not fail the command. `JOB_APPLICATION_AGENT_NO_UPDATE_CHECK=1` still skips the check and the nudge. SKILL.md tells the agent to show the nudge verbatim and to ask before updating. No version bump, telemetry, pricing, or site change.
 
 ## 3.8.8 — 16 Nov 2026
 

@@ -1,6 +1,7 @@
 // Notify-only update check for the installed skill.
 // Reads the latest published version from the public npm registry and reports it.
-// A registry read, successful or failed, is cached for 24 hours. The check never
+// A successful registry read is cached for 24 hours. A failed read is cached for
+// about an hour so a brief outage does not hide a newer version for a day. The check never
 // downloads, installs, or runs anything, and a timeout or network failure returns
 // quietly instead of failing the command. No profile, ledger, or identity data is sent.
 import { existsSync } from 'node:fs';
@@ -28,6 +29,7 @@ export const AUTO_UPDATE_NOTICE = [
 
 const SEMVER = /^(\d+)\.(\d+)\.(\d+)(?:-([0-9A-Za-z.-]+))?$/;
 const UPDATE_CHECK_TTL_MS = 24 * 60 * 60 * 1000;
+const UPDATE_CHECK_FAILURE_TTL_MS = 60 * 60 * 1000;
 
 export function upgradeNudge(currentVersion, latestVersion) {
   const current = String(currentVersion ?? '').replace(/[\r\n]/g, '').trim();
@@ -96,7 +98,8 @@ function freshUpdateCache(cache, nowMs) {
   const checkedAt = Date.parse(cache.checkedAt);
   if (!Number.isFinite(checkedAt) || !Number.isFinite(nowMs)) return false;
   const age = nowMs - checkedAt;
-  return age >= 0 && age < UPDATE_CHECK_TTL_MS;
+  const ttl = cache.ok === true ? UPDATE_CHECK_TTL_MS : UPDATE_CHECK_FAILURE_TTL_MS;
+  return age >= 0 && age < ttl;
 }
 
 function checkedAtStamp(nowMs) {

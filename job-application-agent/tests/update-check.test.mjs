@@ -12,6 +12,7 @@ import { AUTO_UPDATE_NOTICE, checkForUpdate, compareVersions, NPM_LATEST_URL, UP
 import { SKILL_VERSION } from '../scripts/version.mjs';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
+const HOUR_MS = 60 * 60 * 1000;
 
 const run = promisify(execFile);
 const CLI = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', 'scripts', 'job-application.mjs');
@@ -149,7 +150,7 @@ test('the registry is read at most once per day, then again after the cache expi
   assert.equal(calls.length, 2);
 });
 
-test('offline and timeout failures stay quiet, do not throw, and are not retried the same day', async () => {
+test('offline and timeout failures stay quiet, do not throw, and are not retried within the hour', async () => {
   const f = await home(null);
   const started = 1_700_000_000_000;
   const offline = await checkForUpdate({
@@ -164,17 +165,30 @@ test('offline and timeout failures stay quiet, do not throw, and are not retried
   assert.equal(offline.nudge, undefined);
   assert.equal(offline.updateAvailable, undefined);
 
-  let calls = 0;
+  let failureReads = 0;
   const cachedFailure = await checkForUpdate({
     currentVersion: '3.8.6',
     env: f.env,
     homeDir: f.root,
-    now: () => started + 60_000,
-    fetchImpl: async () => { calls += 1; throw new Error('offline again'); },
+    now: () => started + HOUR_MS - 1,
+    fetchImpl: async () => { failureReads += 1; throw new Error('offline again'); },
   });
   assert.equal(cachedFailure.checked, false);
   assert.equal(cachedFailure.cached, true);
-  assert.equal(calls, 0);
+  assert.equal(failureReads, 0);
+
+  const retryCalls = [];
+  const retried = await checkForUpdate({
+    currentVersion: '3.8.6',
+    env: f.env,
+    homeDir: f.root,
+    now: () => started + HOUR_MS,
+    fetchImpl: registry('3.8.7', retryCalls),
+  });
+  assert.equal(retried.checked, true);
+  assert.equal(retried.cached, false);
+  assert.equal(retried.nudge, expectedNudge('3.8.6', '3.8.7'));
+  assert.equal(retryCalls.length, 1);
 
   const hanging = await home(null);
   let aborted = false;
