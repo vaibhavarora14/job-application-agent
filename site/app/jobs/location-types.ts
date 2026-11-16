@@ -37,7 +37,7 @@ export type JobLocation = {
   cities: string[];
   countries: string[];
   countryCodes?: string[];
-  places?: { locality?: string; region?: string; country: string }[];
+  places?: { locality?: string; region?: string; postalCode?: string; streetAddress?: string; country: string }[];
   workplace: string;
   salary?: (JobSalary & { basis?: "ats" | "text" }) | null;
   employmentType?: string | null;
