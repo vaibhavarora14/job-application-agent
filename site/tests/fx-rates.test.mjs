@@ -67,16 +67,18 @@ test('rendering the current table back is byte-identical, and a refresh only cha
   assert.equal(renderFxRatesSource(source, FX_AS_OF, selectRates(currencies, UNITS_PER_USD)), source);
 
   const refreshedRates = selectRates(currencies, { ...UNITS_PER_USD, EUR: 0.89823, INR: 95.22 });
-  const next = renderFxRatesSource(source, '2026-11-02', refreshedRates);
-  assert.match(next, /export const FX_AS_OF = '2026-11-02';/);
+  // A day after the committed table, so a monthly refresh cannot collide with this sample.
+  const refreshedAsOf = new Date(Date.parse(`${FX_AS_OF}T00:00:00Z`) + 86_400_000).toISOString().slice(0, 10);
+  const next = renderFxRatesSource(source, refreshedAsOf, refreshedRates);
+  assert.match(next, new RegExp(`export const FX_AS_OF = '${refreshedAsOf}';`));
   assert.ok(next.includes('\n  EUR: 0.89823,\n'));
   assert.ok(next.includes('\n  INR: 95.22,\n'));
   assert.match(next, /export function toUsd\(amount, currency\)/);
   assert.throws(() => renderFxRatesSource(source, '2026-02-31', refreshedRates), /real YYYY-MM-DD/);
   const changed = next.split('\n').filter((line, index) => line !== source.split('\n')[index]);
-  assert.deepEqual(changed, ["export const FX_AS_OF = '2026-11-02';", '  EUR: 0.89823,', '  INR: 95.22,']);
+  assert.deepEqual(changed, [`export const FX_AS_OF = '${refreshedAsOf}';`, '  EUR: 0.89823,', '  INR: 95.22,']);
   const refreshed = await import(`data:text/javascript,${encodeURIComponent(next)}`);
-  assert.equal(refreshed.FX_AS_OF, '2026-11-02');
+  assert.equal(refreshed.FX_AS_OF, refreshedAsOf);
   assert.equal(refreshed.toUsd(95.22, 'INR'), 1);
 });
 
