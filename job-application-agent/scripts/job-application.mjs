@@ -57,6 +57,10 @@ function invalidChoice(sentence, values, extra = '') {
   return new Error(`${sentence} Allowed: ${[...values].join(', ')}.${suffix}`);
 }
 
+function unknownPropertyError(kind, key, allowed) {
+  return new Error(`Unknown ${kind} property: ${key}. Allowed: ${[...allowed].join(', ')}.`);
+}
+
 const INTERVIEW_QUALITIES = new Set(['promising', 'viable', 'weak', 'dead']);
 const FAILURE_POINTS = new Set(['role-scope', 'company-problem', 'constraints', 'interviewer', 'process', 'unknown']);
 const APPROVALS = new Set(['APPROVE SUBMIT', 'STANDING AUTHORIZATION']);
@@ -85,9 +89,9 @@ export const LOGGED_ENTRY_ORIGIN = 'logged';
 // 3.8.0); there is no batch approval token (the batch review gate was removed in 3.8.6).
 const AUTONOMY_SCOPES = Object.freeze(['discover', 'assess', 'fill', 'upload-resume', 'submit', 'send-recruiting-email', 'record-ledger', 'record-outcomes', 'cleanup-tabs', 'open-improvement-pr']);
 const AUTONOMY_HARD_STOPS = Object.freeze(['authentication', 'mfa', 'captcha', 'legal-attestation', 'demographic', 'government-id', 'unverifiable-claim', 'ambiguous-authorization', 'ambiguous-compensation']);
-const ATTENTION_STAGES = new Set(['discovery', 'assessment', 'application', 'contact', 'resume', 'questions', 'legal', 'demographic', 'review', 'submission', 'confirmation', 'outcome', 'answers', 'upload']);
-const ATTENTION_BLOCKERS = new Set(['authentication', 'mfa', 'captcha', 'legal-attestation', 'demographic', 'government-id', 'ambiguous-authorization', 'ambiguous-compensation', 'unverifiable-claim', 'judgment', 'video', 'upload', 'site-error', 'other']);
-const REQUIRED_ACTIONS = new Set(['sign-in', 'complete-mfa', 'complete-captcha', 'review-legal', 'choose-demographic', 'provide-government-id', 'provide-authorization', 'provide-compensation', 'verify-claim', 'provide-judgment', 'record-video', 'enable-upload', 'retry-site']);
+export const ATTENTION_STAGES = new Set(['discovery', 'assessment', 'application', 'contact', 'resume', 'questions', 'legal', 'demographic', 'review', 'submission', 'confirmation', 'outcome', 'answers', 'upload']);
+export const ATTENTION_BLOCKERS = new Set(['authentication', 'mfa', 'captcha', 'legal-attestation', 'demographic', 'government-id', 'ambiguous-authorization', 'ambiguous-compensation', 'unverifiable-claim', 'judgment', 'video', 'upload', 'site-error', 'other']);
+export const REQUIRED_ACTIONS = new Set(['sign-in', 'complete-mfa', 'complete-captcha', 'review-legal', 'choose-demographic', 'provide-government-id', 'provide-authorization', 'provide-compensation', 'verify-claim', 'provide-judgment', 'record-video', 'enable-upload', 'retry-site', 'review-form', 'review-delivery', 'review-assessment']);
 const COMPANY_REAPPLY_COOLDOWN_DAYS = 15;
 const COMPANY_REAPPLY_OVERRIDE = 'CANDIDATE APPROVED EARLY REAPPLICATION';
 const SOURCE_CATALOG_URL = new URL('../references/SOURCES.json', import.meta.url);
@@ -374,6 +378,26 @@ const ATTENTION_ACTION_ALIASES = Object.freeze({
   'upload-resume': 'enable-upload',
   'resume-upload': 'enable-upload',
 });
+
+function attentionAllowedKeys() {
+  return new Set([
+    'roundId', 'applicationId', 'url', 'stage', 'blocker', 'requiredActions', 'createdAt', 'company', 'role', 'title',
+    'questions', 'postingText', 'aiAssistanceDiscouraged', 'notes',
+    ...SESSION_BINDING_ATTENTION_KEYS,
+  ]);
+}
+
+/** Stable kebab id from a job URL when attention add has no ledger applicationId yet. */
+export function applicationIdFromUrl(url) {
+  const canonical = normalizeUrl(url);
+  const parsed = new URL(canonical);
+  const slug = `${parsed.hostname}${parsed.pathname}${parsed.search ? `-${parsed.search.slice(1)}` : ''}`
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '');
+  if (!slug) throw new Error('attention.applicationId must be a non-empty string no longer than 180 characters, or omit it when attention.url is a valid HTTP(S) job URL.');
+  return slug.slice(0, 180);
+}
 
 function submissionApprovalMode(entry) {
   if (entry?.approval === 'STANDING AUTHORIZATION') return 'routine-auto';
@@ -2843,11 +2867,61 @@ function normalizeAttentionBlocker(value) {
 }
 
 function normalizeAttentionActions(value) {
-  const actions = stringArray(value, 'attention.requiredActions', true).map((item) => {
-    const raw = item.toLowerCase();
-    return ATTENTION_ACTION_ALIASES[raw] ?? raw;
+  const raw = typeof value === 'string' ? [value] : value;
+  const actions = stringArray(raw, 'attention.requiredActions', true).map((item) => {
+    const normalized = item.toLowerCase();
+    return ATTENTION_ACTION_ALIASES[normalized] ?? normalized;
   });
   return [...new Set(actions)];
+}
+
+export function normalizeAttentionInput(input) {
+  const value = object(input, 'attention item');
+  const allowed = attentionAllowedKeys();
+  if (Object.hasOwn(value, 'answers')) {
+    throw new Error(
+      'Unknown attention property: answers. Candidate responses must not be stored on attention add; '
+      + 'use the hosted resume signal answers[] / answer bank path instead. '
+      + `Allowed: ${[...allowed].join(', ')}.`,
+    );
+  }
+  for (const key of Object.keys(value)) {
+    if (!allowed.has(key)) throw unknownPropertyError('attention', key, allowed);
+  }
+  const stage = string(value.stage, 'attention.stage', 40).toLowerCase();
+  const blocker = normalizeAttentionBlocker(value.blocker);
+  if (!ATTENTION_STAGES.has(stage)) throw invalidChoice('attention.stage is invalid.', ATTENTION_STAGES);
+  if (!ATTENTION_BLOCKERS.has(blocker)) throw invalidChoice('attention.blocker is invalid.', ATTENTION_BLOCKERS);
+  const requiredActions = normalizeAttentionActions(value.requiredActions);
+  if (requiredActions.length > 8) throw new Error('attention.requiredActions must contain at most 8 documented actions.');
+  const unknownAction = requiredActions.find((item) => !REQUIRED_ACTIONS.has(item));
+  if (unknownAction) {
+    const index = requiredActions.indexOf(unknownAction);
+    throw invalidChoice(`attention.requiredActions[${index}] "${unknownAction}" is not allowed.`, REQUIRED_ACTIONS);
+  }
+  const url = string(value.url, 'attention.url', 2048);
+  let applicationId;
+  if (typeof value.applicationId === 'string' && value.applicationId.trim()) {
+    applicationId = string(value.applicationId, 'attention.applicationId', 180);
+  } else {
+    try {
+      applicationId = applicationIdFromUrl(url);
+    } catch (error) {
+      if (/attention\.applicationId/.test(error.message)) throw error;
+      throw new Error('attention.applicationId must be a non-empty string no longer than 180 characters, or omit it when attention.url is a valid HTTP(S) job URL.');
+    }
+  }
+  if (value.notes != null) string(value.notes, 'attention.notes', 2000);
+  return {
+    value,
+    stage,
+    blocker,
+    requiredActions,
+    url,
+    applicationId,
+    roundId: string(value.roundId, 'attention.roundId', 180),
+    createdAt: isoDate(value.createdAt, 'attention.createdAt'),
+  };
 }
 
 function sessionBindingAttentionError(error) {
@@ -2868,28 +2942,7 @@ function sessionBindingAttentionError(error) {
 }
 
 async function attentionAdd(input, { notify = true } = {}) {
-  const value = object(input, 'attention item');
-  if (Object.hasOwn(value, 'answers')) {
-    throw new Error(
-      'Unknown attention property: answers. Candidate responses must not be stored on attention add; '
-      + 'use the hosted resume signal answers[] / answer bank path instead.',
-    );
-  }
-  const allowed = new Set([
-    'roundId', 'applicationId', 'url', 'stage', 'blocker', 'requiredActions', 'createdAt', 'company', 'role', 'title',
-    // P1.5 judgment packaging (prompts only — never candidate responses).
-    'questions', 'postingText', 'aiAssistanceDiscouraged',
-    // Local-only session binding hooks — never appended to the cloud attention event.
-    ...SESSION_BINDING_ATTENTION_KEYS,
-  ]);
-  for (const key of Object.keys(value)) if (!allowed.has(key)) throw new Error(`Unknown attention property: ${key}.`);
-  const stage = string(value.stage, 'attention.stage', 40).toLowerCase();
-  const blocker = normalizeAttentionBlocker(value.blocker);
-  if (!ATTENTION_STAGES.has(stage)) throw new Error('attention.stage is invalid.');
-  if (!ATTENTION_BLOCKERS.has(blocker)) throw new Error('attention.blocker is invalid.');
-  const requiredActions = normalizeAttentionActions(value.requiredActions);
-  if (requiredActions.length > 8 || requiredActions.some((item) => !REQUIRED_ACTIONS.has(item))) throw new Error('attention.requiredActions must contain only documented actions.');
-  const applicationId = string(value.applicationId, 'attention.applicationId', 180);
+  const { value, stage, blocker, requiredActions, url, applicationId, roundId, createdAt } = normalizeAttentionInput(input);
   let company = terminalPlain(value.company);
   let role = terminalPlain(value.role) || terminalPlain(value.title);
   if (!company || !role) {
@@ -2913,16 +2966,16 @@ async function attentionAdd(input, { notify = true } = {}) {
   const event = {
     type: 'opened',
     id: `attention-${randomUUID()}`,
-    roundId: string(value.roundId, 'attention.roundId', 180),
+    roundId,
     applicationId,
-    url: string(value.url, 'attention.url', 2048),
+    url,
     stage,
     blocker,
     requiredActions: [...new Set(requiredActions)],
     // Prompts only — never store candidate responses on the attention queue.
     ...(questions.length ? { questions } : {}),
     ...(aiAssistanceDiscouraged ? { aiAssistanceDiscouraged: true } : {}),
-    createdAt: isoDate(value.createdAt, 'attention.createdAt'),
+    createdAt,
   };
   await appendPrivateEvent('attention', event);
   await recordReviewPaused({ url: event.url, company, title: role }).catch(() => {});
@@ -2958,7 +3011,7 @@ async function attentionAdd(input, { notify = true } = {}) {
 async function attentionResolve(input) {
   const value = object(input, 'attention resolution');
   const allowed = new Set(['id', 'resolvedAt']);
-  for (const key of Object.keys(value)) if (!allowed.has(key)) throw new Error(`Unknown attention resolution property: ${key}.`);
+  for (const key of Object.keys(value)) if (!allowed.has(key)) throw unknownPropertyError('attention resolution', key, allowed);
   const id = string(value.id, 'attention.id', 180);
   const current = await attentionList();
   if (current.items.some(item => item.id === id && item.derived)) throw new Error('Resolve accounting attention with a delivery correction, verified recovery, or lead revision.');
