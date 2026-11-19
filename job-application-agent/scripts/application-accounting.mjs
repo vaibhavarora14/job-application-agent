@@ -31,7 +31,7 @@ export function leadObservedAt(value, now = new Date()) {
 }
 function object(input, allowed) {
   if (!input || typeof input !== 'object' || Array.isArray(input)) throw new Error('Accounting event must be an object.');
-  for (const key of Object.keys(input)) if (!allowed.includes(key)) throw new Error(`Unknown accounting field: ${key}.`);
+  for (const key of Object.keys(input)) if (!allowed.includes(key)) throw new Error(`Unknown accounting field: ${key}. Allowed: ${allowed.join(', ')}.`);
 }
 export function canonicalUrl(value) {
   const url = new URL(required(value, 'url', 2048));

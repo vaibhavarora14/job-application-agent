@@ -280,7 +280,7 @@ export function telemetryErrorCode(error) {
 
 export function telemetryErrorFieldLabel(error) {
   const message = String(error?.message ?? '');
-  const match = message.match(/\b((?:entry|profile|job|attention|friction|outcome|coverage|round|candidate)\.[A-Za-z0-9_.]+)\b/);
+  const match = message.match(/\b((?:entry|profile|job|attention|friction|outcome|coverage|round|candidate|lead)\.[A-Za-z0-9_.]+)\b/);
   return sanitizeTelemetryFieldLabel(match?.[1]);
 }
 
@@ -973,10 +973,40 @@ function sourceId(value, label) {
   return id;
 }
 
-function knownDiscoverySourceId(value, label) {
+function editDistance(a, b) {
+  if (a === b) return 0;
+  if (!a.length) return b.length;
+  if (!b.length) return a.length;
+  const prev = Array.from({ length: b.length + 1 }, (_, index) => index);
+  for (let i = 0; i < a.length; i += 1) {
+    let diagonal = prev[0];
+    prev[0] = i + 1;
+    for (let j = 0; j < b.length; j += 1) {
+      const nextDiagonal = prev[j + 1];
+      prev[j + 1] = Math.min(prev[j + 1] + 1, prev[j] + 1, diagonal + (a[i] === b[j] ? 0 : 1));
+      diagonal = nextDiagonal;
+    }
+  }
+  return prev[b.length];
+}
+
+export function suggestDiscoverySourceIds(id, limit = 3) {
+  const scored = [...SOURCE_CATALOG_IDS, COMMUNITY_FEED_SOURCE_ID].map((candidate) => {
+    const token = candidate.split('-')[0];
+    const prefix = candidate === id || candidate.startsWith(`${id}-`) || token === id;
+    const distance = Math.min(editDistance(id, candidate), editDistance(id, token));
+    return { id: candidate, prefix, distance };
+  });
+  scored.sort((left, right) => Number(right.prefix) - Number(left.prefix) || left.distance - right.distance || left.id.localeCompare(right.id));
+  return scored.filter((item) => item.prefix || item.distance <= 4).slice(0, limit).map((item) => item.id);
+}
+
+export function knownDiscoverySourceId(value, label) {
   const id = sourceId(value, label);
-  if (!SOURCE_CATALOG_IDS.has(id) && !COMMUNITY_SOURCE_ID.test(id) && id !== COMMUNITY_FEED_SOURCE_ID) throw new Error(`${label} must match a packaged or community source ID.`);
-  return id;
+  if (SOURCE_CATALOG_IDS.has(id) || COMMUNITY_SOURCE_ID.test(id) || id === COMMUNITY_FEED_SOURCE_ID) return id;
+  const suggestions = suggestDiscoverySourceIds(id);
+  const hint = suggestions.length ? ` Did you mean ${suggestions.join(', ')}?` : '';
+  throw new Error(`${label} must match a packaged or community source ID.${hint} Run \`sources list\` for all ids.`);
 }
 
 function integer(value, label, min, max) {
@@ -2609,16 +2639,30 @@ async function leadHistory(roundId) {
   return { ...discoveryProjection(history, { roundId: id }), history };
 }
 
-async function roundStart(input) {
+const ROUND_START_KEYS = new Set(['requestedCount', 'startedAt']);
+
+export function normalizeRoundStartInput(input) {
   const value = object(input, 'round');
-  const allowed = new Set(['requestedCount', 'startedAt']);
-  for (const key of Object.keys(value)) if (!allowed.has(key)) throw new Error(`Unknown round property: ${key}.`);
+  if (Object.hasOwn(value, 'roundId') || Object.hasOwn(value, 'id')) {
+    throw new Error('round start creates a new round and returns its id; to continue an existing round use `round status <round-id>`. Allowed: requestedCount, startedAt.');
+  }
+  for (const key of Object.keys(value)) {
+    if (!ROUND_START_KEYS.has(key)) throw unknownPropertyError('round', key, ROUND_START_KEYS);
+  }
+  return {
+    requestedCount: integer(value.requestedCount, 'round.requestedCount', 1, 1000),
+    startedAt: isoDate(value.startedAt, 'round.startedAt'),
+  };
+}
+
+async function roundStart(input) {
+  const value = normalizeRoundStartInput(input);
   const event = {
     type: 'started',
     roundId: `round-${new Date().toISOString().slice(0, 10)}-${randomUUID()}`,
     discoveryPolicyVersion: 2,
-    requestedCount: integer(value.requestedCount, 'round.requestedCount', 1, 1000),
-    occurredAt: isoDate(value.startedAt, 'round.startedAt'),
+    requestedCount: value.requestedCount,
+    occurredAt: value.startedAt,
   };
   await appendPrivateEvent('rounds', event);
   await appendRoundEvidence({ type: 'round-gates', version: ROUND_GATES_VERSION, roundId: event.roundId, at: new Date().toISOString() });
@@ -2692,17 +2736,32 @@ function leadMatchesApplication(lead, app, events) {
         : canonicalUrl(lead.url) === canonicalUrl(app.url)));
 }
 
-function normalizeSourceCoverage(input) {
+const SOURCE_COVERAGE_KEYS = new Set(['roundId', 'sourceId', 'status', 'reviewedCount', 'qualifiedCount', 'blocker', 'evidence', 'applicationIds', 'query', 'notes']);
+
+function optionalCoverageText(value, key) {
+  if (value[key] == null) return '';
+  if (typeof value[key] === 'string' && !value[key].trim()) return '';
+  return string(value[key], `coverage.${key}`, 2000);
+}
+
+function coverageEvidence(value) {
+  const evidence = ['evidence', 'query', 'notes'].map((key) => optionalCoverageText(value, key)).filter(Boolean).join('\n').slice(0, 2000);
+  if (!evidence) throw new Error('coverage.evidence must be a non-empty string no longer than 2000 characters.');
+  return evidence;
+}
+
+export function normalizeSourceCoverage(input) {
   const value = object(input, 'source coverage');
-  const allowed = new Set(['roundId', 'sourceId', 'status', 'reviewedCount', 'qualifiedCount', 'blocker', 'evidence', 'applicationIds']);
-  for (const key of Object.keys(value)) if (!allowed.has(key)) throw new Error(`Unknown source coverage property: ${key}.`);
+  for (const key of Object.keys(value)) {
+    if (!SOURCE_COVERAGE_KEYS.has(key)) throw unknownPropertyError('source coverage', key, SOURCE_COVERAGE_KEYS);
+  }
   const sourceId = knownDiscoverySourceId(value.sourceId, 'coverage.sourceId');
   const status = string(value.status, 'coverage.status', 20);
   if (!['searched', 'blocked'].includes(status)) throw new Error('coverage.status must be searched or blocked.');
   const roundId = string(value.roundId, 'coverage.roundId', 180);
   const blocker = value.blocker == null ? null : string(value.blocker, 'coverage.blocker', 40);
   if (status === 'searched' && blocker != null) throw new Error('Searched sources cannot have a blocker.');
-  const evidence = string(value.evidence, 'coverage.evidence', 2000);
+  const evidence = coverageEvidence(value);
   const applicationIds = value.applicationIds == null ? [] : [...new Set(stringArray(value.applicationIds, 'coverage.applicationIds'))];
   if (applicationIds.length > 1000 || (status === 'blocked' && applicationIds.length)) throw new Error('Invalid coverage.applicationIds.');
   return { value, sourceId, status, roundId, blocker, evidence, applicationIds };
@@ -3156,7 +3215,7 @@ async function roundStartedWithoutOutcome(dir, startedAt, completedAt) {
 async function roundComplete(input) {
   const value = object(input, 'round completion');
   const allowed = new Set(['roundId', 'completedAt', 'concentrationReason', 'concentrationEvidence']);
-  for (const key of Object.keys(value)) if (!allowed.has(key)) throw new Error(`Unknown round completion property: ${key}.`);
+  for (const key of Object.keys(value)) if (!allowed.has(key)) throw unknownPropertyError('round completion', key, allowed);
   // Use the same lock order as ledger writes so completion cannot race a confirmed submission.
   const result = await withStateLock('applications', () => withStateLock('rounds', async (dir) => {
     const status = await roundStatus(string(value.roundId, 'round.roundId', 180));
@@ -3194,7 +3253,7 @@ async function roundComplete(input) {
 async function roundConfirm(input) {
   const value = object(input, 'round confirmation');
   const allowed = new Set(['roundId', 'outreachId', 'outreachIds']);
-  for (const key of Object.keys(value)) if (!allowed.has(key)) throw new Error(`Unknown round confirmation property: ${key}.`);
+  for (const key of Object.keys(value)) if (!allowed.has(key)) throw unknownPropertyError('round confirmation', key, allowed);
   const roundId = string(value.roundId, 'round.roundId', 180);
   const ids = [];
   if (value.outreachId != null) ids.push(string(value.outreachId, 'round.outreachId', 100));
