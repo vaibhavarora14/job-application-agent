@@ -218,7 +218,9 @@ test('strict record rejects invalid schema while automatic telemetry emits a sch
   assert.ok(logs.some((line) => /schema-invalid/i.test(line)));
   const counter = relay.requests.map((request) => request.body).find((body) => body?.event === 'skill_error');
   assert.equal(counter?.properties?.errorCategory, 'schema_invalid');
-  assert.equal(counter?.properties?.sanitizedMessage, undefined);
+  assert.equal(counter?.properties?.fieldLabel, 'command_completed.durationBucket');
+  assert.equal(counter?.properties?.sanitizedMessage, 'telemetry schema rejected command_completed');
+  assert.equal(JSON.stringify(counter).includes('raw private value'), false);
 });
 
 const usageEvent = { event: 'command_completed', properties: { command: 'profile', result: 'success', durationBucket: 'under-1s' } };

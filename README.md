@@ -98,6 +98,10 @@ On Linux, profile storage uses the Secret Service via the `secret-tool` CLI. Ins
 
 Unlike macOS Keychain or Windows Credential Manager, the Linux Secret Service has no always-running system daemon: a keyring daemon (GNOME Keyring, KWallet, or similar) must be running in the user session for `secret-tool` to store or read the profile. On a desktop login this is normally already the case; on headless servers, containers, or SSH-only sessions, start one explicitly (e.g. `gnome-keyring-daemon --unlock --components=secrets`) before first use.
 
+### Troubleshooting Linux profile storage
+
+If `secret-tool` is missing or the keyring is locked (headless, SSH, containers, WSL), the CLI falls back to an owner-only encrypted profile file (mode 0600) in the state directory. Set `JOB_APPLICATION_AGENT_PROFILE_KEY` to a 32-byte key (hex or base64), or let the CLI create a 0600 key file next to the profile. Run `profile set` once to populate the fallback. Do not retry the same profile command in a loop: the first failure names the fallback, and later calls in that state directory refuse with a short non-retryable error.
+
 For one person's agents across several trusted hosts, an optional private Cloudflare D1 backend with R2 (or a private Workers KV blob fallback) shares profile, résumé, application, outcome, round, answer, and attention state. Each host receives a separate revocable credential, and one renewable lease ensures only one host submits applications at a time. See [`CLOUD_STATE.md`](job-application-agent/references/CLOUD_STATE.md).
 
 ## ✨ What it does

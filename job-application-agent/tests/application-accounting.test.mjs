@@ -302,6 +302,13 @@ test('an identity correction cannot merge unrelated requisitions at the same com
   assert.equal(result.conflicts.length, 0);
 });
 
+test('unknown lead fields list the allowed keys (#296)', () => {
+  assert.throws(
+    () => validateLead({ ...lead(), notes: 'search notes' }),
+    /Unknown accounting field: notes\. Allowed: version, type, id, roundId, sourceId, url, company, role, employerJobId, disposition, observedAt, evidence, applicationId, supersedes\./,
+  );
+});
+
 test('unknown lead and delivery enums name every allowed value (#255)', () => {
   assert.throws(() => validateLead({ ...lead(), disposition: 'skipped' }), (error) => {
     assert.equal(error.message, 'Invalid lead disposition. Allowed: qualified, duplicate, no-relevant-opening, location-authorization-conflict, compensation-below-floor, seniority-mismatch, insufficient-must-have-coverage, closed-stale, blocked.');

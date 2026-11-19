@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto';
 import { chmod, mkdir, readFile, readdir, rename, unlink, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
-import { createTelemetryEnvelope, jobIdentity, validateEvent, validateTelemetryIdentity } from './telemetry-schema.mjs';
+import { createTelemetryEnvelope, jobIdentity, sanitizeTelemetryFieldLabel, validateEvent, validateTelemetryIdentity } from './telemetry-schema.mjs';
 import { SKILL_VERSION } from './version.mjs';
 
 export { SKILL_VERSION };
@@ -138,6 +138,34 @@ export function withoutProfileOneClick(event) {
   if (event?.event !== 'application_submitted' || !event.properties || !('profileOneClick' in event.properties)) return null;
   const { profileOneClick: _unused, ...properties } = event.properties;
   return { ...event, properties };
+}
+
+function schemaEventName(input) {
+  const event = input?.event;
+  return typeof event === 'string' && /^[a-z][a-z0-9_]{0,40}$/.test(event) ? event : 'event';
+}
+
+function schemaPropertyKey(error) {
+  const message = String(error?.message ?? '');
+  return message.match(/Unknown telemetry property: ([A-Za-z0-9_]+)/)?.[1]
+    || message.match(/Missing telemetry property: ([A-Za-z0-9_]+)/)?.[1]
+    || message.match(/Unknown telemetry input property: ([A-Za-z0-9_]+)/)?.[1]
+    || message.match(/^([A-Za-z0-9_]+) (?:must |is invalid|contains )/ )?.[1]
+    || (message.includes('Unknown telemetry event') ? 'event' : 'schema');
+}
+
+export function schemaInvalidCounterProperties(input, error) {
+  const event = schemaEventName(input);
+  const properties = {
+    errorCode: 'invalid_input',
+    stage: 'application',
+    recoverable: true,
+    errorCategory: 'schema_invalid',
+    sanitizedMessage: `telemetry schema rejected ${event}`,
+  };
+  const fieldLabel = sanitizeTelemetryFieldLabel(`${event}.${schemaPropertyKey(error)}`);
+  if (fieldLabel) properties.fieldLabel = fieldLabel;
+  return properties;
 }
 
 export async function prepareTelemetryInput(input) {
@@ -751,12 +779,7 @@ export class TelemetryClient {
         try {
           const counter = validateEvent({
             event: 'skill_error',
-            properties: {
-              errorCode: 'invalid_input',
-              stage: 'application',
-              recoverable: true,
-              errorCategory: 'schema_invalid',
-            },
+            properties: schemaInvalidCounterProperties(input, error),
           });
           await this.sendValidated(counter, session, await this.readConfig(), { queueOnFailure: true });
         } catch { /* counter is best effort */ }

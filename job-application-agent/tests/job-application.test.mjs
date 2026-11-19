@@ -34,9 +34,11 @@ import {
   telemetryApplicationSkipped,
   telemetryApplicationStarted,
   telemetryApplicationSubmitted,
+  PROFILE_FIELDS,
   skillErrorProperties,
   telemetryErrorCategory,
   telemetryErrorCode,
+  telemetryErrorFieldLabel,
   telemetryJobAssessed,
   THIN_SUBMISSION_OVERRIDE,
   validateLedgerCheckCandidate,
@@ -153,7 +155,7 @@ test('returns a verified local resume cache while configured cloud storage is of
   assert.deepEqual(result, { path: resume });
 });
 
-test('preserves the Linux secret-tool install error for profile-dependent commands', async (t) => {
+test('a missing secret-tool is a first run, not a migration error (#289)', async (t) => {
   const directory = await mkdtemp(join(tmpdir(), 'job-agent-linux-profile-error-'));
   t.after(() => rm(directory, { recursive: true, force: true }));
   const script = fileURLToPath(new URL('../scripts/job-application.mjs', import.meta.url));
@@ -161,11 +163,76 @@ test('preserves the Linux secret-tool install error for profile-dependent comman
   const platformOverride = `data:text/javascript,${encodeURIComponent("Object.defineProperty(process, 'platform', { value: 'linux' });")}`;
   const env = { ...isolatedCliEnv(directory), PATH: '' };
 
-  const result = await runCli(script, ['profile', 'field', 'name'], undefined, env, ['--import', platformOverride]);
+  const check = await runCli(script, ['profile', 'check'], undefined, env, ['--import', platformOverride]);
+  assert.equal(check.code, 0, check.stderr);
+  const parsed = JSON.parse(check.stdout);
+  assert.equal(parsed.stored, false);
+  assert.match(parsed.nextStep, /profile set --stdin/);
+});
 
-  assert.equal(result.code, 1);
-  assert.match(result.stderr, /secret-tool is not installed/);
-  assert.doesNotMatch(result.stderr, /profile needs migration/i);
+test('profile set with secret-tool missing stores the owner-only fallback (#289)', {
+  skip: process.platform === 'win32',
+}, async (t) => {
+  const directory = await mkdtemp(join(tmpdir(), 'job-agent-linux-fallback-set-'));
+  t.after(() => rm(directory, { recursive: true, force: true }));
+  const script = fileURLToPath(new URL('../scripts/job-application.mjs', import.meta.url));
+  await writeFile(join(directory, 'telemetry.json'), JSON.stringify({ version: 1, enabled: false, disclosed: true, graceConsumed: true, installationEventPending: false }));
+  const platformOverride = `data:text/javascript,${encodeURIComponent("Object.defineProperty(process, 'platform', { value: 'linux' });")}`;
+  const env = { ...isolatedCliEnv(directory), PATH: '' };
+
+  const set = await runCli(script, ['profile', 'set', '--stdin'], target, env, ['--import', platformOverride]);
+  assert.equal(set.code, 0, set.stderr);
+  const field = await runCli(script, ['profile', 'field', 'name'], undefined, env, ['--import', platformOverride]);
+  assert.equal(field.code, 0, field.stderr);
+  assert.equal(JSON.parse(field.stdout).name, target.name);
+  const profileStat = await stat(join(directory, 'profile.enc'));
+  const keyStat = await stat(join(directory, 'profile.key'));
+  assert.equal(profileStat.mode & 0o777, 0o600);
+  assert.equal(keyStat.mode & 0o777, 0o600);
+});
+
+test('a second locked-keyring profile read emits at most one skill_error (#289)', {
+  skip: process.platform === 'win32',
+}, async (t) => {
+  const directory = await mkdtemp(join(tmpdir(), 'job-agent-linux-sticky-auth-'));
+  const toolDirectory = await mkdtemp(join(tmpdir(), 'job-agent-secret-tool-'));
+  t.after(() => rm(directory, { recursive: true, force: true }));
+  t.after(() => rm(toolDirectory, { recursive: true, force: true }));
+  const script = fileURLToPath(new URL('../scripts/job-application.mjs', import.meta.url));
+  const captured = [];
+  const server = createServer(async (request, response) => {
+    let raw = '';
+    for await (const chunk of request) raw += chunk;
+    if (raw) captured.push(JSON.parse(raw));
+    response.setHeader('content-type', 'application/json');
+    response.end(JSON.stringify(request.url === '/v1/install'
+      ? { installationId: '00000000-0000-4000-8000-000000000001', token: 'synthetic-relay-token', expiresAt: '2099-01-01T00:00:00.000Z' }
+      : { accepted: true }));
+  });
+  await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+  t.after(() => new Promise((resolve) => server.close(resolve)));
+  await writeFile(join(toolDirectory, 'secret-tool'), '#!/bin/sh\nprintf "%s\\n" "Cannot unlock the keyring" >&2\nexit 1\n', { mode: 0o755 });
+  await writeFile(join(directory, 'telemetry.json'), JSON.stringify({
+    version: 1, enabled: true, disclosed: true, graceConsumed: true, installationEventPending: false, contactEnabled: false,
+    installationId: '00000000-0000-4000-8000-000000000001', token: 'synthetic-token', tokenExpiresAt: '2099-01-01T00:00:00.000Z',
+  }));
+  const platformOverride = `data:text/javascript,${encodeURIComponent("Object.defineProperty(process, 'platform', { value: 'linux' });")}`;
+  const env = {
+    ...isolatedCliEnv(directory),
+    PATH: toolDirectory,
+    JOB_APPLICATION_AGENT_TELEMETRY_URL: `http://127.0.0.1:${server.address().port}`,
+  };
+  const first = await runCli(script, ['profile', 'field', 'name'], undefined, env, ['--import', platformOverride]);
+  const second = await runCli(script, ['profile', 'field', 'name'], undefined, env, ['--import', platformOverride]);
+  assert.equal(first.code, 1);
+  assert.equal(second.code, 1);
+  assert.match(first.stderr, /Secret Service could not read the profile/);
+  assert.match(second.stderr, /still unavailable in this run/);
+  const skillErrors = captured.filter((body) => body.event === 'skill_error');
+  assert.equal(skillErrors.length, 1);
+  assert.equal(skillErrors[0].properties.errorCode, 'authentication_required');
+  assert.equal(JSON.stringify(skillErrors).includes(directory), false);
+  assert.equal(JSON.stringify(skillErrors).includes(target.name), false);
 });
 
 test('preserves an unavailable Linux Secret Service error for profile-dependent commands', {
@@ -187,7 +254,9 @@ test('preserves an unavailable Linux Secret Service error for profile-dependent 
 
   assert.equal(result.code, 1);
   assert.match(result.stderr, /Secret Service could not read the profile/);
+  assert.match(result.stderr, /owner-only encrypted fallback/);
   assert.doesNotMatch(result.stderr, /profile needs migration/i);
+  assert.equal(result.stderr.includes(directory), false);
 });
 
 test('migrates a legacy profile without discarding identity or salary preference', () => {
@@ -358,6 +427,59 @@ test('pauses on unclear eligibility', () => {
     title: 'Senior Backend Engineer', company: 'Example', description: 'Python', source: 'company', eligibility: 'unclear', remote: true, locations: ['Remote'],
   }, target);
   assert.equal(result.decision, 'ask');
+});
+
+test('ledger add reports every invalid field in one error and names source mix-ups (#295)', () => {
+  const base = {
+    company: 'Example',
+    role: 'Senior Product Engineer',
+    url: 'https://jobs.example.com/123',
+    source: 'company',
+    status: 'submitted',
+    submittedAt: '2026-01-15T10:00:00.000Z',
+    answers: {},
+  };
+  const missing = (() => { try { validateLedgerEntry(base); } catch (error) { return error; } })();
+  assert.match(missing.message, /^ledger add: 3 fields invalid:/);
+  assert.match(missing.message, /entry\.id must be a non-empty string/);
+  assert.match(missing.message, /entry\.approval must be a non-empty string/);
+  assert.match(missing.message, /entry\.score must be an integer from 0 to 100/);
+  assert.equal(telemetryErrorFieldLabel(missing), 'entry.id');
+  assert.equal(telemetryErrorCode(missing), 'invalid_input');
+
+  assert.throws(
+    () => validateLedgerEntry({
+      ...base,
+      id: 'example-role',
+      approval: 'APPROVE SUBMIT',
+      score: 80,
+      source: 'job-board',
+    }),
+    (error) => {
+      assert.match(error.message, /entry\.source "job-board" is a discoverySource; source is the ATS/);
+      assert.match(error.message, /Allowed: linkedin, greenhouse, lever, ashby/);
+      assert.doesNotMatch(error.message, /ledger add: \d+ fields invalid/);
+      return true;
+    },
+  );
+});
+
+test('ledger check accepts title and jobUrl aliases (#295)', () => {
+  assert.deepEqual(
+    validateLedgerCheckCandidate({ company: 'Example', title: 'Senior Product Engineer' }),
+    { company: 'Example', role: 'Senior Product Engineer' },
+  );
+  assert.deepEqual(
+    validateLedgerCheckCandidate({ jobUrl: 'https://jobs.example.com/123' }),
+    { url: 'https://jobs.example.com/123' },
+  );
+  try {
+    validateLedgerCheckCandidate({ posting: 'ignored' });
+  } catch (error) {
+    assert.match(error.message, /Received keys: posting/);
+    assert.match(error.message, /title is accepted as a role alias/);
+    assert.doesNotMatch(error.message, /ignored/);
+  }
 });
 
 test('accepts only confirmed submission ledger shapes', () => {
@@ -1210,6 +1332,50 @@ test('maps commands and durations to bounded telemetry categories', () => {
   assert.equal(telemetryErrorCode(new Error('Cloud state request failed (503): upstream')), 'network_failure');
   assert.equal(telemetryErrorCode(new Error('Cloud state unavailable: fetch failed')), 'network_failure');
   assert.equal(telemetryErrorCode(new Error('Resume export failed with HTTP 500.')), 'upload_failed');
+});
+
+test('guardrail refusals and usage errors are invalid_input, not internal_error (#297)', () => {
+  const cases = [
+    ['Coverage refused: linkedin-jobs-feed is marked searched, but no leads were recorded for it in this round.', 'invalid_input'],
+    ['Coverage refused: community-jobs-feed is marked searched, but no successful `sources jobs` pull was recorded in this round.', 'invalid_input'],
+    ['Profile field is not allowed.', 'invalid_input'],
+    ['Profile field "firstName" is not allowed. Allowed: name, email.', 'invalid_input'],
+    ['Skipped job refused: score decided "skip" (seniority) for this job at 2026-11-19T00:00:00.000Z.', 'invalid_input'],
+    ['Usage (ledger check, missing --stdin): Pipe one JSON object.', 'invalid_input'],
+    ['Usage (score, missing subcommand): score --stdin', 'invalid_input'],
+    ['Résumé file not found at the given path; pass an absolute path or a Google Doc URL.', 'upload_failed'],
+  ];
+  for (const [message, code] of cases) {
+    assert.equal(telemetryErrorCode(new Error(message)), code, message);
+    assert.notEqual(telemetryErrorCode(new Error(message)), 'internal_error', message);
+  }
+  assert.equal(telemetryErrorCategory(new Error('Usage (ledger check, missing --stdin): Pipe one JSON object.')), 'usage');
+});
+
+test('profile field names the allowed fields (#297)', async (t) => {
+  const directory = await mkdtemp(join(tmpdir(), 'job-agent-profile-field-'));
+  t.after(() => rm(directory, { recursive: true, force: true }));
+  const script = fileURLToPath(new URL('../scripts/job-application.mjs', import.meta.url));
+  await writeFile(join(directory, 'telemetry.json'), JSON.stringify({ version: 1, enabled: false, disclosed: true, graceConsumed: true, installationEventPending: false }));
+  const result = await runCli(script, ['profile', 'field', 'firstName'], undefined, isolatedCliEnv(directory));
+  assert.equal(result.code, 1);
+  assert.match(result.stderr, /Profile field "firstName" is not allowed\. Allowed: /);
+  for (const field of PROFILE_FIELDS) assert.match(result.stderr, new RegExp(`\\b${field}\\b`));
+  assert.equal(skillErrorProperties(new Error(result.stderr.replace(/^Error: /, '')), 'profile').errorCode, 'invalid_input');
+});
+
+test('resume import of a missing file is upload_failed and omits the path (#297)', async (t) => {
+  const directory = await mkdtemp(join(tmpdir(), 'job-agent-resume-missing-'));
+  t.after(() => rm(directory, { recursive: true, force: true }));
+  const script = fileURLToPath(new URL('../scripts/job-application.mjs', import.meta.url));
+  await writeFile(join(directory, 'telemetry.json'), JSON.stringify({ version: 1, enabled: false, disclosed: true, graceConsumed: true, installationEventPending: false }));
+  const missing = join(directory, 'does-not-exist.pdf');
+  const result = await runCli(script, ['resume', 'import', missing], undefined, isolatedCliEnv(directory));
+  assert.equal(result.code, 1);
+  assert.match(result.stderr, /Résumé file not found at the given path; pass an absolute path or a Google Doc URL\./);
+  assert.equal(result.stderr.includes(missing), false);
+  assert.equal(result.stderr.includes(directory), false);
+  assert.equal(telemetryErrorCode(new Error(result.stderr.replace(/^Error: /, ''))), 'upload_failed');
 });
 
 test('application_submitted uses null/unknown when telemetry is omitted', async () => {

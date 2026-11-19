@@ -57,6 +57,10 @@ function invalidChoice(sentence, values, extra = '') {
   return new Error(`${sentence} Allowed: ${[...values].join(', ')}.${suffix}`);
 }
 
+function unknownPropertyError(kind, key, allowed) {
+  return new Error(`Unknown ${kind} property: ${key}. Allowed: ${[...allowed].join(', ')}.`);
+}
+
 const INTERVIEW_QUALITIES = new Set(['promising', 'viable', 'weak', 'dead']);
 const FAILURE_POINTS = new Set(['role-scope', 'company-problem', 'constraints', 'interviewer', 'process', 'unknown']);
 const APPROVALS = new Set(['APPROVE SUBMIT', 'STANDING AUTHORIZATION']);
@@ -85,9 +89,9 @@ export const LOGGED_ENTRY_ORIGIN = 'logged';
 // 3.8.0); there is no batch approval token (the batch review gate was removed in 3.8.6).
 const AUTONOMY_SCOPES = Object.freeze(['discover', 'assess', 'fill', 'upload-resume', 'submit', 'send-recruiting-email', 'record-ledger', 'record-outcomes', 'cleanup-tabs', 'open-improvement-pr']);
 const AUTONOMY_HARD_STOPS = Object.freeze(['authentication', 'mfa', 'captcha', 'legal-attestation', 'demographic', 'government-id', 'unverifiable-claim', 'ambiguous-authorization', 'ambiguous-compensation']);
-const ATTENTION_STAGES = new Set(['discovery', 'assessment', 'application', 'contact', 'resume', 'questions', 'legal', 'demographic', 'review', 'submission', 'confirmation', 'outcome', 'answers', 'upload']);
-const ATTENTION_BLOCKERS = new Set(['authentication', 'mfa', 'captcha', 'legal-attestation', 'demographic', 'government-id', 'ambiguous-authorization', 'ambiguous-compensation', 'unverifiable-claim', 'judgment', 'video', 'upload', 'site-error', 'other']);
-const REQUIRED_ACTIONS = new Set(['sign-in', 'complete-mfa', 'complete-captcha', 'review-legal', 'choose-demographic', 'provide-government-id', 'provide-authorization', 'provide-compensation', 'verify-claim', 'provide-judgment', 'record-video', 'enable-upload', 'retry-site']);
+export const ATTENTION_STAGES = new Set(['discovery', 'assessment', 'application', 'contact', 'resume', 'questions', 'legal', 'demographic', 'review', 'submission', 'confirmation', 'outcome', 'answers', 'upload']);
+export const ATTENTION_BLOCKERS = new Set(['authentication', 'mfa', 'captcha', 'legal-attestation', 'demographic', 'government-id', 'ambiguous-authorization', 'ambiguous-compensation', 'unverifiable-claim', 'judgment', 'video', 'upload', 'site-error', 'other']);
+export const REQUIRED_ACTIONS = new Set(['sign-in', 'complete-mfa', 'complete-captcha', 'review-legal', 'choose-demographic', 'provide-government-id', 'provide-authorization', 'provide-compensation', 'verify-claim', 'provide-judgment', 'record-video', 'enable-upload', 'retry-site', 'review-form', 'review-delivery', 'review-assessment']);
 const COMPANY_REAPPLY_COOLDOWN_DAYS = 15;
 const COMPANY_REAPPLY_OVERRIDE = 'CANDIDATE APPROVED EARLY REAPPLICATION';
 const SOURCE_CATALOG_URL = new URL('../references/SOURCES.json', import.meta.url);
@@ -104,6 +108,13 @@ const STRING_PROFILE_FIELDS = new Set(['name', 'email', 'phone', 'location', 'wo
 const ARRAY_PROFILE_FIELDS = new Set(['roleFamilies', 'seniority', 'skills', 'targetLocations', 'excludedLocations', 'workModes', 'industries', 'excludedCompanies']);
 const NUMBER_PROFILE_FIELDS = new Set(['yearsExperience', 'autoSubmitMinScore', 'manualReviewMinScore', 'minMustHaveCoverage']);
 const OBJECT_PROFILE_FIELDS = new Set(['compensationFloor']);
+export const PROFILE_FIELDS = Object.freeze([
+  ...STRING_PROFILE_FIELDS, ...ARRAY_PROFILE_FIELDS, ...NUMBER_PROFILE_FIELDS, ...OBJECT_PROFILE_FIELDS,
+]);
+
+function invalidInputError(message) {
+  return Object.assign(new Error(message), { telemetryErrorCode: 'invalid_input' });
+}
 const LEGACY_PROFILE_FIELDS = new Set(['salaryPreference']);
 const DEFAULT_TARGETING = {
   roleFamilies: ['product-engineering', 'full-stack', 'ai-ml'],
@@ -247,7 +258,7 @@ function telemetryStage(command, error) {
 export function telemetryErrorCategory(error) {
   if (typeof error?.telemetryErrorCategory === 'string') return error.telemetryErrorCategory;
   const message = messageForErrorClass(error?.message ?? '');
-  if (/^Usage:/i.test(message)) return 'usage';
+  if (/^Usage[ :(]/i.test(message)) return 'usage';
   if (/keychain|keyring|secret service|secret-tool|credential manager|dpapi|authentication|login|lease/i.test(message)) return 'auth';
   // Resume/PDF upload before generic http/network (export errors often include "HTTP").
   if (/upload|resume|pdf/i.test(message)) return 'upload';
@@ -255,28 +266,28 @@ export function telemetryErrorCategory(error) {
   if (/profile|migration|missing or unreadable/i.test(message)) return 'profile';
   if (/cloud|intent/i.test(message)) return 'cloud';
   if (/duplicate|ledger|submission|submitted|approval|telemetry\./i.test(message)) return 'submission';
-  if (/invalid|must|required|expected|unsupported/i.test(message)) return 'validation';
+  if (/invalid|must|required|expected|unsupported|refused|not allowed/i.test(message)) return 'validation';
   return 'other';
 }
 
 export function telemetryErrorCode(error) {
   if (typeof error?.telemetryErrorCode === 'string') return error.telemetryErrorCode;
   const message = messageForErrorClass(error?.message ?? '');
-  if (/^Usage:/i.test(message)) return 'invalid_input';
+  if (/^Usage[ :(]/i.test(message)) return 'invalid_input';
   if (/keychain|keyring|secret service|secret-tool|credential manager|dpapi|authentication|login/i.test(message)) return 'authentication_required';
   if (/No local cloud lease|lease is recorded|live lease/i.test(message)) return 'authentication_required';
   // Resume/PDF upload failures before generic network/http matching (messages often include "HTTP").
-  if (/upload failed|Resume export failed|did not contain a valid PDF|Canonical resume/i.test(message)) return 'upload_failed';
+  if (/upload failed|Resume export failed|did not contain a valid PDF|Canonical resume|Résumé file not found/i.test(message)) return 'upload_failed';
   if (/Cloud state (unavailable|request failed)|network|fetch|http|relay unavailable|upstream/i.test(message)) return 'network_failure';
   if (/rate.?limit/i.test(message)) return 'rate_limited';
-  if (/missing or unreadable|needs migration|Expected one JSON|Unknown |is invalid|must be|requires |required|expected|unsupported|Hard duplicate|cooldown|follow-up|Usage:/i.test(message)) return 'invalid_input';
+  if (/missing or unreadable|needs migration|Expected one JSON|Unknown |is invalid|must be|requires |required|expected|unsupported|Hard duplicate|cooldown|follow-up|Usage[ :(]|refused|not allowed/i.test(message)) return 'invalid_input';
   if (/invalid|must|required|expected|unsupported/i.test(message)) return 'invalid_input';
   return 'internal_error';
 }
 
 export function telemetryErrorFieldLabel(error) {
   const message = String(error?.message ?? '');
-  const match = message.match(/\b((?:entry|profile|job|attention|friction|outcome|coverage|round|candidate)\.[A-Za-z0-9_.]+)\b/);
+  const match = message.match(/\b((?:entry|profile|job|attention|friction|outcome|coverage|round|candidate|lead)\.[A-Za-z0-9_.]+)\b/);
   return sanitizeTelemetryFieldLabel(match?.[1]);
 }
 
@@ -293,7 +304,7 @@ export function skillErrorProperties(error, command) {
   const properties = {
     errorCode: telemetryErrorCode(error),
     stage: telemetryStage(command, error),
-    recoverable: true,
+    recoverable: error?.recoverable !== false,
     errorCategory: telemetryErrorCategory(error),
   };
   const sanitizedMessage = sanitizeTelemetryErrorMessage(error?.message, localIdentityForRedaction());
@@ -374,6 +385,26 @@ const ATTENTION_ACTION_ALIASES = Object.freeze({
   'upload-resume': 'enable-upload',
   'resume-upload': 'enable-upload',
 });
+
+function attentionAllowedKeys() {
+  return new Set([
+    'roundId', 'applicationId', 'url', 'stage', 'blocker', 'requiredActions', 'createdAt', 'company', 'role', 'title',
+    'questions', 'postingText', 'aiAssistanceDiscouraged', 'notes',
+    ...SESSION_BINDING_ATTENTION_KEYS,
+  ]);
+}
+
+/** Stable kebab id from a job URL when attention add has no ledger applicationId yet. */
+export function applicationIdFromUrl(url) {
+  const canonical = normalizeUrl(url);
+  const parsed = new URL(canonical);
+  const slug = `${parsed.hostname}${parsed.pathname}${parsed.search ? `-${parsed.search.slice(1)}` : ''}`
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '');
+  if (!slug) throw new Error('attention.applicationId must be a non-empty string no longer than 180 characters, or omit it when attention.url is a valid HTTP(S) job URL.');
+  return slug.slice(0, 180);
+}
 
 function submissionApprovalMode(entry) {
   if (entry?.approval === 'STANDING AUTHORIZATION') return 'routine-auto';
@@ -949,15 +980,59 @@ function sourceId(value, label) {
   return id;
 }
 
-function knownDiscoverySourceId(value, label) {
+function editDistance(a, b) {
+  if (a === b) return 0;
+  if (!a.length) return b.length;
+  if (!b.length) return a.length;
+  const prev = Array.from({ length: b.length + 1 }, (_, index) => index);
+  for (let i = 0; i < a.length; i += 1) {
+    let diagonal = prev[0];
+    prev[0] = i + 1;
+    for (let j = 0; j < b.length; j += 1) {
+      const nextDiagonal = prev[j + 1];
+      prev[j + 1] = Math.min(prev[j + 1] + 1, prev[j] + 1, diagonal + (a[i] === b[j] ? 0 : 1));
+      diagonal = nextDiagonal;
+    }
+  }
+  return prev[b.length];
+}
+
+export function suggestDiscoverySourceIds(id, limit = 3) {
+  const scored = [...SOURCE_CATALOG_IDS, COMMUNITY_FEED_SOURCE_ID].map((candidate) => {
+    const token = candidate.split('-')[0];
+    const prefix = candidate === id || candidate.startsWith(`${id}-`) || token === id;
+    const distance = Math.min(editDistance(id, candidate), editDistance(id, token));
+    return { id: candidate, prefix, distance };
+  });
+  scored.sort((left, right) => Number(right.prefix) - Number(left.prefix) || left.distance - right.distance || left.id.localeCompare(right.id));
+  return scored.filter((item) => item.prefix || item.distance <= 4).slice(0, limit).map((item) => item.id);
+}
+
+export function knownDiscoverySourceId(value, label) {
   const id = sourceId(value, label);
-  if (!SOURCE_CATALOG_IDS.has(id) && !COMMUNITY_SOURCE_ID.test(id) && id !== COMMUNITY_FEED_SOURCE_ID) throw new Error(`${label} must match a packaged or community source ID.`);
-  return id;
+  if (SOURCE_CATALOG_IDS.has(id) || COMMUNITY_SOURCE_ID.test(id) || id === COMMUNITY_FEED_SOURCE_ID) return id;
+  const suggestions = suggestDiscoverySourceIds(id);
+  const hint = suggestions.length ? ` Did you mean ${suggestions.join(', ')}?` : '';
+  throw new Error(`${label} must match a packaged or community source ID.${hint} Run \`sources list\` for all ids.`);
 }
 
 function integer(value, label, min, max) {
   if (!Number.isInteger(value) || value < min || value > max) throw new Error(`${label} must be an integer from ${min} to ${max}.`);
   return value;
+}
+
+function collect(errors, fn) {
+  try { return fn(); }
+  catch (error) {
+    errors.push(error.message);
+    return undefined;
+  }
+}
+
+function throwCollected(prefix, errors) {
+  if (!errors.length) return;
+  if (errors.length === 1) throw new Error(errors[0]);
+  throw new Error(`${prefix}: ${errors.length} fields invalid: ${errors.join('; ')}`);
 }
 
 function compensationFloor(value) {
@@ -1202,71 +1277,96 @@ function ledgerApproval(value) {
   return value.trim();
 }
 
+function sourceMixUpMessage(value) {
+  return `entry.source "${value}" is a discoverySource; source is the ATS. Allowed: ${[...SOURCES].join(', ')}.`;
+}
+
 export function validateLedgerEntry(input) {
   const entry = object(input, 'entry');
+  const errors = [];
   const normalized = {
-    id: string(entry.id, 'entry.id', 180),
-    company: string(entry.company, 'entry.company', 300),
-    role: string(entry.role, 'entry.role', 300),
-    url: string(entry.url, 'entry.url', 2048),
-    source: string(entry.source, 'entry.source', 40).toLowerCase(),
+    id: collect(errors, () => string(entry.id, 'entry.id', 180)),
+    company: collect(errors, () => string(entry.company, 'entry.company', 300)),
+    role: collect(errors, () => string(entry.role, 'entry.role', 300)),
+    url: collect(errors, () => string(entry.url, 'entry.url', 2048)),
+    source: collect(errors, () => string(entry.source, 'entry.source', 40).toLowerCase()),
     score: entry.score,
-    status: string(entry.status, 'entry.status', 40).toLowerCase(),
-    submittedAt: string(entry.submittedAt, 'entry.submittedAt', 80),
-    approval: ledgerApproval(entry.approval),
+    status: collect(errors, () => string(entry.status, 'entry.status', 40).toLowerCase()),
+    submittedAt: collect(errors, () => string(entry.submittedAt, 'entry.submittedAt', 80)),
+    approval: collect(errors, () => ledgerApproval(entry.approval)),
     answers: entry.answers ?? {},
   };
-  if (entry.employerJobId != null) normalized.employerJobId = string(entry.employerJobId, 'entry.employerJobId', 300);
-  if (entry.discoverySource != null) normalized.discoverySource = string(entry.discoverySource, 'entry.discoverySource', 40).toLowerCase();
-  if (entry.discoverySourceId != null) {
-    normalized.discoverySourceId = knownDiscoverySourceId(entry.discoverySourceId, 'entry.discoverySourceId');
+  if (entry.employerJobId != null) normalized.employerJobId = collect(errors, () => string(entry.employerJobId, 'entry.employerJobId', 300));
+  if (entry.discoverySource != null) {
+    normalized.discoverySource = collect(errors, () => string(entry.discoverySource, 'entry.discoverySource', 40).toLowerCase());
   }
-  if (entry.applicationChannel != null) normalized.applicationChannel = string(entry.applicationChannel, 'entry.applicationChannel', 40).toLowerCase();
-  if (entry.roundId != null) normalized.roundId = string(entry.roundId, 'entry.roundId', 180);
+  if (entry.discoverySourceId != null) {
+    normalized.discoverySourceId = collect(errors, () => knownDiscoverySourceId(entry.discoverySourceId, 'entry.discoverySourceId'));
+  }
+  if (entry.applicationChannel != null) {
+    normalized.applicationChannel = collect(errors, () => string(entry.applicationChannel, 'entry.applicationChannel', 40).toLowerCase());
+  }
+  if (entry.roundId != null) normalized.roundId = collect(errors, () => string(entry.roundId, 'entry.roundId', 180));
+  if (normalized.source != null && !SOURCES.has(normalized.source)) {
+    errors.push(DISCOVERY_SOURCES.has(normalized.source)
+      ? sourceMixUpMessage(normalized.source)
+      : invalidChoice('entry.source is invalid.', SOURCES).message);
+  }
+  if (normalized.discoverySource != null && !DISCOVERY_SOURCES.has(normalized.discoverySource)) {
+    errors.push(invalidChoice('entry.discoverySource is invalid.', DISCOVERY_SOURCES).message);
+  }
+  if (normalized.applicationChannel != null && !APPLICATION_CHANNELS.has(normalized.applicationChannel)) {
+    errors.push(invalidChoice('entry.applicationChannel is invalid.', APPLICATION_CHANNELS).message);
+  }
+  if (!Number.isInteger(normalized.score) || normalized.score < 0 || normalized.score > 100) {
+    errors.push('entry.score must be an integer from 0 to 100.');
+  }
+  if (normalized.status != null && normalized.status !== 'submitted') errors.push('New ledger entries must have status submitted.');
+  if (normalized.approval != null && !APPROVALS.has(normalized.approval)) {
+    errors.push(`entry.approval is invalid. ${APPROVAL_HINT}`);
+  }
+  if (normalized.submittedAt != null && Number.isNaN(Date.parse(normalized.submittedAt))) {
+    errors.push('entry.submittedAt must be an ISO date.');
+  }
+  collect(errors, () => {
+    object(normalized.answers, 'entry.answers');
+    for (const [key, value] of Object.entries(normalized.answers)) {
+      string(key, 'answer key', 200);
+      string(value, `answer ${key}`, 5000);
+    }
+  });
+  if (entry.fillMetricsSource != null) {
+    if (!FILL_METRICS_SOURCES.has(entry.fillMetricsSource)) errors.push(invalidChoice('entry.fillMetricsSource is invalid.', FILL_METRICS_SOURCES).message);
+    else normalized.fillMetricsSource = entry.fillMetricsSource;
+  }
+  if (entry.telemetrySupplied != null) {
+    if (typeof entry.telemetrySupplied !== 'boolean') errors.push('entry.telemetrySupplied must be a Boolean.');
+    else normalized.telemetrySupplied = entry.telemetrySupplied;
+  }
+  if (entry.entryOrigin != null) {
+    if (!ENTRY_ORIGINS.has(entry.entryOrigin)) errors.push(invalidChoice('entry.entryOrigin is invalid.', ENTRY_ORIGINS).message);
+    else normalized.entryOrigin = entry.entryOrigin;
+  }
+  throwCollected('ledger add', errors);
   // applyKind marks fixture/vendor-sandbox applies so metrics/community treat them as non-employer.
   // The kind comes from the URL allowlist. A caller-supplied fixture/vendor-sandbox on any
   // other URL is rejected; it is not an exemption from live fill telemetry.
   const applyKind = resolveApplyKind(normalized.url, { applyKind: entry.applyKind });
-  if (!APPLY_KINDS.has(applyKind)) throw new Error('entry.applyKind is invalid.');
+  if (!APPLY_KINDS.has(applyKind)) throw invalidChoice('entry.applyKind is invalid.', APPLY_KINDS);
   normalized.applyKind = applyKind;
-  if (entry.fillMetricsSource != null) {
-    if (!FILL_METRICS_SOURCES.has(entry.fillMetricsSource)) throw new Error('entry.fillMetricsSource is invalid.');
-    normalized.fillMetricsSource = entry.fillMetricsSource;
-  }
-  if (entry.telemetrySupplied != null) {
-    if (typeof entry.telemetrySupplied !== 'boolean') throw new Error('entry.telemetrySupplied must be a Boolean.');
-    normalized.telemetrySupplied = entry.telemetrySupplied;
-  }
-  if (entry.entryOrigin != null) {
-    if (!ENTRY_ORIGINS.has(entry.entryOrigin)) throw new Error('entry.entryOrigin is invalid.');
-    normalized.entryOrigin = entry.entryOrigin;
-  }
-  if (!SOURCES.has(normalized.source)) throw new Error('entry.source is invalid.');
-  if (normalized.discoverySource != null && !DISCOVERY_SOURCES.has(normalized.discoverySource)) throw new Error('entry.discoverySource is invalid.');
-  if (normalized.applicationChannel != null && !APPLICATION_CHANNELS.has(normalized.applicationChannel)) {
-    throw new Error('entry.applicationChannel is invalid.');
-  }
-  if (!Number.isInteger(normalized.score) || normalized.score < 0 || normalized.score > 100) throw new Error('entry.score must be an integer from 0 to 100.');
-  if (normalized.status !== 'submitted') throw new Error('New ledger entries must have status submitted.');
-  if (!APPROVALS.has(normalized.approval)) throw new Error(`entry.approval is invalid. ${APPROVAL_HINT}`);
-  if (Number.isNaN(Date.parse(normalized.submittedAt))) throw new Error('entry.submittedAt must be an ISO date.');
-  object(normalized.answers, 'entry.answers');
-  for (const [key, value] of Object.entries(normalized.answers)) {
-    string(key, 'answer key', 200);
-    string(value, `answer ${key}`, 5000);
-  }
   return normalized;
 }
 
 export function validateLedgerCheckCandidate(input) {
   const candidate = object(input, 'candidate');
   const id = optionalPresentString(candidate, 'id', 180);
-  const url = optionalPresentString(candidate, 'url', 2048);
+  const url = optionalPresentString(candidate, 'url', 2048) || optionalPresentString(candidate, 'jobUrl', 2048);
   const employerJobId = optionalPresentString(candidate, 'employerJobId', 300);
   const company = optionalPresentString(candidate, 'company', 300);
-  const role = optionalPresentString(candidate, 'role', 300);
+  const role = optionalPresentString(candidate, 'role', 300) || optionalPresentString(candidate, 'title', 300);
   if (!url && !id && !(employerJobId && company) && !(company && role)) {
-    throw new Error('ledger check requires at least one identifier set: url, id, employerJobId+company, or company+role.');
+    const keys = Object.keys(candidate).sort();
+    throw new Error(`ledger check requires at least one identifier set: url, id, employerJobId+company, or company+role. Received keys: ${keys.length ? keys.join(', ') : '(none)'}. title is accepted as a role alias; jobUrl is accepted as a url alias.`);
   }
   if (url) normalizeUrl(url);
   return {
@@ -1515,7 +1615,7 @@ function storedProfileRawUnnormalized() {
   const cloudProfile = cachedCloudProfileRaw();
   if (cloudProfile) return cloudProfile;
   try { return object(JSON.parse(secretStore.readProfile()), 'profile'); } catch (error) {
-    if (/missing or unreadable|could not read|could not store|Windows profile storage|not supported on this platform|secret-tool is not installed/i.test(error.message)) throw error;
+    if (/missing or unreadable|could not read|could not store|Windows profile storage|not supported on this platform|secret-tool|Linux profile storage|JOB_APPLICATION_AGENT_PROFILE_KEY|owner-only encrypted fallback/i.test(error.message)) throw error;
     throw new Error('The stored profile is missing or unreadable. Run profile set again.');
   }
 }
@@ -1535,7 +1635,7 @@ function profileCheck() {
 
 function storedProfile() {
   try { return validateProfile(storedProfileRaw()); } catch (error) {
-    if (/Secret Service could not read|not supported on this platform|secret-tool is not installed/i.test(error.message)) throw error;
+    if (/Secret Service could not read|not supported on this platform|secret-tool|Linux profile storage|JOB_APPLICATION_AGENT_PROFILE_KEY|owner-only encrypted fallback/i.test(error.message)) throw error;
     throw new Error('The stored profile needs migration. Run profile check, then profile migrate --stdin.');
   }
 }
@@ -1880,7 +1980,14 @@ async function importResume(source) {
   } else {
     const local = resolve(source);
     if (!local.toLowerCase().endsWith('.pdf')) throw new Error('Local resume must be a PDF.');
-    bytes = await readFile(local);
+    try {
+      bytes = await readFile(local);
+    } catch (error) {
+      if (error?.code === 'ENOENT') {
+        throw Object.assign(new Error('Résumé file not found at the given path; pass an absolute path or a Google Doc URL.'), { telemetryErrorCode: 'upload_failed' });
+      }
+      throw error;
+    }
     sourceLabel = local;
   }
   if (bytes.length < 1000 || !bytes.subarray(0, 4).equals(Buffer.from('%PDF'))) throw new Error('Resume source did not contain a valid PDF.');
@@ -2072,7 +2179,7 @@ async function assertJobNotSkipped(dir, { url, company, role }) {
   const keys = [assessmentJobKey({ url }), assessmentJobKey({ company, title: role })].filter(Boolean);
   const skipped = keys.map((key) => jobs[key]).find((record) => record && typeof record === 'object');
   if (!skipped) return;
-  throw new Error(`Skipped job refused: score decided "${skipped.decision}" (${skipped.reason}) for ${company || 'this job'} at ${skipped.at}. A skipped or excluded job is never submitted or recorded, in any mode. Do not apply; tell the candidate.`);
+  throw invalidInputError(`Skipped job refused: score decided "${skipped.decision}" (${skipped.reason}) for ${company || 'this job'} at ${skipped.at}. A skipped or excluded job is never submitted or recorded, in any mode. Do not apply; tell the candidate.`);
 }
 
 // The batch review gate (`review stage/approve/show/open/status/revoke/list`, 3.8.0 to 3.8.5) was
@@ -2546,16 +2653,30 @@ async function leadHistory(roundId) {
   return { ...discoveryProjection(history, { roundId: id }), history };
 }
 
-async function roundStart(input) {
+const ROUND_START_KEYS = new Set(['requestedCount', 'startedAt']);
+
+export function normalizeRoundStartInput(input) {
   const value = object(input, 'round');
-  const allowed = new Set(['requestedCount', 'startedAt']);
-  for (const key of Object.keys(value)) if (!allowed.has(key)) throw new Error(`Unknown round property: ${key}.`);
+  if (Object.hasOwn(value, 'roundId') || Object.hasOwn(value, 'id')) {
+    throw new Error('round start creates a new round and returns its id; to continue an existing round use `round status <round-id>`. Allowed: requestedCount, startedAt.');
+  }
+  for (const key of Object.keys(value)) {
+    if (!ROUND_START_KEYS.has(key)) throw unknownPropertyError('round', key, ROUND_START_KEYS);
+  }
+  return {
+    requestedCount: integer(value.requestedCount, 'round.requestedCount', 1, 1000),
+    startedAt: isoDate(value.startedAt, 'round.startedAt'),
+  };
+}
+
+async function roundStart(input) {
+  const value = normalizeRoundStartInput(input);
   const event = {
     type: 'started',
     roundId: `round-${new Date().toISOString().slice(0, 10)}-${randomUUID()}`,
     discoveryPolicyVersion: 2,
-    requestedCount: integer(value.requestedCount, 'round.requestedCount', 1, 1000),
-    occurredAt: isoDate(value.startedAt, 'round.startedAt'),
+    requestedCount: value.requestedCount,
+    occurredAt: value.startedAt,
   };
   await appendPrivateEvent('rounds', event);
   await appendRoundEvidence({ type: 'round-gates', version: ROUND_GATES_VERSION, roundId: event.roundId, at: new Date().toISOString() });
@@ -2629,17 +2750,35 @@ function leadMatchesApplication(lead, app, events) {
         : canonicalUrl(lead.url) === canonicalUrl(app.url)));
 }
 
-function normalizeSourceCoverage(input) {
+const SOURCE_COVERAGE_KEYS = new Set(['roundId', 'sourceId', 'status', 'reviewedCount', 'qualifiedCount', 'blocker', 'evidence', 'applicationIds', 'query', 'notes']);
+
+function optionalCoverageText(value, key) {
+  if (value[key] == null) return '';
+  if (typeof value[key] === 'string' && !value[key].trim()) return '';
+  return string(value[key], `coverage.${key}`, 2000);
+}
+
+function coverageEvidence(value) {
+  const evidence = ['evidence', 'query', 'notes'].map((key) => optionalCoverageText(value, key)).filter(Boolean).join('\n');
+  if (!evidence) throw new Error('coverage.evidence must be a non-empty string no longer than 2000 characters.');
+  if (evidence.length > 2000) {
+    throw invalidInputError('coverage.evidence, query, and notes together must be no longer than 2000 characters. Shorten them and retry; nothing was recorded.');
+  }
+  return evidence;
+}
+
+export function normalizeSourceCoverage(input) {
   const value = object(input, 'source coverage');
-  const allowed = new Set(['roundId', 'sourceId', 'status', 'reviewedCount', 'qualifiedCount', 'blocker', 'evidence', 'applicationIds']);
-  for (const key of Object.keys(value)) if (!allowed.has(key)) throw new Error(`Unknown source coverage property: ${key}.`);
+  for (const key of Object.keys(value)) {
+    if (!SOURCE_COVERAGE_KEYS.has(key)) throw unknownPropertyError('source coverage', key, SOURCE_COVERAGE_KEYS);
+  }
   const sourceId = knownDiscoverySourceId(value.sourceId, 'coverage.sourceId');
   const status = string(value.status, 'coverage.status', 20);
   if (!['searched', 'blocked'].includes(status)) throw new Error('coverage.status must be searched or blocked.');
   const roundId = string(value.roundId, 'coverage.roundId', 180);
   const blocker = value.blocker == null ? null : string(value.blocker, 'coverage.blocker', 40);
   if (status === 'searched' && blocker != null) throw new Error('Searched sources cannot have a blocker.');
-  const evidence = string(value.evidence, 'coverage.evidence', 2000);
+  const evidence = coverageEvidence(value);
   const applicationIds = value.applicationIds == null ? [] : [...new Set(stringArray(value.applicationIds, 'coverage.applicationIds'))];
   if (applicationIds.length > 1000 || (status === 'blocked' && applicationIds.length)) throw new Error('Invalid coverage.applicationIds.');
   return { value, sourceId, status, roundId, blocker, evidence, applicationIds };
@@ -2666,14 +2805,14 @@ async function buildSourceEvent(dir, prepared) {
   if (gates) {
     const pulls = feedPulls(evidenceLog, Date.parse(gates.at));
     if (sourceId === COMMUNITY_FEED_SOURCE_ID && status === 'searched' && !pulls.some((pull) => pull.ok === true)) {
-      throw new Error(`Coverage refused: ${COMMUNITY_FEED_SOURCE_ID} is marked searched, but no successful \`sources jobs\` pull was recorded in this round. Run \`sources jobs\` and review its leads first. If that call failed, record the source as blocked with blocker access-unavailable (community feed unavailable).`);
+      throw invalidInputError(`Coverage refused: ${COMMUNITY_FEED_SOURCE_ID} is marked searched, but no successful \`sources jobs\` pull was recorded in this round. Run \`sources jobs\` and review its leads first. If that call failed, record the source as blocked with blocker access-unavailable (community feed unavailable).`);
     }
     if (sourceId === COMMUNITY_FEED_SOURCE_ID && status === 'blocked' && (!pulls.some((pull) => pull.ok !== true) || !COMMUNITY_FEED_BLOCKERS.includes(blocker))) {
-      throw new Error(`Coverage refused: ${COMMUNITY_FEED_SOURCE_ID} can be recorded as blocked (community feed unavailable) only after a \`sources jobs\` call in this round failed, with blocker access-unavailable or site-error. Run \`sources jobs\` first; if it returns leads, review them and record the source as searched.`);
+      throw invalidInputError(`Coverage refused: ${COMMUNITY_FEED_SOURCE_ID} can be recorded as blocked (community feed unavailable) only after a \`sources jobs\` call in this round failed, with blocker access-unavailable or site-error. Run \`sources jobs\` first; if it returns leads, review them and record the source as searched.`);
     }
     if (sourceId !== COMMUNITY_FEED_SOURCE_ID && status === 'searched' && !['recruiter-inbound', 'user-supplied-leads'].includes(sourceId)) {
       if (!leads.length) {
-        throw new Error(`Coverage refused: ${sourceId} is marked searched, but no leads were recorded for it in this round. Record every reviewed lead with round lead --stdin before round source (an empty search is one lead with disposition "no-relevant-opening" and the search URL); a source you could not search is "blocked" with its blocker.`);
+        throw invalidInputError(`Coverage refused: ${sourceId} is marked searched, but no leads were recorded for it in this round. Record every reviewed lead with round lead --stdin before round source (an empty search is one lead with disposition "no-relevant-opening" and the search URL); a source you could not search is "blocked" with its blocker.`);
       }
       // Leads recorded only after every submission so far are after-the-fact coverage.
       const lastSubmissionAt = round.routineGates?.coverage?.lastSubmissionAt;
@@ -2843,11 +2982,61 @@ function normalizeAttentionBlocker(value) {
 }
 
 function normalizeAttentionActions(value) {
-  const actions = stringArray(value, 'attention.requiredActions', true).map((item) => {
-    const raw = item.toLowerCase();
-    return ATTENTION_ACTION_ALIASES[raw] ?? raw;
+  const raw = typeof value === 'string' ? [value] : value;
+  const actions = stringArray(raw, 'attention.requiredActions', true).map((item) => {
+    const normalized = item.toLowerCase();
+    return ATTENTION_ACTION_ALIASES[normalized] ?? normalized;
   });
   return [...new Set(actions)];
+}
+
+export function normalizeAttentionInput(input) {
+  const value = object(input, 'attention item');
+  const allowed = attentionAllowedKeys();
+  if (Object.hasOwn(value, 'answers')) {
+    throw new Error(
+      'Unknown attention property: answers. Candidate responses must not be stored on attention add; '
+      + 'use the hosted resume signal answers[] / answer bank path instead. '
+      + `Allowed: ${[...allowed].join(', ')}.`,
+    );
+  }
+  for (const key of Object.keys(value)) {
+    if (!allowed.has(key)) throw unknownPropertyError('attention', key, allowed);
+  }
+  const stage = string(value.stage, 'attention.stage', 40).toLowerCase();
+  const blocker = normalizeAttentionBlocker(value.blocker);
+  if (!ATTENTION_STAGES.has(stage)) throw invalidChoice('attention.stage is invalid.', ATTENTION_STAGES);
+  if (!ATTENTION_BLOCKERS.has(blocker)) throw invalidChoice('attention.blocker is invalid.', ATTENTION_BLOCKERS);
+  const requiredActions = normalizeAttentionActions(value.requiredActions);
+  if (requiredActions.length > 8) throw new Error('attention.requiredActions must contain at most 8 documented actions.');
+  const unknownAction = requiredActions.find((item) => !REQUIRED_ACTIONS.has(item));
+  if (unknownAction) {
+    const index = requiredActions.indexOf(unknownAction);
+    throw invalidChoice(`attention.requiredActions[${index}] "${unknownAction}" is not allowed.`, REQUIRED_ACTIONS);
+  }
+  const url = string(value.url, 'attention.url', 2048);
+  let applicationId;
+  if (typeof value.applicationId === 'string' && value.applicationId.trim()) {
+    applicationId = string(value.applicationId, 'attention.applicationId', 180);
+  } else {
+    try {
+      applicationId = applicationIdFromUrl(url);
+    } catch (error) {
+      if (/attention\.applicationId/.test(error.message)) throw error;
+      throw new Error('attention.applicationId must be a non-empty string no longer than 180 characters, or omit it when attention.url is a valid HTTP(S) job URL.');
+    }
+  }
+  if (value.notes != null) string(value.notes, 'attention.notes', 2000);
+  return {
+    value,
+    stage,
+    blocker,
+    requiredActions,
+    url,
+    applicationId,
+    roundId: string(value.roundId, 'attention.roundId', 180),
+    createdAt: isoDate(value.createdAt, 'attention.createdAt'),
+  };
 }
 
 function sessionBindingAttentionError(error) {
@@ -2868,28 +3057,7 @@ function sessionBindingAttentionError(error) {
 }
 
 async function attentionAdd(input, { notify = true } = {}) {
-  const value = object(input, 'attention item');
-  if (Object.hasOwn(value, 'answers')) {
-    throw new Error(
-      'Unknown attention property: answers. Candidate responses must not be stored on attention add; '
-      + 'use the hosted resume signal answers[] / answer bank path instead.',
-    );
-  }
-  const allowed = new Set([
-    'roundId', 'applicationId', 'url', 'stage', 'blocker', 'requiredActions', 'createdAt', 'company', 'role', 'title',
-    // P1.5 judgment packaging (prompts only — never candidate responses).
-    'questions', 'postingText', 'aiAssistanceDiscouraged',
-    // Local-only session binding hooks — never appended to the cloud attention event.
-    ...SESSION_BINDING_ATTENTION_KEYS,
-  ]);
-  for (const key of Object.keys(value)) if (!allowed.has(key)) throw new Error(`Unknown attention property: ${key}.`);
-  const stage = string(value.stage, 'attention.stage', 40).toLowerCase();
-  const blocker = normalizeAttentionBlocker(value.blocker);
-  if (!ATTENTION_STAGES.has(stage)) throw new Error('attention.stage is invalid.');
-  if (!ATTENTION_BLOCKERS.has(blocker)) throw new Error('attention.blocker is invalid.');
-  const requiredActions = normalizeAttentionActions(value.requiredActions);
-  if (requiredActions.length > 8 || requiredActions.some((item) => !REQUIRED_ACTIONS.has(item))) throw new Error('attention.requiredActions must contain only documented actions.');
-  const applicationId = string(value.applicationId, 'attention.applicationId', 180);
+  const { value, stage, blocker, requiredActions, url, applicationId, roundId, createdAt } = normalizeAttentionInput(input);
   let company = terminalPlain(value.company);
   let role = terminalPlain(value.role) || terminalPlain(value.title);
   if (!company || !role) {
@@ -2913,16 +3081,16 @@ async function attentionAdd(input, { notify = true } = {}) {
   const event = {
     type: 'opened',
     id: `attention-${randomUUID()}`,
-    roundId: string(value.roundId, 'attention.roundId', 180),
+    roundId,
     applicationId,
-    url: string(value.url, 'attention.url', 2048),
+    url,
     stage,
     blocker,
     requiredActions: [...new Set(requiredActions)],
     // Prompts only — never store candidate responses on the attention queue.
     ...(questions.length ? { questions } : {}),
     ...(aiAssistanceDiscouraged ? { aiAssistanceDiscouraged: true } : {}),
-    createdAt: isoDate(value.createdAt, 'attention.createdAt'),
+    createdAt,
   };
   await appendPrivateEvent('attention', event);
   await recordReviewPaused({ url: event.url, company, title: role }).catch(() => {});
@@ -2958,7 +3126,7 @@ async function attentionAdd(input, { notify = true } = {}) {
 async function attentionResolve(input) {
   const value = object(input, 'attention resolution');
   const allowed = new Set(['id', 'resolvedAt']);
-  for (const key of Object.keys(value)) if (!allowed.has(key)) throw new Error(`Unknown attention resolution property: ${key}.`);
+  for (const key of Object.keys(value)) if (!allowed.has(key)) throw unknownPropertyError('attention resolution', key, allowed);
   const id = string(value.id, 'attention.id', 180);
   const current = await attentionList();
   if (current.items.some(item => item.id === id && item.derived)) throw new Error('Resolve accounting attention with a delivery correction, verified recovery, or lead revision.');
@@ -3064,7 +3232,7 @@ async function roundStartedWithoutOutcome(dir, startedAt, completedAt) {
 async function roundComplete(input) {
   const value = object(input, 'round completion');
   const allowed = new Set(['roundId', 'completedAt', 'concentrationReason', 'concentrationEvidence']);
-  for (const key of Object.keys(value)) if (!allowed.has(key)) throw new Error(`Unknown round completion property: ${key}.`);
+  for (const key of Object.keys(value)) if (!allowed.has(key)) throw unknownPropertyError('round completion', key, allowed);
   // Use the same lock order as ledger writes so completion cannot race a confirmed submission.
   const result = await withStateLock('applications', () => withStateLock('rounds', async (dir) => {
     const status = await roundStatus(string(value.roundId, 'round.roundId', 180));
@@ -3102,7 +3270,7 @@ async function roundComplete(input) {
 async function roundConfirm(input) {
   const value = object(input, 'round confirmation');
   const allowed = new Set(['roundId', 'outreachId', 'outreachIds']);
-  for (const key of Object.keys(value)) if (!allowed.has(key)) throw new Error(`Unknown round confirmation property: ${key}.`);
+  for (const key of Object.keys(value)) if (!allowed.has(key)) throw unknownPropertyError('round confirmation', key, allowed);
   const roundId = string(value.roundId, 'round.roundId', 180);
   const ids = [];
   if (value.outreachId != null) ids.push(string(value.outreachId, 'round.outreachId', 100));
@@ -3575,7 +3743,7 @@ async function executeCommand(argv, telemetry, session, community) {
   } else if (area === 'profile' && action === 'check') {
     result = profileCheck();
   } else if (area === 'profile' && action === 'field' && value) {
-    if (![...STRING_PROFILE_FIELDS, ...ARRAY_PROFILE_FIELDS, ...NUMBER_PROFILE_FIELDS, ...OBJECT_PROFILE_FIELDS].includes(value)) throw new Error('Profile field is not allowed.');
+    if (!PROFILE_FIELDS.includes(value)) throw invalidInputError(`Profile field "${value}" is not allowed. Allowed: ${PROFILE_FIELDS.join(', ')}.`);
     result = { [value]: storedProfile()[value] ?? null };
   } else if (area === 'resume' && action === 'import' && value) result = await importResume(value);
   else if (area === 'resume' && action === 'path' && value == null) result = await canonicalResumePath();

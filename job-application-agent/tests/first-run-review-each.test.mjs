@@ -53,10 +53,12 @@ function linuxPreload(lookup) {
   return ['--import', `data:text/javascript,${encodeURIComponent(preload)}`];
 }
 
-test('every store tags "nothing stored yet" so callers can tell it from a failed read', async () => {
+test('every store tags "nothing stored yet" so callers can tell it from a failed read', async (t) => {
   const notFound = () => { const error = new Error('not found'); error.status = 1; error.stderr = ''; throw error; };
   const keychainNotFound = () => { const error = new Error('not found'); error.status = 44; error.stderr = 'security: SecKeychainSearchCopyNext: The specified item could not be found in the keychain.'; throw error; };
-  const linux = createSecretStore({ platform: 'linux', execFileSync: notFound });
+  const linuxDir = await stateDir(t, 'job-agent-linux-missing-');
+  const lockedDir = await stateDir(t, 'job-agent-linux-locked-');
+  const linux = createSecretStore({ platform: 'linux', execFileSync: notFound, stateDir: linuxDir, env: {} });
   const darwin = createSecretStore({ platform: 'darwin', execFileSync: keychainNotFound });
   const windows = createSecretStore({
     platform: 'win32',
@@ -66,7 +68,7 @@ test('every store tags "nothing stored yet" so callers can tell it from a failed
   for (const store of [linux, darwin, windows]) {
     assert.throws(() => store.readProfile(), (error) => isProfileMissingError(error) && error.message === PROFILE_MISSING_MESSAGE);
   }
-  const locked = createSecretStore({ platform: 'linux', execFileSync: () => { const error = new Error('x'); error.status = 1; error.stderr = 'locked'; throw error; } });
+  const locked = createSecretStore({ platform: 'linux', stateDir: lockedDir, env: {}, execFileSync: () => { const error = new Error('x'); error.status = 1; error.stderr = 'locked'; throw error; } });
   assert.throws(() => locked.readProfile(), (error) => !isProfileMissingError(error) && /Secret Service could not read/.test(error.message));
   // A locked or inaccessible Keychain keeps the old message but is not reported as a first run.
   const keychainLocked = createSecretStore({ platform: 'darwin', execFileSync: () => { const error = new Error('x'); error.status = 36; error.stderr = 'User interaction is not allowed.'; throw error; } });
@@ -91,6 +93,7 @@ test('profile check still fails when the keyring cannot be read', async (t) => {
   const locked = await runCli(['profile', 'check'], undefined, isolatedEnv(directory), linuxPreload('locked'));
   assert.equal(locked.code, 1);
   assert.match(locked.stderr, /Secret Service could not read the profile/);
+  assert.match(locked.stderr, /owner-only encrypted fallback/);
 });
 
 const entry = {

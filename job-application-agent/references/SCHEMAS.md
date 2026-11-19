@@ -83,7 +83,7 @@ Assessment output retains `review`, `ask`, `skip`, and `exclude`, and adds `auto
 
 ## Duplicate check input
 
-`ledger check` accepts any one identifier set: job URL, internal application id, employer job id plus company, or company+role. Include more identifiers when known. Company-only, role-only, and empty objects are rejected.
+`ledger check` accepts any one identifier set: job URL, internal application id, employer job id plus company, or company+role. `title` is accepted as a `role` alias and `jobUrl` as a `url` alias. Include more identifiers when known. Company-only, role-only, and empty objects are rejected. When no identifier set is present, the error lists the key names received (never their values).
 
 ```json
 {
@@ -101,7 +101,30 @@ The check removes fragments and non-job query parameters while retaining recogni
 
 ## Confirmed submission input
 
-Add only after visible success confirmation.
+Add only after visible success confirmation. `ledger add` reports every invalid field in one error; it does not default `approval`, `score`, or fill telemetry. `source` is the ATS (`linkedin`, `greenhouse`, `lever`, `ashby`, `workable`, `comeet`, `workday`, `rippling`, `smartrecruiters`, `google-form`, `company`, `email`, `other`). `discoverySource` is where the lead was found (`direct-company`, `linkedin`, `x`, `yc`, `hacker-news`, `job-board`, `email`, `user-supplied`, `web-search`, `other`). Sending a discovery value as `source` is refused with that distinction; it is not remapped.
+
+Minimal valid live entry:
+
+```json
+{
+  "id": "example-senior-product-engineer-2026-01-15",
+  "company": "Example",
+  "role": "Senior Product Engineer",
+  "url": "https://jobs.example.com/roles/123",
+  "source": "greenhouse",
+  "score": 84,
+  "status": "submitted",
+  "submittedAt": "2026-01-15T10:00:00.000Z",
+  "approval": "APPROVE SUBMIT",
+  "answers": {},
+  "telemetry": {
+    "durationBucket": "5-15m",
+    "fieldsFilled": 14,
+    "resumeUploaded": true,
+    "resumeFieldPresent": true
+  }
+}
+```
 
 ```json
 {
@@ -198,7 +221,7 @@ Use `round source --stdin` for per-source search/blocker reports and optional at
 }
 ```
 
-Allowed blockers: `authentication`, `mfa`, `captcha`, `legal-attestation`, `demographic`, `government-id`, `ambiguous-authorization`, `ambiguous-compensation`, `unverifiable-claim`, `judgment`, `video`, `upload`, `site-error`, and `other`. Common aliases `login` / `sign-in` / `sso` map to `authentication`. Resolve with `{ "id": "attention-..." }`. The queue never stores CAPTCHA, MFA, cookies, demographic answers, or government IDs. Do not pass `answers` on `attention add` — candidate responses travel via site signal `answers[]` / answer bank, not the attention.ndjson queue. Optional `questions[]` (prompts only) and `aiAssistanceDiscouraged` may be packaged for hosted attention UI. Optional `company` / `role` (or `title` as a role alias) are notify-only hints (not persisted on the attention event) with terminal control sequences removed; the hosted notify path uses profile email when `ATTENTION_NOTIFY_URL` and `ATTENTION_NOTIFY_SECRET` are set. That POST is not held under the applications lock and aborts after 4 seconds. A possible-duplicate pause that finds an open judgment item for the same URL from an earlier round keeps that item and appends `{ "type": "round-linked", "id", "roundId" }` so `round status` for the current round counts it. The opened event is unchanged, and telemetry stays the existing `application_paused` event. Optional session binding activates only when `browserProfilePath` is set; `display` / `vncPort` / `tabHint` alone are ignored so partial binding fields do not fail the pause. When binding is written, `display` must be `:99` and `vncPort` must be `5900`. See `site/docs/ATTENTION.md` and `references/agent-box/`.
+Allowed stages: `discovery`, `assessment`, `application`, `contact`, `resume`, `questions`, `legal`, `demographic`, `review`, `submission`, `confirmation`, `outcome`, `answers`, `upload`. Allowed blockers: `authentication`, `mfa`, `captcha`, `legal-attestation`, `demographic`, `government-id`, `ambiguous-authorization`, `ambiguous-compensation`, `unverifiable-claim`, `judgment`, `video`, `upload`, `site-error`, and `other`. Common aliases `login` / `sign-in` / `sso` map to `authentication`. Allowed required actions: `sign-in`, `complete-mfa`, `complete-captcha`, `review-legal`, `choose-demographic`, `provide-government-id`, `provide-authorization`, `provide-compensation`, `verify-claim`, `provide-judgment`, `record-video`, `enable-upload`, `retry-site`, `review-form`, `review-delivery`, `review-assessment`. A single string `requiredActions` is accepted and wrapped as a one-item array. Common aliases `login` / `complete-login` map to `sign-in`, and `upload-resume` / `resume-upload` map to `enable-upload`. `applicationId` may be omitted before a ledger row exists: the CLI derives a stable kebab id (at most 180 characters) from the canonical job URL. Optional `notes` is accepted, bounded, and local-only — it is not stored on the attention event, the cloud queue, or telemetry; use `postingText` or `evidence` for anything that must persist. Resolve with `{ "id": "attention-..." }`. The queue never stores CAPTCHA, MFA, cookies, demographic answers, or government IDs. Do not pass `answers` on `attention add` — candidate responses travel via site signal `answers[]` / answer bank, not the attention.ndjson queue. Optional `questions[]` (prompts only) and `aiAssistanceDiscouraged` may be packaged for hosted attention UI. Optional `company` / `role` (or `title` as a role alias) are notify-only hints (not persisted on the attention event) with terminal control sequences removed; the hosted notify path uses profile email when `ATTENTION_NOTIFY_URL` and `ATTENTION_NOTIFY_SECRET` are set. That POST is not held under the applications lock and aborts after 4 seconds. A possible-duplicate pause that finds an open judgment item for the same URL from an earlier round keeps that item and appends `{ "type": "round-linked", "id", "roundId" }` so `round status` for the current round counts it. The opened event is unchanged, and telemetry stays the existing `application_paused` event. Optional session binding activates only when `browserProfilePath` is set; `display` / `vncPort` / `tabHint` alone are ignored so partial binding fields do not fail the pause. When binding is written, `display` must be `:99` and `vncPort` must be `5900`. See `site/docs/ATTENTION.md` and `references/agent-box/`.
 
 ## Friction input
 
