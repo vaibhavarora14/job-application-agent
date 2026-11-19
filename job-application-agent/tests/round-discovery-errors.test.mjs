@@ -53,6 +53,24 @@ test('round source folds query and notes into evidence and lists allowed keys (#
       roundId: 'round-1',
       sourceId: 'indeed',
       status: 'searched',
+      evidence: 'e'.repeat(1990),
+      query: 'q'.repeat(20),
+    }),
+    (error) => {
+      assert.match(error.message, /coverage\.evidence, query, and notes together must be no longer than 2000 characters/);
+      assert.match(error.message, /nothing was recorded/);
+      assert.doesNotMatch(error.message, /e{10,}/);
+      const props = skillErrorProperties(error, 'round');
+      assert.equal(props.errorCode, 'invalid_input');
+      return true;
+    },
+  );
+
+  assert.throws(
+    () => normalizeSourceCoverage({
+      roundId: 'round-1',
+      sourceId: 'indeed',
+      status: 'searched',
       evidence: 'Reviewed current listings.',
       discoverySource: 'linkedin',
     }),

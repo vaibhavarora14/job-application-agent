@@ -2759,8 +2759,11 @@ function optionalCoverageText(value, key) {
 }
 
 function coverageEvidence(value) {
-  const evidence = ['evidence', 'query', 'notes'].map((key) => optionalCoverageText(value, key)).filter(Boolean).join('\n').slice(0, 2000);
+  const evidence = ['evidence', 'query', 'notes'].map((key) => optionalCoverageText(value, key)).filter(Boolean).join('\n');
   if (!evidence) throw new Error('coverage.evidence must be a non-empty string no longer than 2000 characters.');
+  if (evidence.length > 2000) {
+    throw invalidInputError('coverage.evidence, query, and notes together must be no longer than 2000 characters. Shorten them and retry; nothing was recorded.');
+  }
   return evidence;
 }
 

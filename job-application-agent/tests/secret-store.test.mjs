@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { mkdtemp, mkdir, readFile, rm, stat, writeFile } from 'node:fs/promises';
+import { chmod, mkdtemp, mkdir, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
@@ -279,6 +279,42 @@ test('a second Linux keyring failure in the same state dir is sticky and non-ret
   assert.equal(secondProps.errorCode, 'authentication_required');
   assert.equal(secondProps.recoverable, false);
   await stat(join(directory, LINUX_AUTH_MARKER));
+});
+
+test('linux store refreshes an existing fallback after a successful Secret Service write', async (t) => {
+  const directory = await linuxStateDir(t, 'refresh-fallback');
+  const secrets = new Map();
+  const missing = () => { throw Object.assign(new Error('spawn secret-tool ENOENT'), { code: 'ENOENT' }); };
+  const fallbackStore = createSecretStore({ platform: 'linux', execFileSync: missing, stateDir: directory, env: {} });
+  fallbackStore.writeProfile(JSON.stringify(sampleProfile));
+
+  let locked = false;
+  const exec = (command, args, options) => {
+    if (locked) throw Object.assign(new Error('locked'), { stderr: 'Cannot unlock the keyring\n' });
+    return linuxSecretExec(secrets)(command, args, options);
+  };
+  const store = createSecretStore({ platform: 'linux', execFileSync: exec, stateDir: directory, env: {} });
+  const next = JSON.stringify({ ...sampleProfile, name: 'Latest' });
+  store.writeProfile(next);
+  assert.equal(store.readProfile(), next);
+  locked = true;
+  assert.equal(store.readProfile(), next);
+});
+
+test('linux fallback write leaves the previous file when the replacement fails', {
+  skip: process.platform === 'win32',
+}, async (t) => {
+  const directory = await linuxStateDir(t, 'atomic-fallback');
+  const missing = () => { throw Object.assign(new Error('spawn secret-tool ENOENT'), { code: 'ENOENT' }); };
+  const store = createSecretStore({ platform: 'linux', execFileSync: missing, stateDir: directory, env: {} });
+  store.writeProfile(JSON.stringify(sampleProfile));
+  await chmod(directory, 0o500);
+  try {
+    assert.throws(() => store.writeProfile(JSON.stringify({ ...sampleProfile, name: 'Overwrite' })));
+  } finally {
+    await chmod(directory, 0o700);
+  }
+  assert.equal(store.readProfile(), JSON.stringify(sampleProfile));
 });
 
 test('linux store keeps a prior Secret Service profile readable when a later write uses the fallback', async (t) => {

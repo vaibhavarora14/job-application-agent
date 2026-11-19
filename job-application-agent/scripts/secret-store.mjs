@@ -4,7 +4,7 @@
 // goes over stdin, never on the command line, and nothing is sent over the network.
 import { createCipheriv, createDecipheriv, randomBytes } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
-import { chmodSync, existsSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdirSync, readFileSync, renameSync, unlinkSync, writeFileSync } from 'node:fs';
 import { cp, lstat, mkdir } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
@@ -164,8 +164,16 @@ function decodeProfileKey(value) {
 
 function ownerOnlyWrite(filePath, contents) {
   mkdirSync(dirname(filePath), { recursive: true, mode: 0o700 });
-  writeFileSync(filePath, contents, { mode: 0o600 });
-  chmodSync(filePath, 0o600);
+  const temporary = `${filePath}.${randomBytes(8).toString('hex')}.tmp`;
+  try {
+    writeFileSync(temporary, contents, { mode: 0o600 });
+    chmodSync(temporary, 0o600);
+    renameSync(temporary, filePath);
+    chmodSync(filePath, 0o600);
+  } catch (error) {
+    try { unlinkSync(temporary); } catch (cleanup) { if (cleanup?.code !== 'ENOENT') throw cleanup; }
+    throw error;
+  }
 }
 
 function linuxFallbackKey(env, keyPath, { create = false } = {}) {
@@ -309,6 +317,13 @@ function createLinuxStore({ execFileSync: exec, service, account, stateDir, env 
       const stored = linuxStoreSecret(exec, service, account, raw);
       if (stored.ok) {
         clearLinuxAuthMarker(markerPath());
+        if (existsSync(fallbackPath())) {
+          try {
+            writeFallback(raw);
+          } catch {
+            try { unlinkSync(fallbackPath()); } catch (error) { if (error?.code !== 'ENOENT') throw error; }
+          }
+        }
         return;
       }
       if (stored.reason === 'too-large') throw linuxTooLargeError();
