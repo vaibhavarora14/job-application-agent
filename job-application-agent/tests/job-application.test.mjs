@@ -154,7 +154,7 @@ test('returns a verified local resume cache while configured cloud storage is of
   assert.deepEqual(result, { path: resume });
 });
 
-test('preserves the Linux secret-tool install error for profile-dependent commands', async (t) => {
+test('a missing secret-tool is a first run, not a migration error (#289)', async (t) => {
   const directory = await mkdtemp(join(tmpdir(), 'job-agent-linux-profile-error-'));
   t.after(() => rm(directory, { recursive: true, force: true }));
   const script = fileURLToPath(new URL('../scripts/job-application.mjs', import.meta.url));
@@ -162,11 +162,76 @@ test('preserves the Linux secret-tool install error for profile-dependent comman
   const platformOverride = `data:text/javascript,${encodeURIComponent("Object.defineProperty(process, 'platform', { value: 'linux' });")}`;
   const env = { ...isolatedCliEnv(directory), PATH: '' };
 
-  const result = await runCli(script, ['profile', 'field', 'name'], undefined, env, ['--import', platformOverride]);
+  const check = await runCli(script, ['profile', 'check'], undefined, env, ['--import', platformOverride]);
+  assert.equal(check.code, 0, check.stderr);
+  const parsed = JSON.parse(check.stdout);
+  assert.equal(parsed.stored, false);
+  assert.match(parsed.nextStep, /profile set --stdin/);
+});
 
-  assert.equal(result.code, 1);
-  assert.match(result.stderr, /secret-tool is not installed/);
-  assert.doesNotMatch(result.stderr, /profile needs migration/i);
+test('profile set with secret-tool missing stores the owner-only fallback (#289)', {
+  skip: process.platform === 'win32',
+}, async (t) => {
+  const directory = await mkdtemp(join(tmpdir(), 'job-agent-linux-fallback-set-'));
+  t.after(() => rm(directory, { recursive: true, force: true }));
+  const script = fileURLToPath(new URL('../scripts/job-application.mjs', import.meta.url));
+  await writeFile(join(directory, 'telemetry.json'), JSON.stringify({ version: 1, enabled: false, disclosed: true, graceConsumed: true, installationEventPending: false }));
+  const platformOverride = `data:text/javascript,${encodeURIComponent("Object.defineProperty(process, 'platform', { value: 'linux' });")}`;
+  const env = { ...isolatedCliEnv(directory), PATH: '' };
+
+  const set = await runCli(script, ['profile', 'set', '--stdin'], target, env, ['--import', platformOverride]);
+  assert.equal(set.code, 0, set.stderr);
+  const field = await runCli(script, ['profile', 'field', 'name'], undefined, env, ['--import', platformOverride]);
+  assert.equal(field.code, 0, field.stderr);
+  assert.equal(JSON.parse(field.stdout).name, target.name);
+  const profileStat = await stat(join(directory, 'profile.enc'));
+  const keyStat = await stat(join(directory, 'profile.key'));
+  assert.equal(profileStat.mode & 0o777, 0o600);
+  assert.equal(keyStat.mode & 0o777, 0o600);
+});
+
+test('a second locked-keyring profile read emits at most one skill_error (#289)', {
+  skip: process.platform === 'win32',
+}, async (t) => {
+  const directory = await mkdtemp(join(tmpdir(), 'job-agent-linux-sticky-auth-'));
+  const toolDirectory = await mkdtemp(join(tmpdir(), 'job-agent-secret-tool-'));
+  t.after(() => rm(directory, { recursive: true, force: true }));
+  t.after(() => rm(toolDirectory, { recursive: true, force: true }));
+  const script = fileURLToPath(new URL('../scripts/job-application.mjs', import.meta.url));
+  const captured = [];
+  const server = createServer(async (request, response) => {
+    let raw = '';
+    for await (const chunk of request) raw += chunk;
+    if (raw) captured.push(JSON.parse(raw));
+    response.setHeader('content-type', 'application/json');
+    response.end(JSON.stringify(request.url === '/v1/install'
+      ? { installationId: '00000000-0000-4000-8000-000000000001', token: 'synthetic-relay-token', expiresAt: '2099-01-01T00:00:00.000Z' }
+      : { accepted: true }));
+  });
+  await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+  t.after(() => new Promise((resolve) => server.close(resolve)));
+  await writeFile(join(toolDirectory, 'secret-tool'), '#!/bin/sh\nprintf "%s\\n" "Cannot unlock the keyring" >&2\nexit 1\n', { mode: 0o755 });
+  await writeFile(join(directory, 'telemetry.json'), JSON.stringify({
+    version: 1, enabled: true, disclosed: true, graceConsumed: true, installationEventPending: false, contactEnabled: false,
+    installationId: '00000000-0000-4000-8000-000000000001', token: 'synthetic-token', tokenExpiresAt: '2099-01-01T00:00:00.000Z',
+  }));
+  const platformOverride = `data:text/javascript,${encodeURIComponent("Object.defineProperty(process, 'platform', { value: 'linux' });")}`;
+  const env = {
+    ...isolatedCliEnv(directory),
+    PATH: toolDirectory,
+    JOB_APPLICATION_AGENT_TELEMETRY_URL: `http://127.0.0.1:${server.address().port}`,
+  };
+  const first = await runCli(script, ['profile', 'field', 'name'], undefined, env, ['--import', platformOverride]);
+  const second = await runCli(script, ['profile', 'field', 'name'], undefined, env, ['--import', platformOverride]);
+  assert.equal(first.code, 1);
+  assert.equal(second.code, 1);
+  assert.match(first.stderr, /Secret Service could not read the profile/);
+  assert.match(second.stderr, /still unavailable in this run/);
+  const skillErrors = captured.filter((body) => body.event === 'skill_error');
+  assert.equal(skillErrors.length, 1);
+  assert.equal(skillErrors[0].properties.errorCode, 'authentication_required');
+  assert.equal(JSON.stringify(skillErrors).includes(directory), false);
+  assert.equal(JSON.stringify(skillErrors).includes(target.name), false);
 });
 
 test('preserves an unavailable Linux Secret Service error for profile-dependent commands', {
@@ -188,7 +253,9 @@ test('preserves an unavailable Linux Secret Service error for profile-dependent 
 
   assert.equal(result.code, 1);
   assert.match(result.stderr, /Secret Service could not read the profile/);
+  assert.match(result.stderr, /owner-only encrypted fallback/);
   assert.doesNotMatch(result.stderr, /profile needs migration/i);
+  assert.equal(result.stderr.includes(directory), false);
 });
 
 test('migrates a legacy profile without discarding identity or salary preference', () => {

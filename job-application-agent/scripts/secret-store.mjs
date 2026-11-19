@@ -2,10 +2,12 @@
 // argument array (never a shell): macOS `security`, Linux `secret-tool`, and on Windows
 // `powershell.exe -File` on this package's own windows-profile-store.ps1. The profile
 // goes over stdin, never on the command line, and nothing is sent over the network.
+import { createCipheriv, createDecipheriv, randomBytes } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
+import { chmodSync, existsSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs';
 import { cp, lstat, mkdir } from 'node:fs/promises';
 import { homedir } from 'node:os';
-import { join, resolve } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 export const PROFILE_ACCOUNT = 'profile';
@@ -14,6 +16,10 @@ export const LEGACY_SECRET_SERVICE = 'com.openai.codex.job-application-agent';
 export const UNSUPPORTED_PLATFORM_ERROR = 'Secure profile storage is not supported on this platform.';
 export const LINUX_STORE_REQUIRED_TOOL = 'secret-tool';
 export const LINUX_SECRET_MAX_BYTES = 8191;
+export const LINUX_FALLBACK_PROFILE = 'profile.enc';
+export const LINUX_FALLBACK_KEY = 'profile.key';
+export const LINUX_AUTH_MARKER = 'linux-profile-auth.json';
+export const LINUX_FALLBACK_HINT = 'Unlock the session keyring, or run profile set to store an owner-only encrypted fallback (mode 0600) in the state directory. Optional JOB_APPLICATION_AGENT_PROFILE_KEY supplies a 32-byte key (hex or base64). No profile data was logged.';
 export const WINDOWS_PROFILE_SCRIPT = fileURLToPath(new URL('./windows-profile-store.ps1', import.meta.url));
 export const PROFILE_MISSING_MESSAGE = 'The stored profile is missing or unreadable. Run profile set again.';
 
@@ -125,46 +131,194 @@ function linuxToolMissing(error) {
   return error?.code === 'ENOENT';
 }
 
-function linuxFind(exec, service, account) {
+function linuxAuthError(message, { sticky = false } = {}) {
+  return Object.assign(new Error(message), {
+    telemetryErrorCode: 'authentication_required',
+    telemetryErrorCategory: 'auth',
+    recoverable: !sticky,
+    suppressTelemetry: sticky,
+  });
+}
+
+function linuxUnavailableReadError(sticky) {
+  const message = sticky
+    ? `Linux profile storage is still unavailable in this run. Do not retry the same command. ${LINUX_FALLBACK_HINT}`
+    : `Secret Service could not read the profile (keyring locked, no session, or secret-tool missing). ${LINUX_FALLBACK_HINT}`;
+  return linuxAuthError(message, { sticky });
+}
+
+function linuxTooLargeError() {
+  return new Error(`The profile is too large for Linux Secret Service storage. Keep it under ${LINUX_SECRET_MAX_BYTES + 1} UTF-8 bytes and retry; the stored profile was not changed.`);
+}
+
+function decodeProfileKey(value) {
+  const trimmed = String(value ?? '').trim();
+  if (/^[0-9a-f]{64}$/i.test(trimmed)) return Buffer.from(trimmed, 'hex');
   try {
-    return exec(LINUX_STORE_REQUIRED_TOOL, ['lookup', 'service', service, 'account', account], {
-      encoding: 'utf8',
-      stdio: ['ignore', 'pipe', 'pipe'],
-    });
-  } catch (error) {
-    if (linuxToolMissing(error)) throw new Error(`${LINUX_STORE_REQUIRED_TOOL} is not installed. Install libsecret-tools (e.g. sudo apt-get install libsecret-tools) to enable Linux profile storage.`);
-    if (String(error?.stderr ?? '').trim()) {
-      throw new Error('Secret Service could not read the profile. Start or unlock your keyring and retry; no profile data was logged.');
-    }
+    const key = Buffer.from(trimmed, 'base64');
+    return key.length === 32 ? key : null;
+  } catch {
     return null;
   }
 }
 
-function linuxWrite(exec, service, account, raw) {
-  if (Buffer.byteLength(raw, 'utf8') > LINUX_SECRET_MAX_BYTES) {
-    throw new Error(`The profile is too large for Linux Secret Service storage. Keep it under ${LINUX_SECRET_MAX_BYTES + 1} UTF-8 bytes and retry; the stored profile was not changed.`);
+function ownerOnlyWrite(filePath, contents) {
+  mkdirSync(dirname(filePath), { recursive: true, mode: 0o700 });
+  writeFileSync(filePath, contents, { mode: 0o600 });
+  chmodSync(filePath, 0o600);
+}
+
+function linuxFallbackKey(env, keyPath, { create = false } = {}) {
+  const provided = env.JOB_APPLICATION_AGENT_PROFILE_KEY;
+  if (typeof provided === 'string' && provided.trim()) {
+    const key = decodeProfileKey(provided.trim());
+    if (!key) throw linuxAuthError('JOB_APPLICATION_AGENT_PROFILE_KEY must be 32 bytes as hex or base64; no profile data was logged.');
+    return key;
   }
+  if (existsSync(keyPath)) {
+    const key = decodeProfileKey(readFileSync(keyPath, 'utf8'));
+    if (!key) throw linuxAuthError('The Linux profile fallback key file is invalid. Run profile set again; no profile data was logged.');
+    return key;
+  }
+  if (!create) return null;
+  const key = randomBytes(32);
+  ownerOnlyWrite(keyPath, key.toString('hex'));
+  return key;
+}
+
+function sealProfile(plaintext, key) {
+  const iv = randomBytes(12);
+  const cipher = createCipheriv('aes-256-gcm', key, iv);
+  const ciphertext = Buffer.concat([cipher.update(String(plaintext), 'utf8'), cipher.final()]);
+  return `${JSON.stringify({
+    v: 1,
+    iv: iv.toString('base64'),
+    tag: cipher.getAuthTag().toString('base64'),
+    data: ciphertext.toString('base64'),
+  })}\n`;
+}
+
+function openProfile(raw, key) {
+  let parsed;
+  try { parsed = JSON.parse(String(raw)); } catch {
+    throw linuxAuthError('The Linux profile fallback could not be decrypted. Run profile set again; no profile data was logged.');
+  }
+  if (parsed?.v !== 1 || typeof parsed.iv !== 'string' || typeof parsed.tag !== 'string' || typeof parsed.data !== 'string') {
+    throw linuxAuthError('The Linux profile fallback could not be decrypted. Run profile set again; no profile data was logged.');
+  }
+  try {
+    const decipher = createDecipheriv('aes-256-gcm', key, Buffer.from(parsed.iv, 'base64'));
+    decipher.setAuthTag(Buffer.from(parsed.tag, 'base64'));
+    return Buffer.concat([decipher.update(Buffer.from(parsed.data, 'base64')), decipher.final()]).toString('utf8');
+  } catch {
+    throw linuxAuthError('The Linux profile fallback could not be decrypted. Run profile set again; no profile data was logged.');
+  }
+}
+
+function linuxAuthMarkerPresent(markerPath) {
+  try {
+    return JSON.parse(readFileSync(markerPath, 'utf8'))?.version === 1;
+  } catch {
+    return false;
+  }
+}
+
+function writeLinuxAuthMarker(markerPath) {
+  ownerOnlyWrite(markerPath, `${JSON.stringify({ version: 1, at: new Date().toISOString() })}\n`);
+}
+
+function clearLinuxAuthMarker(markerPath) {
+  try { unlinkSync(markerPath); } catch (error) { if (error?.code !== 'ENOENT') throw error; }
+}
+
+function linuxLookup(exec, service, account) {
+  try {
+    const raw = exec(LINUX_STORE_REQUIRED_TOOL, ['lookup', 'service', service, 'account', account], {
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+    if (raw != null && String(raw).trim()) return { ok: true, value: decodeSecret(String(raw).trim()) };
+    return { ok: false, reason: 'missing' };
+  } catch (error) {
+    if (linuxToolMissing(error)) return { ok: false, reason: 'missing' };
+    if (String(error?.stderr ?? '').trim()) return { ok: false, reason: 'unavailable' };
+    return { ok: false, reason: 'missing' };
+  }
+}
+
+function linuxStoreSecret(exec, service, account, raw) {
+  if (Buffer.byteLength(raw, 'utf8') > LINUX_SECRET_MAX_BYTES) return { ok: false, reason: 'too-large' };
   try {
     exec(LINUX_STORE_REQUIRED_TOOL, ['store', '--label=job-application-agent', 'service', service, 'account', account], {
       input: raw,
       encoding: 'utf8',
       stdio: ['pipe', 'pipe', 'pipe'],
     });
+    return { ok: true };
   } catch (error) {
-    if (linuxToolMissing(error)) throw new Error(`${LINUX_STORE_REQUIRED_TOOL} is not installed. Install libsecret-tools (e.g. sudo apt-get install libsecret-tools) to enable Linux profile storage.`);
-    throw new Error('Secret Service could not store the profile. Unlock your keyring and retry; no profile data was logged.');
+    if (linuxToolMissing(error)) return { ok: false, reason: 'unavailable' };
+    return { ok: false, reason: 'unavailable' };
   }
 }
 
-function createLinuxStore({ execFileSync: exec, service, account }) {
+function createLinuxStore({ execFileSync: exec, service, account, stateDir, env = process.env }) {
+  const directory = () => (typeof stateDir === 'function' ? stateDir() : stateDir);
+  const fallbackPath = () => join(directory(), LINUX_FALLBACK_PROFILE);
+  const keyPath = () => join(directory(), LINUX_FALLBACK_KEY);
+  const markerPath = () => join(directory(), LINUX_AUTH_MARKER);
+
+  function readFallback() {
+    const path = fallbackPath();
+    if (!existsSync(path)) return null;
+    const key = linuxFallbackKey(env, keyPath(), { create: false });
+    if (!key) throw linuxAuthError('The Linux profile fallback is present but no key is available. Set JOB_APPLICATION_AGENT_PROFILE_KEY or run profile set again; no profile data was logged.');
+    return openProfile(readFileSync(path, 'utf8'), key);
+  }
+
+  function writeFallback(raw) {
+    const key = linuxFallbackKey(env, keyPath(), { create: true });
+    ownerOnlyWrite(fallbackPath(), sealProfile(raw, key));
+  }
+
   return {
     readProfile() {
-      const current = linuxFind(exec, service, account);
-      if (current != null && current.trim()) return decodeSecret(current.trim());
-      throw profileMissingError();
+      const sticky = linuxAuthMarkerPresent(markerPath());
+      const lookup = linuxLookup(exec, service, account);
+      if (lookup.ok) {
+        clearLinuxAuthMarker(markerPath());
+        return lookup.value;
+      }
+      try {
+        const fallback = readFallback();
+        if (fallback != null && String(fallback).trim()) {
+          clearLinuxAuthMarker(markerPath());
+          return fallback;
+        }
+      } catch (error) {
+        if (lookup.reason === 'unavailable') {
+          if (!sticky) writeLinuxAuthMarker(markerPath());
+          throw sticky ? linuxUnavailableReadError(true) : error;
+        }
+        throw error;
+      }
+      if (lookup.reason === 'missing') throw profileMissingError();
+      if (!sticky) writeLinuxAuthMarker(markerPath());
+      throw linuxUnavailableReadError(sticky);
     },
     writeProfile(raw) {
-      linuxWrite(exec, service, account, raw);
+      const stored = linuxStoreSecret(exec, service, account, raw);
+      if (stored.ok) {
+        clearLinuxAuthMarker(markerPath());
+        return;
+      }
+      if (stored.reason === 'too-large') throw linuxTooLargeError();
+      try {
+        writeFallback(raw);
+      } catch (error) {
+        if (error?.telemetryErrorCode === 'authentication_required') throw error;
+        throw linuxAuthError(`Secret Service could not store the profile, and the owner-only fallback could not be written. ${LINUX_FALLBACK_HINT}`);
+      }
+      clearLinuxAuthMarker(markerPath());
     },
   };
 }
@@ -288,6 +442,6 @@ export function createSecretStore({
 } = {}) {
   if (platform === 'darwin') return createDarwinStore({ execFileSync: exec, service, legacyService, account });
   if (platform === 'win32') return createWin32Store({ execFileSync: exec, service, account, stateDir, scriptPath });
-  if (platform === 'linux') return createLinuxStore({ execFileSync: exec, service, account });
+  if (platform === 'linux') return createLinuxStore({ execFileSync: exec, service, account, stateDir, env });
   return unsupportedStore();
 }

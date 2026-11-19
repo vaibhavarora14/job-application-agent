@@ -297,7 +297,7 @@ export function skillErrorProperties(error, command) {
   const properties = {
     errorCode: telemetryErrorCode(error),
     stage: telemetryStage(command, error),
-    recoverable: true,
+    recoverable: error?.recoverable !== false,
     errorCategory: telemetryErrorCategory(error),
   };
   const sanitizedMessage = sanitizeTelemetryErrorMessage(error?.message, localIdentityForRedaction());
@@ -1608,7 +1608,7 @@ function storedProfileRawUnnormalized() {
   const cloudProfile = cachedCloudProfileRaw();
   if (cloudProfile) return cloudProfile;
   try { return object(JSON.parse(secretStore.readProfile()), 'profile'); } catch (error) {
-    if (/missing or unreadable|could not read|could not store|Windows profile storage|not supported on this platform|secret-tool is not installed/i.test(error.message)) throw error;
+    if (/missing or unreadable|could not read|could not store|Windows profile storage|not supported on this platform|secret-tool|Linux profile storage|JOB_APPLICATION_AGENT_PROFILE_KEY|owner-only encrypted fallback/i.test(error.message)) throw error;
     throw new Error('The stored profile is missing or unreadable. Run profile set again.');
   }
 }
@@ -1628,7 +1628,7 @@ function profileCheck() {
 
 function storedProfile() {
   try { return validateProfile(storedProfileRaw()); } catch (error) {
-    if (/Secret Service could not read|not supported on this platform|secret-tool is not installed/i.test(error.message)) throw error;
+    if (/Secret Service could not read|not supported on this platform|secret-tool|Linux profile storage|JOB_APPLICATION_AGENT_PROFILE_KEY|owner-only encrypted fallback/i.test(error.message)) throw error;
     throw new Error('The stored profile needs migration. Run profile check, then profile migrate --stdin.');
   }
 }

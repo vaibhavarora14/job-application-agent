@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { mkdtemp, mkdir, readFile, writeFile } from 'node:fs/promises';
+import { mkdtemp, mkdir, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
@@ -7,13 +7,18 @@ import test from 'node:test';
 import {
   createSecretStore,
   DEFAULT_SECRET_SERVICE,
+  isProfileMissingError,
   LEGACY_SECRET_SERVICE,
+  LINUX_AUTH_MARKER,
+  LINUX_FALLBACK_KEY,
+  LINUX_FALLBACK_PROFILE,
   LINUX_SECRET_MAX_BYTES,
   migrateLegacyStateDir,
   PROFILE_ACCOUNT,
   resolveStateDir,
   UNSUPPORTED_PLATFORM_ERROR,
 } from '../scripts/secret-store.mjs';
+import { skillErrorProperties } from '../scripts/job-application.mjs';
 
 const sampleProfile = {
   name: 'Test Candidate',
@@ -133,9 +138,8 @@ test('windows store keeps a wrapping key small and a profile larger than 2560 by
   assert.ok(files.get(profileFile).length > 2560);
 });
 
-test('linux store writes and reads the profile via Secret Service', () => {
-  const secrets = new Map();
-  const exec = (command, args, options) => {
+function linuxSecretExec(secrets) {
+  return (command, args, options) => {
     assert.equal(command, 'secret-tool');
     if (args[0] === 'lookup') {
       const service = args[args.indexOf('service') + 1];
@@ -151,32 +155,52 @@ test('linux store writes and reads the profile via Secret Service', () => {
     }
     throw new Error(`unexpected secret-tool args: ${args.join(' ')}`);
   };
-  const store = createSecretStore({ platform: 'linux', execFileSync: exec });
+}
+
+async function linuxStateDir(t, label) {
+  const directory = await mkdtemp(join(tmpdir(), `job-agent-linux-${label}-`));
+  t.after(() => rm(directory, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 }));
+  return directory;
+}
+
+test('linux store writes and reads the profile via Secret Service', () => {
+  const secrets = new Map();
+  const store = createSecretStore({ platform: 'linux', execFileSync: linuxSecretExec(secrets), env: {} });
   store.writeProfile(JSON.stringify(sampleProfile));
   assert.equal(store.readProfile(), JSON.stringify(sampleProfile));
 });
 
-test('linux store reports a clear error when secret-tool is not installed', () => {
+test('linux store falls back to an owner-only file when secret-tool is missing (#289)', async (t) => {
+  const directory = await linuxStateDir(t, 'enoent');
   const exec = () => { throw Object.assign(new Error('spawn secret-tool ENOENT'), { code: 'ENOENT' }); };
-  const store = createSecretStore({ platform: 'linux', execFileSync: exec });
-  assert.throws(() => store.writeProfile(JSON.stringify(sampleProfile)), /libsecret-tools/);
-  assert.throws(() => store.readProfile(), /libsecret-tools/);
+  const store = createSecretStore({ platform: 'linux', execFileSync: exec, stateDir: directory, env: {} });
+  store.writeProfile(JSON.stringify(sampleProfile));
+  assert.equal(store.readProfile(), JSON.stringify(sampleProfile));
+  const profileStat = await stat(join(directory, LINUX_FALLBACK_PROFILE));
+  const keyStat = await stat(join(directory, LINUX_FALLBACK_KEY));
+  assert.equal(profileStat.mode & 0o777, 0o600);
+  assert.equal(keyStat.mode & 0o777, 0o600);
+  const raw = await readFile(join(directory, LINUX_FALLBACK_PROFILE), 'utf8');
+  assert.equal(raw.includes(sampleProfile.email), false);
+  assert.equal(raw.includes(sampleProfile.name), false);
 });
 
-test('linux store reports a clear error when keyring storage fails', () => {
-  const exec = (command, args) => {
-    assert.equal(command, 'secret-tool');
-    if (args[0] === 'lookup') throw new Error('not found');
-    throw new Error('keyring locked');
+test('linux store reads the fallback when Secret Service is locked (#289)', async (t) => {
+  const directory = await linuxStateDir(t, 'locked-fallback');
+  const missing = () => { throw Object.assign(new Error('spawn secret-tool ENOENT'), { code: 'ENOENT' }); };
+  const writer = createSecretStore({ platform: 'linux', execFileSync: missing, stateDir: directory, env: {} });
+  writer.writeProfile(JSON.stringify(sampleProfile));
+  const locked = () => {
+    throw Object.assign(new Error('secret-tool exited with status 1'), { stderr: 'secret-tool: Cannot autolaunch D-Bus without X11 $DISPLAY\n' });
   };
-  const store = createSecretStore({ platform: 'linux', execFileSync: exec });
-  assert.throws(() => store.writeProfile(JSON.stringify(sampleProfile)), /could not store the profile/);
-  assert.throws(() => store.readProfile(), /missing or unreadable/);
+  const store = createSecretStore({ platform: 'linux', execFileSync: locked, stateDir: directory, env: {} });
+  assert.equal(store.readProfile(), JSON.stringify(sampleProfile));
 });
 
-test('linux store treats a successful empty lookup as a missing profile', () => {
-  const store = createSecretStore({ platform: 'linux', execFileSync: () => '' });
-  assert.throws(() => store.readProfile(), /missing or unreadable/);
+test('linux store treats a successful empty lookup as a missing profile', async (t) => {
+  const directory = await linuxStateDir(t, 'empty-lookup');
+  const store = createSecretStore({ platform: 'linux', execFileSync: () => '', stateDir: directory, env: {} });
+  assert.throws(() => store.readProfile(), (error) => isProfileMissingError(error));
 });
 
 test('linux store rejects profiles that secret-tool would silently truncate', () => {
@@ -187,7 +211,7 @@ test('linux store rejects profiles that secret-tool would silently truncate', ()
     stored.push(options.input);
     return '';
   };
-  const store = createSecretStore({ platform: 'linux', execFileSync: exec });
+  const store = createSecretStore({ platform: 'linux', execFileSync: exec, env: {} });
 
   store.writeProfile('x'.repeat(LINUX_SECRET_MAX_BYTES));
   assert.equal(stored[0].length, LINUX_SECRET_MAX_BYTES);
@@ -202,30 +226,76 @@ test('linux store rejects profiles that secret-tool would silently truncate', ()
   assert.equal(stored.length, 1);
 });
 
-test('linux store distinguishes an unavailable Secret Service from a missing profile', () => {
+test('linux store distinguishes an unavailable Secret Service from a missing profile (#289)', async (t) => {
+  const directory = await linuxStateDir(t, 'unavailable');
   const exec = () => {
     throw Object.assign(new Error('secret-tool exited with status 1'), {
       stderr: 'secret-tool: Cannot autolaunch D-Bus without X11 $DISPLAY\n',
     });
   };
-  const store = createSecretStore({ platform: 'linux', execFileSync: exec });
+  const store = createSecretStore({ platform: 'linux', execFileSync: exec, stateDir: directory, env: {} });
 
-  assert.throws(() => store.readProfile(), /Secret Service could not read the profile/);
+  assert.throws(() => store.readProfile(), (error) => {
+    assert.equal(isProfileMissingError(error), false);
+    assert.match(error.message, /Secret Service could not read the profile/);
+    assert.match(error.message, /owner-only encrypted fallback/);
+    assert.equal(error.telemetryErrorCode, 'authentication_required');
+    assert.equal(error.recoverable, true);
+    assert.equal(error.suppressTelemetry, false);
+    assert.equal(error.message.includes(directory), false);
+    return true;
+  });
 });
 
-test('linux store keeps a prior profile readable when a later write fails', () => {
+test('a second Linux keyring failure in the same state dir is sticky and non-retryable (#289)', async (t) => {
+  const directory = await linuxStateDir(t, 'sticky');
+  const exec = () => {
+    throw Object.assign(new Error('secret-tool exited with status 1'), { stderr: 'Cannot unlock the keyring\n' });
+  };
+  const store = createSecretStore({ platform: 'linux', execFileSync: exec, stateDir: directory, env: {} });
+  let first;
+  assert.throws(() => store.readProfile(), (error) => {
+    first = error;
+    assert.match(error.message, /Secret Service could not read the profile/);
+    assert.equal(error.suppressTelemetry, false);
+    assert.equal(error.recoverable, true);
+    return true;
+  });
+  let second;
+  assert.throws(() => store.readProfile(), (error) => {
+    second = error;
+    assert.match(error.message, /still unavailable in this run/);
+    assert.equal(error.suppressTelemetry, true);
+    assert.equal(error.recoverable, false);
+    assert.match(error.message, /Do not retry the same command/);
+    return true;
+  });
+  const firstProps = skillErrorProperties(first, 'profile');
+  const secondProps = skillErrorProperties(second, 'profile');
+  assert.equal(firstProps.errorCode, 'authentication_required');
+  assert.equal(firstProps.recoverable, true);
+  assert.equal(secondProps.errorCode, 'authentication_required');
+  assert.equal(secondProps.recoverable, false);
+  await stat(join(directory, LINUX_AUTH_MARKER));
+});
+
+test('linux store keeps a prior Secret Service profile readable when a later write uses the fallback', async (t) => {
+  const directory = await linuxStateDir(t, 'write-fallback');
   const secrets = new Map();
   let failWrites = false;
   const exec = (command, args, options) => {
     assert.equal(command, 'secret-tool');
     if (args[0] === 'lookup') {
+      if (failWrites) {
+        throw Object.assign(new Error('locked'), { stderr: 'Cannot unlock the keyring\n' });
+      }
       const service = args[args.indexOf('service') + 1];
       const account = args[args.indexOf('account') + 1];
       if (!secrets.has(`${service}/${account}`)) throw new Error('not found');
       return `${secrets.get(`${service}/${account}`)}\n`;
     }
     if (args[0] === 'store') {
-      if (failWrites) throw new Error('keyring locked');
+      if (failWrites) throw Object.assign(new Error('keyring locked'), { stderr: 'Cannot unlock the keyring\n' });
       const service = args[args.indexOf('service') + 1];
       const account = args[args.indexOf('account') + 1];
       secrets.set(`${service}/${account}`, options.input);
@@ -233,11 +303,12 @@ test('linux store keeps a prior profile readable when a later write fails', () =
     }
     throw new Error(`unexpected secret-tool args: ${args.join(' ')}`);
   };
-  const store = createSecretStore({ platform: 'linux', execFileSync: exec });
+  const store = createSecretStore({ platform: 'linux', execFileSync: exec, stateDir: directory, env: {} });
   store.writeProfile(JSON.stringify(sampleProfile));
   failWrites = true;
-  assert.throws(() => store.writeProfile(JSON.stringify({ ...sampleProfile, name: 'Overwrite' })), /could not store the profile/);
-  assert.equal(store.readProfile(), JSON.stringify(sampleProfile));
+  const next = JSON.stringify({ ...sampleProfile, name: 'Overwrite' });
+  store.writeProfile(next);
+  assert.equal(store.readProfile(), next);
 });
 
 test('unsupported platforms retain an explicit profile storage error', () => {
