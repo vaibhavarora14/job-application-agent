@@ -234,13 +234,18 @@ test('stale-while-revalidate serves STALE and refreshes once in the background',
   assert.equal(stale.headers.get(EDGE_CACHE_STATUS_HEADER), 'STALE');
   assert.equal(await stale.text(), '<html>v1</html>');
 
-  // Burst of stale hits must coalesce to one background render.
+  // Burst of stale hits must coalesce to one background render. A request that
+  // lands after that refresh stores may already see HIT; it must not re-render.
   const burst = await Promise.all([
     serveWithEdgeCache(page('/jobs/slug-a'), options),
     serveWithEdgeCache(page('/jobs/slug-a'), options),
     serveWithEdgeCache(page('/jobs/slug-a'), options),
   ]);
-  for (const response of burst) assert.equal(response.headers.get(EDGE_CACHE_STATUS_HEADER), 'STALE');
+  for (const response of burst) {
+    const state = response.headers.get(EDGE_CACHE_STATUS_HEADER);
+    assert.ok(state === 'STALE' || state === 'HIT', state);
+    assert.equal(await response.text(), state === 'HIT' ? '<html>v2</html>' : '<html>v1</html>');
+  }
   await Promise.all(pending.splice(0));
   assert.equal(renders, 2);
 
@@ -396,6 +401,74 @@ test('concurrent misses on the same key render once', async () => {
   }
   await Promise.all(pending);
   assert.equal(renders, 1);
+});
+
+function delay(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+test('follower still returns 200 when the leader render never settles', async () => {
+  const cache = new MemoryCache();
+  const pending = [];
+  let releaseLeader = () => {};
+  const leaderHold = new Promise((resolve) => { releaseLeader = resolve; });
+  let renders = 0;
+  const render = async () => {
+    renders += 1;
+    if (renders === 1) {
+      await leaderHold;
+      return new Response('leader', { headers: { 'content-type': 'text/html' } });
+    }
+    return new Response('follower', { headers: { 'content-type': 'text/html' } });
+  };
+  const options = { cache, release: 'r1', waitUntil: (p) => pending.push(p), render };
+  const leaderP = serveWithEdgeCache(page('/jobs/slug-hang'), options);
+  await delay(20);
+  const followerP = serveWithEdgeCache(page('/jobs/slug-hang'), options);
+  try {
+    const follower = await Promise.race([
+      followerP,
+      delay(5_000).then(() => { throw new Error('follower hung waiting for a leader that never settled'); }),
+    ]);
+    assert.equal(follower.status, 200);
+    assert.equal(await follower.text(), 'follower');
+    assert.equal(follower.headers.get(EDGE_CACHE_STATUS_HEADER), 'MISS');
+    assert.equal(renders, 2);
+  } finally {
+    releaseLeader();
+    await Promise.allSettled([leaderP, followerP, ...pending]);
+  }
+});
+
+test('follower still returns 200 when the leader render rejects', async () => {
+  const cache = new MemoryCache();
+  const pending = [];
+  let renders = 0;
+  let abortLeader = () => {};
+  const leaderHold = new Promise((_, reject) => {
+    abortLeader = () => reject(new Error('leader aborted'));
+  });
+  const render = async () => {
+    renders += 1;
+    if (renders === 1) {
+      await leaderHold;
+      throw new Error('leader aborted');
+    }
+    return new Response('follower', { headers: { 'content-type': 'text/html' } });
+  };
+  const options = { cache, release: 'r1', waitUntil: (p) => pending.push(p), render };
+  const leaderP = serveWithEdgeCache(page('/jobs/slug-abort'), options);
+  const leaderFailed = assert.rejects(leaderP, /leader aborted/);
+  await delay(20);
+  const followerP = serveWithEdgeCache(page('/jobs/slug-abort'), options);
+  await delay(20);
+  abortLeader();
+  const follower = await followerP;
+  assert.equal(follower.status, 200);
+  assert.equal(await follower.text(), 'follower');
+  assert.equal(follower.headers.get(EDGE_CACHE_STATUS_HEADER), 'MISS');
+  await leaderFailed;
+  await Promise.all(pending);
 });
 
 test('no cache available falls through to render', async () => {

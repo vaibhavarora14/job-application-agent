@@ -13,8 +13,10 @@ const BOARD_MEMO_MS = 60 * 1000;
 const BOARD_BUILT_AT_HEADER = 'x-jaa-board-built-at';
 /** @type {Map<string, { until: number, jobs: unknown[] }>} */
 const boardMemo = new Map();
-/** @type {Map<string, Promise<unknown[]>>} */
-const boardInflight = new Map();
+/** @type {Map<string, number>} leader start times — not promises; sharing those across requests throws */
+const boardLoading = new Map();
+const BOARD_FOLLOWER_WAIT_MS = 2_000;
+const BOARD_FOLLOWER_POLL_MS = 20;
 
 /**
  * Open-board lookup index for /jobs/<slug>: one line per job, `\n<jobId>\t<wire JSON>`,
@@ -179,27 +181,41 @@ export async function loadLiveJobs(options = {}) {
   if (useMemo) {
     const memo = boardMemo.get(memoKey);
     if (memo && Date.now() < memo.until) return memo.jobs;
-    // Single-flight: an SSR request renders metadata and page concurrently and a
-    // crawler burst lands several requests on one isolate. Each used to page the
-    // whole board through the relay on its own (12 relay calls per refresh instead
-    // of 6). Concurrent callers now share one load.
+    // Coalesce concurrent loads in this isolate through boardMemo (plain jobs),
+    // not a shared promise. An SSR request renders metadata and page together and
+    // a crawler burst lands several requests on one isolate; waiters poll the
+    // memo, then load themselves if the leader is aborted or never settles.
     if (options.signal) return loadBoard({ base, status, cache, cacheKey, memoKey, useMemo, options });
-    const shared = () => {
-      const inflight = boardInflight.get(memoKey);
-      if (inflight) return inflight;
-      const load = loadBoard({ base, status, cache, cacheKey, memoKey, useMemo, options })
-        .finally(() => { if (boardInflight.get(memoKey) === load) boardInflight.delete(memoKey); });
-      boardInflight.set(memoKey, load);
-      return load;
-    };
-    // A follower whose shared load fails (e.g. the leading request was cancelled)
-    // retries once rather than rendering an empty board. The retry is itself
-    // shared, so a failed burst re-paginates once, not once per follower.
-    const pending = boardInflight.get(memoKey);
-    if (pending) return pending.catch(() => shared());
-    return shared();
+    const loadingStarted = boardLoading.get(memoKey);
+    if (loadingStarted && Date.now() - loadingStarted < BOARD_FOLLOWER_WAIT_MS) {
+      const jobs = await waitForBoardMemo(memoKey);
+      if (jobs) return jobs;
+    }
+    const started = Date.now();
+    boardLoading.set(memoKey, started);
+    try {
+      return await loadBoard({ base, status, cache, cacheKey, memoKey, useMemo, options });
+    } finally {
+      if (boardLoading.get(memoKey) === started) boardLoading.delete(memoKey);
+    }
   }
   return loadBoard({ base, status, cache, cacheKey, memoKey, useMemo, options });
+}
+
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/** @param {string} memoKey @returns {Promise<unknown[] | null>} */
+async function waitForBoardMemo(memoKey) {
+  const deadline = Date.now() + BOARD_FOLLOWER_WAIT_MS;
+  while (Date.now() < deadline) {
+    const memo = boardMemo.get(memoKey);
+    if (memo && Date.now() < memo.until) return memo.jobs;
+    if (!boardLoading.has(memoKey)) return null;
+    await sleep(BOARD_FOLLOWER_POLL_MS);
+  }
+  return null;
 }
 
 /** Memo expiry: the cached copy's own expiry, never shorter than BOARD_MEMO_MS. */
