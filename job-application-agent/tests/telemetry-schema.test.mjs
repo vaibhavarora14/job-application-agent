@@ -46,6 +46,22 @@ test('canonicalizes job URLs and hashes the destination without query data', asy
   assert.equal(first.jobHash.length, 64);
 });
 
+test('jobIdentity hashes without global crypto (#298)', async () => {
+  const url = 'https://jobs.example.com/x';
+  const expected = await jobIdentity(url);
+  const previous = Object.getOwnPropertyDescriptor(globalThis, 'crypto');
+  Object.defineProperty(globalThis, 'crypto', { configurable: true, value: undefined });
+  try {
+    const again = await jobIdentity(url);
+    assert.equal(again.jobHash, expected.jobHash);
+    assert.equal(again.domain, 'jobs.example.com');
+    assert.match(again.jobHash, /^[0-9a-f]{64}$/);
+  } finally {
+    if (previous) Object.defineProperty(globalThis, 'crypto', previous);
+    else delete globalThis.crypto;
+  }
+});
+
 test('accepts rich structured job and workflow events', () => {
   const event = validateEvent({
     event: 'job_assessed',
