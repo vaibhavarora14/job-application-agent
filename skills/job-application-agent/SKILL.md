@@ -141,7 +141,7 @@ node scripts/job-application.mjs cloud intent-prepare|intent-sent|intent-confirm
 node scripts/job-application.mjs profile set --stdin
 node scripts/job-application.mjs profile migrate --stdin
 node scripts/job-application.mjs profile check
-node scripts/job-application.mjs profile field <allowed-field>
+node scripts/job-application.mjs profile field name|email|phone|location|workAuthorization|linkedin|github|portfolio|availability|currentCompensation|targetCompensation|submissionMode|submissionModeChosenAt|roleFamilies|seniority|skills|targetLocations|excludedLocations|workModes|industries|excludedCompanies|yearsExperience|autoSubmitMinScore|manualReviewMinScore|minMustHaveCoverage|compensationFloor
 node scripts/job-application.mjs resume import <google-doc-url-or-local-pdf>
 node scripts/job-application.mjs resume path
 node scripts/job-application.mjs score --stdin

@@ -34,6 +34,7 @@ import {
   telemetryApplicationSkipped,
   telemetryApplicationStarted,
   telemetryApplicationSubmitted,
+  PROFILE_FIELDS,
   skillErrorProperties,
   telemetryErrorCategory,
   telemetryErrorCode,
@@ -1331,6 +1332,50 @@ test('maps commands and durations to bounded telemetry categories', () => {
   assert.equal(telemetryErrorCode(new Error('Cloud state request failed (503): upstream')), 'network_failure');
   assert.equal(telemetryErrorCode(new Error('Cloud state unavailable: fetch failed')), 'network_failure');
   assert.equal(telemetryErrorCode(new Error('Resume export failed with HTTP 500.')), 'upload_failed');
+});
+
+test('guardrail refusals and usage errors are invalid_input, not internal_error (#297)', () => {
+  const cases = [
+    ['Coverage refused: linkedin-jobs-feed is marked searched, but no leads were recorded for it in this round.', 'invalid_input'],
+    ['Coverage refused: community-jobs-feed is marked searched, but no successful `sources jobs` pull was recorded in this round.', 'invalid_input'],
+    ['Profile field is not allowed.', 'invalid_input'],
+    ['Profile field "firstName" is not allowed. Allowed: name, email.', 'invalid_input'],
+    ['Skipped job refused: score decided "skip" (seniority) for this job at 2026-11-19T00:00:00.000Z.', 'invalid_input'],
+    ['Usage (ledger check, missing --stdin): Pipe one JSON object.', 'invalid_input'],
+    ['Usage (score, missing subcommand): score --stdin', 'invalid_input'],
+    ['Résumé file not found at the given path; pass an absolute path or a Google Doc URL.', 'upload_failed'],
+  ];
+  for (const [message, code] of cases) {
+    assert.equal(telemetryErrorCode(new Error(message)), code, message);
+    assert.notEqual(telemetryErrorCode(new Error(message)), 'internal_error', message);
+  }
+  assert.equal(telemetryErrorCategory(new Error('Usage (ledger check, missing --stdin): Pipe one JSON object.')), 'usage');
+});
+
+test('profile field names the allowed fields (#297)', async (t) => {
+  const directory = await mkdtemp(join(tmpdir(), 'job-agent-profile-field-'));
+  t.after(() => rm(directory, { recursive: true, force: true }));
+  const script = fileURLToPath(new URL('../scripts/job-application.mjs', import.meta.url));
+  await writeFile(join(directory, 'telemetry.json'), JSON.stringify({ version: 1, enabled: false, disclosed: true, graceConsumed: true, installationEventPending: false }));
+  const result = await runCli(script, ['profile', 'field', 'firstName'], undefined, isolatedCliEnv(directory));
+  assert.equal(result.code, 1);
+  assert.match(result.stderr, /Profile field "firstName" is not allowed\. Allowed: /);
+  for (const field of PROFILE_FIELDS) assert.match(result.stderr, new RegExp(`\\b${field}\\b`));
+  assert.equal(skillErrorProperties(new Error(result.stderr.replace(/^Error: /, '')), 'profile').errorCode, 'invalid_input');
+});
+
+test('resume import of a missing file is upload_failed and omits the path (#297)', async (t) => {
+  const directory = await mkdtemp(join(tmpdir(), 'job-agent-resume-missing-'));
+  t.after(() => rm(directory, { recursive: true, force: true }));
+  const script = fileURLToPath(new URL('../scripts/job-application.mjs', import.meta.url));
+  await writeFile(join(directory, 'telemetry.json'), JSON.stringify({ version: 1, enabled: false, disclosed: true, graceConsumed: true, installationEventPending: false }));
+  const missing = join(directory, 'does-not-exist.pdf');
+  const result = await runCli(script, ['resume', 'import', missing], undefined, isolatedCliEnv(directory));
+  assert.equal(result.code, 1);
+  assert.match(result.stderr, /Résumé file not found at the given path; pass an absolute path or a Google Doc URL\./);
+  assert.equal(result.stderr.includes(missing), false);
+  assert.equal(result.stderr.includes(directory), false);
+  assert.equal(telemetryErrorCode(new Error(result.stderr.replace(/^Error: /, ''))), 'upload_failed');
 });
 
 test('application_submitted uses null/unknown when telemetry is omitted', async () => {

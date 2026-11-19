@@ -108,6 +108,13 @@ const STRING_PROFILE_FIELDS = new Set(['name', 'email', 'phone', 'location', 'wo
 const ARRAY_PROFILE_FIELDS = new Set(['roleFamilies', 'seniority', 'skills', 'targetLocations', 'excludedLocations', 'workModes', 'industries', 'excludedCompanies']);
 const NUMBER_PROFILE_FIELDS = new Set(['yearsExperience', 'autoSubmitMinScore', 'manualReviewMinScore', 'minMustHaveCoverage']);
 const OBJECT_PROFILE_FIELDS = new Set(['compensationFloor']);
+export const PROFILE_FIELDS = Object.freeze([
+  ...STRING_PROFILE_FIELDS, ...ARRAY_PROFILE_FIELDS, ...NUMBER_PROFILE_FIELDS, ...OBJECT_PROFILE_FIELDS,
+]);
+
+function invalidInputError(message) {
+  return Object.assign(new Error(message), { telemetryErrorCode: 'invalid_input' });
+}
 const LEGACY_PROFILE_FIELDS = new Set(['salaryPreference']);
 const DEFAULT_TARGETING = {
   roleFamilies: ['product-engineering', 'full-stack', 'ai-ml'],
@@ -251,7 +258,7 @@ function telemetryStage(command, error) {
 export function telemetryErrorCategory(error) {
   if (typeof error?.telemetryErrorCategory === 'string') return error.telemetryErrorCategory;
   const message = messageForErrorClass(error?.message ?? '');
-  if (/^Usage:/i.test(message)) return 'usage';
+  if (/^Usage[ :(]/i.test(message)) return 'usage';
   if (/keychain|keyring|secret service|secret-tool|credential manager|dpapi|authentication|login|lease/i.test(message)) return 'auth';
   // Resume/PDF upload before generic http/network (export errors often include "HTTP").
   if (/upload|resume|pdf/i.test(message)) return 'upload';
@@ -259,21 +266,21 @@ export function telemetryErrorCategory(error) {
   if (/profile|migration|missing or unreadable/i.test(message)) return 'profile';
   if (/cloud|intent/i.test(message)) return 'cloud';
   if (/duplicate|ledger|submission|submitted|approval|telemetry\./i.test(message)) return 'submission';
-  if (/invalid|must|required|expected|unsupported/i.test(message)) return 'validation';
+  if (/invalid|must|required|expected|unsupported|refused|not allowed/i.test(message)) return 'validation';
   return 'other';
 }
 
 export function telemetryErrorCode(error) {
   if (typeof error?.telemetryErrorCode === 'string') return error.telemetryErrorCode;
   const message = messageForErrorClass(error?.message ?? '');
-  if (/^Usage:/i.test(message)) return 'invalid_input';
+  if (/^Usage[ :(]/i.test(message)) return 'invalid_input';
   if (/keychain|keyring|secret service|secret-tool|credential manager|dpapi|authentication|login/i.test(message)) return 'authentication_required';
   if (/No local cloud lease|lease is recorded|live lease/i.test(message)) return 'authentication_required';
   // Resume/PDF upload failures before generic network/http matching (messages often include "HTTP").
-  if (/upload failed|Resume export failed|did not contain a valid PDF|Canonical resume/i.test(message)) return 'upload_failed';
+  if (/upload failed|Resume export failed|did not contain a valid PDF|Canonical resume|Résumé file not found/i.test(message)) return 'upload_failed';
   if (/Cloud state (unavailable|request failed)|network|fetch|http|relay unavailable|upstream/i.test(message)) return 'network_failure';
   if (/rate.?limit/i.test(message)) return 'rate_limited';
-  if (/missing or unreadable|needs migration|Expected one JSON|Unknown |is invalid|must be|requires |required|expected|unsupported|Hard duplicate|cooldown|follow-up|Usage:/i.test(message)) return 'invalid_input';
+  if (/missing or unreadable|needs migration|Expected one JSON|Unknown |is invalid|must be|requires |required|expected|unsupported|Hard duplicate|cooldown|follow-up|Usage[ :(]|refused|not allowed/i.test(message)) return 'invalid_input';
   if (/invalid|must|required|expected|unsupported/i.test(message)) return 'invalid_input';
   return 'internal_error';
 }
@@ -1973,7 +1980,14 @@ async function importResume(source) {
   } else {
     const local = resolve(source);
     if (!local.toLowerCase().endsWith('.pdf')) throw new Error('Local resume must be a PDF.');
-    bytes = await readFile(local);
+    try {
+      bytes = await readFile(local);
+    } catch (error) {
+      if (error?.code === 'ENOENT') {
+        throw Object.assign(new Error('Résumé file not found at the given path; pass an absolute path or a Google Doc URL.'), { telemetryErrorCode: 'upload_failed' });
+      }
+      throw error;
+    }
     sourceLabel = local;
   }
   if (bytes.length < 1000 || !bytes.subarray(0, 4).equals(Buffer.from('%PDF'))) throw new Error('Resume source did not contain a valid PDF.');
@@ -2165,7 +2179,7 @@ async function assertJobNotSkipped(dir, { url, company, role }) {
   const keys = [assessmentJobKey({ url }), assessmentJobKey({ company, title: role })].filter(Boolean);
   const skipped = keys.map((key) => jobs[key]).find((record) => record && typeof record === 'object');
   if (!skipped) return;
-  throw new Error(`Skipped job refused: score decided "${skipped.decision}" (${skipped.reason}) for ${company || 'this job'} at ${skipped.at}. A skipped or excluded job is never submitted or recorded, in any mode. Do not apply; tell the candidate.`);
+  throw invalidInputError(`Skipped job refused: score decided "${skipped.decision}" (${skipped.reason}) for ${company || 'this job'} at ${skipped.at}. A skipped or excluded job is never submitted or recorded, in any mode. Do not apply; tell the candidate.`);
 }
 
 // The batch review gate (`review stage/approve/show/open/status/revoke/list`, 3.8.0 to 3.8.5) was
@@ -2788,14 +2802,14 @@ async function buildSourceEvent(dir, prepared) {
   if (gates) {
     const pulls = feedPulls(evidenceLog, Date.parse(gates.at));
     if (sourceId === COMMUNITY_FEED_SOURCE_ID && status === 'searched' && !pulls.some((pull) => pull.ok === true)) {
-      throw new Error(`Coverage refused: ${COMMUNITY_FEED_SOURCE_ID} is marked searched, but no successful \`sources jobs\` pull was recorded in this round. Run \`sources jobs\` and review its leads first. If that call failed, record the source as blocked with blocker access-unavailable (community feed unavailable).`);
+      throw invalidInputError(`Coverage refused: ${COMMUNITY_FEED_SOURCE_ID} is marked searched, but no successful \`sources jobs\` pull was recorded in this round. Run \`sources jobs\` and review its leads first. If that call failed, record the source as blocked with blocker access-unavailable (community feed unavailable).`);
     }
     if (sourceId === COMMUNITY_FEED_SOURCE_ID && status === 'blocked' && (!pulls.some((pull) => pull.ok !== true) || !COMMUNITY_FEED_BLOCKERS.includes(blocker))) {
-      throw new Error(`Coverage refused: ${COMMUNITY_FEED_SOURCE_ID} can be recorded as blocked (community feed unavailable) only after a \`sources jobs\` call in this round failed, with blocker access-unavailable or site-error. Run \`sources jobs\` first; if it returns leads, review them and record the source as searched.`);
+      throw invalidInputError(`Coverage refused: ${COMMUNITY_FEED_SOURCE_ID} can be recorded as blocked (community feed unavailable) only after a \`sources jobs\` call in this round failed, with blocker access-unavailable or site-error. Run \`sources jobs\` first; if it returns leads, review them and record the source as searched.`);
     }
     if (sourceId !== COMMUNITY_FEED_SOURCE_ID && status === 'searched' && !['recruiter-inbound', 'user-supplied-leads'].includes(sourceId)) {
       if (!leads.length) {
-        throw new Error(`Coverage refused: ${sourceId} is marked searched, but no leads were recorded for it in this round. Record every reviewed lead with round lead --stdin before round source (an empty search is one lead with disposition "no-relevant-opening" and the search URL); a source you could not search is "blocked" with its blocker.`);
+        throw invalidInputError(`Coverage refused: ${sourceId} is marked searched, but no leads were recorded for it in this round. Record every reviewed lead with round lead --stdin before round source (an empty search is one lead with disposition "no-relevant-opening" and the search URL); a source you could not search is "blocked" with its blocker.`);
       }
       // Leads recorded only after every submission so far are after-the-fact coverage.
       const lastSubmissionAt = round.routineGates?.coverage?.lastSubmissionAt;
@@ -3726,7 +3740,7 @@ async function executeCommand(argv, telemetry, session, community) {
   } else if (area === 'profile' && action === 'check') {
     result = profileCheck();
   } else if (area === 'profile' && action === 'field' && value) {
-    if (![...STRING_PROFILE_FIELDS, ...ARRAY_PROFILE_FIELDS, ...NUMBER_PROFILE_FIELDS, ...OBJECT_PROFILE_FIELDS].includes(value)) throw new Error('Profile field is not allowed.');
+    if (!PROFILE_FIELDS.includes(value)) throw invalidInputError(`Profile field "${value}" is not allowed. Allowed: ${PROFILE_FIELDS.join(', ')}.`);
     result = { [value]: storedProfile()[value] ?? null };
   } else if (area === 'resume' && action === 'import' && value) result = await importResume(value);
   else if (area === 'resume' && action === 'path' && value == null) result = await canonicalResumePath();
