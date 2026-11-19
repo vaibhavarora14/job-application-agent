@@ -178,8 +178,10 @@ test('linux store falls back to an owner-only file when secret-tool is missing (
   assert.equal(store.readProfile(), JSON.stringify(sampleProfile));
   const profileStat = await stat(join(directory, LINUX_FALLBACK_PROFILE));
   const keyStat = await stat(join(directory, LINUX_FALLBACK_KEY));
-  assert.equal(profileStat.mode & 0o777, 0o600);
-  assert.equal(keyStat.mode & 0o777, 0o600);
+  if (process.platform !== 'win32') {
+    assert.equal(profileStat.mode & 0o777, 0o600);
+    assert.equal(keyStat.mode & 0o777, 0o600);
+  }
   const raw = await readFile(join(directory, LINUX_FALLBACK_PROFILE), 'utf8');
   assert.equal(raw.includes(sampleProfile.email), false);
   assert.equal(raw.includes(sampleProfile.name), false);
