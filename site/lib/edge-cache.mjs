@@ -9,9 +9,10 @@
  *
  * Strategy: Workers Cache API (`caches.default`) with stale-while-revalidate.
  * Fresh hits return immediately. After the fresh TTL the stored copy is still
- * served (STALE) while `ctx.waitUntil` refreshes it. An in-isolate map coalesces
- * concurrent miss/stale refreshes for the same key so a burst triggers at most
- * one render per isolate.
+ * served (STALE) while `ctx.waitUntil` refreshes it. Concurrent misses in one
+ * isolate coalesce through a plain-value snapshot (and Cache API) so a burst
+ * still renders once when the leader finishes — followers never await another
+ * request's promise, which the runtime refuses to settle after that request ends.
  *
  * Scope:
  * - GET/HEAD only. No Authorization. No session/auth cookies (`founding_purchase`
@@ -147,8 +148,23 @@ const PLATFORM_DETAIL = /^\/platforms\/[^/]+$/;
 /** Tracking params that do not change SSR output on allowlisted document pages. */
 const TRACKING_QUERY_PARAM = /^(utm_[a-z0-9_]+|gclid|dclid|fbclid|msclkid|gbraid|wbraid|mc_[a-z0-9_]+|ref|ref_src)$/i;
 
-/** @type {Map<string, Promise<unknown>>} */
-const inflightByKey = new Map();
+/** @type {Map<string, number>} leader start times — not promises; sharing those across requests throws */
+const inflightStartedAt = new Map();
+/** @type {Map<string, { until: number, value: unknown }>} plain snapshots so a follower can reuse a finished miss without awaiting I/O */
+const inflightResults = new Map();
+/** How long a follower waits for a leader snapshot before rendering itself. */
+export const EDGE_CACHE_COALESCE_WAIT_MS = 2_000;
+const COALESCE_POLL_MS = 20;
+/** How long a finished miss snapshot is kept for concurrent followers. */
+export const EDGE_CACHE_COALESCE_RESULT_MS = 2_000;
+/** Cap on in-isolate miss snapshots (each holds a response body). */
+export const EDGE_CACHE_COALESCE_SNAPSHOT_MAX = 64;
+/**
+ * Background SWR claim lifetime if `finally` never runs (CPU kill). Matches the
+ * Workers `waitUntil` ceiling so a slow refresh is not treated as expired at the
+ * 2s follower window.
+ */
+export const EDGE_CACHE_REVALIDATE_CLAIM_MS = 30_000;
 
 export function isEdgeCacheablePath(pathname) {
   return (
@@ -375,28 +391,118 @@ function callRender(render, request) {
   return render(request);
 }
 
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function isCrossRequestIoError(error) {
+  const message = error instanceof Error ? error.message : String(error);
+  return (
+    message.includes('created by a request that has since ended')
+    || message.includes('Cannot perform I/O on behalf of a different request')
+    || message.includes('handle_cross_request_promise_resolution')
+  );
+}
+
 /**
- * Coalesce concurrent work for one cache key inside this isolate.
+ * Coalesce concurrent work for one cache key inside this isolate without sharing
+ * promises across requests. Followers poll a plain snapshot (or give up and run
+ * `task` themselves) so a cancelled leader cannot 500 them.
  * @template T
  * @param {string} key
  * @param {() => Promise<T>} task
  * @returns {Promise<T>}
  */
 export function coalesceEdgeCacheWork(key, task) {
-  const existing = inflightByKey.get(key);
-  if (existing) return /** @type {Promise<T>} */ (existing);
-  const pending = Promise.resolve()
-    .then(task)
-    .finally(() => {
-      if (inflightByKey.get(key) === pending) inflightByKey.delete(key);
-    });
-  inflightByKey.set(key, pending);
-  return /** @type {Promise<T>} */ (pending);
+  const now = Date.now();
+  pruneInflightResults(now);
+  const cached = inflightResults.get(key);
+  if (cached && now < cached.until) return Promise.resolve(/** @type {T} */ (cached.value));
+
+  const started = inflightStartedAt.get(key);
+  if (started && now - started < EDGE_CACHE_COALESCE_WAIT_MS) {
+    return waitForCoalescedResult(key).then((value) => (
+      value !== undefined ? /** @type {T} */ (value) : runCoalescedWork(key, task)
+    ));
+  }
+  return runCoalescedWork(key, task);
 }
 
-/** Test helper: clear in-flight coalesce map. */
+/**
+ * @param {string} key
+ * @returns {Promise<unknown>}
+ */
+async function waitForCoalescedResult(key) {
+  const deadline = Date.now() + EDGE_CACHE_COALESCE_WAIT_MS;
+  while (Date.now() < deadline) {
+    pruneInflightResults();
+    const cached = inflightResults.get(key);
+    if (cached && Date.now() < cached.until) return cached.value;
+    if (!inflightStartedAt.has(key)) return undefined;
+    await sleep(COALESCE_POLL_MS);
+  }
+  return undefined;
+}
+
+/**
+ * @template T
+ * @param {string} key
+ * @param {() => Promise<T>} task
+ * @returns {Promise<T>}
+ */
+async function runCoalescedWork(key, task) {
+  const started = Date.now();
+  inflightStartedAt.set(key, started);
+  try {
+    const value = await task();
+    storeInflightResult(key, value);
+    return value;
+  } finally {
+    if (inflightStartedAt.get(key) === started) inflightStartedAt.delete(key);
+  }
+}
+
+/**
+ * Claim exclusive background work for `key` without returning a shared promise.
+ * @param {string} key
+ * @returns {number} start token, or 0 if another request already claimed it
+ */
+function claimEdgeCacheWork(key) {
+  const started = inflightStartedAt.get(key);
+  if (started && Date.now() - started < EDGE_CACHE_REVALIDATE_CLAIM_MS) return 0;
+  const now = Date.now();
+  inflightStartedAt.set(key, now);
+  return now;
+}
+
+function pruneInflightResults(now = Date.now()) {
+  for (const [key, entry] of inflightResults) {
+    if (now >= entry.until) inflightResults.delete(key);
+  }
+}
+
+/** @param {string} key @param {unknown} value */
+function storeInflightResult(key, value) {
+  const now = Date.now();
+  pruneInflightResults(now);
+  inflightResults.set(key, { until: now + EDGE_CACHE_COALESCE_RESULT_MS, value });
+  while (inflightResults.size > EDGE_CACHE_COALESCE_SNAPSHOT_MAX) {
+    const oldest = inflightResults.keys().next().value;
+    if (oldest === undefined || oldest === key) break;
+    inflightResults.delete(oldest);
+  }
+}
+
+/** Test helper: clear in-flight coalesce maps. */
 export function resetEdgeCacheInflight() {
-  inflightByKey.clear();
+  inflightStartedAt.clear();
+  inflightResults.clear();
+}
+
+/** Test helper: in-isolate miss snapshot count after pruning expired entries. */
+export function edgeCacheInflightSnapshotSize() {
+  pruneInflightResults();
+  return inflightResults.size;
 }
 
 /**
@@ -481,8 +587,10 @@ export async function serveWithEdgeCache(request, { cache, release, waitUntil, r
         return isHead ? asHeadResponse(hit) : hit;
       }
       // Still inside Cache API max-age (fresh + SWR): serve stale, refresh once.
-      waitUntil(
-        coalesceEdgeCacheWork(`revalidate:${coalesceId}`, async () => {
+      const revalidateKey = `revalidate:${coalesceId}`;
+      const revalidateStarted = claimEdgeCacheWork(revalidateKey);
+      if (revalidateStarted) {
+        waitUntil((async () => {
           try {
             const rendered = await callRender(render, request);
             if (!isEdgeStorableResponse(request, rendered)) return;
@@ -490,9 +598,13 @@ export async function serveWithEdgeCache(request, { cache, release, waitUntil, r
             await cache.put(key, stored);
           } catch {
             /* background refresh must never throw into the isolate */
+          } finally {
+            if (inflightStartedAt.get(revalidateKey) === revalidateStarted) {
+              inflightStartedAt.delete(revalidateKey);
+            }
           }
-        }).catch(() => {}),
-      );
+        })());
+      }
       const stale = fromStoredResponse(cached, "STALE", { ttlSeconds, swrSeconds });
       return isHead ? asHeadResponse(stale) : stale;
     }
@@ -500,60 +612,99 @@ export async function serveWithEdgeCache(request, { cache, release, waitUntil, r
     /* cache lookup failure must never break the page */
   }
 
-  /** @type {{ status: number, statusText: string, headers: [string, string][], body: ArrayBuffer, cacheStatus: string }} */
-  const shared = await coalesceEdgeCacheWork(`miss:${coalesceId}`, async () => {
-    try {
-      const raced = await cache.match(key);
-      if (raced) {
-        const pathname = new URL(request.url).pathname;
-        const ttlSeconds = edgeCacheTtlSeconds(pathname, raced.status);
-        const swrSeconds = edgeCacheSwrSeconds(pathname, raced.status);
-        const state = currentNow() < Number(raced.headers.get(FRESH_UNTIL_HEADER) || 0) ? "HIT" : "STALE";
-        const rebuilt = fromStoredResponse(raced, state, { ttlSeconds, swrSeconds });
-        return {
-          status: rebuilt.status,
-          statusText: rebuilt.statusText,
-          headers: [...rebuilt.headers.entries()],
-          body: await rebuilt.arrayBuffer(),
-          cacheStatus: state,
-        };
-      }
-    } catch {
-      /* ignore */
-    }
+  try {
+    const shared = await coalesceEdgeCacheWork(`miss:${coalesceId}`, () => renderMissSnapshot({
+      request,
+      render,
+      cache,
+      key,
+      waitUntil,
+      now: currentNow,
+    }));
+    return responseFromSnapshot(shared, isHead);
+  } catch (error) {
+    if (!isCrossRequestIoError(error)) throw error;
+    const shared = await renderMissSnapshot({
+      request,
+      render,
+      cache,
+      key,
+      waitUntil,
+      now: currentNow,
+    });
+    return responseFromSnapshot(shared, isHead);
+  }
+}
 
-    const rendered = await callRender(render, request);
-    if (!isEdgeStorableResponse(request, rendered)) {
-      const bypassed = withEdgeCacheStatus(rendered, "BYPASS");
+/**
+ * @param {{
+ *   request: Request,
+ *   render: (request?: Request) => Promise<Response>,
+ *   cache: Cache,
+ *   key: Request,
+ *   waitUntil: (p: Promise<unknown>) => void,
+ *   now: () => number,
+ * }} input
+ * @returns {Promise<{ status: number, statusText: string, headers: [string, string][], body: ArrayBuffer, cacheStatus: string }>}
+ */
+async function renderMissSnapshot({ request, render, cache, key, waitUntil, now }) {
+  try {
+    const raced = await cache.match(key);
+    if (raced) {
+      const pathname = new URL(request.url).pathname;
+      const ttlSeconds = edgeCacheTtlSeconds(pathname, raced.status);
+      const swrSeconds = edgeCacheSwrSeconds(pathname, raced.status);
+      const state = now() < Number(raced.headers.get(FRESH_UNTIL_HEADER) || 0) ? "HIT" : "STALE";
+      const rebuilt = fromStoredResponse(raced, state, { ttlSeconds, swrSeconds });
       return {
-        status: bypassed.status,
-        statusText: bypassed.statusText,
-        headers: [...bypassed.headers.entries()],
-        body: await bypassed.arrayBuffer(),
-        cacheStatus: "BYPASS",
+        status: rebuilt.status,
+        statusText: rebuilt.statusText,
+        headers: [...rebuilt.headers.entries()],
+        body: await rebuilt.arrayBuffer(),
+        cacheStatus: state,
       };
     }
+  } catch {
+    /* ignore */
+  }
 
-    const opts = storeOptionsFor(request, rendered, currentNow());
-    const forClient = withEdgeCacheStatus(rendered, "MISS");
-    const clientHeaders = new Headers(forClient.headers);
-    clientHeaders.set("cache-control", clientCacheControl(opts.ttlSeconds, opts.swrSeconds));
-    const body = await forClient.arrayBuffer();
-    const toCache = toStoredResponse(new Response(body.slice(0), {
-      status: forClient.status,
-      statusText: forClient.statusText,
-      headers: clientHeaders,
-    }), opts);
-    waitUntil(cache.put(key, toCache).catch(() => {}));
+  const rendered = await callRender(render, request);
+  if (!isEdgeStorableResponse(request, rendered)) {
+    const bypassed = withEdgeCacheStatus(rendered, "BYPASS");
     return {
-      status: forClient.status,
-      statusText: forClient.statusText,
-      headers: [...clientHeaders.entries()],
-      body,
-      cacheStatus: "MISS",
+      status: bypassed.status,
+      statusText: bypassed.statusText,
+      headers: [...bypassed.headers.entries()],
+      body: await bypassed.arrayBuffer(),
+      cacheStatus: "BYPASS",
     };
-  });
+  }
 
+  const opts = storeOptionsFor(request, rendered, now());
+  const forClient = withEdgeCacheStatus(rendered, "MISS");
+  const clientHeaders = new Headers(forClient.headers);
+  clientHeaders.set("cache-control", clientCacheControl(opts.ttlSeconds, opts.swrSeconds));
+  const body = await forClient.arrayBuffer();
+  const toCache = toStoredResponse(new Response(body.slice(0), {
+    status: forClient.status,
+    statusText: forClient.statusText,
+    headers: clientHeaders,
+  }), opts);
+  waitUntil(cache.put(key, toCache).catch(() => {}));
+  return {
+    status: forClient.status,
+    statusText: forClient.statusText,
+    headers: [...clientHeaders.entries()],
+    body,
+    cacheStatus: "MISS",
+  };
+}
+
+/**
+ * @param {{ status: number, statusText: string, headers: [string, string][], body: ArrayBuffer, cacheStatus: string }} shared
+ * @param {boolean} isHead
+ */
+function responseFromSnapshot(shared, isHead) {
   const headers = new Headers(shared.headers);
   headers.set(EDGE_CACHE_STATUS_HEADER, shared.cacheStatus);
   if (isHead) {
