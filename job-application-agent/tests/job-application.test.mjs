@@ -37,6 +37,7 @@ import {
   skillErrorProperties,
   telemetryErrorCategory,
   telemetryErrorCode,
+  telemetryErrorFieldLabel,
   telemetryJobAssessed,
   THIN_SUBMISSION_OVERRIDE,
   validateLedgerCheckCandidate,
@@ -358,6 +359,59 @@ test('pauses on unclear eligibility', () => {
     title: 'Senior Backend Engineer', company: 'Example', description: 'Python', source: 'company', eligibility: 'unclear', remote: true, locations: ['Remote'],
   }, target);
   assert.equal(result.decision, 'ask');
+});
+
+test('ledger add reports every invalid field in one error and names source mix-ups (#295)', () => {
+  const base = {
+    company: 'Example',
+    role: 'Senior Product Engineer',
+    url: 'https://jobs.example.com/123',
+    source: 'company',
+    status: 'submitted',
+    submittedAt: '2026-01-15T10:00:00.000Z',
+    answers: {},
+  };
+  const missing = (() => { try { validateLedgerEntry(base); } catch (error) { return error; } })();
+  assert.match(missing.message, /^ledger add: 3 fields invalid:/);
+  assert.match(missing.message, /entry\.id must be a non-empty string/);
+  assert.match(missing.message, /entry\.approval must be a non-empty string/);
+  assert.match(missing.message, /entry\.score must be an integer from 0 to 100/);
+  assert.equal(telemetryErrorFieldLabel(missing), 'entry.id');
+  assert.equal(telemetryErrorCode(missing), 'invalid_input');
+
+  assert.throws(
+    () => validateLedgerEntry({
+      ...base,
+      id: 'example-role',
+      approval: 'APPROVE SUBMIT',
+      score: 80,
+      source: 'job-board',
+    }),
+    (error) => {
+      assert.match(error.message, /entry\.source "job-board" is a discoverySource; source is the ATS/);
+      assert.match(error.message, /Allowed: linkedin, greenhouse, lever, ashby/);
+      assert.doesNotMatch(error.message, /ledger add: \d+ fields invalid/);
+      return true;
+    },
+  );
+});
+
+test('ledger check accepts title and jobUrl aliases (#295)', () => {
+  assert.deepEqual(
+    validateLedgerCheckCandidate({ company: 'Example', title: 'Senior Product Engineer' }),
+    { company: 'Example', role: 'Senior Product Engineer' },
+  );
+  assert.deepEqual(
+    validateLedgerCheckCandidate({ jobUrl: 'https://jobs.example.com/123' }),
+    { url: 'https://jobs.example.com/123' },
+  );
+  try {
+    validateLedgerCheckCandidate({ posting: 'ignored' });
+  } catch (error) {
+    assert.match(error.message, /Received keys: posting/);
+    assert.match(error.message, /title is accepted as a role alias/);
+    assert.doesNotMatch(error.message, /ignored/);
+  }
 });
 
 test('accepts only confirmed submission ledger shapes', () => {

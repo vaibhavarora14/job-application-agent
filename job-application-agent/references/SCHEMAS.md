@@ -83,7 +83,7 @@ Assessment output retains `review`, `ask`, `skip`, and `exclude`, and adds `auto
 
 ## Duplicate check input
 
-`ledger check` accepts any one identifier set: job URL, internal application id, employer job id plus company, or company+role. Include more identifiers when known. Company-only, role-only, and empty objects are rejected.
+`ledger check` accepts any one identifier set: job URL, internal application id, employer job id plus company, or company+role. `title` is accepted as a `role` alias and `jobUrl` as a `url` alias. Include more identifiers when known. Company-only, role-only, and empty objects are rejected. When no identifier set is present, the error lists the key names received (never their values).
 
 ```json
 {
@@ -101,7 +101,30 @@ The check removes fragments and non-job query parameters while retaining recogni
 
 ## Confirmed submission input
 
-Add only after visible success confirmation.
+Add only after visible success confirmation. `ledger add` reports every invalid field in one error; it does not default `approval`, `score`, or fill telemetry. `source` is the ATS (`linkedin`, `greenhouse`, `lever`, `ashby`, `workable`, `comeet`, `workday`, `rippling`, `smartrecruiters`, `google-form`, `company`, `email`, `other`). `discoverySource` is where the lead was found (`direct-company`, `linkedin`, `x`, `yc`, `hacker-news`, `job-board`, `email`, `user-supplied`, `web-search`, `other`). Sending a discovery value as `source` is refused with that distinction; it is not remapped.
+
+Minimal valid live entry:
+
+```json
+{
+  "id": "example-senior-product-engineer-2026-01-15",
+  "company": "Example",
+  "role": "Senior Product Engineer",
+  "url": "https://jobs.example.com/roles/123",
+  "source": "greenhouse",
+  "score": 84,
+  "status": "submitted",
+  "submittedAt": "2026-01-15T10:00:00.000Z",
+  "approval": "APPROVE SUBMIT",
+  "answers": {},
+  "telemetry": {
+    "durationBucket": "5-15m",
+    "fieldsFilled": 14,
+    "resumeUploaded": true,
+    "resumeFieldPresent": true
+  }
+}
+```
 
 ```json
 {

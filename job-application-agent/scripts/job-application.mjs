@@ -984,6 +984,20 @@ function integer(value, label, min, max) {
   return value;
 }
 
+function collect(errors, fn) {
+  try { return fn(); }
+  catch (error) {
+    errors.push(error.message);
+    return undefined;
+  }
+}
+
+function throwCollected(prefix, errors) {
+  if (!errors.length) return;
+  if (errors.length === 1) throw new Error(errors[0]);
+  throw new Error(`${prefix}: ${errors.length} fields invalid: ${errors.join('; ')}`);
+}
+
 function compensationFloor(value) {
   const input = object(value, 'profile.compensationFloor');
   const allowed = new Set(['amount', 'currency', 'period']);
@@ -1226,71 +1240,96 @@ function ledgerApproval(value) {
   return value.trim();
 }
 
+function sourceMixUpMessage(value) {
+  return `entry.source "${value}" is a discoverySource; source is the ATS. Allowed: ${[...SOURCES].join(', ')}.`;
+}
+
 export function validateLedgerEntry(input) {
   const entry = object(input, 'entry');
+  const errors = [];
   const normalized = {
-    id: string(entry.id, 'entry.id', 180),
-    company: string(entry.company, 'entry.company', 300),
-    role: string(entry.role, 'entry.role', 300),
-    url: string(entry.url, 'entry.url', 2048),
-    source: string(entry.source, 'entry.source', 40).toLowerCase(),
+    id: collect(errors, () => string(entry.id, 'entry.id', 180)),
+    company: collect(errors, () => string(entry.company, 'entry.company', 300)),
+    role: collect(errors, () => string(entry.role, 'entry.role', 300)),
+    url: collect(errors, () => string(entry.url, 'entry.url', 2048)),
+    source: collect(errors, () => string(entry.source, 'entry.source', 40).toLowerCase()),
     score: entry.score,
-    status: string(entry.status, 'entry.status', 40).toLowerCase(),
-    submittedAt: string(entry.submittedAt, 'entry.submittedAt', 80),
-    approval: ledgerApproval(entry.approval),
+    status: collect(errors, () => string(entry.status, 'entry.status', 40).toLowerCase()),
+    submittedAt: collect(errors, () => string(entry.submittedAt, 'entry.submittedAt', 80)),
+    approval: collect(errors, () => ledgerApproval(entry.approval)),
     answers: entry.answers ?? {},
   };
-  if (entry.employerJobId != null) normalized.employerJobId = string(entry.employerJobId, 'entry.employerJobId', 300);
-  if (entry.discoverySource != null) normalized.discoverySource = string(entry.discoverySource, 'entry.discoverySource', 40).toLowerCase();
-  if (entry.discoverySourceId != null) {
-    normalized.discoverySourceId = knownDiscoverySourceId(entry.discoverySourceId, 'entry.discoverySourceId');
+  if (entry.employerJobId != null) normalized.employerJobId = collect(errors, () => string(entry.employerJobId, 'entry.employerJobId', 300));
+  if (entry.discoverySource != null) {
+    normalized.discoverySource = collect(errors, () => string(entry.discoverySource, 'entry.discoverySource', 40).toLowerCase());
   }
-  if (entry.applicationChannel != null) normalized.applicationChannel = string(entry.applicationChannel, 'entry.applicationChannel', 40).toLowerCase();
-  if (entry.roundId != null) normalized.roundId = string(entry.roundId, 'entry.roundId', 180);
+  if (entry.discoverySourceId != null) {
+    normalized.discoverySourceId = collect(errors, () => knownDiscoverySourceId(entry.discoverySourceId, 'entry.discoverySourceId'));
+  }
+  if (entry.applicationChannel != null) {
+    normalized.applicationChannel = collect(errors, () => string(entry.applicationChannel, 'entry.applicationChannel', 40).toLowerCase());
+  }
+  if (entry.roundId != null) normalized.roundId = collect(errors, () => string(entry.roundId, 'entry.roundId', 180));
+  if (normalized.source != null && !SOURCES.has(normalized.source)) {
+    errors.push(DISCOVERY_SOURCES.has(normalized.source)
+      ? sourceMixUpMessage(normalized.source)
+      : invalidChoice('entry.source is invalid.', SOURCES).message);
+  }
+  if (normalized.discoverySource != null && !DISCOVERY_SOURCES.has(normalized.discoverySource)) {
+    errors.push(invalidChoice('entry.discoverySource is invalid.', DISCOVERY_SOURCES).message);
+  }
+  if (normalized.applicationChannel != null && !APPLICATION_CHANNELS.has(normalized.applicationChannel)) {
+    errors.push(invalidChoice('entry.applicationChannel is invalid.', APPLICATION_CHANNELS).message);
+  }
+  if (!Number.isInteger(normalized.score) || normalized.score < 0 || normalized.score > 100) {
+    errors.push('entry.score must be an integer from 0 to 100.');
+  }
+  if (normalized.status != null && normalized.status !== 'submitted') errors.push('New ledger entries must have status submitted.');
+  if (normalized.approval != null && !APPROVALS.has(normalized.approval)) {
+    errors.push(`entry.approval is invalid. ${APPROVAL_HINT}`);
+  }
+  if (normalized.submittedAt != null && Number.isNaN(Date.parse(normalized.submittedAt))) {
+    errors.push('entry.submittedAt must be an ISO date.');
+  }
+  collect(errors, () => {
+    object(normalized.answers, 'entry.answers');
+    for (const [key, value] of Object.entries(normalized.answers)) {
+      string(key, 'answer key', 200);
+      string(value, `answer ${key}`, 5000);
+    }
+  });
+  if (entry.fillMetricsSource != null) {
+    if (!FILL_METRICS_SOURCES.has(entry.fillMetricsSource)) errors.push(invalidChoice('entry.fillMetricsSource is invalid.', FILL_METRICS_SOURCES).message);
+    else normalized.fillMetricsSource = entry.fillMetricsSource;
+  }
+  if (entry.telemetrySupplied != null) {
+    if (typeof entry.telemetrySupplied !== 'boolean') errors.push('entry.telemetrySupplied must be a Boolean.');
+    else normalized.telemetrySupplied = entry.telemetrySupplied;
+  }
+  if (entry.entryOrigin != null) {
+    if (!ENTRY_ORIGINS.has(entry.entryOrigin)) errors.push(invalidChoice('entry.entryOrigin is invalid.', ENTRY_ORIGINS).message);
+    else normalized.entryOrigin = entry.entryOrigin;
+  }
+  throwCollected('ledger add', errors);
   // applyKind marks fixture/vendor-sandbox applies so metrics/community treat them as non-employer.
   // The kind comes from the URL allowlist. A caller-supplied fixture/vendor-sandbox on any
   // other URL is rejected; it is not an exemption from live fill telemetry.
   const applyKind = resolveApplyKind(normalized.url, { applyKind: entry.applyKind });
-  if (!APPLY_KINDS.has(applyKind)) throw new Error('entry.applyKind is invalid.');
+  if (!APPLY_KINDS.has(applyKind)) throw invalidChoice('entry.applyKind is invalid.', APPLY_KINDS);
   normalized.applyKind = applyKind;
-  if (entry.fillMetricsSource != null) {
-    if (!FILL_METRICS_SOURCES.has(entry.fillMetricsSource)) throw new Error('entry.fillMetricsSource is invalid.');
-    normalized.fillMetricsSource = entry.fillMetricsSource;
-  }
-  if (entry.telemetrySupplied != null) {
-    if (typeof entry.telemetrySupplied !== 'boolean') throw new Error('entry.telemetrySupplied must be a Boolean.');
-    normalized.telemetrySupplied = entry.telemetrySupplied;
-  }
-  if (entry.entryOrigin != null) {
-    if (!ENTRY_ORIGINS.has(entry.entryOrigin)) throw new Error('entry.entryOrigin is invalid.');
-    normalized.entryOrigin = entry.entryOrigin;
-  }
-  if (!SOURCES.has(normalized.source)) throw new Error('entry.source is invalid.');
-  if (normalized.discoverySource != null && !DISCOVERY_SOURCES.has(normalized.discoverySource)) throw new Error('entry.discoverySource is invalid.');
-  if (normalized.applicationChannel != null && !APPLICATION_CHANNELS.has(normalized.applicationChannel)) {
-    throw new Error('entry.applicationChannel is invalid.');
-  }
-  if (!Number.isInteger(normalized.score) || normalized.score < 0 || normalized.score > 100) throw new Error('entry.score must be an integer from 0 to 100.');
-  if (normalized.status !== 'submitted') throw new Error('New ledger entries must have status submitted.');
-  if (!APPROVALS.has(normalized.approval)) throw new Error(`entry.approval is invalid. ${APPROVAL_HINT}`);
-  if (Number.isNaN(Date.parse(normalized.submittedAt))) throw new Error('entry.submittedAt must be an ISO date.');
-  object(normalized.answers, 'entry.answers');
-  for (const [key, value] of Object.entries(normalized.answers)) {
-    string(key, 'answer key', 200);
-    string(value, `answer ${key}`, 5000);
-  }
   return normalized;
 }
 
 export function validateLedgerCheckCandidate(input) {
   const candidate = object(input, 'candidate');
   const id = optionalPresentString(candidate, 'id', 180);
-  const url = optionalPresentString(candidate, 'url', 2048);
+  const url = optionalPresentString(candidate, 'url', 2048) || optionalPresentString(candidate, 'jobUrl', 2048);
   const employerJobId = optionalPresentString(candidate, 'employerJobId', 300);
   const company = optionalPresentString(candidate, 'company', 300);
-  const role = optionalPresentString(candidate, 'role', 300);
+  const role = optionalPresentString(candidate, 'role', 300) || optionalPresentString(candidate, 'title', 300);
   if (!url && !id && !(employerJobId && company) && !(company && role)) {
-    throw new Error('ledger check requires at least one identifier set: url, id, employerJobId+company, or company+role.');
+    const keys = Object.keys(candidate).sort();
+    throw new Error(`ledger check requires at least one identifier set: url, id, employerJobId+company, or company+role. Received keys: ${keys.length ? keys.join(', ') : '(none)'}. title is accepted as a role alias; jobUrl is accepted as a url alias.`);
   }
   if (url) normalizeUrl(url);
   return {
