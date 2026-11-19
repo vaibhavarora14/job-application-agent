@@ -4,11 +4,15 @@ import {
   EDGE_CACHE_404_TTL_SECONDS,
   EDGE_CACHE_API_SWR_SECONDS,
   EDGE_CACHE_API_TTL_SECONDS,
+  EDGE_CACHE_COALESCE_RESULT_MS,
+  EDGE_CACHE_COALESCE_SNAPSHOT_MAX,
+  EDGE_CACHE_COALESCE_WAIT_MS,
   EDGE_CACHE_STATIC_SWR_SECONDS,
   EDGE_CACHE_STATIC_TTL_SECONDS,
   EDGE_CACHE_SWR_SECONDS,
   EDGE_CACHE_STATUS_HEADER,
   EDGE_CACHE_TTL_SECONDS,
+  edgeCacheInflightSnapshotSize,
   edgeCacheKey,
   edgeCacheSwrSeconds,
   edgeCacheTtlSeconds,
@@ -437,6 +441,84 @@ test('follower still returns 200 when the leader render never settles', async ()
   } finally {
     releaseLeader();
     await Promise.allSettled([leaderP, followerP, ...pending]);
+  }
+});
+
+test('expired miss snapshots are pruned instead of retained forever', async () => {
+  const realNow = Date.now;
+  let t = 5_000_000;
+  Date.now = () => t;
+  try {
+    const cache = new MemoryCache();
+    const pending = [];
+    const options = {
+      cache,
+      release: 'r1',
+      waitUntil: (p) => pending.push(p),
+      render: async (req) => new Response(new URL(req.url).pathname, { headers: { 'content-type': 'text/html' } }),
+    };
+    await serveWithEdgeCache(page('/jobs/slug-keep-1'), options);
+    assert.equal(edgeCacheInflightSnapshotSize(), 1);
+    t += EDGE_CACHE_COALESCE_RESULT_MS + 1;
+    await serveWithEdgeCache(page('/jobs/slug-keep-2'), options);
+    assert.equal(edgeCacheInflightSnapshotSize(), 1);
+    await Promise.all(pending);
+  } finally {
+    Date.now = realNow;
+  }
+});
+
+test('miss snapshots for distinct keys are capped', async () => {
+  const cache = new MemoryCache();
+  const pending = [];
+  const options = {
+    cache,
+    release: 'r1',
+    waitUntil: (p) => pending.push(p),
+    render: async (req) => new Response(new URL(req.url).pathname, { headers: { 'content-type': 'text/html' } }),
+  };
+  for (let i = 0; i < EDGE_CACHE_COALESCE_SNAPSHOT_MAX + 8; i++) {
+    await serveWithEdgeCache(page(`/jobs/slug-cap-${i}`), options);
+  }
+  assert.ok(edgeCacheInflightSnapshotSize() <= EDGE_CACHE_COALESCE_SNAPSHOT_MAX);
+  await Promise.all(pending);
+});
+
+test('a slow stale refresh is not reclaimed after the follower wait window', async () => {
+  const realNow = Date.now;
+  let t = realNow();
+  Date.now = () => t;
+  let releaseRefresh = () => {};
+  const hold = new Promise((resolve) => { releaseRefresh = resolve; });
+  const pending = [];
+  try {
+    const cache = new MemoryCache();
+    let renders = 0;
+    let clock = 2_000_000;
+    const render = async () => {
+      renders += 1;
+      if (renders >= 2) await hold;
+      return new Response(`<html>v${renders}</html>`, { headers: { 'content-type': 'text/html' } });
+    };
+    const options = {
+      cache,
+      release: 'r1',
+      waitUntil: (p) => pending.push(p),
+      render,
+      now: () => clock,
+    };
+    assert.equal((await serveWithEdgeCache(page('/jobs/slug-slow'), options)).headers.get(EDGE_CACHE_STATUS_HEADER), 'MISS');
+    await Promise.all(pending.splice(0));
+    clock += (EDGE_CACHE_TTL_SECONDS + 1) * 1000;
+    assert.equal((await serveWithEdgeCache(page('/jobs/slug-slow'), options)).headers.get(EDGE_CACHE_STATUS_HEADER), 'STALE');
+    t += EDGE_CACHE_COALESCE_WAIT_MS + 1;
+    const during = await serveWithEdgeCache(page('/jobs/slug-slow'), options);
+    assert.ok(during.headers.get(EDGE_CACHE_STATUS_HEADER) === 'STALE' || during.headers.get(EDGE_CACHE_STATUS_HEADER) === 'HIT');
+    assert.equal(renders, 2, 'the 2s follower window must not start a second refresh');
+  } finally {
+    Date.now = realNow;
+    releaseRefresh();
+    await Promise.all(pending);
   }
 });
 

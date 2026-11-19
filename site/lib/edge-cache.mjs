@@ -152,9 +152,19 @@ const TRACKING_QUERY_PARAM = /^(utm_[a-z0-9_]+|gclid|dclid|fbclid|msclkid|gbraid
 const inflightStartedAt = new Map();
 /** @type {Map<string, { until: number, value: unknown }>} plain snapshots so a follower can reuse a finished miss without awaiting I/O */
 const inflightResults = new Map();
-const COALESCE_WAIT_MS = 2_000;
+/** How long a follower waits for a leader snapshot before rendering itself. */
+export const EDGE_CACHE_COALESCE_WAIT_MS = 2_000;
 const COALESCE_POLL_MS = 20;
-const COALESCE_RESULT_MS = 2_000;
+/** How long a finished miss snapshot is kept for concurrent followers. */
+export const EDGE_CACHE_COALESCE_RESULT_MS = 2_000;
+/** Cap on in-isolate miss snapshots (each holds a response body). */
+export const EDGE_CACHE_COALESCE_SNAPSHOT_MAX = 64;
+/**
+ * Background SWR claim lifetime if `finally` never runs (CPU kill). Matches the
+ * Workers `waitUntil` ceiling so a slow refresh is not treated as expired at the
+ * 2s follower window.
+ */
+export const EDGE_CACHE_REVALIDATE_CLAIM_MS = 30_000;
 
 export function isEdgeCacheablePath(pathname) {
   return (
@@ -404,11 +414,13 @@ function isCrossRequestIoError(error) {
  * @returns {Promise<T>}
  */
 export function coalesceEdgeCacheWork(key, task) {
+  const now = Date.now();
+  pruneInflightResults(now);
   const cached = inflightResults.get(key);
-  if (cached && Date.now() < cached.until) return Promise.resolve(/** @type {T} */ (cached.value));
+  if (cached && now < cached.until) return Promise.resolve(/** @type {T} */ (cached.value));
 
   const started = inflightStartedAt.get(key);
-  if (started && Date.now() - started < COALESCE_WAIT_MS) {
+  if (started && now - started < EDGE_CACHE_COALESCE_WAIT_MS) {
     return waitForCoalescedResult(key).then((value) => (
       value !== undefined ? /** @type {T} */ (value) : runCoalescedWork(key, task)
     ));
@@ -421,8 +433,9 @@ export function coalesceEdgeCacheWork(key, task) {
  * @returns {Promise<unknown>}
  */
 async function waitForCoalescedResult(key) {
-  const deadline = Date.now() + COALESCE_WAIT_MS;
+  const deadline = Date.now() + EDGE_CACHE_COALESCE_WAIT_MS;
   while (Date.now() < deadline) {
+    pruneInflightResults();
     const cached = inflightResults.get(key);
     if (cached && Date.now() < cached.until) return cached.value;
     if (!inflightStartedAt.has(key)) return undefined;
@@ -442,7 +455,7 @@ async function runCoalescedWork(key, task) {
   inflightStartedAt.set(key, started);
   try {
     const value = await task();
-    inflightResults.set(key, { until: Date.now() + COALESCE_RESULT_MS, value });
+    storeInflightResult(key, value);
     return value;
   } finally {
     if (inflightStartedAt.get(key) === started) inflightStartedAt.delete(key);
@@ -456,16 +469,40 @@ async function runCoalescedWork(key, task) {
  */
 function claimEdgeCacheWork(key) {
   const started = inflightStartedAt.get(key);
-  if (started && Date.now() - started < COALESCE_WAIT_MS) return 0;
+  if (started && Date.now() - started < EDGE_CACHE_REVALIDATE_CLAIM_MS) return 0;
   const now = Date.now();
   inflightStartedAt.set(key, now);
   return now;
+}
+
+function pruneInflightResults(now = Date.now()) {
+  for (const [key, entry] of inflightResults) {
+    if (now >= entry.until) inflightResults.delete(key);
+  }
+}
+
+/** @param {string} key @param {unknown} value */
+function storeInflightResult(key, value) {
+  const now = Date.now();
+  pruneInflightResults(now);
+  inflightResults.set(key, { until: now + EDGE_CACHE_COALESCE_RESULT_MS, value });
+  while (inflightResults.size > EDGE_CACHE_COALESCE_SNAPSHOT_MAX) {
+    const oldest = inflightResults.keys().next().value;
+    if (oldest === undefined || oldest === key) break;
+    inflightResults.delete(oldest);
+  }
 }
 
 /** Test helper: clear in-flight coalesce maps. */
 export function resetEdgeCacheInflight() {
   inflightStartedAt.clear();
   inflightResults.clear();
+}
+
+/** Test helper: in-isolate miss snapshot count after pruning expired entries. */
+export function edgeCacheInflightSnapshotSize() {
+  pruneInflightResults();
+  return inflightResults.size;
 }
 
 /**
