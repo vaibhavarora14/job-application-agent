@@ -4,12 +4,13 @@ import test from 'node:test';
 
 // fetch-live-jobs imports `env` from cloudflare:workers; give it a stub env whose
 // TELEMETRY binding counts relay calls.
-const relay = { calls: 0, fail: false };
+const relay = { calls: 0, fail: false, hang: false };
 globalThis.__liveJobsTestEnv = {
   COMMUNITY_JOBS_LIVE_UPSTREAM: 'https://relay.example.com/v1/jobs/live',
   TELEMETRY: {
     async fetch(request) {
       relay.calls++;
+      if (relay.hang) await new Promise(() => {});
       await new Promise((resolve) => setTimeout(resolve, 5));
       if (relay.fail) throw new Error('cancelled');
       const url = new URL(request.url);
@@ -62,15 +63,28 @@ test('concurrent board loads in one isolate share a single relay pagination', { 
   assert.equal(relay.calls, 2);
 });
 
-test('followers retry once, together, when the shared load fails', { skip }, async () => {
+test('a failed load does not poison a later caller', { skip }, async () => {
   relay.calls = 0;
   relay.fail = true;
-  const leader = loadLiveJobs({ status: 'closed' });
-  const followers = [loadLiveJobs({ status: 'closed' }), loadLiveJobs({ status: 'closed' }), loadLiveJobs({ status: 'closed' })];
-  await assert.rejects(leader);
+  await assert.rejects(loadLiveJobs({ status: 'closed' }));
   relay.fail = false;
-  const boards = await Promise.all(followers);
-  for (const jobs of boards) assert.equal(jobs.length, 4);
-  // 1 failed first page + one shared 2-page retry, not one retry per follower.
-  assert.equal(relay.calls, 3);
+  const jobs = await loadLiveJobs({ status: 'closed' });
+  assert.equal(jobs.length, 4);
+});
+
+test('a follower does not await a never-settling leader load', { skip }, async () => {
+  relay.calls = 0;
+  relay.hang = true;
+  const leader = loadLiveJobs({ status: 'unknown' });
+  leader.catch(() => {});
+  await new Promise((resolve) => setTimeout(resolve, 30));
+  relay.hang = false;
+  const jobs = await Promise.race([
+    loadLiveJobs({ status: 'unknown' }),
+    new Promise((_, reject) => {
+      setTimeout(() => reject(new Error('follower hung waiting for a leader that never settled')), 5_000);
+    }),
+  ]);
+  assert.equal(jobs.length, 4);
+  assert.ok(relay.calls >= 3, 'follower paginated on its own after giving up on the hung leader');
 });
