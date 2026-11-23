@@ -7,6 +7,12 @@
 
 export const DEFAULT_POSTHOG_HOST = "https://us.i.posthog.com";
 
+/** Same-origin ingest path proxied by the site Worker to DEFAULT_POSTHOG_HOST. */
+export const BROWSER_POSTHOG_INGEST_PATH = "/ingest";
+
+/** Hosts allowed in CSP connect-src for browser capture. Same-origin `/ingest` uses `'self'`. */
+export const POSTHOG_CONNECT_SRC = Object.freeze([]);
+
 export const FOUNDING_EVENTS = Object.freeze({
   CTA_CLICKED: "founding_cta_clicked",
   CHECKOUT_CREATED: "founding_checkout_created",
@@ -21,9 +27,6 @@ export const UTM_KEYS = Object.freeze([
   "utm_term",
   "utm_content",
 ]);
-
-/** Hosts allowed in CSP connect-src for client/edge PostHog capture. */
-export const POSTHOG_CONNECT_SRC = Object.freeze([DEFAULT_POSTHOG_HOST]);
 
 const encoder = new TextEncoder();
 
@@ -95,6 +98,66 @@ export function resolvePostHogHost(host) {
   } catch {
     return DEFAULT_POSTHOG_HOST;
   }
+}
+
+/**
+ * Browser capture host. Relative same-origin paths are kept; PostHog ingest
+ * origins are remapped to `/ingest` so ad blockers cannot see us.i.posthog.com.
+ * @param {string | undefined} host
+ */
+export function resolveBrowserPostHogHost(host) {
+  const trimmed = host?.trim();
+  if (!trimmed) return BROWSER_POSTHOG_INGEST_PATH;
+  if (trimmed.startsWith("/") && !trimmed.startsWith("//")) {
+    return trimmed.replace(/\/+$/, "") || BROWSER_POSTHOG_INGEST_PATH;
+  }
+  const resolved = resolveCaptureHost(trimmed);
+  return isCustomPostHogApiHost(resolved) ? resolved : BROWSER_POSTHOG_INGEST_PATH;
+}
+
+/**
+ * Resolve a capture endpoint for the landing client. Unlike
+ * `resolveBrowserPostHogHost`, an explicit PostHog ingest origin is kept so
+ * tests can mock `https://us.i.posthog.com`.
+ * @param {string | undefined} host
+ */
+export function resolveCaptureHost(host) {
+  const trimmed = host?.trim();
+  if (!trimmed) return BROWSER_POSTHOG_INGEST_PATH;
+  if (trimmed.startsWith("/") && !trimmed.startsWith("//")) {
+    return trimmed.replace(/\/+$/, "") || BROWSER_POSTHOG_INGEST_PATH;
+  }
+  try {
+    const url = new URL(trimmed);
+    if (url.protocol !== "https:" && url.hostname !== "localhost") return BROWSER_POSTHOG_INGEST_PATH;
+    return url.origin;
+  } catch {
+    return BROWSER_POSTHOG_INGEST_PATH;
+  }
+}
+
+/**
+ * @param {string | undefined} host
+ */
+export function isCustomPostHogApiHost(host) {
+  const resolved = resolveCaptureHost(host);
+  if (resolved.startsWith("/")) return true;
+  try {
+    const { hostname } = new URL(resolved);
+    return hostname !== "us.i.posthog.com" && hostname !== "eu.i.posthog.com";
+  } catch {
+    return true;
+  }
+}
+
+/**
+ * @param {string | undefined} host
+ * @param {string} [path]
+ */
+export function postHogCaptureUrl(host, path = "/i/v0/e/") {
+  const resolved = resolveCaptureHost(host);
+  const suffix = path.startsWith("/") ? path : `/${path}`;
+  return `${resolved}${suffix}`;
 }
 
 /**

@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
+  BROWSER_POSTHOG_INGEST_PATH,
   DEFAULT_POSTHOG_HOST,
   FOUNDING_EVENTS,
   POSTHOG_CONNECT_SRC,
@@ -10,12 +11,18 @@ import {
   extractUtmParams,
   foundingEventProperties,
   hashPurchaseId,
+  isCustomPostHogApiHost,
+  postHogCaptureUrl,
+  resolveBrowserPostHogHost,
+  resolveCaptureHost,
   resolvePostHogHost,
 } from "../lib/posthog.mjs";
 import {
   captureLandingEvent,
   captureLandingPageview,
+  isUuidV7,
   readUtmFromLocation,
+  resetLandingAnalyticsStateForTests,
 } from "../lib/landing-analytics.mjs";
 
 const purchaseId = "11111111-1111-4111-8111-111111111111";
@@ -111,15 +118,28 @@ test("resolvePostHogHost rejects non-https remote hosts", () => {
   assert.equal(resolvePostHogHost(undefined), DEFAULT_POSTHOG_HOST);
   assert.equal(resolvePostHogHost("https://eu.i.posthog.com/"), "https://eu.i.posthog.com");
   assert.equal(resolvePostHogHost("http://evil.example"), DEFAULT_POSTHOG_HOST);
-  assert.equal(POSTHOG_CONNECT_SRC.includes(DEFAULT_POSTHOG_HOST), true);
+  assert.equal(POSTHOG_CONNECT_SRC.length, 0);
+});
+
+test("browser ingest defaults to same-origin /ingest and remaps PostHog hosts", () => {
+  assert.equal(resolveBrowserPostHogHost(undefined), BROWSER_POSTHOG_INGEST_PATH);
+  assert.equal(resolveBrowserPostHogHost("https://us.i.posthog.com"), BROWSER_POSTHOG_INGEST_PATH);
+  assert.equal(resolveBrowserPostHogHost("https://eu.i.posthog.com/"), BROWSER_POSTHOG_INGEST_PATH);
+  assert.equal(resolveBrowserPostHogHost("/ingest/"), "/ingest");
+  assert.equal(resolveCaptureHost("https://us.i.posthog.com"), "https://us.i.posthog.com");
+  assert.equal(postHogCaptureUrl("/ingest"), "/ingest/i/v0/e/");
+  assert.equal(isCustomPostHogApiHost("/ingest"), true);
+  assert.equal(isCustomPostHogApiHost("https://us.i.posthog.com"), false);
 });
 
 test("landing helpers read UTM from search and capture pageviews", async () => {
+  resetLandingAnalyticsStateForTests();
   assert.deepEqual(
     readUtmFromLocation("?utm_source=x&utm_medium=y&email=nope@example.com"),
     { utm_source: "x", utm_medium: "y" },
   );
 
+  const sessionStore = memoryStore();
   /** @type {unknown[]} */
   const captured = [];
   const pageview = await captureLandingPageview({
@@ -128,15 +148,21 @@ test("landing helpers read UTM from search and capture pageviews", async () => {
     pathname: "/",
     search: "?utm_campaign=launch",
     href: "https://jobappagent.com/?utm_campaign=launch",
+    pageHost: "jobappagent.com",
+    sessionStore,
     fetchFn: async (url, options) => {
       captured.push({ url, body: JSON.parse(String(options.body)) });
       return new Response("{}", { status: 200 });
     },
   });
   assert.equal(pageview.ok, true);
+  assert.equal(captured[0].url, "https://us.i.posthog.com/i/v0/e/");
   assert.equal(captured[0].body.event, "$pageview");
   assert.equal(captured[0].body.properties.path, "/");
   assert.equal(captured[0].body.properties.utm_campaign, "launch");
+  assert.equal(captured[0].body.properties.$host, "jobappagent.com");
+  assert.equal(isUuidV7(captured[0].body.properties.$session_id), true);
+  assert.equal("$lib_custom_api_host" in captured[0].body.properties, false);
 
   const event = await captureLandingEvent({
     apiKey: "phc_public",
@@ -144,6 +170,8 @@ test("landing helpers read UTM from search and capture pageviews", async () => {
     event: FOUNDING_EVENTS.CTA_CLICKED,
     distinctId: "anon-1",
     properties: { offer: "founding_90_days", utm_source: "x" },
+    pageHost: "jobappagent.com",
+    sessionStore,
     fetchFn: async (url, options) => {
       captured.push({ url, body: JSON.parse(String(options.body)) });
       return new Response("{}", { status: 200 });
@@ -153,7 +181,16 @@ test("landing helpers read UTM from search and capture pageviews", async () => {
   assert.equal(captured[1].body.event, "founding_cta_clicked");
   assert.equal(captured[1].body.distinct_id, "anon-1");
   assert.equal(captured[1].body.properties.utm_source, "x");
+  assert.equal(captured[1].body.properties.$session_id, captured[0].body.properties.$session_id);
 });
+
+function memoryStore() {
+  const map = new Map();
+  return {
+    getItem(key) { return map.has(key) ? map.get(key) : null; },
+    setItem(key, value) { map.set(key, String(value)); },
+  };
+}
 
 test("docs and source never embed committed PostHog project keys", async () => {
   const { readFile } = await import("node:fs/promises");
@@ -161,6 +198,9 @@ test("docs and source never embed committed PostHog project keys", async () => {
     new URL("../lib/posthog.mjs", import.meta.url),
     new URL("../lib/landing-analytics.mjs", import.meta.url),
     new URL("../lib/jobs-analytics.mjs", import.meta.url),
+    new URL("../lib/landing-session.mjs", import.meta.url),
+    new URL("../lib/landing-web-vitals.mjs", import.meta.url),
+    new URL("../lib/posthog-ingest-proxy.mjs", import.meta.url),
     new URL("../README.md", import.meta.url),
     new URL("../docs/POSTHOG.md", import.meta.url),
     new URL("../.env.example", import.meta.url),

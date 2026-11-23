@@ -1,13 +1,16 @@
 "use client";
 
 import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
+import { onCLS, onINP, onLCP } from "web-vitals";
 import {
   FOUNDING_EVENTS,
+  bindLandingPageleave,
   captureLandingEvent,
   captureLandingPageview,
   readUtmFromLocation,
 } from "../../lib/landing-analytics.mjs";
-import { DEFAULT_POSTHOG_HOST } from "../../lib/posthog.mjs";
+import { bindLandingWebVitals } from "../../lib/landing-web-vitals.mjs";
+import { BROWSER_POSTHOG_INGEST_PATH } from "../../lib/posthog.mjs";
 
 type AnalyticsConfig = {
   apiKey: string;
@@ -18,7 +21,7 @@ type AnalyticsConfig = {
 
 const AnalyticsContext = createContext<AnalyticsConfig>({
   apiKey: "",
-  host: DEFAULT_POSTHOG_HOST,
+  host: BROWSER_POSTHOG_INGEST_PATH,
   ready: false,
   capture() {},
 });
@@ -48,7 +51,7 @@ export function LandingAnalyticsProvider({ children }: { children: ReactNode }) 
         if (!apiKey || !active) return;
         setRemote({
           apiKey,
-          host: typeof body.host === "string" && body.host.trim() ? body.host.trim() : DEFAULT_POSTHOG_HOST,
+          host: typeof body.host === "string" && body.host.trim() ? body.host.trim() : BROWSER_POSTHOG_INGEST_PATH,
         });
       } catch {
         /* Analytics is best-effort. */
@@ -65,11 +68,20 @@ export function LandingAnalyticsProvider({ children }: { children: ReactNode }) 
       if (jobsFlag || window.location.pathname.startsWith("/jobs")) return;
     }
     void captureLandingPageview({ apiKey: remote.apiKey, host: remote.host });
+    const stopPageleave = bindLandingPageleave({ apiKey: remote.apiKey, host: remote.host });
+    const stopWebVitals = bindLandingWebVitals(
+      { apiKey: remote.apiKey, host: remote.host },
+      { onLCP, onCLS, onINP },
+    );
+    return () => {
+      stopPageleave();
+      stopWebVitals();
+    };
   }, [remote]);
 
   const value = useMemo<AnalyticsConfig>(() => ({
     apiKey: remote?.apiKey ?? "",
-    host: remote?.host ?? DEFAULT_POSTHOG_HOST,
+    host: remote?.host ?? BROWSER_POSTHOG_INGEST_PATH,
     ready: Boolean(remote?.apiKey),
     capture(event, properties = {}) {
       if (!remote?.apiKey) return;
