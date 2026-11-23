@@ -19,6 +19,10 @@ test("ingest prefix maps capture to US ingest and assets to the assets host", ()
   assert.equal(postHogProxyTargets().assets, POSTHOG_US_ASSETS_HOST);
   assert.equal(postHogProxyTargets("https://eu.i.posthog.com").assets, POSTHOG_EU_ASSETS_HOST);
   assert.equal(
+    postHogProxyTargets("https://eu.i.posthog.com.evil.example").assets,
+    POSTHOG_US_ASSETS_HOST,
+  );
+  assert.equal(
     postHogProxyUpstreamUrl("https://jobappagent.com/ingest/i/v0/e/?v=1", undefined).href,
     "https://us.i.posthog.com/i/v0/e/?v=1",
   );

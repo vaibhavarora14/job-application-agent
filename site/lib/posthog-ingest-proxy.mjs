@@ -44,7 +44,13 @@ export function isPostHogIngestPath(pathname) {
  */
 export function postHogProxyTargets(ingestHost) {
   const ingest = resolvePostHogHost(ingestHost);
-  const assets = ingest.includes("eu.i.posthog.com") ? POSTHOG_EU_ASSETS_HOST : POSTHOG_US_ASSETS_HOST;
+  let hostname = "";
+  try {
+    hostname = new URL(ingest).hostname;
+  } catch {
+    hostname = "";
+  }
+  const assets = hostname === "eu.i.posthog.com" ? POSTHOG_EU_ASSETS_HOST : POSTHOG_US_ASSETS_HOST;
   return { ingest, assets };
 }
 
