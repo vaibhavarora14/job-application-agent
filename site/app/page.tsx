@@ -12,7 +12,7 @@ export const metadata: Metadata = {
 };
 
 const REPO = "https://github.com/vaibhavarora14/job-application-agent";
-const INSTALL = "npx job-application-agent@latest install";
+const INSTALL = "npx job-application-agent@latest install --source=site";
 
 /*
  * Information architecture: one path, free first, paid next.

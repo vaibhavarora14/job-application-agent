@@ -132,6 +132,38 @@ test('apply with a valid https URL prints the review-mode prompt', async () => {
   assert.match(logs.join('\n'), /LIVE_APPLY/);
 });
 
+test('install and apply ignore a closed --source= tag so the URL stays the only apply argument', async () => {
+  const f = await setup();
+  const output = [];
+  const installed = await runCli(['install', '--source=readme'], {
+    packageRoot: f.packageRoot,
+    packageVersion: '3.0.0',
+    agentHome: f.agentHome,
+    homeDir: f.root,
+    platform: 'test',
+    scheduler: false,
+    output: (value) => output.push(value),
+  });
+  assert.match(output.join('\n'), /Installed job-application-agent 3\.0\.0/);
+  assert.equal(installed.installedVersion, '3.0.0');
+
+  const url = 'https://jobs.example.com/boards/acme/jobs/123';
+  for (const args of [['apply', '--source=jobs', url], ['apply', url, '--source=jobs']]) {
+    const result = await runCli(args, {
+      packageRoot: f.packageRoot,
+      packageVersion: '3.0.0',
+      agentHome: f.agentHome,
+      homeDir: f.root,
+      env: {},
+      log: () => {},
+      launchPrompt: true,
+      output: () => {},
+    });
+    assert.equal(result.url, url);
+    assert.equal(result.reviewMode, true);
+  }
+});
+
 test('apply without a URL fails with usage', async () => {
   const f = await setup();
   await assert.rejects(

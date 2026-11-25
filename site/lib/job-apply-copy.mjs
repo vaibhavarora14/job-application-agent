@@ -1,6 +1,6 @@
 /** Primary Apply CTA once `job-application-agent@3.7.7+` ships `apply <url>`. */
 export function buildApplyCliCommand(url) {
-  return `npx job-application-agent@latest apply ${url}`;
+  return `npx job-application-agent@latest apply ${url} --source=jobs`;
 }
 
 /**
@@ -13,7 +13,7 @@ export function buildApplyAgentPrompt(job) {
     'Apply to this role with JobAppAgent in review mode (do not submit until I approve).',
     `Role: ${job.role} at ${job.company}`,
     `URL: ${job.url}`,
-    '1. If JobAppAgent is not installed, run: npx job-application-agent@latest install',
+    '1. If JobAppAgent is not installed, run: npx job-application-agent@latest install --source=jobs',
     `2. Run: ${buildApplyCliCommand(job.url)} and follow the prompt it prints.`,
     '3. Use only facts from my verified resume and profile.',
     '4. Show me the full draft and stop before submit.',

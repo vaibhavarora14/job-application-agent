@@ -1,7 +1,7 @@
 # Shareable job-application prompt
 
 ```bash
-npx job-application-agent@latest install
+npx job-application-agent@latest install --source=share
 ```
 
 Copy the prompt below into a new agent chat. Use `scripts/job-application.mjs` for private state. Do not keep a second ledger. `score` and `ledger add` are refused until that install has been run on the same machine as the browser.
@@ -11,7 +11,7 @@ Copy the prompt below into a new agent chat. Use `scripts/job-application.mjs` f
 Install the managed runtime on the same machine as the browser, then use `scripts/job-application.mjs` for the profile, résumé, score, ledger, rounds, and outcomes. Do not keep a second ledger.
 
 ```bash
-npx job-application-agent@latest install
+npx job-application-agent@latest install --source=share
 ```
 
 `score` and `ledger add` are refused until that command finishes. Do not assess or apply from this prompt alone. Follow the installed `SKILL.md` for every later step.

@@ -12,7 +12,7 @@ This package is Marketplace metadata + Cursor skill/command wrappers around the 
 
 ## Install surface
 
-- Installer: `npx job-application-agent@latest install` (Node ≥ 20).
+- Installer: `npx job-application-agent@latest install --source=plugin` (Node ≥ 20).
 - Updates are staged and validated before replacement; private candidate state lives outside the replaceable skill directory.
 
 ## Reporting

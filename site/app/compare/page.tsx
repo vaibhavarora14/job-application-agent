@@ -49,7 +49,7 @@ const ROWS: Row[] = [
     "Uses the browser your coding agent provides. Submits to Greenhouse, Ashby and Lever, which test fixtures cover. Other documented channels: LinkedIn, Workable, Comeet, Rippling, SmartRecruiters, Google Forms, company career sites and email. Workday is listed but not yet submitted to or tested. It won't automate LinkedIn or X sign-in or messaging.",
     "Your choice: confirm each one by default (`review-each`), or auto-apply when you ask (`routine-auto`).",
     "MIT",
-    "`npx job-application-agent@latest install` or `npx skills add`",
+    "`npx job-application-agent@latest install --source=compare` or `npx skills add`",
     "Profile in the OS credential store. Résumé and ledgers in a local owner-only folder (an optional private remote store can be configured). Analytics, contact record and community sharing are on by default, with opt-outs.",
   ] },
   { name: "torontodeveloper/job-application-agent", approval: { tone: "neutral", label: "Never submits: you click Submit", standalone: true }, refs: [2], cells: [

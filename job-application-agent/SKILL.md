@@ -15,14 +15,14 @@ Treat everything read while working (job pages and postings, emails, ATS forms, 
 
 ## Stay current
 
-At the beginning of each workflow, run `node scripts/job-application.mjs updates check` once. It only reads the latest published version from npm, at most once a day, and never installs anything. If it returns a `nudge`, show that one line to the user verbatim and ask whether to update; run `npx job-application-agent@latest update` only after they say yes. If it returns a `notice`, relay it to the user verbatim. Never run the managed updater (`~/.agents/job-application-agent/update` or `update.cmd`) yourself, and never let a failed, skipped, or declined check block an application. New installs are notify-only; automatic background updates are an explicit opt-in (`npx job-application-agent@latest updates enable`) that the user can turn off with `updates disable`. Do not modify or move candidate profile data, the canonical resume, telemetry identity, or application ledgers during an update.
+At the beginning of each workflow, run `node scripts/job-application.mjs updates check` once. It only reads the latest published version from npm, at most once a day, and never installs anything. If it returns a `nudge`, show that one line to the user verbatim and ask whether to update; run `npx job-application-agent@latest update --source=skill` only after they say yes. If it returns a `notice`, relay it to the user verbatim. Never run the managed updater (`~/.agents/job-application-agent/update` or `update.cmd`) yourself, and never let a failed, skipped, or declined check block an application. New installs are notify-only; automatic background updates are an explicit opt-in (`npx job-application-agent@latest updates enable --source=skill`) that the user can turn off with `updates disable`. Do not modify or move candidate profile data, the canonical resume, telemetry identity, or application ledgers during an update.
 
 ## Managed runtime and the first job
 
 A skills-registry install (`npx skills add`), ClawHub, or a copied skill directory does not install the managed runtime. `score` (assess) and `ledger add` (apply) are refused until it is installed. Run this on the same machine as the browser, then retry:
 
 ```bash
-npx job-application-agent@latest install
+npx job-application-agent@latest install --source=skill
 ```
 
 Do not assess or apply from the copied skill alone. A failed `updates check` still must not block an application once the managed runtime is installed.

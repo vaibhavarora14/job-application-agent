@@ -4,7 +4,7 @@ The product privacy policy is https://jobappagent.com/privacy. This page summari
 
 ## What this plugin package contains
 
-This package ships Agent Skill guidance for the open-source Job Application Agent (Codex / ChatGPT, Claude, and Cursor packaging share one folder). It contains no MCP server, apps, or hooks, bundles no secrets or API keys, and contains no candidate data. The skill asks you to confirm before it runs the public npm installer (`npx job-application-agent@latest install`) or the GitHub skills installer.
+This package ships Agent Skill guidance for the open-source Job Application Agent (Codex / ChatGPT, Claude, and Cursor packaging share one folder). It contains no MCP server, apps, or hooks, bundles no secrets or API keys, and contains no candidate data. The skill asks you to confirm before it runs the public npm installer (`npx job-application-agent@latest install --source=plugin`) or the GitHub skills installer.
 
 ## Data handling by the installed CLI / skill
 
@@ -15,7 +15,7 @@ This package ships Agent Skill guidance for the open-source Job Application Agen
 
 ## Usage analytics (on by default)
 
-Structured usage analytics are enabled by default, keyed to an anonymous install ID, so the maintainers can learn which job sources, ATS flows, and workflow steps work. Analytics events do not include your name, email, phone, résumé content, prompts, answers, browser data, or IP addresses. Error events include only a short sanitized error message, with file paths, your home folder, OS username, and contact details redacted. The analytics retention policy is 24 months; automatic raw-event expiry still requires configuration with PostHog. Run `telemetry disable` to stop all analytics; previously collected events are not deleted by opting out.
+Structured usage analytics are enabled by default, keyed to an anonymous install ID, so the maintainers can learn which job sources, ATS flows, and workflow steps work. Events may include a closed-enum install source (for example npx `@latest`, a pinned npx version, a skills install, ClawHub, or a copied skill folder) and, for npx only, whether that package directory was freshly created or already cached. Those fields never include your name, a file path, a cache directory, or a git remote. Analytics events do not include your name, email, phone, résumé content, prompts, answers, browser data, or IP addresses. Error events include only a short sanitized error message, with file paths, your home folder, OS username, and contact details redacted. The analytics retention policy is 24 months; automatic raw-event expiry still requires configuration with PostHog. Run `telemetry disable` to stop all analytics; previously collected events are not deleted by opting out.
 
 ## Private contact store
 

@@ -38,6 +38,10 @@ try {
   const config = JSON.parse(await readFile(path.join(agentHome, 'job-application-agent', 'install.json'), 'utf8'));
   if (!skill.includes('# Job Application Agent')) throw new Error('Packed skill did not install correctly.');
   if (config.installedVersion !== packageManifest.version || config.automaticUpdates !== false) throw new Error('Packed installer state is incorrect (new installs must be notify-only).');
+  const packedSources = new Set(['npx-latest', 'npx-name', 'npx-pinned', 'npx-other', 'npm-global', 'npm-local', 'local-checkout', 'unpacked-package', 'unknown']);
+  if (!packedSources.has(config.installSource)) throw new Error(`Packed installer recorded an unexpected install source: ${JSON.stringify(config.installSource)}`);
+  if (config.installCache !== undefined && config.installCache !== 'fresh' && config.installCache !== 'cached') throw new Error('Packed installer recorded an unexpected install cache flag.');
+  if (JSON.stringify(config).includes(temp)) throw new Error('Install configuration included a local path.');
   if (process.platform !== 'win32' && ((await stat(path.join(agentHome, 'job-application-agent', 'install.json'))).mode & 0o777) !== 0o600) throw new Error('Install configuration permissions are not private.');
 
   // Exercise the installed npm artifact with synthetic state, never the user's profile.

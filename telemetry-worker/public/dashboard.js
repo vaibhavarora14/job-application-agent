@@ -165,7 +165,7 @@ function renderOutcomeBar(outcomes, submitted) {
 function setupCopyAction() {
   const button = document.querySelector('#copy-install');
   button?.addEventListener('click', async () => {
-    const command = 'npx job-application-agent@latest';
+    const command = 'npx job-application-agent@latest install --source=dashboard';
     try {
       await navigator.clipboard.writeText(command);
       button.textContent = 'Copied';

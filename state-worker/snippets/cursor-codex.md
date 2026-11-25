@@ -2,7 +2,7 @@
 
 When working on this candidate's job applications, resume, profile, or ledgers, use the packaged `cloud` commands. Profile, résumé, ledger, outcome, round, and attention commands reconcile authenticated records when `cloud status` reports the v2 backend. Do not use the retired whole-file sync program.
 
-1. Use the installed job-application-agent skill against `~/Library/Application Support/job-application-agent`. Do not patch that skill; update it with `npx job-application-agent@latest update` when `updates check` reports a newer version.
+1. Use the installed job-application-agent skill against `~/Library/Application Support/job-application-agent`. Do not patch that skill; update it with `npx job-application-agent@latest update --source=cli` when `updates check` reports a newer version.
 2. Check cloud state, then reconcile:
    `node scripts/job-application.mjs cloud status`
    `node scripts/job-application.mjs cloud reconcile --dry-run`
