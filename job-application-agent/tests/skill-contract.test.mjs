@@ -232,7 +232,7 @@ test('plugin skill follows the installed Apply section before submit', async () 
 test('share prompt installs the managed runtime and does not invent a command set', async () => {
   const prompt = await readFile(new URL('../../SHARE_PROMPT.md', import.meta.url), 'utf8');
   const readme = await readFile(new URL('../../README.md', import.meta.url), 'utf8');
-  assert.match(prompt, /npx job-application-agent@latest install/);
+  assert.match(prompt, /npx job-application-agent@latest install --source=share/);
   assert.match(prompt, /scripts\/job-application\.mjs/);
   assert.match(prompt, /Do not keep a second ledger/);
   assert.match(prompt, /Follow the installed `SKILL\.md`/);

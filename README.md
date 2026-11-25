@@ -14,7 +14,7 @@
 </div>
 
 ```bash
-npx job-application-agent@latest install
+npx job-application-agent@latest install --source=readme
 ```
 
 ```bash
@@ -30,11 +30,11 @@ JobAppAgent (Job Application Agent) is an [Agent Skill](https://agentskills.io/s
 ## Try it on one job
 
 ```bash
-npx job-application-agent@latest install
-npx job-application-agent@latest apply <url>
+npx job-application-agent@latest install --source=readme
+npx job-application-agent@latest apply <url> --source=readme
 ```
 
-`<url>` is the HTTPS posting for one role from [https://jobappagent.com/jobs](https://jobappagent.com/jobs). `apply` takes that URL and no other flags, and prints a prompt for your coding agent. You choose whether the agent sends the application, or fills the employer's own page and stops before Submit so you can review it there. There is no separate review page.
+`<url>` is the HTTPS posting for one role from [https://jobappagent.com/jobs](https://jobappagent.com/jobs). `apply` takes that URL and prints a prompt for your coding agent. You choose whether the agent sends the application, or fills the employer's own page and stops before Submit so you can review it there. There is no separate review page.
 
 ## 🔒 Privacy in 30 seconds
 
@@ -49,7 +49,7 @@ npx job-application-agent@latest apply <url>
 Install it with either:
 
 ```bash
-npx job-application-agent@latest install
+npx job-application-agent@latest install --source=readme
 ```
 
 ```bash
@@ -81,8 +81,8 @@ Requires Node.js 20 or newer and a browser-capable coding agent.
 Setup templates are available for **Hermes Agent**, **Grok Bot**, and **OpenClaw**:
 
 ```bash
-npx job-application-agent@latest platforms
-npx job-application-agent@latest platforms hermes
+npx job-application-agent@latest platforms --source=readme
+npx job-application-agent@latest platforms hermes --source=readme
 ```
 
 Replace `hermes` with `grok` or `openclaw` for that guide. These commands print
@@ -194,13 +194,13 @@ Rounds require recorded attempts across at least three distinct discovery source
 
 The installer places the skill at `~/.agents/skills/job-application-agent`. Compatible vendor skill directories are also supported when they already exist.
 
-New installs are notify-only: at the start of a workflow the agent runs `updates check`, which only reads the latest version from npm, caches a successful result for a day, and caches a failed check for about an hour. When this install is behind, it shows one line with the exact upgrade command (`npx job-application-agent@latest update`). Nothing is installed until you ask. An offline, timed-out, or declined check does not stop the workflow. Automatic background updates (at login and hourly) are an explicit opt-in with `updates enable`. Installs that already had automatic updates on keep them and show a one-time notice explaining how to keep or turn them off.
+New installs are notify-only: at the start of a workflow the agent runs `updates check`, which only reads the latest version from npm, caches a successful result for a day, and caches a failed check for about an hour. When this install is behind, it shows one line with the exact upgrade command (`npx job-application-agent@latest update --source=readme`). Nothing is installed until you ask. An offline, timed-out, or declined check does not stop the workflow. Automatic background updates (at login and hourly) are an explicit opt-in with `updates enable`. Installs that already had automatic updates on keep them and show a one-time notice explaining how to keep or turn them off.
 
 ```bash
-npx job-application-agent@latest status
-npx job-application-agent@latest update            # install the latest version now
-npx job-application-agent@latest updates enable    # opt in to automatic background updates
-npx job-application-agent@latest updates disable   # back to notify-only
+npx job-application-agent@latest status --source=readme
+npx job-application-agent@latest update --source=readme            # install the latest version now
+npx job-application-agent@latest updates enable --source=readme    # opt in to automatic background updates
+npx job-application-agent@latest updates disable --source=readme   # back to notify-only
 node ~/.agents/skills/job-application-agent/scripts/job-application.mjs updates check   # read-only version check
 ```
 
@@ -267,7 +267,7 @@ See [`ANALYTICS.md`](job-application-agent/references/ANALYTICS.md) for the even
 npm test
 ```
 
-GitHub Actions validates the skill and runs the same test suite on every pull request. See [`CONTRIBUTING.md`](CONTRIBUTING.md) for the full local verification and review contract. [`SHARE_PROMPT.md`](SHARE_PROMPT.md) is a paste-in prompt that starts with `npx job-application-agent@latest install` and then uses `scripts/job-application.mjs`.
+GitHub Actions validates the skill and runs the same test suite on every pull request. See [`CONTRIBUTING.md`](CONTRIBUTING.md) for the full local verification and review contract. [`SHARE_PROMPT.md`](SHARE_PROMPT.md) is a paste-in prompt that starts with `npx job-application-agent@latest install --source=share` and then uses `scripts/job-application.mjs`.
 
 ## ⚖️ Responsible use
 

@@ -167,7 +167,7 @@ test('apply prompt is ready to paste and carries the full posting URL', () => {
   assert.match(prompt, /review mode/);
   assert.match(prompt, /Senior Product Engineer at LiveKit/);
   assert.ok(prompt.includes(`URL: ${url}`));
-  assert.ok(prompt.includes(`npx job-application-agent@latest apply ${url}`));
+  assert.ok(prompt.includes(`npx job-application-agent@latest apply ${url} --source=jobs`));
   assert.match(prompt, /stop before submit/);
 });
 

@@ -4,6 +4,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { assertApplyUrlAllowed, parseApplyUrl } from '../../job-application-agent/scripts/ats/apply-url-gate.mjs';
+import { stripSnippetSourceArgs } from '../../job-application-agent/scripts/install-source.mjs';
 import { consumeAutoUpdateNotice, installSkill, readInstallStatus, resolveAgentHome, setAutomaticUpdates, updateSkill } from './installer.mjs';
 import { createUpdateRunner } from './runner.mjs';
 
@@ -43,7 +44,7 @@ export function buildApplyReviewPrompt(url) {
     '3. Stop and show me the draft for approval before any submit.',
     '4. Never auto-submit. Review mode stays on.',
     '',
-    'Paste this into your JobAppAgent session, or run your usual agent after: npx job-application-agent@latest install',
+    'Paste this into your JobAppAgent session, or run your usual agent after: npx job-application-agent@latest install --source=cli',
   ].join('\n');
 }
 
@@ -71,6 +72,8 @@ function resolveHome(options = {}) {
 
 export async function runCli(args, options = {}) {
   const output = options.output || (value => process.stdout.write(`${value}\n`));
+  const argv = Array.isArray(args) ? args : [];
+  args = stripSnippetSourceArgs(argv);
   // An explicit help request is not an error: print usage and exit 0. A missing or unknown
   // command still fails with the same usage text.
   if (args.length === 1 && HELP_ARGS.has(args[0])) {
@@ -88,6 +91,7 @@ export async function runCli(args, options = {}) {
     agentHome,
     platform: options.platform,
     scheduler,
+    argv,
   };
   const command = args[0];
 
