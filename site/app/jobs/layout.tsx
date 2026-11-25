@@ -1,13 +1,16 @@
 import type { ReactNode } from "react";
+import { JobsAnalytics } from "./JobsAnalytics";
 
 /**
- * Jobs surfaces opt out of landing pageview analytics via JobsAnalyticsGate.
- * Shared SiteHeader/SiteFooter with foundingCta={false} (no Reserve/$49 on /jobs*).
+ * Jobs surfaces keep the landing-client skip (JobsAnalyticsGate) so founding
+ * `$pageview` does not start sending board query strings. JobsAnalytics sends
+ * a separate personless /jobs capture. Shared chrome uses foundingCta={false}.
  */
 export default function JobsLayout({ children }: { children: ReactNode }) {
   return (
     <>
       <JobsAnalyticsGate />
+      <JobsAnalytics />
       {children}
     </>
   );
