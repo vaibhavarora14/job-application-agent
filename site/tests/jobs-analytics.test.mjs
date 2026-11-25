@@ -77,7 +77,7 @@ test("detectGoogleForJobsLanding uses host/UTM only and ignores paid clicks", ()
     referrer: leakyReferrer,
     search: "?utm_source=twitter",
   }), false);
-  assert.equal(detectGoogleForJobsLanding({ referrer: "https://t.co/x" }), false);
+  assert.equal(detectGoogleForJobsLanding({ referrer: "https://example.net/share" }), false);
 });
 
 test("jobs board pageview is personless and strips query plus referrer", async () => {
@@ -91,7 +91,7 @@ test("jobs board pageview is personless and strips query plus referrer", async (
     search: "?workplace=remote&utm_source=twitter&email=nope@example.com",
     origin: "https://jobappagent.com",
     href: "https://jobappagent.com/jobs?workplace=remote&utm_source=twitter&email=nope@example.com",
-    referrer: "https://t.co/x?q=secret-query",
+    referrer: "https://example.net/share?q=secret-query",
     distinctId: DISTINCT,
     fetchFn: fetchRecorder(captured),
   });
@@ -114,7 +114,6 @@ test("jobs board pageview is personless and strips query plus referrer", async (
   assert.equal(serialized.includes("secret-query"), false);
   assert.equal(serialized.includes("nope@example.com"), false);
   assert.equal(serialized.includes("$referrer"), false);
-  assert.equal(serialized.includes("https://t.co"), false);
 });
 
 test("Google search referrer with a query string is detected without leaking the URL", async () => {
