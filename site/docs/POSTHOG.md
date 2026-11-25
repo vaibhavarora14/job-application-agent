@@ -55,13 +55,13 @@ Leave keys unset locally to disable capture. Redeploy after setting production v
 
 ## Jobs board events
 
-`/jobs` is still skipped by the landing client (`window.__JAA_JOBS_NO_ANALYTICS__` plus a pathname check) so founding `$pageview` does not start sending board filters or a raw `document.referrer`. A separate jobs client (`JobsAnalytics`) loads the same `/api/analytics-config` key and reuses `captureLandingEvent`.
+`/jobs` is still skipped by the landing client (`window.__JAA_JOBS_NO_ANALYTICS__` plus a pathname check) so founding `$pageview` does not start sending board filters or a raw `document.referrer`. A separate jobs client (`JobsAnalytics`) loads the same `/api/analytics-config` key and reuses `captureLandingEvent`. Browser capture posts only to hosts in CSP `connect-src` (`https://us.i.posthog.com`); a custom `PUBLIC_POSTHOG_HOST` that is not on that list is sent through the default ingest host.
 
 | Event | Where | Distinct id | Notes |
 |---|---|---|---|
 | `$pageview` | `/jobs` board | anonymous UUID in `localStorage` | `surface=board`; `$current_url` is origin+pathname (no query/hash); allowlisted UTM only |
 | `$pageview` | `/jobs/<slug>` | same | `surface=job_page`; slug is the public path only |
-| `google_for_jobs_landing` | jobs surfaces, once per document | same | Google Search / `jobs.google.com` referrer host, or Google organic UTM. Paid (`cpc`, `gclid`, …) is excluded. **Never** sends the referrer URL |
+| `google_for_jobs_landing` | jobs surfaces, once per document | same | Google Search / `jobs.google.com` referrer host, or Google UTM with empty/`organic`/`referral` medium. Paid (`cpc`, `paidsearch`, `gclid`, …) is excluded. **Never** sends the referrer URL |
 | `jobs_copy_clicked` | Copy prompt / Copy command | same | `copyKind` is `prompt` or `command`. Never clipboard contents |
 
 `/jobs/alerts*` is not captured. GeoIP stays disabled; no `posthog-js`; no new cookies.

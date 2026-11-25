@@ -10,11 +10,13 @@ import {
   detectGoogleForJobsLanding,
   isGoogleJobsReferrerHost,
   isJobsCopyKind,
+  jobsCaptureHost,
   jobsCaptureUrl,
   normalizeJobsPathname,
   referrerHostname,
   resetJobsAnalyticsForTests,
 } from "../lib/jobs-analytics.mjs";
+import { DEFAULT_POSTHOG_HOST } from "../lib/posthog.mjs";
 
 const DISTINCT = "11111111-1111-4111-8111-111111111111";
 
@@ -68,6 +70,8 @@ test("detectGoogleForJobsLanding uses host/UTM only and ignores paid clicks", ()
   assert.equal(detectGoogleForJobsLanding({ search: "?utm_source=google&utm_medium=organic" }), true);
   assert.equal(detectGoogleForJobsLanding({ search: "?utm_source=google_jobs" }), true);
   assert.equal(detectGoogleForJobsLanding({ search: "?utm_source=google&utm_medium=cpc" }), false);
+  assert.equal(detectGoogleForJobsLanding({ search: "?utm_source=google&utm_medium=paidsearch" }), false);
+  assert.equal(detectGoogleForJobsLanding({ search: "?utm_source=google&utm_medium=email" }), false);
   assert.equal(detectGoogleForJobsLanding({
     referrer: leakyReferrer,
     search: "?gclid=abc123",
@@ -208,6 +212,63 @@ test("google-for-jobs UTM landing fires once per document and omits paid clicks"
   assert.equal("googleForJobs" in captured[0].body.properties, false);
   assert.equal(JSON.stringify(captured).includes("gclid"), false);
   assert.equal(JSON.stringify(captured).includes("abc"), false);
+
+  resetJobsAnalyticsForTests();
+  captured.length = 0;
+  await captureJobsPageview({
+    apiKey: "phc_public",
+    pathname: "/jobs/example-slug",
+    search: "?utm_source=google&utm_medium=paidsearch",
+    origin: "https://jobappagent.com",
+    distinctId: DISTINCT,
+    fetchFn,
+  });
+  assert.equal(captured.length, 1);
+  assert.equal(captured[0].body.event, "$pageview");
+  assert.equal("googleForJobs" in captured[0].body.properties, false);
+});
+
+test("overlapping Google landings reserve the once-per-document flag before awaiting", async () => {
+  resetJobsAnalyticsForTests();
+  /** @type {unknown[]} */
+  const captured = [];
+  const fetchFn = async (url, options) => {
+    await Promise.resolve();
+    captured.push({ url, body: JSON.parse(String(options.body)) });
+    return new Response("{}", { status: 200 });
+  };
+  const input = {
+    apiKey: "phc_public",
+    pathname: "/jobs/example-slug",
+    search: "?utm_source=google&utm_medium=organic",
+    origin: "https://jobappagent.com",
+    distinctId: DISTINCT,
+    fetchFn,
+  };
+  await Promise.all([captureJobsPageview(input), captureJobsPageview(input)]);
+  const landings = captured.filter((row) => row.body.event === JOBS_EVENTS.GOOGLE_FOR_JOBS_LANDING);
+  assert.equal(landings.length, 1);
+  assert.equal(captured.filter((row) => row.body.event === "$pageview").length, 2);
+});
+
+test("jobsCaptureHost pins browser ingest to CSP connect-src", async () => {
+  assert.equal(jobsCaptureHost(undefined), DEFAULT_POSTHOG_HOST);
+  assert.equal(jobsCaptureHost(DEFAULT_POSTHOG_HOST), DEFAULT_POSTHOG_HOST);
+  assert.equal(jobsCaptureHost("https://eu.i.posthog.com"), DEFAULT_POSTHOG_HOST);
+
+  resetJobsAnalyticsForTests();
+  /** @type {unknown[]} */
+  const captured = [];
+  await captureJobsPageview({
+    apiKey: "phc_public",
+    host: "https://eu.i.posthog.com",
+    pathname: "/jobs",
+    origin: "https://jobappagent.com",
+    distinctId: DISTINCT,
+    fetchFn: fetchRecorder(captured),
+  });
+  assert.equal(captured.length, 1);
+  assert.equal(captured[0].url, `${DEFAULT_POSTHOG_HOST}/i/v0/e/`);
 });
 
 test("alerts routes and missing surfaces skip capture", async () => {

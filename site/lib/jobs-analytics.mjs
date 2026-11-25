@@ -5,6 +5,11 @@
  */
 
 import { captureLandingEvent, readUtmFromLocation } from "./landing-analytics.mjs";
+import {
+  DEFAULT_POSTHOG_HOST,
+  POSTHOG_CONNECT_SRC,
+  resolvePostHogHost,
+} from "./posthog.mjs";
 
 export const JOBS_EVENTS = Object.freeze({
   GOOGLE_FOR_JOBS_LANDING: "google_for_jobs_landing",
@@ -30,6 +35,7 @@ const PAID_MEDIUMS = new Set([
   "cpc",
   "ppc",
   "paid",
+  "paidsearch",
   "display",
   "cpm",
   "cpv",
@@ -40,6 +46,9 @@ const PAID_MEDIUMS = new Set([
   "google_ads",
   "sem",
 ]);
+
+/** Google UTM counts as organic only for these media (empty = unset). */
+const ORGANIC_GOOGLE_MEDIUMS = new Set(["", "organic", "referral"]);
 
 /** @type {{ apiKey: string, host?: string } | null} */
 let browserConfig = null;
@@ -55,6 +64,18 @@ export function setJobsAnalyticsBrowserConfig(config) {
 export function resetJobsAnalyticsForTests() {
   browserConfig = null;
   googleLandingSent = false;
+}
+
+/**
+ * Browser capture must POST to a host already in CSP `connect-src`.
+ * A custom `PUBLIC_POSTHOG_HOST` that is not allowlisted is sent through
+ * the default ingest endpoint instead of opening a new origin.
+ *
+ * @param {string | undefined} host
+ */
+export function jobsCaptureHost(host) {
+  const resolved = resolvePostHogHost(host);
+  return POSTHOG_CONNECT_SRC.includes(resolved) ? resolved : DEFAULT_POSTHOG_HOST;
 }
 
 /**
@@ -140,7 +161,10 @@ export function detectGoogleForJobsLanding(input = {}) {
   const utm = input.utm ?? readUtmFromLocation(input.search ?? "");
   if (isPaidAcquisition(utm, input.search)) return false;
   const source = (utm.utm_source ?? "").trim().toLowerCase();
-  if (GOOGLE_JOBS_SOURCES.has(source)) return true;
+  if (GOOGLE_JOBS_SOURCES.has(source)) {
+    const medium = (utm.utm_medium ?? "").trim().toLowerCase();
+    return ORGANIC_GOOGLE_MEDIUMS.has(medium);
+  }
   if (source) return false;
   return isGoogleJobsReferrerHost(referrerHostname(input.referrer));
 }
@@ -206,6 +230,9 @@ export async function captureJobsPageview(input) {
     search: input.search,
     utm,
   });
+  if (googleForJobs) googleLandingSent = true;
+
+  const host = jobsCaptureHost(input.host);
 
   /** @type {Record<string, unknown>} */
   const properties = {
@@ -219,7 +246,7 @@ export async function captureJobsPageview(input) {
 
   const pageview = await captureLandingEvent({
     apiKey: input.apiKey,
-    host: input.host,
+    host,
     event: "$pageview",
     properties,
     distinctId: input.distinctId,
@@ -228,10 +255,9 @@ export async function captureJobsPageview(input) {
 
   if (!googleForJobs) return pageview;
 
-  googleLandingSent = true;
   await captureLandingEvent({
     apiKey: input.apiKey,
-    host: input.host,
+    host,
     event: JOBS_EVENTS.GOOGLE_FOR_JOBS_LANDING,
     properties: {
       $current_url: currentUrl,
@@ -274,7 +300,7 @@ export function captureJobsCopyClicked(input) {
   const pathname = normalizeJobsPathname(input.pathname);
   return captureLandingEvent({
     apiKey: input.apiKey,
-    host: input.host,
+    host: jobsCaptureHost(input.host),
     event: JOBS_EVENTS.COPY_CLICKED,
     properties: {
       $current_url: jobsCaptureUrl({

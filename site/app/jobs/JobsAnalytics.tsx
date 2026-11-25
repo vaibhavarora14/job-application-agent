@@ -4,9 +4,9 @@ import { useEffect, useState } from "react";
 import { usePathname } from "next/navigation";
 import {
   captureJobsPageview,
+  jobsCaptureHost,
   setJobsAnalyticsBrowserConfig,
 } from "../../lib/jobs-analytics.mjs";
-import { DEFAULT_POSTHOG_HOST } from "../../lib/posthog.mjs";
 
 type RemoteConfig = { apiKey: string; host: string };
 
@@ -30,7 +30,7 @@ export function JobsAnalytics() {
         if (!apiKey || !active) return;
         const next = {
           apiKey,
-          host: typeof body.host === "string" && body.host.trim() ? body.host.trim() : DEFAULT_POSTHOG_HOST,
+          host: jobsCaptureHost(typeof body.host === "string" ? body.host : undefined),
         };
         setJobsAnalyticsBrowserConfig(next);
         setRemote(next);

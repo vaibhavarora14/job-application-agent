@@ -89,6 +89,7 @@ declare module "*/jobs-analytics.mjs" {
   export function classifyJobsSurface(pathname?: string): "board" | "job_page" | null;
   export function isGoogleJobsReferrerHost(hostname?: string): boolean;
   export function referrerHostname(referrer?: string): string;
+  export function jobsCaptureHost(host?: string): string;
   export function detectGoogleForJobsLanding(input?: {
     referrer?: string;
     search?: string;
