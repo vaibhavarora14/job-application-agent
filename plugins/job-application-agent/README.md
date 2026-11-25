@@ -19,7 +19,7 @@ Product site: [https://jobappagent.com](https://jobappagent.com) · Contact: fou
 After installing the skill/plugin from any marketplace (or loading it locally), run:
 
 ```bash
-npx job-application-agent@latest install
+npx job-application-agent@latest install --source=plugin
 ```
 
 so the full skill runtime (scripts, references, updater) is on disk.
@@ -37,7 +37,7 @@ mkdir -p ~/.cursor/plugins/local
 cp -R /path/to/job-application-agent/plugins/job-application-agent ~/.cursor/plugins/local/job-application-agent
 ```
 
-Restart Cursor or run **Developer: Reload Window**. Then install the CLI runtime with `npx job-application-agent@latest install`.
+Restart Cursor or run **Developer: Reload Window**. Then install the CLI runtime with `npx job-application-agent@latest install --source=plugin`.
 
 On Teams/Enterprise, local plugin imports may be admin-gated (**Allow Local Plugin Imports**).
 
@@ -45,7 +45,7 @@ Monorepo note: Cursor lists this plugin from the repo root at `.cursor-plugin/ma
 
 ## Install in Claude (directory / Claude Code plugin)
 
-After directory listing (or for local dogfood), point Claude Code at this plugin directory (for example `--plugin-dir plugins/job-application-agent` or install from a marketplace that sources this path). Claude discovers `skills/job-application-agent/SKILL.md` from the plugin root. Then run `npx job-application-agent@latest install`.
+After directory listing (or for local dogfood), point Claude Code at this plugin directory (for example `--plugin-dir plugins/job-application-agent` or install from a marketplace that sources this path). Claude discovers `skills/job-application-agent/SKILL.md` from the plugin root. Then run `npx job-application-agent@latest install --source=plugin`.
 
 ## Install in Codex / ChatGPT (Plugins Directory — after listing)
 

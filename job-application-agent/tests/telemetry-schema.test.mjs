@@ -188,7 +188,7 @@ test('install source is an optional envelope enum and rejects paths, names, and 
   }
   const pinned = validateTelemetryEnvelope({ ...base, schemaVersion: 1, installSource: 'npx-pinned', installCache: 'cached' });
   assert.equal(pinned.installCache, 'cached');
-  for (const installSource of ['/home/Alex/.npm/_npx/abc', 'Alex@example.com', 'npx job-application-agent@3.8.4', 'personal-user/fork']) {
+  for (const installSource of ['/home/Alex/.npm/_npx/abc', 'Alex@example.com', 'npx job-application-agent@3.8.4', 'personal-user/fork', 'readme', 'npx-github']) {
     assert.throws(() => createTelemetryEnvelope({ ...base, installSource }), /installSource/);
   }
   assert.throws(() => createTelemetryEnvelope({ ...base, installSource: 'copied-tree', installCache: 'fresh' }), /installCache/);

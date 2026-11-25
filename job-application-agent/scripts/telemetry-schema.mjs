@@ -42,12 +42,15 @@ const DISCOVERY_BLOCKERS = values('login', 'mfa', 'captcha', 'site-error', 'acce
 const CONCENTRATION_REASONS = values('stronger-fit', 'alternatives-exhausted', 'access-blocked', 'candidate-directed');
 // Envelope fields, not event properties. Keep in lockstep with install-source.mjs INSTALL_SOURCES.
 export const INSTALL_SOURCE_VALUES = [
-  'npx-latest', 'npx-name', 'npx-pinned', 'npx-other', 'npm-global', 'npm-local', 'local-checkout', 'unpacked-package',
+  'npx-latest', 'npx-name', 'npx-pinned', 'npx-other',
+  'npx-readme', 'npx-site', 'npx-opensource', 'npx-compare', 'npx-jobs', 'npx-llms',
+  'npx-skill', 'npx-share', 'npx-plugin', 'npx-dashboard', 'npx-platforms', 'npx-cli',
+  'npm-global', 'npm-local', 'local-checkout', 'unpacked-package',
   'skill-add', 'skill-add-pinned', 'skill-add-local', 'skill-add-other', 'clawhub', 'clawhub-other',
   'managed-unrecorded', 'stale-copy', 'copied-tree', 'unknown',
 ];
 const INSTALL_SOURCES = values(...INSTALL_SOURCE_VALUES);
-const NPX_INSTALL_SOURCES = values('npx-latest', 'npx-name', 'npx-pinned', 'npx-other');
+const NPX_INSTALL_SOURCES = values(...INSTALL_SOURCE_VALUES.filter((value) => value.startsWith('npx-')));
 const INSTALL_CACHES = values('fresh', 'cached');
 
 const text = (max, identitySafe = false) => ({ kind: 'text', max, identitySafe });

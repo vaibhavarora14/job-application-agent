@@ -894,7 +894,12 @@ test('install source is forwarded to PostHog and a path is rejected', async () =
   assert.equal((await send({ installSource: 'copied-tree' })).status, 202);
   assert.equal(bindings.captured.at(-1).body.properties.installSource, 'copied-tree');
   assert.equal('installCache' in bindings.captured.at(-1).body.properties, false);
+  assert.equal((await send({ installSource: 'npx-readme', installCache: 'fresh' })).status, 202);
+  assert.equal(bindings.captured.at(-1).body.properties.installSource, 'npx-readme');
+  assert.equal(bindings.captured.at(-1).body.properties.installCache, 'fresh');
   const before = bindings.captured.length;
+  assert.equal((await send({ installSource: 'readme' })).status, 400);
+  assert.equal((await send({ installSource: 'npx-github' })).status, 400);
   assert.equal((await send({ installSource: '/home/Alex/.npm/_npx/0123456789abcdef' })).status, 400);
   assert.equal((await send({ installSource: 'npx-latest', installCache: '/tmp/cache' })).status, 400);
   assert.equal((await send({ installSource: 'copied-tree', installCache: 'fresh' })).status, 400);

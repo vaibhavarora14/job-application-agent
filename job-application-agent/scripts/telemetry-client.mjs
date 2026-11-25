@@ -706,6 +706,7 @@ export class TelemetryClient {
           scriptPath: fileURLToPath(import.meta.url),
           packageVersion: SKILL_VERSION,
           env: this.env,
+          argv: process.argv,
         });
       this.installOrigin = publicInstallOrigin(detected);
     } catch {

@@ -66,6 +66,7 @@ How the running skill tree was obtained is recorded as two optional envelope fie
 | `npx-name` | `npx job-application-agent` with no version. |
 | `npx-pinned` | `npx` of the exact version that ran, for example `@3.8.4` when that build is 3.8.4. The specifier text is not sent. |
 | `npx-other` | An npx cache entry for some other specifier: a range, another dist-tag, a git URL, or more than one package. |
+| `npx-readme` / `npx-site` / `npx-opensource` / `npx-compare` / `npx-jobs` / `npx-llms` / `npx-skill` / `npx-share` / `npx-plugin` / `npx-dashboard` / `npx-platforms` / `npx-cli` | `npx` of `@latest` (or a bare name) copied from a tagged public snippet. The closed `--source=` tag is read locally and never sent as free-form text. A pinned specifier stays `npx-pinned`. |
 | `npm-global` / `npm-local` | A normal global npm install, or a dependency of another project. The original specifier is not recoverable. |
 | `local-checkout` | A git checkout of this package. |
 | `unpacked-package` | The package directory with no `.git` and no npm install layout. |
@@ -81,6 +82,8 @@ How the running skill tree was obtained is recorded as two optional envelope fie
 | `unknown` | The installer ran and none of the layouts above matched. |
 
 `installCache` is `fresh` or `cached` and is sent only with an `npx-*` source, and only when the package directory has a real creation time. `fresh` means that creation time was within 3 minutes before the installer process started. `cached` means the npx directory was already there. The field is omitted when the filesystem does not report a creation time, so a missing `installCache` is not evidence of a cache hit.
+
+Public copyable `npx` commands include that closed `--source=` tag so later events can tell README, the site, `/jobs`, llms.txt, and other snippets apart without sending the command string. Unknown `--source=` values are ignored.
 
 The npm installer writes the enums into `install.json`. Later commands replay that record when they are running the managed skill tree, or a vendor copy of the same version. An in-tree `.clawhub` or `.clawdhub` origin wins over `install.json`, because the installer never writes that directory. A skills-lock entry wins when its timestamp is newer than `install.json`, or when there is no installer record. A skill folder that is not the managed install is classified from its own markers and does not inherit another tree's `install.json`. A global skills lock does not label an unrelated copied folder.
 

@@ -155,6 +155,43 @@ test('records whether this tree came from npx @latest or a pinned version, and n
   if (stored.installCache !== undefined) assert.equal(stored.installCache, 'fresh');
 });
 
+test('a closed --source= tag is stored for npx @latest and ignored for a pinned specifier', async () => {
+  const f = await fixture();
+  const latestRoot = path.join(f.root, 'npm', '_npx', npxCacheKey('job-application-agent@latest'), 'node_modules', 'job-application-agent');
+  await mkdir(path.join(latestRoot, 'job-application-agent', 'scripts'), { recursive: true });
+  await writeFile(path.join(latestRoot, 'package.json'), JSON.stringify({ name: 'job-application-agent', version: '3.1.0' }));
+  await writeFile(path.join(latestRoot, 'job-application-agent', 'SKILL.md'), '# latest\n');
+  await writeFile(path.join(latestRoot, 'job-application-agent', 'scripts', 'job-application.mjs'), 'export {};\n');
+  const tagged = await installSkill({
+    packageRoot: latestRoot,
+    packageVersion: '3.1.0',
+    homeDir: f.homeDir,
+    agentHome: f.agentHome,
+    platform: 'test',
+    scheduler: false,
+    argv: ['node', 'cli.mjs', 'install', '--source=readme'],
+  });
+  assert.equal(tagged.installSource, 'npx-readme');
+  assert.equal(JSON.stringify(tagged).includes('--source='), false);
+  assert.equal(JSON.stringify(tagged).includes(latestRoot), false);
+
+  const pinnedRoot = path.join(f.root, 'npm', '_npx', npxCacheKey('job-application-agent@3.0.0'), 'node_modules', 'job-application-agent');
+  await mkdir(path.join(pinnedRoot, 'job-application-agent', 'scripts'), { recursive: true });
+  await writeFile(path.join(pinnedRoot, 'package.json'), JSON.stringify({ name: 'job-application-agent', version: '3.0.0' }));
+  await writeFile(path.join(pinnedRoot, 'job-application-agent', 'SKILL.md'), '# pinned\n');
+  await writeFile(path.join(pinnedRoot, 'job-application-agent', 'scripts', 'job-application.mjs'), 'export {};\n');
+  const pinned = await updateSkill({
+    packageRoot: pinnedRoot,
+    packageVersion: '3.0.0',
+    homeDir: f.homeDir,
+    agentHome: f.agentHome,
+    platform: 'test',
+    scheduler: false,
+    argv: ['node', 'cli.mjs', 'install', '--source=readme'],
+  });
+  assert.equal(pinned.installSource, 'npx-pinned');
+});
+
 test('migrates a previous Codex skill and install.json into ~/.agents without deleting the old files', async () => {
   const f = await fixture();
   const legacyHome = path.join(f.homeDir, '.codex');

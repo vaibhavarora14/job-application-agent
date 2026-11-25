@@ -6,7 +6,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { dirname, join } from 'node:path';
 
-export const INSTALL_COMMAND = 'npx job-application-agent@latest install';
+export const INSTALL_COMMAND = 'npx job-application-agent@latest install --source=cli';
 export const JOBS_BOARD_URL = 'https://jobappagent.com/jobs';
 export const FIRST_JOB_PROMPTED_VERSION = 'firstJobPromptedVersion';
 

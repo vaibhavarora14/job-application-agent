@@ -53,12 +53,12 @@ export default function OpenSource() {
 
     <h2>Install</h2>
     <p>You need Node.js 20 or newer and a coding agent that can drive a browser.</p>
-    <CopyCode code="npx job-application-agent@latest install" />
-    <p>That installs the full skill. It tells you when a new version is out and installs nothing until you ask. To opt in to automatic updates, run <code>npx job-application-agent@latest updates enable</code>.</p>
+    <CopyCode code="npx job-application-agent@latest install --source=opensource" />
+    <p>That installs the full skill. It tells you when a new version is out and installs nothing until you ask. To opt in to automatic updates, run <code>npx job-application-agent@latest updates enable --source=opensource</code>.</p>
     <p>If you&apos;d rather use the skills CLI:</p>
     <CopyCode code="npx skills add vaibhavarora14/job-application-agent" />
     <p>Check the install:</p>
-    <CopyCode code="npx job-application-agent@latest status" />
+    <CopyCode code="npx job-application-agent@latest status --source=opensource" />
     <p>Then ask your agent: &quot;Use job-application-agent to onboard my résumé and job preferences.&quot;</p>
 
     <h2>Source code and licence</h2>
@@ -90,14 +90,14 @@ export default function OpenSource() {
     <div className={`faq ${styles.faq}`}>
       <details><summary>What is JobAppAgent?</summary><p>JobAppAgent is an open-source job application agent, MIT licensed, published as <code>vaibhavarora14/job-application-agent</code> on GitHub and <code>job-application-agent</code> on npm. It runs inside a coding agent on your computer. It searches for roles, matches them to one verified résumé and your preferences, applies within rules you set, and records an application only after a visible confirmation.</p></details>
       <details><summary>Can JobAppAgent auto-apply for me?</summary><p>Yes, when you ask for it. By default (<code>review-each</code>) it fills the employer&apos;s own page and stops before Submit so you can confirm. Switch on auto-apply (<code>routine-auto</code>, an opt-in standing grant) and it auto-applies for you. It still pauses for sign-in and CAPTCHA, and you can revoke the grant any time.</p></details>
-      <details><summary>How do I install JobAppAgent?</summary><p>Run <code>npx job-application-agent@latest install</code> with Node.js 20 or newer, then check it with <code>npx job-application-agent@latest status</code>. You can also install it with the skills CLI: <code>npx skills add vaibhavarora14/job-application-agent</code>.</p></details>
+      <details><summary>How do I install JobAppAgent?</summary><p>Run <code>npx job-application-agent@latest install --source=opensource</code> with Node.js 20 or newer, then check it with <code>npx job-application-agent@latest status --source=opensource</code>. You can also install it with the skills CLI: <code>npx skills add vaibhavarora14/job-application-agent</code>.</p></details>
       <details><summary>Where does JobAppAgent keep my data?</summary><p>Profile facts stay in your OS credential store, and your résumé and application ledgers stay in an owner-only folder on your computer. Anonymous usage analytics, a private contact record (your saved name and email) and community sharing of public job links are on by default. You can turn each one off with a CLI command.</p></details>
       <details><summary>Is JobAppAgent the same as other &quot;job-application-agent&quot; repositories on GitHub?</summary><p>No. JobAppAgent is <code>vaibhavarora14/job-application-agent</code>, the project behind jobappagent.com and the <code>job-application-agent</code> npm package. Other repositories with the same name are separate projects.</p></details>
     </div>
 
     <section className={styles.crossLinks} aria-label="Install and links">
       <h2>Install in one line</h2>
-      <CopyCode code="npx job-application-agent@latest install" />
+      <CopyCode code="npx job-application-agent@latest install --source=opensource" />
       <p><a href={REPO}>View on GitHub</a> · <Link href="/compare">See how it compares</Link></p>
     </section>
   </main>

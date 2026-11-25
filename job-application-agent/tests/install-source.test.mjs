@@ -6,11 +6,17 @@ import test from 'node:test';
 
 import {
   INSTALL_SOURCES,
+  NPX_SNIPPET_TAGS,
   cacheFreshness,
   classifyPackageRoot,
   npxCacheHashFromPath,
   npxCacheKey,
+  overlaySnippetSource,
+  publicInstallOrigin,
   resolveSkillInstallOrigin,
+  snippetTagFromArgv,
+  stripSnippetSourceArgs,
+  taggedNpxCommand,
 } from '../scripts/install-source.mjs';
 
 const PACKAGE = 'job-application-agent';
@@ -340,4 +346,112 @@ test('running the skill from the package tree reports that package, not the home
     env: {},
   });
   assert.deepEqual(origin, { installSource: 'local-checkout' });
+});
+
+test('closed --source= tags overlay npx @latest and a bare name, and never keep the tag text', async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), 'install-source-tag-'));
+  const latestRoot = path.join(root, '_npx', npxCacheKey(`${PACKAGE}@latest`), 'node_modules', PACKAGE);
+  const nameRoot = path.join(root, '_npx', npxCacheKey(PACKAGE), 'node_modules', PACKAGE);
+  const pinnedRoot = path.join(root, '_npx', npxCacheKey(`${PACKAGE}@3.8.4`), 'node_modules', PACKAGE);
+  for (const dir of [latestRoot, nameRoot, pinnedRoot]) await mkdir(dir, { recursive: true });
+  await writeJson(path.join(latestRoot, 'package.json'), { name: PACKAGE, version: VERSION });
+  await writeJson(path.join(nameRoot, 'package.json'), { name: PACKAGE, version: VERSION });
+  await writeJson(path.join(pinnedRoot, 'package.json'), { name: PACKAGE, version: '3.8.4' });
+  const now = Date.now();
+  const statCached = async () => ({ birthtimeMs: now - 24 * 60 * 60 * 1000 });
+
+  const readme = await classifyPackageRoot(latestRoot, {
+    packageVersion: VERSION,
+    processStartMs: now,
+    stat: statCached,
+    argv: ['node', 'cli.mjs', 'install', '--source=readme'],
+  });
+  assert.deepEqual(readme, { installSource: 'npx-readme', installCache: 'cached' });
+  assertPublicOrigin(readme);
+
+  const jobs = await classifyPackageRoot(nameRoot, {
+    packageVersion: VERSION,
+    processStartMs: now,
+    stat: async () => ({ birthtimeMs: 0 }),
+    argv: ['node', 'cli.mjs', 'apply', 'https://jobs.example.com/role', '--source', 'jobs'],
+  });
+  assert.deepEqual(jobs, { installSource: 'npx-jobs' });
+
+  const pinned = await classifyPackageRoot(pinnedRoot, {
+    packageVersion: '3.8.4',
+    processStartMs: now,
+    stat: statCached,
+    argv: ['node', 'cli.mjs', 'install', '--source=readme'],
+  });
+  assert.deepEqual(pinned, { installSource: 'npx-pinned', installCache: 'cached' });
+
+  const unknown = await classifyPackageRoot(latestRoot, {
+    packageVersion: VERSION,
+    processStartMs: now,
+    stat: statCached,
+    argv: ['node', 'cli.mjs', 'install', '--source=Alex@example.com', '--source=/home/Alex/.npm/_npx/secret'],
+  });
+  assert.deepEqual(unknown, { installSource: 'npx-latest', installCache: 'cached' });
+  assert.equal(JSON.stringify(unknown).includes('Alex'), false);
+
+  const globalRoot = path.join(root, 'prefix', 'lib', 'node_modules', PACKAGE);
+  await mkdir(globalRoot, { recursive: true });
+  await writeJson(path.join(globalRoot, 'package.json'), { name: PACKAGE, version: VERSION });
+  const global = await classifyPackageRoot(globalRoot, {
+    argv: ['node', 'cli.mjs', 'install', '--source=site'],
+  });
+  assert.equal(global.installSource, 'npm-global');
+});
+
+test('a later --source= tag does not rewrite a managed install.json origin', async () => {
+  const { homeDir, scriptPath } = await skillFixture();
+  await writeJson(path.join(homeDir, '.agents', PACKAGE, 'install.json'), {
+    installed: true,
+    installedVersion: VERSION,
+    installSource: 'npx-latest',
+    installCache: 'fresh',
+    updatedAt: '2026-11-12T00:00:00.000Z',
+  });
+  const origin = await resolveSkillInstallOrigin({
+    scriptPath,
+    packageVersion: VERSION,
+    homeDir,
+    env: {},
+    argv: ['node', 'job-application.mjs', 'search', '--source=jobs'],
+  });
+  assert.deepEqual(origin, { installSource: 'npx-latest', installCache: 'fresh' });
+});
+
+test('snippet --source= args are a closed overlay and are stripped before apply sees the URL', () => {
+  assert.deepEqual(NPX_SNIPPET_TAGS, [
+    'readme', 'site', 'opensource', 'compare', 'jobs', 'llms',
+    'skill', 'share', 'plugin', 'dashboard', 'platforms', 'cli',
+  ]);
+  assert.equal(snippetTagFromArgv(['install', '--source=readme']), 'readme');
+  assert.equal(snippetTagFromArgv(['apply', '--source', 'jobs', 'https://jobs.example.com/role']), 'jobs');
+  assert.equal(snippetTagFromArgv(['install', '--source=github']), undefined);
+  assert.equal(snippetTagFromArgv(['install', '--source=Alex@example.com']), undefined);
+  assert.deepEqual(
+    stripSnippetSourceArgs(['apply', '--source=jobs', 'https://jobs.example.com/role']),
+    ['apply', 'https://jobs.example.com/role'],
+  );
+  assert.deepEqual(
+    stripSnippetSourceArgs(['apply', 'https://jobs.example.com/role', '--source', 'readme']),
+    ['apply', 'https://jobs.example.com/role'],
+  );
+  assert.equal(taggedNpxCommand('site'), 'npx job-application-agent@latest install --source=site');
+  assert.equal(
+    taggedNpxCommand('jobs', 'apply https://jobs.example.com/role'),
+    'npx job-application-agent@latest apply https://jobs.example.com/role --source=jobs',
+  );
+  assert.throws(() => taggedNpxCommand('github'), /invalid/);
+  assert.deepEqual(
+    overlaySnippetSource({ installSource: 'npx-latest', installCache: 'fresh' }, ['--source=llms']),
+    { installSource: 'npx-llms', installCache: 'fresh' },
+  );
+  assert.deepEqual(
+    overlaySnippetSource({ installSource: 'npx-pinned', installCache: 'cached' }, ['--source=readme']),
+    { installSource: 'npx-pinned', installCache: 'cached' },
+  );
+  assert.deepEqual(publicInstallOrigin({ installSource: 'npx-readme', cacheKey: 'deadbeefdeadbeef' }), { installSource: 'npx-readme' });
 });

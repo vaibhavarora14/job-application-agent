@@ -4,7 +4,7 @@ The product privacy policy is https://jobappagent.com/privacy. This page summari
 
 ## What this plugin package contains
 
-This package ships Agent Skill guidance for the open-source Job Application Agent (Codex / ChatGPT, Claude, and Cursor packaging share one folder). It contains no MCP server, apps, or hooks, bundles no secrets or API keys, and contains no candidate data. The skill asks you to confirm before it runs the public npm installer (`npx job-application-agent@latest install`) or the GitHub skills installer.
+This package ships Agent Skill guidance for the open-source Job Application Agent (Codex / ChatGPT, Claude, and Cursor packaging share one folder). It contains no MCP server, apps, or hooks, bundles no secrets or API keys, and contains no candidate data. The skill asks you to confirm before it runs the public npm installer (`npx job-application-agent@latest install --source=plugin`) or the GitHub skills installer.
 
 ## Data handling by the installed CLI / skill
 

@@ -12,11 +12,27 @@ export const OFFICIAL_CLAWHUB_OWNER = 'vaibhavarora14';
 export const VENDOR_SKILL_DIRS = ['.codex/skills', '.claude/skills', '.cursor/skills', '.copilot/skills', '.gemini/skills'];
 export const NPX_FRESH_WINDOW_MS = 3 * 60 * 1000;
 
+export const NPX_SNIPPET_TAGS = [
+  'readme',
+  'site',
+  'opensource',
+  'compare',
+  'jobs',
+  'llms',
+  'skill',
+  'share',
+  'plugin',
+  'dashboard',
+  'platforms',
+  'cli',
+];
+
 export const INSTALL_SOURCES = [
   'npx-latest',
   'npx-name',
   'npx-pinned',
   'npx-other',
+  ...NPX_SNIPPET_TAGS.map((tag) => `npx-${tag}`),
   'npm-global',
   'npm-local',
   'local-checkout',
@@ -34,7 +50,9 @@ export const INSTALL_SOURCES = [
 ];
 
 const INSTALL_SOURCE_SET = new Set(INSTALL_SOURCES);
-const NPX_SOURCES = new Set(['npx-latest', 'npx-name', 'npx-pinned', 'npx-other']);
+const NPX_SOURCES = new Set(INSTALL_SOURCES.filter((value) => value.startsWith('npx-')));
+const NPX_SNIPPET_TAG_SET = new Set(NPX_SNIPPET_TAGS);
+const SNIPPET_OVERLAY_SOURCES = new Set(['npx-latest', 'npx-name']);
 const FLOATING_REFS = new Set(['main', 'master', 'HEAD', 'head']);
 const SKILL_LAYOUTS = ['skills', '.agents/skills', ...VENDOR_SKILL_DIRS];
 const JSON_LIMIT = 65536;
@@ -76,6 +94,49 @@ export function publicInstallOrigin(input) {
     origin.installCache = input.installCache;
   }
   return origin;
+}
+
+export function snippetTagFromArgv(argv = []) {
+  if (!Array.isArray(argv)) return undefined;
+  for (let i = 0; i < argv.length; i += 1) {
+    const arg = argv[i];
+    if (typeof arg !== 'string') continue;
+    let tag;
+    if (arg.startsWith('--source=')) tag = arg.slice('--source='.length);
+    else if (arg === '--source' && typeof argv[i + 1] === 'string' && !argv[i + 1].startsWith('-')) {
+      tag = argv[i + 1];
+      i += 1;
+    }
+    if (typeof tag === 'string' && NPX_SNIPPET_TAG_SET.has(tag)) return tag;
+  }
+  return undefined;
+}
+
+export function stripSnippetSourceArgs(argv = []) {
+  if (!Array.isArray(argv)) return [];
+  const out = [];
+  for (let i = 0; i < argv.length; i += 1) {
+    const arg = argv[i];
+    if (typeof arg === 'string' && arg.startsWith('--source=')) continue;
+    if (arg === '--source') {
+      if (typeof argv[i + 1] === 'string' && !argv[i + 1].startsWith('-')) i += 1;
+      continue;
+    }
+    out.push(arg);
+  }
+  return out;
+}
+
+export function overlaySnippetSource(origin, argv) {
+  const tag = snippetTagFromArgv(argv);
+  if (!tag || !SNIPPET_OVERLAY_SOURCES.has(origin?.installSource)) return publicInstallOrigin(origin);
+  return publicInstallOrigin({ ...origin, installSource: `npx-${tag}` });
+}
+
+export function taggedNpxCommand(tag, args = 'install') {
+  if (!NPX_SNIPPET_TAG_SET.has(tag)) throw new Error('install source tag is invalid.');
+  const rest = typeof args === 'string' && args.trim() ? ` ${args.trim()}` : '';
+  return `npx ${PACKAGE_NAME}@latest${rest} --source=${tag}`;
 }
 
 export function skillRootFromScript(scriptPath, pathApi = path) {
@@ -149,9 +210,11 @@ export async function classifyPackageRoot(packageRoot, {
   stat: statFn = stat,
   readFile: readFileFn = readFile,
   processStartMs = Date.now() - process.uptime() * 1000,
+  argv = process.argv,
 } = {}) {
   const root = pathApi.resolve(packageRoot);
   const hash = npxCacheHashFromPath(root, pathApi);
+  let origin;
   if (hash) {
     const version = packageVersion || (await readJsonLimited(pathApi.join(root, 'package.json'), JSON_LIMIT, stat, readFileFn))?.version;
     const installSource = classifyNpxHash(hash, typeof version === 'string' ? version : '');
@@ -163,17 +226,15 @@ export async function classifyPackageRoot(packageRoot, {
       birthtimeMs = undefined;
     }
     const installCache = cacheFreshness(birthtimeMs, processStartMs);
-    return publicInstallOrigin(installCache ? { installSource, installCache } : { installSource });
-  }
-  if (pathApi.basename(pathApi.dirname(root)) === 'node_modules') {
+    origin = publicInstallOrigin(installCache ? { installSource, installCache } : { installSource });
+  } else if (pathApi.basename(pathApi.dirname(root)) === 'node_modules') {
     const projectName = await readPackageName(pathApi.dirname(pathApi.dirname(root)), readFileFn, pathApi);
-    return { installSource: projectName && projectName !== PACKAGE_NAME ? 'npm-local' : 'npm-global' };
-  }
-  if (await readPackageName(root, readFileFn, pathApi) === PACKAGE_NAME) {
+    origin = { installSource: projectName && projectName !== PACKAGE_NAME ? 'npm-local' : 'npm-global' };
+  } else if (await readPackageName(root, readFileFn, pathApi) === PACKAGE_NAME) {
     const git = await pathExists(pathApi.join(root, '.git'), statFn);
-    return { installSource: git ? 'local-checkout' : 'unpacked-package' };
-  }
-  return { installSource: 'unknown' };
+    origin = { installSource: git ? 'local-checkout' : 'unpacked-package' };
+  } else origin = { installSource: 'unknown' };
+  return overlaySnippetSource(origin, argv);
 }
 
 function isoMs(value) {
@@ -286,11 +347,12 @@ export async function resolveSkillInstallOrigin({
   stat: statFn = stat,
   readFile: readFileFn = readFile,
   processStartMs = Date.now() - process.uptime() * 1000,
+  argv = process.argv,
 } = {}) {
   if (typeof scriptPath !== 'string' || !scriptPath.trim()) return { installSource: 'unknown' };
   const skillRoot = skillRootFromScript(scriptPath, pathApi);
   if (await readPackageName(pathApi.dirname(skillRoot), readFileFn, pathApi) === PACKAGE_NAME) {
-    return classifyPackageRoot(pathApi.dirname(skillRoot), { packageVersion, pathApi, stat: statFn, readFile: readFileFn, processStartMs });
+    return classifyPackageRoot(pathApi.dirname(skillRoot), { packageVersion, pathApi, stat: statFn, readFile: readFileFn, processStartMs, argv });
   }
   const clawhub = await classifyClawhub(skillRoot, statFn, readFileFn);
   if (clawhub) return { installSource: clawhub };

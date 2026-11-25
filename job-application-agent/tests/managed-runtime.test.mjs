@@ -41,7 +41,7 @@ test('a copied skill with no managed install tells updates check to install befo
     copiedSkill: true,
   });
   assert.equal(result.managedRuntime.installed, false);
-  assert.equal(result.managedRuntime.command, 'npx job-application-agent@latest install');
+  assert.equal(result.managedRuntime.command, 'npx job-application-agent@latest install --source=cli');
   assert.match(result.managedRuntime.instruction, /same machine as the browser/);
   assert.match(result.managedRuntime.instruction, /assess or apply/);
   assert.equal(result.firstJob, undefined);

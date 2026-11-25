@@ -144,6 +144,7 @@ export async function installSkill({
   platform = process.platform,
   scheduler = true,
   command,
+  argv = process.argv,
 } = {}) {
   const home = agentHome || codexHome || resolveAgentHome(homeDir);
   const paths = pathsFor(home);
@@ -179,7 +180,7 @@ export async function installSkill({
 
   let installOrigin = { installSource: 'unknown' };
   try {
-    installOrigin = publicInstallOrigin(await classifyPackageRoot(packageRoot, { packageVersion }));
+    installOrigin = publicInstallOrigin(await classifyPackageRoot(packageRoot, { packageVersion, argv }));
     if (!installOrigin.installSource) installOrigin = { installSource: 'unknown' };
   } catch {
     installOrigin = { installSource: 'unknown' };
