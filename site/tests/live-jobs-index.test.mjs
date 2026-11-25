@@ -21,7 +21,10 @@ const wire = (n, overrides = {}) => ({
   lastSeenAt: '2026-10-02T00:00:00.000Z',
   contributionCount: n,
   livenessStatus: 'open',
-  lastCheckedAt: '2026-10-28T00:00:00.000Z',
+  // Clock is record.checkedAt + 1h so the location join is fresh. Board listing
+  // hides open jobs last-checked more than 3 days before now, so this must
+  // track the snapshot rather than a date that only matched main's copy.
+  lastCheckedAt: record.checkedAt,
   closedAt: null,
   ...overrides,
 });
