@@ -143,6 +143,7 @@ function ApplyCard({ job }: { job: BoardJob }) {
           value={prompt}
           label="Copy prompt"
           copiedLabel="Copied"
+          copyKind="prompt"
           icon={<CopyIcon />}
           className={`${styles.btn} ${styles.pri} ${styles.full}`}
           copiedNote="Prompt copied. Paste it into your agent."
@@ -168,7 +169,7 @@ function ApplyCard({ job }: { job: BoardJob }) {
           </summary>
           <div className={styles.cmd}>
             <code>{cli}</code>
-            <CopyButton value={cli} ariaLabel="Copy command" icon={<CopyIcon />} className={styles.iconBtn} />
+            <CopyButton value={cli} ariaLabel="Copy command" copyKind="command" icon={<CopyIcon />} className={styles.iconBtn} />
           </div>
         </details>
       </div>
@@ -185,6 +186,7 @@ function ApplyBar({ job }: { job: BoardJob }) {
           value={buildApplyAgentPrompt(job)}
           label="Copy prompt"
           copiedLabel="Copied"
+          copyKind="prompt"
           icon={<CopyIcon />}
           className={`${styles.btn} ${styles.pri} ${styles.grow}`}
           copiedNote="Prompt copied. Paste it into your agent."

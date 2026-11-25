@@ -160,6 +160,7 @@ test("docs and source never embed committed PostHog project keys", async () => {
   const files = [
     new URL("../lib/posthog.mjs", import.meta.url),
     new URL("../lib/landing-analytics.mjs", import.meta.url),
+    new URL("../lib/jobs-analytics.mjs", import.meta.url),
     new URL("../README.md", import.meta.url),
     new URL("../docs/POSTHOG.md", import.meta.url),
     new URL("../.env.example", import.meta.url),

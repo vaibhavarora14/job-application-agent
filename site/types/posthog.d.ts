@@ -72,3 +72,53 @@ declare module "*/landing-analytics.mjs" {
     fetchFn?: typeof fetch;
   }): Promise<{ ok: boolean; skipped: boolean; status?: number }>;
 }
+
+declare module "*/jobs-analytics.mjs" {
+  export const JOBS_EVENTS: Readonly<{
+    GOOGLE_FOR_JOBS_LANDING: string;
+    COPY_CLICKED: string;
+  }>;
+  export const JOBS_COPY_KINDS: Readonly<{
+    PROMPT: "prompt";
+    COMMAND: "command";
+  }>;
+  export function setJobsAnalyticsBrowserConfig(config: { apiKey: string; host?: string } | null): void;
+  export function resetJobsAnalyticsForTests(): void;
+  export function isJobsCopyKind(value: unknown): value is "prompt" | "command";
+  export function normalizeJobsPathname(pathname?: string): string;
+  export function classifyJobsSurface(pathname?: string): "board" | "job_page" | null;
+  export function isGoogleJobsReferrerHost(hostname?: string): boolean;
+  export function referrerHostname(referrer?: string): string;
+  export function detectGoogleForJobsLanding(input?: {
+    referrer?: string;
+    search?: string;
+    utm?: Record<string, string>;
+  }): boolean;
+  export function jobsCaptureUrl(input?: {
+    origin?: string;
+    pathname?: string;
+    href?: string;
+  }): string;
+  export function captureJobsPageview(input: {
+    apiKey: string;
+    host?: string;
+    pathname?: string;
+    search?: string;
+    origin?: string;
+    href?: string;
+    referrer?: string;
+    distinctId?: string;
+    fetchFn?: typeof fetch;
+  }): Promise<{ ok: boolean; skipped: boolean; status?: number }>;
+  export function captureJobsCopyClicked(input: {
+    apiKey: string;
+    host?: string;
+    copyKind: "prompt" | "command";
+    pathname?: string;
+    origin?: string;
+    href?: string;
+    distinctId?: string;
+    fetchFn?: typeof fetch;
+  }): Promise<{ ok: boolean; skipped: boolean; status?: number }>;
+  export function trackJobsCopyClicked(copyKind: "prompt" | "command"): void;
+}

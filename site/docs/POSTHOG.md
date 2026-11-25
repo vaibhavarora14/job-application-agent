@@ -52,3 +52,25 @@ Leave keys unset locally to disable capture. Redeploy after setting production v
 - Hosted-apply / skill funnel events
 - Telemetry Worker identity fields on these site events
 - Cookie-consent banners beyond anonymous first-party distinct_id storage
+
+## Jobs board events
+
+`/jobs` is still skipped by the landing client (`window.__JAA_JOBS_NO_ANALYTICS__` plus a pathname check) so founding `$pageview` does not start sending board filters or a raw `document.referrer`. A separate jobs client (`JobsAnalytics`) loads the same `/api/analytics-config` key and reuses `captureLandingEvent`.
+
+| Event | Where | Distinct id | Notes |
+|---|---|---|---|
+| `$pageview` | `/jobs` board | anonymous UUID in `localStorage` | `surface=board`; `$current_url` is origin+pathname (no query/hash); allowlisted UTM only |
+| `$pageview` | `/jobs/<slug>` | same | `surface=job_page`; slug is the public path only |
+| `google_for_jobs_landing` | jobs surfaces, once per document | same | Google Search / `jobs.google.com` referrer host, or Google organic UTM. Paid (`cpc`, `gclid`, …) is excluded. **Never** sends the referrer URL |
+| `jobs_copy_clicked` | Copy prompt / Copy command | same | `copyKind` is `prompt` or `command`. Never clipboard contents |
+
+`/jobs/alerts*` is not captured. GeoIP stays disabled; no `posthog-js`; no new cookies.
+
+### Verify jobs ingest (after `deploy-site.yml`)
+
+In PostHog project **556627** → Activity / Live events:
+
+1. Open `https://jobappagent.com/jobs` — `$pageview` with `$pathname=/jobs`, `surface=board`, `$geoip_disable=true`, `$process_person_profile=false`. `$current_url` has no query string even if the address bar does.
+2. Open `https://jobappagent.com/jobs/<slug>` — `$pageview` with that pathname and `surface=job_page`.
+3. Open a job URL from Google (or `?utm_source=google&utm_medium=organic`) — the `$pageview` has `googleForJobs=true`, plus a `google_for_jobs_landing` event. Properties must not include `$referrer`, `gclid`, or a `q=` search string.
+4. Click **Copy prompt** and **Copy command** — `jobs_copy_clicked` with `copyKind=prompt` then `copyKind=command`. No prompt text or CLI URL in properties.

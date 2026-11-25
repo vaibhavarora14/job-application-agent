@@ -379,6 +379,8 @@ test("publishes an indexable jobs board with shared site chrome", async () => {
     assert.match(html, /og:url" content="https:\/\/jobappagent\.com\/jobs"/);
     assert.match(html, /twitter:title" content="Open roles/);
     assert.doesNotMatch(html, /name="robots" content="noindex/);
+    // Landing client stays opted out on /jobs*; jobs capture is a separate client.
+    assert.match(html, /__JAA_JOBS_NO_ANALYTICS__=1/);
     // Shared SiteHeader nav without founding CTA on /jobs* (+ phone Menu toggle).
     assert.match(html, /stats\.jobappagent\.com/);
     assert.match(html, />Job board</);

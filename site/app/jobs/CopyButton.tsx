@@ -1,6 +1,24 @@
 "use client";
 
 import { useState, type ReactNode } from "react";
+import { trackJobsCopyClicked } from "../../lib/jobs-analytics.mjs";
+
+type CopyKind = "prompt" | "command";
+
+function trackCopyKind(copyKind: CopyKind | undefined) {
+  switch (copyKind) {
+    case "prompt":
+    case "command":
+      trackJobsCopyClicked(copyKind);
+      return;
+    case undefined:
+      return;
+    default: {
+      const exhaustive: never = copyKind;
+      void exhaustive;
+    }
+  }
+}
 
 /**
  * Clipboard button. `copiedLabel` replaces the label for 1.6 s after a copy; the
@@ -15,6 +33,7 @@ export function CopyButton({
   ariaLabel,
   noteClassName,
   copiedNote,
+  copyKind,
 }: {
   value: string;
   label?: string;
@@ -24,6 +43,7 @@ export function CopyButton({
   ariaLabel?: string;
   noteClassName?: string;
   copiedNote?: string;
+  copyKind?: CopyKind;
 }) {
   const [copied, setCopied] = useState(false);
 
@@ -38,6 +58,7 @@ export function CopyButton({
           try {
             await navigator.clipboard.writeText(value);
             setCopied(true);
+            trackCopyKind(copyKind);
             window.setTimeout(() => setCopied(false), 1600);
           } catch {
             /* clipboard blocked: the prompt stays readable in "Preview the prompt" */
