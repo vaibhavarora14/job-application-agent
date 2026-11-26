@@ -31,7 +31,7 @@ JobAppAgent (Job Application Agent) is an [Agent Skill](https://agentskills.io/s
 
 ```bash
 npx job-application-agent@latest install --source=readme
-npx job-application-agent@latest apply <url> --source=readme
+npx job-application-agent@latest apply <url>
 ```
 
 `<url>` is the HTTPS posting for one role from [https://jobappagent.com/jobs](https://jobappagent.com/jobs). `apply` takes that URL and prints a prompt for your coding agent. You choose whether the agent sends the application, or fills the employer's own page and stops before Submit so you can review it there. There is no separate review page.
@@ -81,8 +81,8 @@ Requires Node.js 20 or newer and a browser-capable coding agent.
 Setup templates are available for **Hermes Agent**, **Grok Bot**, and **OpenClaw**:
 
 ```bash
-npx job-application-agent@latest platforms --source=readme
-npx job-application-agent@latest platforms hermes --source=readme
+npx job-application-agent@latest platforms
+npx job-application-agent@latest platforms hermes
 ```
 
 Replace `hermes` with `grok` or `openclaw` for that guide. These commands print

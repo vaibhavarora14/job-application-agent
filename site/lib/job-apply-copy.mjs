@@ -1,6 +1,8 @@
 /** Primary Apply CTA once `job-application-agent@3.7.7+` ships `apply <url>`. */
 export function buildApplyCliCommand(url) {
-  return `npx job-application-agent@latest apply ${url} --source=jobs`;
+  // npm latest (3.8.10) rejects extra args on `apply`/`platforms`. Keep --source off
+  // those commands until a CLI that strips the tag is published (#306).
+  return `npx job-application-agent@latest apply ${url}`;
 }
 
 /**
