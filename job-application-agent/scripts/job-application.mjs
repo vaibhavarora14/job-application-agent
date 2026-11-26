@@ -15,6 +15,15 @@ import { normalizeCommunityJob, normalizeCommunitySource } from './source-commun
 import { SKILL_VERSION, TelemetryClient } from './telemetry-client.mjs';
 import { normalizeCliArgs, usageError, usageFor } from './cli-args.mjs';
 import { assessApplyRefusal } from './managed-runtime.mjs';
+import {
+  RESUME_IMPORT_RECOVERY,
+  activationSnapshot,
+  assertPastedResumeText,
+  firstJobGuide,
+  parseResumeImportInput,
+  resumeImportFailure,
+} from './first-job.mjs';
+import { textToPdf } from './text-to-pdf.mjs';
 import { jobIdentity, sanitizeTelemetryErrorMessage, sanitizeTelemetryFieldLabel } from './telemetry-schema.mjs';
 import { CloudStateClient, defaultCloudConfigPath, enableCloudUpdateGuard, saveCloudConfig } from './cloud-state-client.mjs';
 import {
@@ -277,7 +286,7 @@ export function telemetryErrorCode(error) {
   if (/keychain|keyring|secret service|secret-tool|credential manager|dpapi|authentication|login/i.test(message)) return 'authentication_required';
   if (/No local cloud lease|lease is recorded|live lease/i.test(message)) return 'authentication_required';
   // Resume/PDF upload failures before generic network/http matching (messages often include "HTTP").
-  if (/upload failed|Resume export failed|did not contain a valid PDF|Canonical resume|Résumé file not found/i.test(message)) return 'upload_failed';
+  if (/upload failed|Resume export failed|did not contain a valid PDF|Canonical resume|Résumé file not found|Pasted résumé|No résumé|Local resume must be a PDF|Invalid Google Docs resume URL/i.test(message)) return 'upload_failed';
   if (/Cloud state (unavailable|request failed)|network|fetch|http|relay unavailable|upstream/i.test(message)) return 'network_failure';
   if (/rate.?limit/i.test(message)) return 'rate_limited';
   if (/missing or unreadable|needs migration|Expected one JSON|Unknown |is invalid|must be|requires |required|expected|unsupported|Hard duplicate|cooldown|follow-up|Usage[ :(]|refused|not allowed/i.test(message)) return 'invalid_input';
@@ -1777,10 +1786,14 @@ async function ensureStateDir() {
   return dir;
 }
 
-async function stdin() {
+async function stdinBuffer() {
   const chunks = [];
   for await (const chunk of process.stdin) chunks.push(chunk);
-  return Buffer.concat(chunks).toString('utf8');
+  return Buffer.concat(chunks);
+}
+
+async function stdin() {
+  return (await stdinBuffer()).toString('utf8');
 }
 
 // Set when the agent passed the JSON payload inline instead of piping it (see cli-args.mjs).
@@ -2085,31 +2098,16 @@ async function profileMigrate(overrides) {
   };
 }
 
-async function importResume(source) {
-  let bytes;
-  let sourceLabel;
-  if (/^https:\/\/docs\.google\.com\/document\/d\//i.test(source)) {
-    const match = new URL(source).pathname.match(/^\/document\/d\/([A-Za-z0-9_-]+)/);
-    if (!match) throw new Error('Invalid Google Docs resume URL.');
-    const exportUrl = `https://docs.google.com/document/d/${match[1]}/export?format=pdf`;
-    const response = await fetch(exportUrl, { redirect: 'follow' });
-    if (!response.ok) throw new Error(`Resume export failed with HTTP ${response.status}.`);
-    bytes = Buffer.from(await response.arrayBuffer());
-    sourceLabel = source;
-  } else {
-    const local = resolve(source);
-    if (!local.toLowerCase().endsWith('.pdf')) throw new Error('Local resume must be a PDF.');
-    try {
-      bytes = await readFile(local);
-    } catch (error) {
-      if (error?.code === 'ENOENT') {
-        throw Object.assign(new Error('Résumé file not found at the given path; pass an absolute path or a Google Doc URL.'), { telemetryErrorCode: 'upload_failed' });
-      }
-      throw error;
-    }
-    sourceLabel = local;
+async function withFirstJob(result) {
+  const guide = firstJobGuide(SKILL_VERSION, null, await activationSnapshot());
+  return guide ? { ...result, firstJob: guide } : result;
+}
+
+async function storeResumePdf(bytes, sourceLabel, { skipMinSize = false, sourceKind } = {}) {
+  const header = bytes?.subarray(0, 4)?.toString('latin1');
+  if (!bytes || header !== '%PDF' || (!skipMinSize && bytes.length < 1000)) {
+    throw resumeImportFailure('Resume source did not contain a valid PDF.');
   }
-  if (bytes.length < 1000 || !bytes.subarray(0, 4).equals(Buffer.from('%PDF'))) throw new Error('Resume source did not contain a valid PDF.');
   const dir = await ensureStateDir();
   const temporary = join(dir, `resume-${process.pid}.pdf`);
   const target = join(dir, 'resume.pdf');
@@ -2122,7 +2120,88 @@ async function importResume(source) {
     await cloudState.putFileCurrent('resume.pdf', bytes);
     await cloudState.putFileCurrent('resume.json', Buffer.from(JSON.stringify(metadata)));
   }
-  return { path: target, sha256: metadata.sha256, bytes: metadata.bytes };
+  return withFirstJob({
+    path: target,
+    sha256: metadata.sha256,
+    bytes: metadata.bytes,
+    ...(sourceKind ? { sourceKind } : {}),
+  });
+}
+
+async function importResume(source) {
+  let bytes;
+  let sourceLabel;
+  let sourceKind;
+  if (/^https:\/\/docs\.google\.com\/document\/d\//i.test(source)) {
+    let documentId;
+    try {
+      documentId = new URL(source).pathname.match(/^\/document\/d\/([A-Za-z0-9_-]+)/)?.[1];
+    } catch {
+      throw resumeImportFailure('Invalid Google Docs resume URL.');
+    }
+    if (!documentId) throw resumeImportFailure('Invalid Google Docs resume URL.');
+    const exportUrl = `https://docs.google.com/document/d/${documentId}/export?format=pdf`;
+    const response = await fetch(exportUrl, { redirect: 'follow' });
+    if (!response.ok) throw resumeImportFailure(`Resume export failed with HTTP ${response.status}.`);
+    bytes = Buffer.from(await response.arrayBuffer());
+    sourceLabel = 'google-docs';
+    sourceKind = 'google-docs';
+  } else {
+    const local = resolve(source);
+    if (!local.toLowerCase().endsWith('.pdf')) throw resumeImportFailure('Local resume must be a PDF.');
+    try {
+      bytes = await readFile(local);
+    } catch (error) {
+      if (error?.code === 'ENOENT') {
+        throw resumeImportFailure('Résumé file not found at the given path; pass an absolute path or a Google Doc URL.');
+      }
+      throw resumeImportFailure('The résumé file could not be read. Pass an absolute PDF path, a shareable Google Docs URL, or paste the résumé text.');
+    }
+    sourceLabel = 'local-pdf';
+    sourceKind = 'local-pdf';
+  }
+  return storeResumePdf(bytes, sourceLabel, { sourceKind });
+}
+
+async function importPastedResume(text) {
+  const value = assertPastedResumeText(text);
+  const pdf = textToPdf(value);
+  return storeResumePdf(pdf.bytes, 'pasted-text', {
+    skipMinSize: true,
+    sourceKind: 'pasted-text',
+  });
+}
+
+async function importResumePayload(payload) {
+  switch (payload?.kind) {
+    case 'empty':
+      throw resumeImportFailure('No résumé was pasted on standard input.');
+    case 'invalid-json':
+      throw resumeImportFailure('resume import --stdin needs JSON {"text":"..."}, {"path":"..."}, {"url":"..."}, raw PDF bytes, or pasted text.');
+    case 'text':
+      return importPastedResume(payload.text);
+    case 'path':
+    case 'url':
+      return importResume(payload.source);
+    case 'pdf-bytes':
+      return storeResumePdf(payload.bytes, 'pasted-pdf', { skipMinSize: true, sourceKind: 'pdf-bytes' });
+    default: {
+      const _exhaustive = payload?.kind;
+      void _exhaustive;
+      throw resumeImportFailure('No résumé source was given.');
+    }
+  }
+}
+
+async function importResumeCommand(value) {
+  if (value === '--stdin') {
+    const inlineJson = inlineJsonInput;
+    inlineJsonInput = undefined;
+    const raw = inlineJson === undefined ? await stdinBuffer() : undefined;
+    return importResumePayload(parseResumeImportInput(raw, { inlineJson }));
+  }
+  if (typeof value === 'string' && value.trim()) return importResume(value);
+  throw resumeImportFailure('No résumé source was given.');
 }
 
 /**
@@ -2162,17 +2241,17 @@ export async function resumeUploadPreflight() {
   try { ({ path } = await canonicalResumePath()); } catch (error) { return blocked(error.message); }
   let handle;
   try { handle = await open(path, 'r'); } catch (error) {
-    return blocked(`The canonical résumé is not readable (${error.code ?? 'read error'}). Fix its permissions or import it again with resume import.`);
+    return blocked(`The canonical résumé is not readable (${error.code ?? 'read error'}). Fix its permissions or import it again with resume import. ${RESUME_IMPORT_RECOVERY}`);
   }
   try {
     const details = await handle.stat();
-    if (!details.isFile() || details.size === 0) return blocked('The canonical résumé file is empty. Import the résumé again with resume import.');
+    if (!details.isFile() || details.size === 0) return blocked(`The canonical résumé file is empty. Import the résumé again with resume import. ${RESUME_IMPORT_RECOVERY}`);
     const header = Buffer.alloc(5);
     await handle.read(header, 0, 5, 0);
-    if (header.toString('latin1') !== '%PDF-') return blocked('The canonical résumé is not a PDF, the supported upload type. Import a PDF or Google Docs résumé again with resume import.');
+    if (header.toString('latin1') !== '%PDF-') return blocked(`The canonical résumé is not a PDF, the supported upload type. Import a PDF or Google Docs résumé again with resume import. ${RESUME_IMPORT_RECOVERY}`);
     return { ok: true, type: 'pdf', checkedAt };
   } catch (error) {
-    return blocked(`The canonical résumé could not be read (${error.code ?? 'read error'}). Import it again with resume import.`);
+    return blocked(`The canonical résumé could not be read (${error.code ?? 'read error'}). Import it again with resume import. ${RESUME_IMPORT_RECOVERY}`);
   } finally {
     await handle.close();
   }
@@ -2324,9 +2403,9 @@ async function canonicalResumePath() {
   }
   try {
     const details = await stat(target);
-    if (!details.isFile()) throw new Error('Canonical resume path is not a file. Import the resume again.');
+    if (!details.isFile()) throw resumeImportFailure('Canonical resume path is not a file. Import the resume again.');
   } catch (error) {
-    if (error.code === 'ENOENT') throw new Error('Canonical resume is not imported. Run resume import first.');
+    if (error.code === 'ENOENT') throw resumeImportFailure('Canonical resume is not imported. Run resume import first.');
     throw error;
   }
   return { path: target };
@@ -3944,8 +4023,8 @@ async function executeCommand(argv, telemetry, session, community) {
   } else if (area === 'profile' && action === 'field' && value) {
     if (!PROFILE_FIELDS.includes(value)) throw invalidInputError(`Profile field "${value}" is not allowed. Allowed: ${PROFILE_FIELDS.join(', ')}.`);
     result = { [value]: storedProfile()[value] ?? null };
-  } else if (area === 'resume' && action === 'import' && value) result = await importResume(value);
-  else if (area === 'resume' && action === 'path' && value == null) result = await canonicalResumePath();
+  }   else if (area === 'resume' && action === 'import') result = await importResumeCommand(value);
+  else if (area === 'resume' && action === 'path' && value == null) result = await withFirstJob(await canonicalResumePath());
   else if (area === 'score' && action === 'guard' && value == null) result = await assessmentGuard().status(writePrivateJson);
   else if (area === 'score' && action === 'guard-reset' && value == null) result = await assessmentGuard().reset(writePrivateJson);
   else if (area === 'score' && action === '--stdin') {

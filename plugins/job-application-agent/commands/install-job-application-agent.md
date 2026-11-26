@@ -11,11 +11,13 @@ Run the public installer (Node 20+):
 npx job-application-agent@latest install --source=plugin
 ```
 
-Then verify:
+Then verify. When no job has been assessed yet, `status` prints the first-job guide (import a résumé, then assess one role in review-each):
 
 ```bash
 npx job-application-agent@latest status --source=plugin
 ```
+
+If résumé import fails, retry with an absolute PDF path, a shareable Google Docs URL, or `node scripts/job-application.mjs resume import --stdin` with `{"text":"<pasted résumé>"}`. Do not skip this and do not invent a résumé.
 
 If the user prefers the skills CLI:
 

@@ -27,13 +27,15 @@ npx job-application-agent@latest install --source=skill
 
 Do not assess or apply from the copied skill alone. A failed `updates check` still must not block an application once the managed runtime is installed.
 
-`updates check` returns `firstJob` once after a fresh managed install and once after a skillVersion upgrade. When `firstJob` is present, ask the candidate to pick one live role at https://jobappagent.com/jobs or paste one employer application URL. Run that one job in `review-each`: fill the employer page, stop before Submit, and record it only after they confirm visible success. Do not auto-submit. Do not invent fill counts. This does not change what `application_started` means (`score` still emits it for `review`). If they decline, continue the workflow and do not ask again for this version.
+`updates check` and `npx job-application-agent@latest status` return `firstJob` after a managed install until a job has been assessed (`score` has written a local decision). After `install`, and on `status` while no job has been assessed, walk the candidate to that first assessment: import a résumé if needed, pick one live role at https://jobappagent.com/jobs or paste one employer application URL, then run that one job in `review-each`. Open the posting, run `score --stdin` with its full text, fill the employer page, stop before Submit, and record it only after they confirm visible success. Do not auto-submit. Do not invent fill counts. This does not change what `application_started` means (`score` still emits it for `review`). If they decline, continue the rest of the workflow; `status` still prints this guide until a job is assessed.
+
+If `resume import` fails or `resume path` says no résumé is imported, follow the CLI recovery prompt: retry with an absolute PDF path, a shareable Google Docs URL, or `resume import --stdin` with `{"text":"<pasted résumé>"}`. Do not skip this and do not invent a résumé.
 
 ## Initialize or migrate
 
 Use `scripts/job-application.mjs` for private state and deterministic checks. Read [references/SCHEMAS.md](references/SCHEMAS.md) before the first profile, score, ledger, or outcome operation. Read [references/ANALYTICS.md](references/ANALYTICS.md) before the first telemetry operation.
 
-1. Ask for a local PDF or read-only Google Docs resume URL. Import it without modifying the source.
+1. Ask for a local PDF, a shareable Google Docs resume URL, or pasted résumé text. Import it without modifying the source (`resume import <path-or-url>` or `resume import --stdin` with `{"text":"..."}`). If import fails or no résumé is present, follow the CLI recovery prompt and retry. Do not skip this and do not invent a résumé.
 2. Run `profile check`. If it reports missing or legacy fields, collect only facts that cannot be preserved or defaulted, then run `profile migrate --stdin`. Use `profile set --stdin` for a new profile; on a first run `profile check` returns `stored: false` (not an error), so go straight to `profile set --stdin`.
 3. Preserve identity fields during migration. Map legacy `salaryPreference` to `targetCompensation`. Add `compensationFloor` only when the candidate provides an amount, currency, and annual comparison basis.
 4. Store the profile in OS-backed profile storage (macOS Keychain, Windows Credential Manager with a DPAPI-protected local file, or Linux Secret Service via `secret-tool`). On Linux, if Secret Service is locked or `secret-tool` is missing, the CLI stores the profile in an owner-only (mode 0600) AES-256-GCM file in the state directory. Optional `JOB_APPLICATION_AGENT_PROFILE_KEY` (32-byte hex or base64) supplies the key; otherwise a 0600 key file is created there. Do not retry a failed profile read in a loop: unlock the keyring or run `profile set` once to populate the fallback. Store the canonical resume and append-only ledgers in the owner-only state directory. When private cloud state is configured, read and write the profile, résumé, and structured records through the v2 adapter instead. Owner-only local caches support browser uploads on macOS and Linux without Keychain access.
@@ -143,6 +145,7 @@ node scripts/job-application.mjs profile migrate --stdin
 node scripts/job-application.mjs profile check
 node scripts/job-application.mjs profile field name|email|phone|location|workAuthorization|linkedin|github|portfolio|availability|currentCompensation|targetCompensation|submissionMode|submissionModeChosenAt|roleFamilies|seniority|skills|targetLocations|excludedLocations|workModes|industries|excludedCompanies|yearsExperience|autoSubmitMinScore|manualReviewMinScore|minMustHaveCoverage|compensationFloor
 node scripts/job-application.mjs resume import <google-doc-url-or-local-pdf>
+node scripts/job-application.mjs resume import --stdin
 node scripts/job-application.mjs resume path
 node scripts/job-application.mjs score --stdin
 node scripts/job-application.mjs ledger check --stdin

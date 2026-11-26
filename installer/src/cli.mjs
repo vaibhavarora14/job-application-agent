@@ -4,6 +4,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { assertApplyUrlAllowed, parseApplyUrl } from '../../job-application-agent/scripts/ats/apply-url-gate.mjs';
+import { activationSnapshot, firstJobGuide, formatFirstJobGuide } from '../../job-application-agent/scripts/first-job.mjs';
 import { stripSnippetSourceArgs } from '../../job-application-agent/scripts/install-source.mjs';
 import { consumeAutoUpdateNotice, installSkill, readInstallStatus, resolveAgentHome, setAutomaticUpdates, updateSkill } from './installer.mjs';
 import { createUpdateRunner } from './runner.mjs';
@@ -68,6 +69,14 @@ function resolveHome(options = {}) {
   const homeDir = options.homeDir || os.homedir();
   const agentHome = options.agentHome || options.codexHome || resolveAgentHome(homeDir);
   return { homeDir, agentHome };
+}
+
+async function printFirstJobGuide({ homeDir, env, version, output, heading }) {
+  const activation = await activationSnapshot({ env: env || process.env, homeDir });
+  const guide = firstJobGuide(version, null, activation);
+  if (!guide) return null;
+  output(formatFirstJobGuide(guide, { heading }));
+  return guide;
 }
 
 export async function runCli(args, options = {}) {
@@ -153,6 +162,16 @@ export async function runCli(args, options = {}) {
       : 'Not installed.');
     const notice = status.installed ? await consumeAutoUpdateNotice({ homeDir, agentHome }) : null;
     if (notice) output(notice);
+    if (status.installed) {
+      const guide = await printFirstJobGuide({
+        homeDir,
+        env: options.env,
+        version: status.installedVersion,
+        output,
+        heading: 'No job has been assessed yet.',
+      });
+      if (guide) status.firstJob = guide;
+    }
     return status;
   }
 
@@ -184,6 +203,16 @@ export async function runCli(args, options = {}) {
     output(`${command === 'install' ? 'Installed' : 'Updated'} job-application-agent ${status.installedVersion}.\n${updatesLine(status)}`);
     const notice = await consumeAutoUpdateNotice({ homeDir, agentHome });
     if (notice) output(notice);
+    if (command === 'install') {
+      const guide = await printFirstJobGuide({
+        homeDir,
+        env: options.env,
+        version: status.installedVersion,
+        output,
+        heading: 'Next: complete one first job in review-each.',
+      });
+      if (guide) status.firstJob = guide;
+    }
     return status;
   }
 

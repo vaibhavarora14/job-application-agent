@@ -5,7 +5,7 @@
 export const COMMAND_USAGE = Object.freeze({
   cloud: 'cloud status | configure --stdin | reconcile [--dry-run] | export [path] | lease-acquire | lease-renew | lease-release | intent-prepare --stdin | intent-sent --stdin | intent-confirm --stdin',
   profile: 'profile set --stdin | migrate --stdin | check | field <name>',
-  resume: 'resume import <google-doc-url-or-local-pdf> | path',
+  resume: 'resume import <google-doc-url-or-local-pdf> | import --stdin | path',
   score: 'score --stdin | guard | guard-reset',
   ledger: 'ledger check|add|outcome|review-ack|delivery|retry --stdin | outcome <application-id-or-url> --status <status> [--note <text>] | list [--status <status>] [--company <name>] [--json] | review | deliveries [application-id]',
   autonomy: 'autonomy grant --stdin | status | preview | revoke',
@@ -108,6 +108,7 @@ const USAGE_NOTES = Object.freeze({
   score: 'An unknown job.roleFamily, job.source, job.discoverySource, job.applicationChannel, job.seniority, job.workMode or must-have status is rejected with the allowed values. An omitted roleFamily defaults to other. An omitted job.source is inferred from the job URL hostname or applicationChannel (references/SCHEMAS.md).',
   round: 'An unknown lead disposition is rejected with the allowed values (references/ACCOUNTING.md). round lead and round source also accept one JSON array.',
   ledger: 'ledger add accepts title/jobUrl aliases, rounds score, and defaults omitted submittedAt. ledger outcome --stdin accepts a job URL as id/url/jobUrl. Flag and stdin statuses include withdrawn. ledger submit aliases add.',
+  resume: 'resume import accepts a local PDF path, a shareable Google Docs URL, or --stdin with {"text":"..."}, {"path":"..."}, {"url":"..."}, raw PDF bytes, or pasted text. Failures say how to retry and do not include file names.',
 });
 
 /** Usage text for `help` output: every area, or one area. */

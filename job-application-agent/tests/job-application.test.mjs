@@ -134,7 +134,10 @@ test('returns the canonical resume path for direct browser uploads', async (t) =
 
   const result = JSON.parse(execFileSync(process.execPath, [script, 'resume', 'path'], { env, encoding: 'utf8' }));
 
-  assert.deepEqual(result, { path: resume });
+  assert.equal(result.path, resume);
+  assert.equal(result.firstJob.mode, 'review-each');
+  assert.equal(result.firstJob.resumeImported, true);
+  assert.equal(result.firstJob.autoSubmit, false);
 });
 
 test('returns a verified local resume cache while configured cloud storage is offline', async (t) => {
@@ -152,7 +155,8 @@ test('returns a verified local resume cache while configured cloud storage is of
 
   const result = JSON.parse(execFileSync(process.execPath, [script, 'resume', 'path'], { env, encoding: 'utf8' }));
 
-  assert.deepEqual(result, { path: resume });
+  assert.equal(result.path, resume);
+  assert.equal(result.firstJob.resumeImported, true);
 });
 
 test('a missing secret-tool is a first run, not a migration error (#289)', async (t) => {
@@ -1373,6 +1377,9 @@ test('resume import of a missing file is upload_failed and omits the path (#297)
   const result = await runCli(script, ['resume', 'import', missing], undefined, isolatedCliEnv(directory));
   assert.equal(result.code, 1);
   assert.match(result.stderr, /Résumé file not found at the given path; pass an absolute path or a Google Doc URL\./);
+  assert.match(result.stderr, /resume import --stdin/);
+  assert.match(result.stderr, /absolute path to a \.pdf/i);
+  assert.match(result.stderr, /Do not skip this step and do not invent a résumé/);
   assert.equal(result.stderr.includes(missing), false);
   assert.equal(result.stderr.includes(directory), false);
   assert.equal(telemetryErrorCode(new Error(result.stderr.replace(/^Error: /, ''))), 'upload_failed');

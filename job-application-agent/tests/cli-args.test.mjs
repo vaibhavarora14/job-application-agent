@@ -64,6 +64,13 @@ test('usage errors are area specific, keep the reason within the analytics bound
   assert.match(usageFor('round').note, /disposition/);
   assert.match(usageFor('round').note, /ACCOUNTING\.md/);
   assert.match(usageFor('ledger').note, /withdrawn/);
+  assert.match(COMMAND_USAGE.resume, /import --stdin/);
+  assert.match(usageFor('resume').usage[0], /import --stdin/);
+  assert.match(usageFor('resume').note, /\{"text":"\.\.\."\}/);
+  assert.match(usageFor('resume').note, /do not include file names/i);
+  const resumeInline = normalizeCliArgs(['resume', 'import', '{"text":"Software engineer with ten years of TypeScript."}']);
+  assert.deepEqual(resumeInline.args, ['resume', 'import', '--stdin']);
+  assert.equal(resumeInline.inlineJson.text, 'Software engineer with ten years of TypeScript.');
 });
 
 test('help and version exit 0 without touching state; usage errors stay nonzero', async (t) => {
