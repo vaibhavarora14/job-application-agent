@@ -120,6 +120,8 @@ test('ledger add accepts title/jobUrl, rounds score, and defaults omitted submit
   assert.equal(validateLedgerEntry({ ...ledgerBase, submittedAt: Date.parse(submittedAt) }).submittedAt, submittedAt);
   assert.equal(validateLedgerEntry({ ...ledgerBase, submittedAt: Date.parse(submittedAt) / 1000 }).submittedAt, submittedAt);
   assert.throws(() => validateLedgerEntry({ ...ledgerBase, score: 0.84 }), /entry\.score must be an integer from 0 to 100.*0–1 fraction/);
+  assert.throws(() => validateLedgerEntry({ ...ledgerBase, score: 100.4 }), /entry\.score must be an integer from 0 to 100/);
+  assert.throws(() => coerceScore(-0.4, 'entry.score'), /entry\.score must be an integer from 0 to 100/);
   assert.equal(coerceScore('86', 'entry.score'), 86);
 });
 
@@ -215,6 +217,57 @@ test('ledger outcome --stdin accepts a job URL as id and url/jobUrl aliases', as
   const ghosted = run(['ledger', 'outcome', 'web-1', '--status', 'no-response']);
   assert.equal(ghosted.status, 0, ghosted.stderr);
   assert.equal(JSON.parse(ghosted.stdout).status, 'closed');
+});
+
+test('ledger add rejects a non-HTTP candidate URL before recording', async (t) => {
+  assert.throws(
+    () => validateLedgerEntry({ ...ledgerBase, url: 'ftp://jobs.example.com/role' }),
+    /entry\.url must be a public HTTP\(S\) URL/,
+  );
+  const { directory, run } = await cliFixture(t);
+  const added = run(['ledger', 'add', '--stdin'], { ...ledgerBase, url: 'ftp://jobs.example.com/role' });
+  assert.notEqual(added.status, 0);
+  assert.match(added.stderr, /entry\.url must be a public HTTP\(S\) URL/);
+  const stored = await readFile(join(directory, 'applications.ndjson'), 'utf8').catch((error) => {
+    if (error.code === 'ENOENT') return '';
+    throw error;
+  });
+  assert.equal(stored.trim(), '');
+});
+
+test('ledger outcome rejects a malformed url alias instead of treating it as an id', async (t) => {
+  const { directory, run } = await cliFixture(t);
+  await writeFile(join(directory, 'applications.ndjson'), `${JSON.stringify({
+    id: 'web-1',
+    company: 'Acme',
+    role: 'Engineer',
+    url: 'https://jobs.example.com/web',
+    source: 'company',
+    score: 90,
+    status: 'submitted',
+    submittedAt: '2026-03-01T00:00:00.000Z',
+    approval: 'APPROVE SUBMIT',
+    answers: {},
+  })}\n`);
+  const ftp = run(['ledger', 'outcome', '--stdin'], {
+    url: 'ftp://jobs.example.com/web',
+    status: 'rejected',
+    occurredAt: '2026-04-02T00:00:00.000Z',
+  });
+  assert.notEqual(ftp.status, 0);
+  assert.match(ftp.stderr, /outcome\.url must be a public HTTP\(S\) URL/);
+  const malformed = run(['ledger', 'outcome', '--stdin'], {
+    jobUrl: 'not-a-url',
+    status: 'rejected',
+    occurredAt: '2026-04-02T00:00:00.000Z',
+  });
+  assert.notEqual(malformed.status, 0);
+  assert.match(malformed.stderr, /outcome\.url must be a public HTTP\(S\) URL/);
+  const outcomes = await readFile(join(directory, 'outcomes.ndjson'), 'utf8').catch((error) => {
+    if (error.code === 'ENOENT') return '';
+    throw error;
+  });
+  assert.equal(outcomes.trim(), '');
 });
 
 test('ledger check does not fail when a stored row has a missing URL', async (t) => {

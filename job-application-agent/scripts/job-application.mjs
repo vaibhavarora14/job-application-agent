@@ -1067,9 +1067,8 @@ export function coerceScore(value, label) {
   const fractionHint = ` Send the integer score from score --stdin (for example 84), not a 0–1 fraction.`;
   if (typeof value === 'number' && Number.isFinite(value)) {
     if (value > 0 && value < 1) throw new Error(`${label} must be an integer from 0 to 100.${fractionHint}`);
-    const rounded = Math.round(value);
-    if (rounded < 0 || rounded > 100) throw new Error(`${label} must be an integer from 0 to 100.`);
-    return rounded;
+    if (value < 0 || value > 100) throw new Error(`${label} must be an integer from 0 to 100.`);
+    return Math.round(value);
   }
   if (typeof value === 'string' && value.trim()) {
     const parsed = Number(value.trim());
@@ -1413,7 +1412,11 @@ export function validateLedgerEntry(input) {
     id: collect(errors, () => string(entry.id, 'entry.id', 180)),
     company: collect(errors, () => string(entry.company, 'entry.company', 300)),
     role: collect(errors, () => string(entry.role, 'entry.role', 300)),
-    url: collect(errors, () => string(entry.url, 'entry.url', 2048)),
+    url: collect(errors, () => {
+      const raw = string(entry.url, 'entry.url', 2048);
+      normalizeUrl(raw, 'entry.url');
+      return raw;
+    }),
     source: collect(errors, () => resolveClosedSource(entry.source, {
       url: entry.url,
       applicationChannel,
@@ -2332,7 +2335,7 @@ async function canonicalResumePath() {
 function duplicateResult(entries, candidate, outcomes = [], now = new Date()) {
   const candidateCompany = normalizedText(candidate.company);
   const candidateRole = normalizedText(candidate.role);
-  const candidateUrl = candidate.url ? safeNormalizeUrl(candidate.url) : null;
+  const candidateUrl = candidate.url ? normalizeUrl(candidate.url, 'url') : null;
   const sameCompanyRole = (entry) => candidateCompany && candidateRole
     && normalizedText(entry.company) === candidateCompany
     && rolesLikelySame(entry.role, candidate.role);
@@ -3714,8 +3717,13 @@ async function ledgerOutcome(outcomeInput) {
   if (target == null || (typeof target === 'string' && !target.trim())) {
     throw new Error('outcome.id or outcome.url is required. Pass the ledger application id (at most 180 characters) or the job URL from ledger list.');
   }
+  const urlAlias = typeof input.url === 'string' ? input.url.trim() : '';
+  const idAlias = typeof input.id === 'string' ? input.id.trim() : '';
   let id;
-  if (outcomeTargetUrl(String(target))) {
+  if (urlAlias && !idAlias) {
+    normalizeUrl(urlAlias, 'outcome.url');
+    id = (await applicationForOutcomeTarget(urlAlias)).id;
+  } else if (outcomeTargetUrl(String(target))) {
     id = (await applicationForOutcomeTarget(String(target))).id;
   } else {
     id = string(target, 'outcome.id', 180);
