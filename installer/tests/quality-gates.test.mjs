@@ -195,6 +195,19 @@ test('validation exposes a stable quality gate and a six-combination high-risk m
   assert.match(workflow, /check:native-artifacts/);
 });
 
+test('telemetry Worker wrangler dry-run stays off the Node-20 CLI check path', async () => {
+  const packageJson = JSON.parse(await readFile(new URL('../../package.json', import.meta.url), 'utf8'));
+  const deploy = (await readFile(new URL('../../.github/workflows/deploy-telemetry.yml', import.meta.url), 'utf8')).replace(/\r\n/g, '\n');
+  const staging = (await readFile(new URL('../../.github/workflows/staging-telemetry.yml', import.meta.url), 'utf8')).replace(/\r\n/g, '\n');
+  const checkInvocations = [...packageJson.scripts.check.matchAll(/(?:^|&& )node scripts\/ci\/check-telemetry-worker-bundle\.mjs(?: --graph-only)?/g)]
+    .map((match) => match[0].replace(/^&& /, ''));
+  assert.deepEqual(checkInvocations, ['node scripts/ci/check-telemetry-worker-bundle.mjs --graph-only']);
+  assert.equal(packageJson.scripts['check:telemetry-worker-bundle'], 'node scripts/ci/check-telemetry-worker-bundle.mjs');
+  assert.match(deploy, /npm run check:telemetry-worker-bundle/);
+  assert.match(staging, /npm run check:telemetry-worker-bundle/);
+  assert.match(deploy, /node-version: 24/);
+});
+
 test('validation runs site lint and typecheck when site paths change', async () => {
   const workflow = await readFile(new URL('../../.github/workflows/validate.yml', import.meta.url), 'utf8');
   assert.match(workflow, /^\s{2}site:/m);

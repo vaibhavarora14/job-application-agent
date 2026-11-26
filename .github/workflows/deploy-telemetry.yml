@@ -19,6 +19,7 @@ jobs:
           node-version: 24
       - run: npm ci
       - run: npm run check && npm test && npm run privacy-audit
+      - run: npm run check:telemetry-worker-bundle
       - name: Apply aggregate database migrations
         run: npx --yes wrangler@4.151.3 d1 migrations apply job-application-agent-public-stats --remote --config telemetry-worker/wrangler.jsonc
         env:
