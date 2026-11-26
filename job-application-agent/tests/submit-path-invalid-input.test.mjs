@@ -136,6 +136,12 @@ test('ledger add infers omitted source from the job URL and still names ATS mix-
     /entry\.source "job-board" is a discoverySource; source is the ATS/,
   );
   assert.equal(inferAtsSourceFromUrl('https://jobs.lever.co/example/abc'), 'lever');
+  assert.equal(inferAtsSourceFromUrl('https://jobs.ashbyhq.com/example/123'), 'ashby');
+  assert.equal(inferAtsSourceFromUrl('https://company.myworkdayjobs.com/en-US/job'), 'workday');
+  assert.equal(inferAtsSourceFromUrl('https://apply.workable.com/example/j/abc'), 'workable');
+  assert.equal(inferAtsSourceFromUrl('https://notashbyhq.com/jobs'), 'company');
+  assert.equal(inferAtsSourceFromUrl('https://ashbyhq.com.evil.example/jobs'), 'company');
+  assert.equal(inferAtsSourceFromUrl('https://prefixworkday.com/jobs'), 'company');
 });
 
 test('score infers omitted source and maps eligibility aliases', () => {

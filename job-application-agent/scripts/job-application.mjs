@@ -1039,20 +1039,24 @@ function looksLikeHttpUrl(value) {
   return typeof value === 'string' && /^https?:\/\//i.test(value.trim());
 }
 
+function hostnameIsDomain(hostname, domain) {
+  return hostname === domain || hostname.endsWith(`.${domain}`);
+}
+
 export function inferAtsSourceFromUrl(value) {
   if (typeof value !== 'string' || !value.trim()) return null;
   try {
     const host = new URL(value.trim()).hostname.toLowerCase();
-    if (host === 'greenhouse.io' || host.endsWith('.greenhouse.io')) return 'greenhouse';
-    if (host === 'lever.co' || host.endsWith('.lever.co')) return 'lever';
-    if (host.includes('ashbyhq.com') || host.endsWith('.ashby.com')) return 'ashby';
-    if (host.includes('myworkdayjobs.com') || host.includes('workday.com')) return 'workday';
-    if (host === 'linkedin.com' || host.endsWith('.linkedin.com')) return 'linkedin';
-    if (host.includes('workable.com')) return 'workable';
-    if (host.includes('comeet.co') || host.includes('comeet.com')) return 'comeet';
-    if (host.includes('rippling.com')) return 'rippling';
-    if (host.includes('smartrecruiters.com')) return 'smartrecruiters';
-    if (host === 'docs.google.com' || host.endsWith('.docs.google.com') || host === 'forms.gle') return 'google-form';
+    if (hostnameIsDomain(host, 'greenhouse.io')) return 'greenhouse';
+    if (hostnameIsDomain(host, 'lever.co')) return 'lever';
+    if (hostnameIsDomain(host, 'ashbyhq.com') || hostnameIsDomain(host, 'ashby.com')) return 'ashby';
+    if (hostnameIsDomain(host, 'myworkdayjobs.com') || hostnameIsDomain(host, 'workday.com')) return 'workday';
+    if (hostnameIsDomain(host, 'linkedin.com')) return 'linkedin';
+    if (hostnameIsDomain(host, 'workable.com')) return 'workable';
+    if (hostnameIsDomain(host, 'comeet.co') || hostnameIsDomain(host, 'comeet.com')) return 'comeet';
+    if (hostnameIsDomain(host, 'rippling.com')) return 'rippling';
+    if (hostnameIsDomain(host, 'smartrecruiters.com')) return 'smartrecruiters';
+    if (hostnameIsDomain(host, 'docs.google.com') || host === 'forms.gle') return 'google-form';
     return 'company';
   } catch {
     return null;
