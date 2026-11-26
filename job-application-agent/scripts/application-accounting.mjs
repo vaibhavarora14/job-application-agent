@@ -15,19 +15,22 @@ function required(value, name, max = 300) {
   return value;
 }
 function date(value, name) { required(value, name, 80); if (!Number.isFinite(Date.parse(value))) throw new Error(`${name} must be an ISO date.`); return new Date(value).toISOString(); }
-// Lead observation time. Agents often omit it or pass epoch numbers; the lead was observed no
-// later than when it is recorded, so a missing value defaults to now (observedAt never affects
-// lead identity or conflict detection). Epoch seconds/milliseconds are accepted as numbers.
-export function leadObservedAt(value, now = new Date()) {
+// Agents often omit timestamps or pass epoch numbers. A missing value defaults to now.
+// Epoch seconds/milliseconds are accepted as numbers. The label is the JSON field name.
+export function coerceIsoDateTime(value, label, now = new Date()) {
   if (value == null || (typeof value === 'string' && !value.trim())) return now.toISOString();
   if (typeof value === 'number') {
-    if (!Number.isFinite(value) || value <= 0) throw new Error('observedAt must be an ISO 8601 date-time such as 2026-10-20T05:00:00Z, or omitted to use the current time.');
+    if (!Number.isFinite(value) || value <= 0) throw new Error(`${label} must be an ISO 8601 date-time such as 2026-10-20T05:00:00Z, or omitted to use the current time.`);
     return new Date(value < 1e11 ? value * 1000 : value).toISOString();
   }
   if (typeof value !== 'string' || value.length > 80 || !Number.isFinite(Date.parse(value))) {
-    throw new Error('observedAt must be an ISO 8601 date-time such as 2026-10-20T05:00:00Z, or omitted to use the current time.');
+    throw new Error(`${label} must be an ISO 8601 date-time such as 2026-10-20T05:00:00Z, or omitted to use the current time.`);
   }
   return new Date(value).toISOString();
+}
+// Lead observation time. observedAt never affects lead identity or conflict detection.
+export function leadObservedAt(value, now = new Date()) {
+  return coerceIsoDateTime(value, 'observedAt', now);
 }
 function object(input, allowed) {
   if (!input || typeof input !== 'object' || Array.isArray(input)) throw new Error('Accounting event must be an object.');
@@ -54,6 +57,9 @@ export function validateDelivery(input) {
   object(input, ['version','id','applicationId','attemptId','type','occurredAt','evidenceType','evidence','messageRef','supersedes','status','channel','url','channelVerifiedAt','approval']);
   const v = { ...input, version: 1 };
   if (input.version != null && input.version !== 1) throw new Error('Unsupported delivery version.');
+  if ((v.attemptId == null || (typeof v.attemptId === 'string' && !v.attemptId.trim())) && typeof v.applicationId === 'string' && v.applicationId.trim()) {
+    v.attemptId = `initial:${v.applicationId.trim()}`;
+  }
   for (const name of ['applicationId','attemptId']) required(v[name], name);
   if (!DELIVERY_TYPES.includes(v.type)) throw invalidChoice('Invalid delivery type.', DELIVERY_TYPES);
   if (!EVIDENCE_TYPES.includes(v.evidenceType)) throw invalidChoice('Invalid evidenceType.', EVIDENCE_TYPES);
@@ -183,11 +189,30 @@ export function validateDeliveryReferences(event, applications, events, { prepar
   }
 }
 
+function remapLeadAliases(input) {
+  if (!input || typeof input !== 'object' || Array.isArray(input)) return input;
+  const raw = { ...input };
+  if (raw.jobId != null && (raw.employerJobId == null || (typeof raw.employerJobId === 'string' && !raw.employerJobId.trim()))) {
+    raw.employerJobId = raw.jobId;
+  }
+  delete raw.jobId;
+  if (raw.jobUrl != null && (raw.url == null || (typeof raw.url === 'string' && !raw.url.trim()))) {
+    raw.url = raw.jobUrl;
+  }
+  delete raw.jobUrl;
+  if (raw.title != null && (raw.role == null || (typeof raw.role === 'string' && !raw.role.trim()))) {
+    raw.role = raw.title;
+  }
+  delete raw.title;
+  return raw;
+}
+
 export function validateLead(input) {
-  object(input,['version','type','id','roundId','sourceId','url','company','role','employerJobId','disposition','observedAt','evidence','applicationId','supersedes']);
-  if (input.version != null && input.version !== 1) throw new Error('Unsupported discovery version.');
-  if (input.type != null && !DISCOVERY_EVENT_TYPES.includes(input.type)) throw invalidChoice('Invalid discovery event type.', DISCOVERY_EVENT_TYPES);
-  const v = { ...input, version: 1, type: 'lead-reviewed', url: canonicalUrl(input.url) };
+  const raw = remapLeadAliases(input);
+  object(raw,['version','type','id','roundId','sourceId','url','company','role','employerJobId','disposition','observedAt','evidence','applicationId','supersedes']);
+  if (raw.version != null && raw.version !== 1) throw new Error('Unsupported discovery version.');
+  if (raw.type != null && !DISCOVERY_EVENT_TYPES.includes(raw.type)) throw invalidChoice('Invalid discovery event type.', DISCOVERY_EVENT_TYPES);
+  const v = { ...raw, version: 1, type: 'lead-reviewed', url: canonicalUrl(raw.url) };
   for (const key of ['roundId','sourceId','company']) required(v[key],key);
   for (const key of ['role','employerJobId','applicationId']) if(v[key] != null) required(v[key],key);
   if (!DISPOSITIONS.includes(v.disposition)) throw invalidChoice('Invalid lead disposition.', DISPOSITIONS);

@@ -8,7 +8,7 @@ import { basename, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { isEntrypoint } from './entrypoint.mjs';
 
-import { ACCOUNTING_CAPABILITY, accountingApplicationKey, canonicalUrl, deliveryProjection, discoveryProjection, validateDelivery, validateDeliveryReferences, validateLead, validateLeadReferences, stableJson } from './application-accounting.mjs';
+import { ACCOUNTING_CAPABILITY, accountingApplicationKey, canonicalUrl, coerceIsoDateTime, deliveryProjection, discoveryProjection, validateDelivery, validateDeliveryReferences, validateLead, validateLeadReferences, stableJson } from './application-accounting.mjs';
 import { createSecretStore, isProfileMissingError, migrateLegacyStateDir, resolveStateDir } from './secret-store.mjs';
 import { SourceCommunityClient } from './source-community-client.mjs';
 import { normalizeCommunityJob, normalizeCommunitySource } from './source-community-schema.mjs';
@@ -384,6 +384,8 @@ const ATTENTION_ACTION_ALIASES = Object.freeze({
   'complete-login': 'sign-in',
   'upload-resume': 'enable-upload',
   'resume-upload': 'enable-upload',
+  'confirm-location': 'verify-claim',
+  'verify-location': 'verify-claim',
 });
 
 function attentionAllowedKeys() {
@@ -1021,6 +1023,106 @@ function integer(value, label, min, max) {
   return value;
 }
 
+function remapAliases(input, aliases) {
+  if (!input || typeof input !== 'object' || Array.isArray(input)) return input;
+  const out = { ...input };
+  for (const [from, to] of Object.entries(aliases)) {
+    if (!Object.hasOwn(out, from)) continue;
+    const missing = !Object.hasOwn(out, to) || out[to] == null || (typeof out[to] === 'string' && !String(out[to]).trim());
+    if (missing) out[to] = out[from];
+    delete out[from];
+  }
+  return out;
+}
+
+function looksLikeHttpUrl(value) {
+  return typeof value === 'string' && /^https?:\/\//i.test(value.trim());
+}
+
+export function inferAtsSourceFromUrl(value) {
+  if (typeof value !== 'string' || !value.trim()) return null;
+  try {
+    const host = new URL(value.trim()).hostname.toLowerCase();
+    if (host === 'greenhouse.io' || host.endsWith('.greenhouse.io')) return 'greenhouse';
+    if (host === 'lever.co' || host.endsWith('.lever.co')) return 'lever';
+    if (host.includes('ashbyhq.com') || host.endsWith('.ashby.com')) return 'ashby';
+    if (host.includes('myworkdayjobs.com') || host.includes('workday.com')) return 'workday';
+    if (host === 'linkedin.com' || host.endsWith('.linkedin.com')) return 'linkedin';
+    if (host.includes('workable.com')) return 'workable';
+    if (host.includes('comeet.co') || host.includes('comeet.com')) return 'comeet';
+    if (host.includes('rippling.com')) return 'rippling';
+    if (host.includes('smartrecruiters.com')) return 'smartrecruiters';
+    if (host === 'docs.google.com' || host.endsWith('.docs.google.com') || host === 'forms.gle') return 'google-form';
+    return 'company';
+  } catch {
+    return null;
+  }
+}
+
+export function coerceScore(value, label) {
+  const fractionHint = ` Send the integer score from score --stdin (for example 84), not a 0–1 fraction.`;
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    if (value > 0 && value < 1) throw new Error(`${label} must be an integer from 0 to 100.${fractionHint}`);
+    const rounded = Math.round(value);
+    if (rounded < 0 || rounded > 100) throw new Error(`${label} must be an integer from 0 to 100.`);
+    return rounded;
+  }
+  if (typeof value === 'string' && value.trim()) {
+    const parsed = Number(value.trim());
+    if (Number.isFinite(parsed)) return coerceScore(parsed, label);
+  }
+  throw new Error(`${label} must be an integer from 0 to 100.${fractionHint}`);
+}
+
+const ELIGIBILITY_ALIASES = Object.freeze({
+  yes: 'eligible',
+  true: 'eligible',
+  authorized: 'eligible',
+  'work-authorized': 'eligible',
+  'work authorized': 'eligible',
+  no: 'ineligible',
+  false: 'ineligible',
+  unauthorized: 'ineligible',
+  'not-eligible': 'ineligible',
+  'not eligible': 'ineligible',
+  unknown: 'unclear',
+  unsure: 'unclear',
+  maybe: 'unclear',
+  'not-sure': 'unclear',
+  'not sure': 'unclear',
+});
+
+function normalizeEligibility(value, label = 'job.eligibility') {
+  if (typeof value === 'boolean') return value ? 'eligible' : 'ineligible';
+  const raw = string(value, label, 40).toLowerCase();
+  const mapped = ELIGIBILITY_ALIASES[raw] ?? raw;
+  if (!ELIGIBILITY.has(mapped)) throw new Error(`${label} must be eligible, unclear, or ineligible. Allowed: eligible, unclear, ineligible.`);
+  return mapped;
+}
+
+function resolveClosedSource(raw, { url, applicationChannel, label }) {
+  if (raw == null || (typeof raw === 'string' && !raw.trim())) {
+    const channel = typeof applicationChannel === 'string' ? applicationChannel.trim().toLowerCase() : '';
+    if (SOURCES.has(channel)) return channel;
+    const inferred = inferAtsSourceFromUrl(url);
+    if (inferred) return inferred;
+    throw invalidChoice(`${label} is invalid.`, SOURCES, `Pass an ATS value, or omit ${label} when the job URL hostname identifies the ATS.`);
+  }
+  if (looksLikeHttpUrl(raw)) {
+    const inferred = inferAtsSourceFromUrl(raw);
+    if (inferred) return inferred;
+  }
+  if (typeof raw === 'string' && raw.trim().length > 40 && !looksLikeHttpUrl(raw)) {
+    throw invalidChoice(`${label} is invalid.`, SOURCES);
+  }
+  const source = string(raw, label, 40).toLowerCase();
+  if (SOURCES.has(source)) return source;
+  if (DISCOVERY_SOURCES.has(source)) {
+    throw new Error(label.startsWith('entry.') ? sourceMixUpMessage(source) : `${label} "${source}" is a discoverySource; source is the ATS. Allowed: ${[...SOURCES].join(', ')}.`);
+  }
+  throw invalidChoice(`${label} is invalid.`, SOURCES);
+}
+
 function collect(errors, fn) {
   try { return fn(); }
   catch (error) {
@@ -1045,13 +1147,30 @@ function compensationFloor(value) {
   return { amount: integer(input.amount, 'profile.compensationFloor.amount', 0, 100_000_000), currency, period: 'year' };
 }
 
-function normalizeUrl(value) {
-  const url = new URL(string(value, 'url', 2048));
-  url.hash = '';
-  for (const key of [...url.searchParams.keys()]) {
-    if (!/^(job|jobid|jid|gh_jid|requisition|requisitionid|reqid|posting|postingid|position|positionid|vacancy|vacancyid)$/i.test(key)) url.searchParams.delete(key);
+function normalizeUrl(value, label = 'url') {
+  let text;
+  try {
+    text = string(value, label, 2048);
+  } catch {
+    throw new Error(`${label} must be a public HTTP(S) URL no longer than 2048 characters.`);
   }
-  return url.toString().replace(/\/$/, '').toLowerCase();
+  try {
+    const url = new URL(text);
+    if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password) {
+      throw new Error('invalid-url');
+    }
+    url.hash = '';
+    for (const key of [...url.searchParams.keys()]) {
+      if (!/^(job|jobid|jid|gh_jid|requisition|requisitionid|reqid|posting|postingid|position|positionid|vacancy|vacancyid)$/i.test(key)) url.searchParams.delete(key);
+    }
+    return url.toString().replace(/\/$/, '').toLowerCase();
+  } catch {
+    throw new Error(`${label} must be a public HTTP(S) URL no longer than 2048 characters.`);
+  }
+}
+
+function safeNormalizeUrl(value) {
+  try { return normalizeUrl(value); } catch { return null; }
 }
 
 function terms(values) {
@@ -1118,19 +1237,18 @@ export function scoreJob(input, target) {
   const title = string(job.title, 'job.title', 300);
   const company = string(job.company, 'job.company', 300);
   const description = string(job.description, 'job.description', 40000);
-  const source = string(job.source, 'job.source', 40).toLowerCase();
   const discoverySource = job.discoverySource == null ? null : string(job.discoverySource, 'job.discoverySource', 40).toLowerCase();
   if (job.discoverySourceId != null) knownDiscoverySourceId(job.discoverySourceId, 'job.discoverySourceId');
   const applicationChannel = job.applicationChannel == null ? null : string(job.applicationChannel, 'job.applicationChannel', 40).toLowerCase();
-  const eligibility = string(job.eligibility, 'job.eligibility', 40).toLowerCase();
+  const source = resolveClosedSource(job.source, { url: job.url ?? job.jobUrl, applicationChannel, label: 'job.source' });
+  if (job.source == null || (typeof job.source === 'string' && !job.source.trim()) || looksLikeHttpUrl(job.source)) job.source = source;
+  const eligibility = normalizeEligibility(job.eligibility);
   const postingStatus = string(job.postingStatus ?? 'unclear', 'job.postingStatus', 40).toLowerCase();
   const seniority = string(job.seniority ?? 'unspecified', 'job.seniority', 40).toLowerCase();
   const roleFamily = string(job.roleFamily ?? 'other', 'job.roleFamily', 80).toLowerCase();
   const workMode = string(job.workMode ?? (job.remote === true ? 'remote' : 'unspecified'), 'job.workMode', 40).toLowerCase();
-  if (!SOURCES.has(source)) throw invalidChoice('job.source is invalid.', SOURCES);
   if (discoverySource != null && !DISCOVERY_SOURCES.has(discoverySource)) throw invalidChoice('job.discoverySource is invalid.', DISCOVERY_SOURCES);
   if (applicationChannel != null && !APPLICATION_CHANNELS.has(applicationChannel)) throw invalidChoice('job.applicationChannel is invalid.', APPLICATION_CHANNELS);
-  if (!ELIGIBILITY.has(eligibility)) throw new Error('job.eligibility must be eligible, unclear, or ineligible.');
   if (!POSTING_STATUS.has(postingStatus)) throw new Error('job.postingStatus must be active, closed, or unclear.');
   if (!JOB_SENIORITIES.has(seniority)) throw invalidChoice('job.seniority is invalid.', JOB_SENIORITIES);
   if (!ROLE_FAMILIES.has(roleFamily)) throw invalidChoice('job.roleFamily is invalid.', ROLE_FAMILIES, 'Omit job.roleFamily to use "other".');
@@ -1282,17 +1400,24 @@ function sourceMixUpMessage(value) {
 }
 
 export function validateLedgerEntry(input) {
-  const entry = object(input, 'entry');
+  const entry = remapAliases(object(input, 'entry'), { title: 'role', jobUrl: 'url' });
   const errors = [];
+  const applicationChannel = entry.applicationChannel == null
+    ? null
+    : collect(errors, () => string(entry.applicationChannel, 'entry.applicationChannel', 40).toLowerCase());
   const normalized = {
     id: collect(errors, () => string(entry.id, 'entry.id', 180)),
     company: collect(errors, () => string(entry.company, 'entry.company', 300)),
     role: collect(errors, () => string(entry.role, 'entry.role', 300)),
     url: collect(errors, () => string(entry.url, 'entry.url', 2048)),
-    source: collect(errors, () => string(entry.source, 'entry.source', 40).toLowerCase()),
-    score: entry.score,
+    source: collect(errors, () => resolveClosedSource(entry.source, {
+      url: entry.url,
+      applicationChannel,
+      label: 'entry.source',
+    })),
+    score: collect(errors, () => coerceScore(entry.score, 'entry.score')),
     status: collect(errors, () => string(entry.status, 'entry.status', 40).toLowerCase()),
-    submittedAt: collect(errors, () => string(entry.submittedAt, 'entry.submittedAt', 80)),
+    submittedAt: collect(errors, () => coerceIsoDateTime(entry.submittedAt, 'entry.submittedAt')),
     approval: collect(errors, () => ledgerApproval(entry.approval)),
     answers: entry.answers ?? {},
   };
@@ -1303,30 +1428,17 @@ export function validateLedgerEntry(input) {
   if (entry.discoverySourceId != null) {
     normalized.discoverySourceId = collect(errors, () => knownDiscoverySourceId(entry.discoverySourceId, 'entry.discoverySourceId'));
   }
-  if (entry.applicationChannel != null) {
-    normalized.applicationChannel = collect(errors, () => string(entry.applicationChannel, 'entry.applicationChannel', 40).toLowerCase());
-  }
+  if (applicationChannel != null) normalized.applicationChannel = applicationChannel;
   if (entry.roundId != null) normalized.roundId = collect(errors, () => string(entry.roundId, 'entry.roundId', 180));
-  if (normalized.source != null && !SOURCES.has(normalized.source)) {
-    errors.push(DISCOVERY_SOURCES.has(normalized.source)
-      ? sourceMixUpMessage(normalized.source)
-      : invalidChoice('entry.source is invalid.', SOURCES).message);
-  }
   if (normalized.discoverySource != null && !DISCOVERY_SOURCES.has(normalized.discoverySource)) {
     errors.push(invalidChoice('entry.discoverySource is invalid.', DISCOVERY_SOURCES).message);
   }
   if (normalized.applicationChannel != null && !APPLICATION_CHANNELS.has(normalized.applicationChannel)) {
     errors.push(invalidChoice('entry.applicationChannel is invalid.', APPLICATION_CHANNELS).message);
   }
-  if (!Number.isInteger(normalized.score) || normalized.score < 0 || normalized.score > 100) {
-    errors.push('entry.score must be an integer from 0 to 100.');
-  }
   if (normalized.status != null && normalized.status !== 'submitted') errors.push('New ledger entries must have status submitted.');
   if (normalized.approval != null && !APPROVALS.has(normalized.approval)) {
     errors.push(`entry.approval is invalid. ${APPROVAL_HINT}`);
-  }
-  if (normalized.submittedAt != null && Number.isNaN(Date.parse(normalized.submittedAt))) {
-    errors.push('entry.submittedAt must be an ISO date.');
   }
   collect(errors, () => {
     object(normalized.answers, 'entry.answers');
@@ -1368,7 +1480,7 @@ export function validateLedgerCheckCandidate(input) {
     const keys = Object.keys(candidate).sort();
     throw new Error(`ledger check requires at least one identifier set: url, id, employerJobId+company, or company+role. Received keys: ${keys.length ? keys.join(', ') : '(none)'}. title is accepted as a role alias; jobUrl is accepted as a url alias.`);
   }
-  if (url) normalizeUrl(url);
+  if (url) normalizeUrl(url, 'candidate.url');
   return {
     ...(id ? { id } : {}),
     ...(url ? { url } : {}),
@@ -2216,7 +2328,7 @@ async function canonicalResumePath() {
 function duplicateResult(entries, candidate, outcomes = [], now = new Date()) {
   const candidateCompany = normalizedText(candidate.company);
   const candidateRole = normalizedText(candidate.role);
-  const candidateUrl = candidate.url ? normalizeUrl(candidate.url) : null;
+  const candidateUrl = candidate.url ? safeNormalizeUrl(candidate.url) : null;
   const sameCompanyRole = (entry) => candidateCompany && candidateRole
     && normalizedText(entry.company) === candidateCompany
     && rolesLikelySame(entry.role, candidate.role);
@@ -2227,7 +2339,7 @@ function duplicateResult(entries, candidate, outcomes = [], now = new Date()) {
   const hardEmployerJobId = entries.find((entry) => candidate.employerJobId && entry.employerJobId
     && normalizedText(entry.company) === candidateCompany
     && entry.employerJobId.toLowerCase() === String(candidate.employerJobId).toLowerCase());
-  const hardUrl = candidateUrl ? entries.find((entry) => normalizeUrl(entry.url) === candidateUrl) : null;
+  const hardUrl = candidateUrl ? entries.find((entry) => safeNormalizeUrl(entry.url) === candidateUrl) : null;
   const hard = hardId ?? hardEmployerJobId ?? hardUrl;
   const hardReason = hardId ? 'id' : hardEmployerJobId ? 'employer-job-id' : hardUrl ? 'url' : null;
   const exact = hard ? null : latestMatchingEntry(entries, exactCompanyRole);
@@ -2751,6 +2863,29 @@ function leadMatchesApplication(lead, app, events) {
 }
 
 const SOURCE_COVERAGE_KEYS = new Set(['roundId', 'sourceId', 'status', 'reviewedCount', 'qualifiedCount', 'blocker', 'evidence', 'applicationIds', 'query', 'notes']);
+const COVERAGE_STATUS_ALIASES = Object.freeze({
+  searched: 'searched',
+  complete: 'searched',
+  done: 'searched',
+  ok: 'searched',
+  blocked: 'blocked',
+  failed: 'blocked',
+  unavailable: 'blocked',
+  inaccessible: 'blocked',
+});
+const SOURCE_BLOCKER_ALIASES = Object.freeze({
+  'login required': 'login',
+  'login-required': 'login',
+  'sign-in': 'login',
+  'sign in': 'login',
+  password: 'login',
+  'two-factor': 'mfa',
+  '2fa': 'mfa',
+  recaptcha: 'captcha',
+  'site error': 'site-error',
+  'access denied': 'access-unavailable',
+  'not available': 'access-unavailable',
+});
 
 function optionalCoverageText(value, key) {
   if (value[key] == null) return '';
@@ -2767,16 +2902,39 @@ function coverageEvidence(value) {
   return evidence;
 }
 
+function normalizeCoverageStatus(value) {
+  if (typeof value === 'boolean') return value ? 'searched' : 'blocked';
+  if (typeof value === 'string') {
+    const mapped = COVERAGE_STATUS_ALIASES[value.trim().toLowerCase()];
+    if (mapped) return mapped;
+  }
+  string(value, 'coverage.status', 20);
+  throw new Error('coverage.status must be searched or blocked. Allowed: searched, blocked.');
+}
+
+function normalizeCoverageBlocker(value) {
+  if (value == null) return null;
+  if (typeof value === 'string') {
+    const mapped = SOURCE_BLOCKER_ALIASES[value.trim().toLowerCase()];
+    if (mapped) return mapped;
+  }
+  const blocker = string(value, 'coverage.blocker', 40).toLowerCase();
+  if (!SOURCE_BLOCKERS.has(blocker)) throw invalidChoice('coverage.blocker is invalid.', SOURCE_BLOCKERS);
+  return blocker;
+}
+
 export function normalizeSourceCoverage(input) {
-  const value = object(input, 'source coverage');
+  const value = remapAliases(object(input, 'source coverage'), {
+    leadsReviewed: 'reviewedCount',
+    leadsQualified: 'qualifiedCount',
+  });
   for (const key of Object.keys(value)) {
     if (!SOURCE_COVERAGE_KEYS.has(key)) throw unknownPropertyError('source coverage', key, SOURCE_COVERAGE_KEYS);
   }
   const sourceId = knownDiscoverySourceId(value.sourceId, 'coverage.sourceId');
-  const status = string(value.status, 'coverage.status', 20);
-  if (!['searched', 'blocked'].includes(status)) throw new Error('coverage.status must be searched or blocked.');
+  const status = normalizeCoverageStatus(value.status);
   const roundId = string(value.roundId, 'coverage.roundId', 180);
-  const blocker = value.blocker == null ? null : string(value.blocker, 'coverage.blocker', 40);
+  const blocker = normalizeCoverageBlocker(value.blocker);
   if (status === 'searched' && blocker != null) throw new Error('Searched sources cannot have a blocker.');
   const evidence = coverageEvidence(value);
   const applicationIds = value.applicationIds == null ? [] : [...new Set(stringArray(value.applicationIds, 'coverage.applicationIds'))];
@@ -2991,7 +3149,7 @@ function normalizeAttentionActions(value) {
 }
 
 export function normalizeAttentionInput(input) {
-  const value = object(input, 'attention item');
+  const value = remapAliases(object(input, 'attention item'), { canonicalUrl: 'url', jobUrl: 'url' });
   const allowed = attentionAllowedKeys();
   if (Object.hasOwn(value, 'answers')) {
     throw new Error(
@@ -3229,10 +3387,15 @@ async function roundStartedWithoutOutcome(dir, startedAt, completedAt) {
   });
 }
 
-async function roundComplete(input) {
-  const value = object(input, 'round completion');
+export function normalizeRoundCompleteInput(input) {
+  const value = remapAliases(object(input, 'round completion'), { concentrationNote: 'concentrationEvidence' });
   const allowed = new Set(['roundId', 'completedAt', 'concentrationReason', 'concentrationEvidence']);
   for (const key of Object.keys(value)) if (!allowed.has(key)) throw unknownPropertyError('round completion', key, allowed);
+  return value;
+}
+
+async function roundComplete(input) {
+  const value = normalizeRoundCompleteInput(input);
   // Use the same lock order as ledger writes so completion cannot race a confirmed submission.
   const result = await withStateLock('applications', () => withStateLock('rounds', async (dir) => {
     const status = await roundStatus(string(value.roundId, 'round.roundId', 180));
@@ -3338,8 +3501,18 @@ async function frictionList() {
 
 // Tracker statuses are a local view over ledger rows plus outcomes. They are not telemetry values.
 export const TRACKER_STATUSES = Object.freeze(['drafted', 'submitted', 'confirmed', 'response', 'closed']);
-const FLAG_OUTCOME_STATUSES = Object.freeze(['response', 'rejected', 'interview', 'offer', 'closed']);
-const STORED_OUTCOME_STATUSES = new Set(['interview', 'rejected', 'offer', 'withdrawn', 'response', 'closed']);
+const FLAG_OUTCOME_STATUSES = Object.freeze(['response', 'rejected', 'interview', 'offer', 'closed', 'withdrawn']);
+const STORED_OUTCOME_STATUSES = new Set(FLAG_OUTCOME_STATUSES);
+const OUTCOME_STATUS_ALIASES = Object.freeze({
+  hired: 'offer',
+  accepted: 'offer',
+  ghosted: 'closed',
+  'no-response': 'closed',
+  no_response: 'closed',
+  noreply: 'closed',
+  'no-reply': 'closed',
+  silent: 'closed',
+});
 const RESPONSE_OUTCOMES = new Set(['response', 'rejected', 'interview', 'offer']);
 const CLOSED_OUTCOMES = new Set(['closed', 'withdrawn']);
 // outcome_recorded still only accepts the original four. New tracker statuses stay on disk.
@@ -3459,10 +3632,16 @@ function parseLedgerOutcomeFlags(args) {
     target = arg;
     index += 1;
   }
-  if (!target) throw new Error('Usage (ledger outcome, missing application): ledger outcome <application-id-or-url> --status response|rejected|interview|offer|closed [--note <text>]');
-  if (!status) throw new Error('Usage (ledger outcome, missing --status): ledger outcome <application-id-or-url> --status response|rejected|interview|offer|closed [--note <text>]');
-  if (!FLAG_OUTCOME_STATUSES.includes(status)) throw new Error('Invalid outcome status. Allowed: response, rejected, interview, offer, closed.');
-  return { target, status, note };
+  if (!target) throw new Error('Usage (ledger outcome, missing application): ledger outcome <application-id-or-url> --status response|rejected|interview|offer|closed|withdrawn [--note <text>]');
+  if (!status) throw new Error('Usage (ledger outcome, missing --status): ledger outcome <application-id-or-url> --status response|rejected|interview|offer|closed|withdrawn [--note <text>]');
+  return { target, status: normalizeOutcomeStatus(status), note };
+}
+
+export function normalizeOutcomeStatus(value, label = 'outcome.status') {
+  const raw = string(value, label, 40).toLowerCase();
+  const mapped = OUTCOME_STATUS_ALIASES[raw] ?? raw;
+  if (!STORED_OUTCOME_STATUSES.has(mapped)) throw invalidChoice(`${label} is invalid.`, FLAG_OUTCOME_STATUSES);
+  return mapped;
 }
 
 function outcomeTargetUrl(value) {
@@ -3506,31 +3685,39 @@ async function ledgerList(filters) {
 }
 
 async function ledgerOutcome(outcomeInput) {
-  const input = object(outcomeInput, 'outcome');
-  const allowed = new Set(['id', 'status', 'occurredAt', 'note', 'reasons', 'interviewQuality', 'failurePoint']);
-  for (const key of Object.keys(input)) if (!allowed.has(key)) throw new Error(`Unknown outcome property: ${key}.`);
-  const status = string(input.status, 'outcome.status', 40).toLowerCase();
-  if (!STORED_OUTCOME_STATUSES.has(status)) throw new Error('Invalid outcome status.');
-  const occurredAt = string(input.occurredAt ?? new Date().toISOString(), 'outcome.occurredAt', 80);
-  if (Number.isNaN(Date.parse(occurredAt))) throw new Error('outcome.occurredAt must be an ISO date.');
+  const input = remapAliases(object(outcomeInput, 'outcome'), { jobUrl: 'url', applicationId: 'id' });
+  const allowed = new Set(['id', 'url', 'status', 'occurredAt', 'note', 'reasons', 'interviewQuality', 'failurePoint']);
+  for (const key of Object.keys(input)) if (!allowed.has(key)) throw unknownPropertyError('outcome', key, allowed);
+  const status = normalizeOutcomeStatus(input.status);
+  const occurredAt = coerceIsoDateTime(input.occurredAt, 'outcome.occurredAt');
   const reasonCategories = new Set(['eligibility', 'closed-stale', 'level-compensation', 'must-have-gap', 'generic-resume-screen', 'interview-stage', 'unknown']);
   const evidenceLevels = new Set(['explicit', 'inferred']);
   const reasons = input.reasons == null ? [] : input.reasons.map((item, index) => {
     const reason = object(item, `outcome.reasons[${index}]`);
     const category = string(reason.category, `outcome.reasons[${index}].category`, 80);
     const evidence = string(reason.evidence, `outcome.reasons[${index}].evidence`, 40);
-    if (!reasonCategories.has(category)) throw new Error(`outcome.reasons[${index}].category is invalid.`);
-    if (!evidenceLevels.has(evidence)) throw new Error(`outcome.reasons[${index}].evidence is invalid.`);
+    if (!reasonCategories.has(category)) throw invalidChoice(`outcome.reasons[${index}].category is invalid.`, reasonCategories);
+    if (!evidenceLevels.has(evidence)) throw invalidChoice(`outcome.reasons[${index}].evidence is invalid.`, evidenceLevels);
     return { category, evidence };
   });
   const interviewQuality = input.interviewQuality == null ? null : string(input.interviewQuality, 'outcome.interviewQuality', 40).toLowerCase();
-  if (interviewQuality != null && !INTERVIEW_QUALITIES.has(interviewQuality)) throw new Error('outcome.interviewQuality is invalid.');
+  if (interviewQuality != null && !INTERVIEW_QUALITIES.has(interviewQuality)) throw invalidChoice('outcome.interviewQuality is invalid.', INTERVIEW_QUALITIES);
   const failurePoint = input.failurePoint == null ? null : string(input.failurePoint, 'outcome.failurePoint', 40).toLowerCase();
-  if (failurePoint != null && !FAILURE_POINTS.has(failurePoint)) throw new Error('outcome.failurePoint is invalid.');
+  if (failurePoint != null && !FAILURE_POINTS.has(failurePoint)) throw invalidChoice('outcome.failurePoint is invalid.', FAILURE_POINTS);
   if (failurePoint != null && interviewQuality == null) throw new Error('outcome.failurePoint requires outcome.interviewQuality.');
   const note = typeof input.note === 'string' ? terminalPlain(input.note).slice(0, 2000) : '';
+  const target = input.id ?? input.url;
+  if (target == null || (typeof target === 'string' && !target.trim())) {
+    throw new Error('outcome.id or outcome.url is required. Pass the ledger application id (at most 180 characters) or the job URL from ledger list.');
+  }
+  let id;
+  if (outcomeTargetUrl(String(target))) {
+    id = (await applicationForOutcomeTarget(String(target))).id;
+  } else {
+    id = string(target, 'outcome.id', 180);
+  }
   const event = {
-    id: string(input.id, 'outcome.id', 180), status, occurredAt,
+    id, status, occurredAt,
     ...(note ? { note } : {}),
     ...(reasons.length ? { reasons } : {}),
     ...(interviewQuality ? { interviewQuality } : {}),

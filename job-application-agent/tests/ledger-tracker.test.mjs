@@ -250,9 +250,17 @@ test('structured ledger outcome --stdin still records and the flag form rejects 
   assert.doesNotMatch(missing.stderr, /private note/);
   assertOmitsHost(missing.stderr, 'jobs.example.com');
 
-  const badStatus = run(['ledger', 'outcome', 'web-1', '--status', 'withdrawn']);
+  const withdrawnFlag = run(['ledger', 'outcome', 'web-1', '--status', 'withdrawn']);
+  assert.equal(withdrawnFlag.status, 0, withdrawnFlag.stderr);
+  assert.equal(JSON.parse(withdrawnFlag.stdout).status, 'withdrawn');
+  const listedWithdrawn = JSON.parse(run(['ledger', 'list', '--json']).stdout);
+  assert.equal(listedWithdrawn.entries[0].status, 'closed');
+
+  const badStatus = run(['ledger', 'outcome', 'web-1', '--status', 'pending']);
   assert.notEqual(badStatus.status, 0);
-  assert.match(badStatus.stderr, /Invalid outcome status/);
+  assert.match(badStatus.stderr, /outcome\.status is invalid/);
+  assert.match(badStatus.stderr, /withdrawn/);
+  assert.doesNotMatch(badStatus.stderr, /pending/);
   const stored = (await readFile(join(directory, 'outcomes.ndjson'), 'utf8')).trim().split('\n');
-  assert.equal(stored.length, 1);
+  assert.equal(stored.length, 2);
 });
