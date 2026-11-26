@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { readFile } from 'node:fs/promises';
 import test from 'node:test';
 
 import { INSTALL_SOURCES } from '../scripts/install-source.mjs';
@@ -46,6 +47,11 @@ test('canonicalizes job URLs and hashes the destination without query data', asy
   assert.equal(first.jobHash, second.jobHash);
   assert.equal(first.domain, 'jobs.example.com');
   assert.equal(first.jobHash.length, 64);
+});
+
+test('telemetry-schema does not statically import node:crypto (Worker upload)', async () => {
+  const source = await readFile(new URL('../scripts/telemetry-schema.mjs', import.meta.url), 'utf8');
+  assert.equal(/\b(?:from|import)\s*(?:\(\s*)?['"]node:crypto['"]/.test(source), false);
 });
 
 test('jobIdentity hashes without global crypto (#298)', async () => {

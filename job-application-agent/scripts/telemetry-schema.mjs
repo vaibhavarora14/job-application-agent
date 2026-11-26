@@ -4,8 +4,6 @@ const DOMAIN = /^(?=.{1,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2
 const CURRENCY = /^[A-Z]{3}$/;
 const VERSION = /^\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?$/;
 
-import { createHash } from 'node:crypto';
-
 import { redactHomePaths } from './telemetry-redact.mjs';
 
 export const TELEMETRY_SCHEMA_VERSION = 1;
@@ -258,10 +256,22 @@ export function canonicalizeJobUrl(value) {
   return url.toString().replace(/\/$/, '');
 }
 
+async function sha256Hex(value) {
+  const subtle = globalThis.crypto?.subtle;
+  if (subtle) {
+    const digest = await subtle.digest('SHA-256', new TextEncoder().encode(value));
+    return [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, '0')).join('');
+  }
+  // Node CLI hosts without Web Crypto (#298). The specifier is built at runtime so wrangler
+  // does not statically resolve node:crypto into the telemetry Worker (upload error 10021;
+  // this Worker's compatibility_date is 2026-08-01, before nodejs_compat became default).
+  const { createHash } = await import(['node', 'crypto'].join(':'));
+  return createHash('sha256').update(value, 'utf8').digest('hex');
+}
+
 export async function jobIdentity(value) {
   const canonical = canonicalizeJobUrl(value);
-  const jobHash = createHash('sha256').update(canonical, 'utf8').digest('hex');
-  return { jobHash, domain: new URL(canonical).hostname };
+  return { jobHash: await sha256Hex(canonical), domain: new URL(canonical).hostname };
 }
 
 // Identity is a separate allowlisted envelope field, never arbitrary event input.
