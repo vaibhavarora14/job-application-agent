@@ -49,6 +49,7 @@ const ACTION_ALIASES = Object.freeze({
   autonomy: { show: 'status', check: 'status' },
   attention: { ls: 'list' },
   friction: { ls: 'list' },
+  ledger: { submit: 'add', record: 'add', log: 'add' },
 });
 
 function parseInlineJson(value) {
@@ -97,14 +98,16 @@ export function normalizeCliArgs(input) {
   const aliases = Object.hasOwn(ACTION_ALIASES, area) ? ACTION_ALIASES[area] : undefined;
   const alias = aliases && Object.hasOwn(aliases, args[1]) ? aliases[args[1]] : undefined;
   if (alias) args = [area, alias, ...args.slice(2)];
+  if (args[0] === 'ledger' && args[1] === 'list') args = args.filter((arg) => arg !== '--stdin');
   // A stdin subcommand given its JSON inline is equivalent to `--stdin`.
   if (inlineJson !== undefined && Object.hasOwn(STDIN_ACTIONS, area) && STDIN_ACTIONS[area].includes(args[1]) && args[2] === '--stdin') args = args.slice(0, 3);
   return { args, ...(inlineJson !== undefined ? { inlineJson } : {}) };
 }
 
 const USAGE_NOTES = Object.freeze({
-  score: 'An unknown job.roleFamily, job.source, job.discoverySource, job.applicationChannel, job.seniority, job.workMode or must-have status is rejected with the allowed values. An omitted roleFamily defaults to other (references/SCHEMAS.md).',
+  score: 'An unknown job.roleFamily, job.source, job.discoverySource, job.applicationChannel, job.seniority, job.workMode or must-have status is rejected with the allowed values. An omitted roleFamily defaults to other. An omitted job.source is inferred from the job URL hostname or applicationChannel (references/SCHEMAS.md).',
   round: 'An unknown lead disposition is rejected with the allowed values (references/ACCOUNTING.md). round lead and round source also accept one JSON array.',
+  ledger: 'ledger add accepts title/jobUrl aliases, rounds score, and defaults omitted submittedAt. ledger outcome --stdin accepts a job URL as id/url/jobUrl. Flag and stdin statuses include withdrawn. ledger submit aliases add.',
 });
 
 /** Usage text for `help` output: every area, or one area. */
