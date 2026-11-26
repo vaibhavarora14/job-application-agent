@@ -128,7 +128,7 @@ export function textToPdf(text) {
 
   add(catalogId, `<< /Type /Catalog /Pages ${pagesId} 0 R >>`);
   add(pagesId, `<< /Type /Pages /Kids [${kids}] /Count ${pageCount} >>`);
-  add(fontId, '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>');
+  add(fontId, '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>');
   for (const [index] of pages.entries()) {
     add(
       firstPageId + index,

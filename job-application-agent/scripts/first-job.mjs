@@ -4,6 +4,7 @@
 import { readFile, stat } from 'node:fs/promises';
 import { join } from 'node:path';
 
+import { defaultCloudConfigPath } from './cloud-state-client.mjs';
 import { JOBS_BOARD_URL, firstJobPrompt } from './managed-runtime.mjs';
 import { ASSESSMENT_DECISIONS_FILE } from './routine-gates.mjs';
 import { resolveStateDir } from './secret-store.mjs';
@@ -57,12 +58,39 @@ async function resumeFilePresent(dir) {
   }
 }
 
+async function resumeMetadataPresent(dir) {
+  const meta = await readJsonObject(join(dir, 'resume.json'));
+  return typeof meta?.sha256 === 'string' && meta.sha256.length > 0;
+}
+
+function cloudConfigPath({ env, homeDir }) {
+  if (typeof env?.JOB_APPLICATION_AGENT_CLOUD_CONFIG === 'string' && env.JOB_APPLICATION_AGENT_CLOUD_CONFIG) {
+    return env.JOB_APPLICATION_AGENT_CLOUD_CONFIG;
+  }
+  // An explicit homeDir is a sandbox (tests/installer); do not read the host XDG path.
+  if (homeDir) {
+    if (process.platform === 'darwin') return join(homeDir, 'Library', 'Application Support', 'job-application-agent-cloud', 'config.json');
+    if (process.platform === 'win32') return join(homeDir, 'AppData', 'Local', 'job-application-agent-cloud', 'config.json');
+    return join(homeDir, '.config', 'job-application-agent', 'cloud.json');
+  }
+  return defaultCloudConfigPath();
+}
+
+async function v2CloudConfigured({ env, homeDir } = {}) {
+  const file = cloudConfigPath({ env, homeDir });
+  if (!file) return false;
+  const config = await readJsonObject(file);
+  return config?.version === 2;
+}
+
 export async function activationSnapshot({ env = process.env, homeDir } = {}) {
   const dir = resolveStateDir({ env, home: homeDir });
   const decisions = await readJsonObject(join(dir, ASSESSMENT_DECISIONS_FILE));
   return {
     assessed: hasAssessedJob(decisions),
-    resumeImported: await resumeFilePresent(dir),
+    resumeImported: await resumeFilePresent(dir)
+      || await resumeMetadataPresent(dir)
+      || await v2CloudConfigured({ env, homeDir }),
   };
 }
 

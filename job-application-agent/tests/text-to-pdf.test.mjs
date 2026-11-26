@@ -23,7 +23,15 @@ test('textToPdf writes a %PDF buffer that contains the résumé text', () => {
   assert.equal(pdf.bytes.subarray(0, 8).toString('ascii'), '%PDF-1.4');
   assert.match(pdf.bytes.toString('latin1'), /%%EOF/);
   assert.match(pdf.bytes.toString('latin1'), /Software engineer with ten years/);
+  assert.match(pdf.bytes.toString('latin1'), /\/Encoding \/WinAnsiEncoding/);
   assert.equal(pdf.pageCount, 1);
+  assert.equal(pdf.replacedCharacters, 0);
+});
+
+test('textToPdf keeps accented Latin characters under WinAnsiEncoding', () => {
+  const pdf = textToPdf('Résumé of a senior engineer in Montréal.');
+  assert.match(pdf.bytes.toString('latin1'), /\/Encoding \/WinAnsiEncoding/);
+  assert.match(pdf.bytes.toString('latin1'), /R\\351sum\\351 of a senior engineer in Montr\\351al/);
   assert.equal(pdf.replacedCharacters, 0);
 });
 

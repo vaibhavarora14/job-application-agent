@@ -4,7 +4,7 @@ import { createHash, randomUUID } from 'node:crypto';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { appendFile, chmod, mkdir, open, readFile, rename, stat, unlink, writeFile } from 'node:fs/promises';
 import { homedir, platform, userInfo } from 'node:os';
-import { basename, join, resolve } from 'node:path';
+import { basename, isAbsolute, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { isEntrypoint } from './entrypoint.mjs';
 
@@ -286,7 +286,7 @@ export function telemetryErrorCode(error) {
   if (/keychain|keyring|secret service|secret-tool|credential manager|dpapi|authentication|login/i.test(message)) return 'authentication_required';
   if (/No local cloud lease|lease is recorded|live lease/i.test(message)) return 'authentication_required';
   // Resume/PDF upload failures before generic network/http matching (messages often include "HTTP").
-  if (/upload failed|Resume export failed|did not contain a valid PDF|Canonical resume|Résumé file not found|Pasted résumé|No résumé|Local resume must be a PDF|Invalid Google Docs resume URL/i.test(message)) return 'upload_failed';
+  if (/upload failed|Resume export failed|did not contain a valid PDF|Canonical resume|Résumé file not found|Pasted résumé|No résumé|Local resume must be a PDF|Local resume must be an absolute PDF path|Invalid Google Docs resume URL|Google Docs résumé export/i.test(message)) return 'upload_failed';
   if (/Cloud state (unavailable|request failed)|network|fetch|http|relay unavailable|upstream/i.test(message)) return 'network_failure';
   if (/rate.?limit/i.test(message)) return 'rate_limited';
   if (/missing or unreadable|needs migration|Expected one JSON|Unknown |is invalid|must be|requires |required|expected|unsupported|Hard duplicate|cooldown|follow-up|Usage[ :(]|refused|not allowed/i.test(message)) return 'invalid_input';
@@ -2141,13 +2141,24 @@ async function importResume(source) {
     }
     if (!documentId) throw resumeImportFailure('Invalid Google Docs resume URL.');
     const exportUrl = `https://docs.google.com/document/d/${documentId}/export?format=pdf`;
-    const response = await fetch(exportUrl, { redirect: 'follow' });
+    let response;
+    try {
+      response = await fetch(exportUrl, { redirect: 'follow' });
+    } catch {
+      throw resumeImportFailure('Google Docs résumé export failed.');
+    }
     if (!response.ok) throw resumeImportFailure(`Resume export failed with HTTP ${response.status}.`);
-    bytes = Buffer.from(await response.arrayBuffer());
+    try {
+      bytes = Buffer.from(await response.arrayBuffer());
+    } catch {
+      throw resumeImportFailure('Google Docs résumé export could not be read.');
+    }
     sourceLabel = 'google-docs';
     sourceKind = 'google-docs';
   } else {
-    const local = resolve(source);
+    const localSource = String(source).trim();
+    if (!isAbsolute(localSource)) throw resumeImportFailure('Local resume must be an absolute PDF path.');
+    const local = resolve(localSource);
     if (!local.toLowerCase().endsWith('.pdf')) throw resumeImportFailure('Local resume must be a PDF.');
     try {
       bytes = await readFile(local);
@@ -2184,7 +2195,7 @@ async function importResumePayload(payload) {
     case 'url':
       return importResume(payload.source);
     case 'pdf-bytes':
-      return storeResumePdf(payload.bytes, 'pasted-pdf', { skipMinSize: true, sourceKind: 'pdf-bytes' });
+      return storeResumePdf(payload.bytes, 'pasted-pdf', { sourceKind: 'pdf-bytes' });
     default: {
       const _exhaustive = payload?.kind;
       void _exhaustive;

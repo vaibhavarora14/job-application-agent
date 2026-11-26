@@ -91,6 +91,25 @@ test('activationSnapshot reads local decisions and résumé presence without lea
   assert.equal(JSON.stringify(assessed).includes(root), false);
 });
 
+test('activationSnapshot treats a v2 cloud config as an imported résumé without reading the host config', async (t) => {
+  const root = await mkdtemp(path.join(tmpdir(), 'jaa-first-job-cloud-'));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const configPath = path.join(root, 'cloud.json');
+  await writeFile(configPath, JSON.stringify({
+    version: 2,
+    url: 'https://127.0.0.1:9',
+    token: 'cloud-client-token-with-sufficient-length',
+    clientId: 'cloud-client',
+  }));
+  const snapshot = await activationSnapshot({
+    env: { JOB_APPLICATION_AGENT_STATE_DIR: root, JOB_APPLICATION_AGENT_CLOUD_CONFIG: configPath },
+    homeDir: root,
+  });
+  assert.equal(snapshot.resumeImported, true);
+  assert.equal(snapshot.assessed, false);
+  assert.equal(JSON.stringify(snapshot).includes(configPath), false);
+});
+
 test('parseResumeImportInput accepts path, URL, JSON, paste, and PDF bytes', () => {
   assert.equal(parseResumeImportInput('').kind, 'empty');
   assert.equal(parseResumeImportInput(Buffer.alloc(0)).kind, 'empty');

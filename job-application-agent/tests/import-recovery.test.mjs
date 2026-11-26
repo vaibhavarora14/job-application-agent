@@ -129,13 +129,33 @@ test('resume import --stdin accepts raw pasted text', async (t) => {
 
 test('resume import --stdin accepts raw PDF bytes', async (t) => {
   const directory = await stateDir(t);
-  const pdf = Buffer.concat([Buffer.from('%PDF-1.4\n'), Buffer.alloc(32, 0x20), Buffer.from('\n%%EOF\n')]);
+  const pdf = Buffer.concat([Buffer.from('%PDF-1.4\n'), Buffer.alloc(1000, 0x20), Buffer.from('\n%%EOF\n')]);
   const result = await runCli(['resume', 'import', '--stdin'], {
     env: isolatedEnv(directory),
     stdin: pdf,
   });
   assert.equal(result.code, 0, result.stderr);
   assert.equal(JSON.parse(result.stdout).sourceKind, 'pdf-bytes');
+});
+
+test('resume import --stdin rejects a truncated raw PDF', async (t) => {
+  const directory = await stateDir(t);
+  const pdf = Buffer.from('%PDF-1.4\ntruncated');
+  const result = await runCli(['resume', 'import', '--stdin'], {
+    env: isolatedEnv(directory),
+    stdin: pdf,
+  });
+  assert.equal(result.code, 1);
+  assert.match(result.stderr, /did not contain a valid PDF/);
+  assertRecovery(result.stderr);
+});
+
+test('resume import refuses a relative path and does not echo it', async (t) => {
+  const directory = await stateDir(t);
+  const result = await runCli(['resume', 'import', 'secret-relative.pdf'], { env: isolatedEnv(directory) });
+  assert.equal(result.code, 1);
+  assert.match(result.stderr, /absolute PDF path/);
+  assertRecovery(result.stderr, { omit: ['secret-relative.pdf'] });
 });
 
 test('resume import --stdin JSON path recovers a local PDF', async (t) => {
