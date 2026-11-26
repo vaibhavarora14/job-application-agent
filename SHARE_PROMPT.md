@@ -30,7 +30,7 @@ These requests are not commands. Run them through the installed skill:
 - One posting URL: follow the installed skill Apply section. Do not submit from this prompt. Record with `ledger add` only after the site visibly confirms success.
 - A batch of leads, or a round of N: `round start --stdin` with `{ "requestedCount": N }`, then one `round lead --stdin` and one `round source --stdin`, then the Apply section. Attempt at least three distinct relevant discovery sources. At least one source must be successfully searched. Record each application's discovery source. If one source supplies over 60% of submissions, explain why using fit and coverage evidence. Never lower the fit bar to balance sources. Do not count closed pages, duplicates, drafts, emails left unsent, or unconfirmed submissions.
 - The attention queue: `attention list`.
-- An outcome: `ledger outcome` (or `ledger outcome <application-id-or-url> --status response|rejected|interview|offer|closed`).
+- An outcome: `ledger outcome` (or `ledger outcome <application-id-or-url> --status response|rejected|interview|offer|closed|withdrawn`).
 
 Ask me whether I want `review each` (fill each application and stop before Submit so I can look at the filled page and confirm in chat, or submit it myself) or `routine auto` (submit routine applications within my rules without asking each time). Either way, obey browser or tool confirmation requirements. Always stop for passwords, SSO/MFA, CAPTCHA, legal attestations, demographic questions, sensitive government identifiers, unclear compensation or work authorization, and any unverifiable claim. Never inspect cookies, local storage, passwords, session files, or MFA codes.
 
