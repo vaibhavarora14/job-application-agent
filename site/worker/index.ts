@@ -11,6 +11,7 @@ import {
   liveSessionConnectSrcOrigins,
   liveSessionFrameSrcOrigins,
 } from "../lib/attention-live-session.mjs";
+import { isPostHogIngestPath, proxyPostHogIngest } from "../lib/posthog-ingest-proxy.mjs";
 import { captureApiServerError, siteSentryOptions } from "../lib/sentry.mjs";
 import { serveFreshEdgeCacheHit, serveWithEdgeCache, withSharedProxyNoStore } from "../lib/edge-cache.mjs";
 import { workersDefaultCache } from "../lib/workers-cache";
@@ -23,6 +24,7 @@ interface Env {
   SENTRY_RELEASE?: string;
   PUBLIC_SITE_URL?: string;
   ATTENTION_LIVE_SESSION_BASE_URL?: string;
+  POSTHOG_HOST?: string;
 }
 
 interface ExecutionContext {
@@ -32,6 +34,9 @@ interface ExecutionContext {
 
 const worker = {
   async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
+    if (isPostHogIngestPath(new URL(request.url).pathname)) {
+      return withSharedProxyNoStore(await proxyPostHogIngest(request, { env }));
+    }
     // Public documents (/, /jobs, /jobs/<slug>, ...) use Cache API + SWR so crawler
     // traffic is served from cache (HIT/STALE) instead of re-running SSR each time.
     // Vercel's external-rewrite cache keys on the workers.dev destination, not the
@@ -78,6 +83,10 @@ const sentryWorker = Sentry.withSentry((env: Env) => siteSentryOptions(env), wor
 
 export default {
   async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
+    // Same-origin PostHog ingest (ad-blocker bypass). Never cache; never enter SSR.
+    if (isPostHogIngestPath(new URL(request.url).pathname)) {
+      return withSharedProxyNoStore(await proxyPostHogIngest(request, { env }));
+    }
     // Fresh edge-cache hits skip Sentry's per-request setup and the app wrapper (CPU on
     // Workers Free). Same response as the HIT branch of serveWithEdgeCache; anything else
     // (stale, miss, bypass, errors) takes the full Sentry-wrapped path below.

@@ -6,9 +6,8 @@
 
 import { captureLandingEvent, readUtmFromLocation } from "./landing-analytics.mjs";
 import {
-  DEFAULT_POSTHOG_HOST,
-  POSTHOG_CONNECT_SRC,
-  resolvePostHogHost,
+  BROWSER_POSTHOG_INGEST_PATH,
+  resolveBrowserPostHogHost,
 } from "./posthog.mjs";
 
 export const JOBS_EVENTS = Object.freeze({
@@ -67,15 +66,15 @@ export function resetJobsAnalyticsForTests() {
 }
 
 /**
- * Browser capture must POST to a host already in CSP `connect-src`.
- * A custom `PUBLIC_POSTHOG_HOST` that is not allowlisted is sent through
- * the default ingest endpoint instead of opening a new origin.
+ * Browser capture must POST same-origin so CSP `connect-src 'self'` holds.
+ * PostHog ingest origins are remapped to `/ingest`; any other non-relative
+ * host is also pinned to `/ingest` so the jobs client cannot open a new origin.
  *
  * @param {string | undefined} host
  */
 export function jobsCaptureHost(host) {
-  const resolved = resolvePostHogHost(host);
-  return POSTHOG_CONNECT_SRC.includes(resolved) ? resolved : DEFAULT_POSTHOG_HOST;
+  const resolved = resolveBrowserPostHogHost(host);
+  return resolved.startsWith("/") ? resolved : BROWSER_POSTHOG_INGEST_PATH;
 }
 
 /**

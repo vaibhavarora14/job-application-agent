@@ -13,7 +13,7 @@ declare namespace Cloudflare {
     POSTHOG_HOST?: string;
     /** Public PostHog project key for landing client capture (Worker var; PUBLIC_* vinext pattern). */
     PUBLIC_POSTHOG_KEY?: string;
-    /** Optional public PostHog host override for the browser client. */
+    /** Optional public PostHog host override for the browser client. Unset → same-origin `/ingest`. */
     PUBLIC_POSTHOG_HOST?: string;
     DODO_PAYMENTS_API_KEY?: string;
     DODO_PAYMENTS_WEBHOOK_KEY?: string;
