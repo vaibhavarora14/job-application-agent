@@ -16,7 +16,8 @@ import {
   referrerHostname,
   resetJobsAnalyticsForTests,
 } from "../lib/jobs-analytics.mjs";
-import { DEFAULT_POSTHOG_HOST } from "../lib/posthog.mjs";
+import { isUuidV7 } from "../lib/landing-analytics.mjs";
+import { BROWSER_POSTHOG_INGEST_PATH, DEFAULT_POSTHOG_HOST } from "../lib/posthog.mjs";
 
 const DISTINCT = "11111111-1111-4111-8111-111111111111";
 
@@ -109,9 +110,22 @@ test("jobs board pageview is personless and strips query plus referrer", async (
   assert.equal("googleForJobs" in captured[0].body.properties, false);
   assert.equal(captured[0].body.properties.$process_person_profile, false);
   assert.equal(captured[0].body.properties.$geoip_disable, true);
+  assert.equal(captured[0].url, `${BROWSER_POSTHOG_INGEST_PATH}/i/v0/e/`);
+  assert.equal(captured[0].body.properties.$lib_custom_api_host, BROWSER_POSTHOG_INGEST_PATH);
+  assert.equal(isUuidV7(captured[0].body.properties.$session_id), true);
   assert.deepEqual(
     Object.keys(captured[0].body.properties).sort(),
-    ["$current_url", "$geoip_disable", "$pathname", "$process_person_profile", "path", "surface", "utm_source"].sort(),
+    [
+      "$current_url",
+      "$geoip_disable",
+      "$lib_custom_api_host",
+      "$pathname",
+      "$process_person_profile",
+      "$session_id",
+      "path",
+      "surface",
+      "utm_source",
+    ].sort(),
   );
   const serialized = JSON.stringify(captured);
   assert.equal(serialized.includes("workplace=remote"), false);
@@ -251,10 +265,11 @@ test("overlapping Google landings reserve the once-per-document flag before awai
   assert.equal(captured.filter((row) => row.body.event === "$pageview").length, 2);
 });
 
-test("jobsCaptureHost pins browser ingest to CSP connect-src", async () => {
-  assert.equal(jobsCaptureHost(undefined), DEFAULT_POSTHOG_HOST);
-  assert.equal(jobsCaptureHost(DEFAULT_POSTHOG_HOST), DEFAULT_POSTHOG_HOST);
-  assert.equal(jobsCaptureHost("https://eu.i.posthog.com"), DEFAULT_POSTHOG_HOST);
+test("jobsCaptureHost pins browser ingest to same-origin /ingest", async () => {
+  assert.equal(jobsCaptureHost(undefined), BROWSER_POSTHOG_INGEST_PATH);
+  assert.equal(jobsCaptureHost(DEFAULT_POSTHOG_HOST), BROWSER_POSTHOG_INGEST_PATH);
+  assert.equal(jobsCaptureHost("https://eu.i.posthog.com"), BROWSER_POSTHOG_INGEST_PATH);
+  assert.equal(jobsCaptureHost("https://attacker.example"), BROWSER_POSTHOG_INGEST_PATH);
 
   resetJobsAnalyticsForTests();
   /** @type {unknown[]} */
@@ -268,7 +283,7 @@ test("jobsCaptureHost pins browser ingest to CSP connect-src", async () => {
     fetchFn: fetchRecorder(captured),
   });
   assert.equal(captured.length, 1);
-  assert.equal(captured[0].url, `${DEFAULT_POSTHOG_HOST}/i/v0/e/`);
+  assert.equal(captured[0].url, `${BROWSER_POSTHOG_INGEST_PATH}/i/v0/e/`);
 });
 
 test("alerts routes and missing surfaces skip capture", async () => {

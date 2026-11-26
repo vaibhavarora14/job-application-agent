@@ -62,7 +62,8 @@ export function LandingAnalyticsProvider({ children }: { children: ReactNode }) 
 
   useEffect(() => {
     if (!remote) return;
-    // Jobs board surfaces — no per-candidate / page analytics there.
+    // Jobs board surfaces — landing skip so board filters never ride founding
+    // `$current_url`. Personless jobs capture lives in JobsAnalytics.
     if (typeof window !== "undefined") {
       const jobsFlag = (window as Window & { __JAA_JOBS_NO_ANALYTICS__?: number }).__JAA_JOBS_NO_ANALYTICS__;
       if (jobsFlag || window.location.pathname.startsWith("/jobs")) return;
