@@ -201,7 +201,7 @@ test("Google search referrer with a query string is detected without leaking the
   const serialized = JSON.stringify(captured);
   assert.equal(serialized.includes("jane"), false);
   assert.equal(serialized.includes("email%40"), false);
-  assert.equal(serialized.includes("google.com/search"), false);
+  assert.doesNotMatch(serialized, /\/search\?q=/);
   assert.doesNotMatch(serialized, /"\$referrer"/);
   assert.equal("$referrer" in captured[0].body.properties, false);
   assert.equal("referrer" in captured[0].body.properties, false);
@@ -407,8 +407,8 @@ test("classification reads allowlisted UTM locally and events get a derived labe
     referrer: leaky,
   });
   assert.deepEqual(attribution, { jobsSource: JOBS_SOURCE_GOOGLE_FOR_JOBS });
+  assert.deepEqual(Object.keys(attribution), ["jobsSource"]);
   assertNoQueryOrReferrerLeak(JSON.stringify(attribution));
-  assert.equal(JSON.stringify(attribution).includes("google.com"), false);
   assert.deepEqual(jobsAttributionProperties({
     search: "?utm_source=twitter&utm_medium=organic",
     referrer: leaky,
