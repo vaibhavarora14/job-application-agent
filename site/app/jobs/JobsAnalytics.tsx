@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation";
 import {
   captureJobsPageview,
   jobsCaptureHost,
+  rememberJobsDocumentTouch,
   setJobsAnalyticsBrowserConfig,
 } from "../../lib/jobs-analytics.mjs";
 
@@ -20,6 +21,12 @@ export function JobsAnalytics() {
   const [remote, setRemote] = useState<RemoteConfig | null>(null);
 
   useEffect(() => {
+    // Snapshot UTM + referrer before the config round-trip. Client navigation
+    // (or a bounce to the ATS) would otherwise drop google_jobs_apply / referrer.
+    rememberJobsDocumentTouch({
+      search: window.location.search,
+      referrer: document.referrer,
+    });
     let active = true;
     void (async () => {
       try {
@@ -45,13 +52,17 @@ export function JobsAnalytics() {
 
   useEffect(() => {
     if (!remote) return;
+    const touch = rememberJobsDocumentTouch({
+      search: window.location.search,
+      referrer: document.referrer,
+    });
     void captureJobsPageview({
       apiKey: remote.apiKey,
       host: remote.host,
       pathname,
-      search: window.location.search,
+      search: touch.search,
       origin: window.location.origin,
-      referrer: document.referrer,
+      referrer: touch.referrer,
     });
   }, [remote, pathname]);
 

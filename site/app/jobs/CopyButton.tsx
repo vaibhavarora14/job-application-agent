@@ -54,14 +54,19 @@ export function CopyButton({
         className={className}
         aria-label={ariaLabel}
         data-copied={copied ? "true" : undefined}
-        onClick={async () => {
+        onClick={() => {
+          // Capture on click, before clipboard I/O, so a blocked or slow write
+          // cannot drop jobs_copy_clicked.
+          trackCopyKind(copyKind);
           try {
-            await navigator.clipboard.writeText(value);
-            setCopied(true);
-            trackCopyKind(copyKind);
-            window.setTimeout(() => setCopied(false), 1600);
+            void navigator.clipboard.writeText(value).then(() => {
+              setCopied(true);
+              window.setTimeout(() => setCopied(false), 1600);
+            }).catch(() => {
+              /* clipboard blocked: the prompt stays readable in "Preview the prompt" */
+            });
           } catch {
-            /* clipboard blocked: the prompt stays readable in "Preview the prompt" */
+            /* clipboard missing: the prompt stays readable in "Preview the prompt" */
           }
         }}
       >
