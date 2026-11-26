@@ -184,7 +184,14 @@ declare module "*/jobs-analytics.mjs" {
     PROMPT: "prompt";
     COMMAND: "command";
   }>;
+  export const JOBS_SOURCE_GOOGLE_FOR_JOBS: "google_for_jobs";
+  export const JOBS_UTM_KEYS: readonly ["utm_source", "utm_medium", "utm_campaign"];
+  export const JOBS_ANALYTICS_WINDOW_KEY: "__JAA_JOBS_ANALYTICS__";
   export function setJobsAnalyticsBrowserConfig(config: { apiKey: string; host?: string } | null): void;
+  export function rememberJobsDocumentTouch(input?: {
+    search?: string;
+    referrer?: string;
+  }): { search: string; referrer: string };
   export function resetJobsAnalyticsForTests(): void;
   export function isJobsCopyKind(value: unknown): value is "prompt" | "command";
   export function normalizeJobsPathname(pathname?: string): string;
@@ -192,6 +199,12 @@ declare module "*/jobs-analytics.mjs" {
   export function isGoogleJobsReferrerHost(hostname?: string): boolean;
   export function referrerHostname(referrer?: string): string;
   export function jobsCaptureHost(host?: string): string;
+  export function readJobsUtmFromLocation(search?: string): Record<string, string>;
+  export function jobsAttributionProperties(input?: {
+    search?: string;
+    referrer?: string;
+    utm?: Record<string, string>;
+  }): { jobsSource?: "google_for_jobs" };
   export function detectGoogleForJobsLanding(input?: {
     referrer?: string;
     search?: string;

@@ -74,10 +74,10 @@ Cookies and `Referer` are stripped; `Set-Cookie` from PostHog is dropped. Server
 
 | Event | Where | Distinct id | Notes |
 |---|---|---|---|
-| `$pageview` | `/jobs` board | anonymous UUID in `localStorage` | `surface=board`; `$current_url` is origin+pathname (no query/hash); allowlisted UTM only |
+| `$pageview` | `/jobs` board | anonymous UUID in `localStorage` | `surface=board`; `$current_url` is origin+pathname (no query/hash). Query strings, UTM values, and referrer are classified locally and never copied onto the event. |
 | `$pageview` | `/jobs/<slug>` | same | `surface=job_page`; slug is the public path only |
-| `google_for_jobs_landing` | jobs surfaces, once per document | same | Google Search / `jobs.google.com` referrer host, or Google UTM with empty/`organic`/`referral` medium. Paid (`cpc`, `paidsearch`, `gclid`, …) is excluded. **Never** sends the referrer URL |
-| `jobs_copy_clicked` | Copy prompt / Copy command | same | `copyKind` is `prompt` or `command`. Never clipboard contents |
+| `google_for_jobs_landing` | jobs surfaces, once per document | same | Classified from Google Search / `jobs.google.com` referrer host, or Google UTM including `utm_source=google_jobs_apply` (Google for Jobs' actual param) with empty/`organic`/`referral` medium. Paid (`cpc`, `paidsearch`, `gclid`, …) is excluded. Fired in the same turn as `$pageview`. Events carry `jobsSource=google_for_jobs` (and `$pageview` also `googleForJobs=true`). **Never** sends UTM values, `$referrer`, `$referring_domain`, or a query string. |
+| `jobs_copy_clicked` | Copy prompt / Copy command | same | `copyKind` is `prompt` or `command`. Fired on click (not after clipboard). Queued until analytics config is ready. Never clipboard contents |
 
 `/jobs/alerts*` is not captured. GeoIP stays disabled; no `posthog-js`; no new cookies.
 
@@ -87,5 +87,5 @@ In PostHog project **556627** → Activity / Live events:
 
 1. Open `https://jobappagent.com/jobs` — capture POSTs go to `/ingest/i/v0/e/` (not `us.i.posthog.com`). `$pageview` with `$pathname=/jobs`, `surface=board`, `$geoip_disable=true`, `$process_person_profile=false`, UUIDv7 `$session_id`. `$current_url` has no query string even if the address bar does.
 2. Open `https://jobappagent.com/jobs/<slug>` — `$pageview` with that pathname and `surface=job_page`.
-3. Open a job URL from Google (or `?utm_source=google&utm_medium=organic`) — the `$pageview` has `googleForJobs=true`, plus a `google_for_jobs_landing` event. Properties must not include `$referrer`, `gclid`, or a `q=` search string.
+3. Open a job URL from Google for Jobs (`?utm_source=google_jobs_apply&utm_medium=organic`) or Google Search — the `$pageview` has `googleForJobs=true` and `jobsSource=google_for_jobs`, plus a `google_for_jobs_landing` event with the same `jobsSource`. Properties must not include `$referrer`, `$referring_domain`, `utm_*`, `gclid`, or a `q=` search string. `$current_url` has no query string.
 4. Click **Copy prompt** and **Copy command** — `jobs_copy_clicked` with `copyKind=prompt` then `copyKind=command`. No prompt text or CLI URL in properties.
