@@ -17,7 +17,10 @@ custom domains to the Cloudflare Worker:
 - **Vercel Project**: Proxies all routes `/*` to the Cloudflare Worker for both
   `jobappagent.com` and `stats.jobappagent.com`.
 - **Origin Worker**: Deployed via GitHub Actions (`.github/workflows/deploy-site.yml`)
-  to Cloudflare Workers on every push to `main`.
+  to Cloudflare Workers on every push to `main`. Browser PostHog capture uses
+  same-origin `/ingest/*`, which this Vercel rewrite forwards to the Worker; the
+  Worker proxies ingest to `us.i.posthog.com` and `/static`+`/array` to
+  `us-assets.i.posthog.com`.
 
 Host-aware routing in `site/proxy.ts` rewrites `stats.jobappagent.com/` to
 `/community-view`. Founding CTA copy is shared via `FOUNDING_CTA_LABEL`
