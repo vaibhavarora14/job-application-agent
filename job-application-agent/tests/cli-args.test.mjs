@@ -6,7 +6,7 @@ import { join } from 'node:path';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
 import { COMMAND_USAGE, normalizeCliArgs, usageError, usageFor } from '../scripts/cli-args.mjs';
-import { leadObservedAt } from '../scripts/application-accounting.mjs';
+import { coerceIsoDateTime, leadObservedAt } from '../scripts/application-accounting.mjs';
 
 const script = fileURLToPath(new URL('../scripts/job-application.mjs', import.meta.url));
 
@@ -42,6 +42,8 @@ test('normalizeCliArgs handles help, version, no-op flags, stdin aliases and inl
   assert.deepEqual(inlineArray.args, ['round', 'lead', '--stdin']);
   assert.deepEqual(inlineArray.inlineJson, [{ roundId: 'round-1' }]);
   assert.deepEqual(normalizeCliArgs(['sources', 'list']).args, ['sources', 'list']);
+  assert.deepEqual(normalizeCliArgs(['ledger', 'submit', '--stdin']).args, ['ledger', 'add', '--stdin']);
+  assert.deepEqual(normalizeCliArgs(['ledger', 'list', '--stdin', '--json']).args, ['ledger', 'list', '--json']);
 });
 
 test('usage errors are area specific, keep the reason within the analytics bound, and never echo values', () => {
@@ -61,7 +63,7 @@ test('usage errors are area specific, keep the reason within the analytics bound
   assert.match(usageFor('score').note, /defaults to other/);
   assert.match(usageFor('round').note, /disposition/);
   assert.match(usageFor('round').note, /ACCOUNTING\.md/);
-  assert.equal(usageFor('ledger').note, undefined);
+  assert.match(usageFor('ledger').note, /withdrawn/);
 });
 
 test('help and version exit 0 without touching state; usage errors stay nonzero', async (t) => {
@@ -102,6 +104,13 @@ test('leadObservedAt defaults missing values and accepts ISO strings and epochs'
   for (const bad of ['yesterday', 'x'.repeat(81), -1, Number.NaN, true, {}]) {
     assert.throws(() => leadObservedAt(bad), /observedAt must be an ISO 8601 date-time/);
   }
+});
+
+test('coerceIsoDateTime names the field on rejection', () => {
+  const now = new Date('2026-10-20T05:00:00.000Z');
+  assert.equal(coerceIsoDateTime(undefined, 'entry.submittedAt', now), now.toISOString());
+  assert.equal(coerceIsoDateTime(1792406940, 'entry.submittedAt'), '2026-10-19T10:49:00.000Z');
+  assert.throws(() => coerceIsoDateTime('yesterday', 'entry.submittedAt'), /entry\.submittedAt must be an ISO 8601 date-time/);
 });
 
 test('round lead without observedAt is recorded; reporting counts before leads explains the recorded totals', async (t) => {

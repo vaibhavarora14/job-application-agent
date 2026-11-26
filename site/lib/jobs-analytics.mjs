@@ -4,9 +4,10 @@
  * query strings, clipboard contents, or Google search queries.
  */
 
-import { captureLandingEvent, readUtmFromLocation } from "./landing-analytics.mjs";
+import { captureLandingEvent } from "./landing-analytics.mjs";
 import {
   BROWSER_POSTHOG_INGEST_PATH,
+  extractUtmParams,
   resolveBrowserPostHogHost,
 } from "./posthog.mjs";
 
@@ -20,14 +21,25 @@ export const JOBS_COPY_KINDS = Object.freeze({
   COMMAND: "command",
 });
 
+/** Derived label sent on jobs events. Raw UTM values never leave the client. */
+export const JOBS_SOURCE_GOOGLE_FOR_JOBS = "google_for_jobs";
+
+/** Keys read locally for Google-for-Jobs classification. Not copied onto events. */
+export const JOBS_UTM_KEYS = Object.freeze(["utm_source", "utm_medium", "utm_campaign"]);
+
+/**
+ * Cross-chunk browser config. CopyButton and JobsAnalytics can land in separate
+ * client graphs; module-local `browserConfig` would then never be visible to clicks.
+ */
+export const JOBS_ANALYTICS_WINDOW_KEY = "__JAA_JOBS_ANALYTICS__";
+const JOBS_COPY_QUEUE_WINDOW_KEY = "__JAA_JOBS_COPY_QUEUE__";
+
 const GOOGLE_JOBS_SOURCES = new Set([
   "google",
   "google_jobs",
-  "google-jobs",
   "googlejobs",
-  "google for jobs",
-  "google-for-jobs",
   "google_for_jobs",
+  "google_jobs_apply",
 ]);
 
 const PAID_MEDIUMS = new Set([
@@ -41,7 +53,6 @@ const PAID_MEDIUMS = new Set([
   "ads",
   "ad",
   "paid_search",
-  "paid-search",
   "google_ads",
   "sem",
 ]);
@@ -49,20 +60,113 @@ const PAID_MEDIUMS = new Set([
 /** Google UTM counts as organic only for these media (empty = unset). */
 const ORGANIC_GOOGLE_MEDIUMS = new Set(["", "organic", "referral"]);
 
+const MAX_PENDING_COPY_CLICKS = 8;
+
 /** @type {{ apiKey: string, host?: string } | null} */
 let browserConfig = null;
 let googleLandingSent = false;
+/** @type {{ search: string, referrer: string } | null} */
+let documentTouch = null;
+/** @type {{ copyKind: "prompt" | "command", pathname: string, origin: string }[]} */
+let pendingCopyClicks = [];
+
+function jobsWindow() {
+  return typeof globalThis !== "undefined" && globalThis.window ? globalThis.window : undefined;
+}
+
+function readBrowserConfig() {
+  const win = jobsWindow();
+  const fromWindow = win ? win[JOBS_ANALYTICS_WINDOW_KEY] : null;
+  if (fromWindow && typeof fromWindow.apiKey === "string" && fromWindow.apiKey.trim()) {
+    return { apiKey: fromWindow.apiKey.trim(), host: fromWindow.host };
+  }
+  return browserConfig;
+}
+
+function writeBrowserConfig(config) {
+  browserConfig = config;
+  const win = jobsWindow();
+  if (!win) return;
+  if (config) win[JOBS_ANALYTICS_WINDOW_KEY] = config;
+  else delete win[JOBS_ANALYTICS_WINDOW_KEY];
+}
+
+function pendingCopyQueue() {
+  const win = jobsWindow();
+  if (win) {
+    if (!Array.isArray(win[JOBS_COPY_QUEUE_WINDOW_KEY])) win[JOBS_COPY_QUEUE_WINDOW_KEY] = [];
+    return win[JOBS_COPY_QUEUE_WINDOW_KEY];
+  }
+  return pendingCopyClicks;
+}
+
+function enqueueCopyClick(payload) {
+  const queue = pendingCopyQueue();
+  if (queue.length >= MAX_PENDING_COPY_CLICKS) return;
+  queue.push(payload);
+}
+
+function takePendingCopyClicks() {
+  const win = jobsWindow();
+  if (win) {
+    const queued = Array.isArray(win[JOBS_COPY_QUEUE_WINDOW_KEY]) ? win[JOBS_COPY_QUEUE_WINDOW_KEY] : [];
+    win[JOBS_COPY_QUEUE_WINDOW_KEY] = [];
+    return queued;
+  }
+  const queued = pendingCopyClicks;
+  pendingCopyClicks = [];
+  return queued;
+}
+
+function flushPendingCopyClicks() {
+  const config = readBrowserConfig();
+  if (!config?.apiKey) return;
+  const queued = takePendingCopyClicks();
+  for (const item of queued) {
+    void captureJobsCopyClicked({
+      apiKey: config.apiKey,
+      host: config.host,
+      copyKind: item.copyKind,
+      pathname: item.pathname,
+      origin: item.origin,
+    });
+  }
+}
 
 /**
  * @param {{ apiKey: string, host?: string } | null} config
  */
 export function setJobsAnalyticsBrowserConfig(config) {
-  browserConfig = config && config.apiKey ? { apiKey: config.apiKey, host: config.host } : null;
+  writeBrowserConfig(config && config.apiKey ? { apiKey: config.apiKey, host: config.host } : null);
+  flushPendingCopyClicks();
+}
+
+/**
+ * First search/referrer on this document. Classification reads these raw values;
+ * capture never copies them onto the event.
+ *
+ * @param {{ search?: string, referrer?: string }} [input]
+ */
+export function rememberJobsDocumentTouch(input = {}) {
+  if (!documentTouch) {
+    documentTouch = {
+      search: typeof input.search === "string" ? input.search : "",
+      referrer: typeof input.referrer === "string" ? input.referrer : "",
+    };
+  }
+  return documentTouch;
 }
 
 export function resetJobsAnalyticsForTests() {
   browserConfig = null;
   googleLandingSent = false;
+  documentTouch = null;
+  pendingCopyClicks = [];
+  const win = jobsWindow();
+  if (win) {
+    delete win[JOBS_ANALYTICS_WINDOW_KEY];
+    delete win[JOBS_COPY_QUEUE_WINDOW_KEY];
+  }
 }
 
 /**
@@ -122,6 +226,8 @@ export function isGoogleJobsReferrerHost(hostname) {
 }
 
 /**
+ * Hostname only — used for classification, never copied onto events.
+ *
  * @param {string | undefined} referrer
  */
 export function referrerHostname(referrer) {
@@ -136,11 +242,45 @@ export function referrerHostname(referrer) {
 }
 
 /**
+ * @param {string | undefined} value
+ */
+function normalizeJobsUtmToken(value) {
+  return String(value ?? "").trim().toLowerCase().replace(/-/g, "_").replace(/\s+/g, "_");
+}
+
+/**
+ * @param {string | undefined} value
+ */
+function isGoogleJobsUtmToken(value) {
+  const token = normalizeJobsUtmToken(value);
+  if (!token) return false;
+  if (GOOGLE_JOBS_SOURCES.has(token)) return true;
+  return token.startsWith("google_jobs_");
+}
+
+/**
+ * Local classification helper. Return value is not an event payload.
+ *
+ * @param {string} [search]
+ */
+export function readJobsUtmFromLocation(search = "") {
+  const rawSearch = typeof search === "string" ? search : "";
+  const params = new URLSearchParams(rawSearch.startsWith("?") || rawSearch.startsWith("&") ? rawSearch : `?${rawSearch}`);
+  /** @type {Record<string, string>} */
+  const raw = {};
+  for (const key of JOBS_UTM_KEYS) {
+    const value = params.get(key);
+    if (value) raw[key] = value;
+  }
+  return extractUtmParams(raw);
+}
+
+/**
  * @param {Record<string, string>} utm
  * @param {string | undefined} search
  */
 function isPaidAcquisition(utm, search) {
-  const medium = (utm.utm_medium ?? "").trim().toLowerCase();
+  const medium = normalizeJobsUtmToken(utm.utm_medium);
   if (PAID_MEDIUMS.has(medium)) return true;
   if (typeof search !== "string" || !search) return false;
   const params = new URLSearchParams(search.startsWith("?") ? search : `?${search}`);
@@ -150,6 +290,10 @@ function isPaidAcquisition(utm, search) {
 /**
  * True for Google Search / Google for Jobs organic landings. Never returns the referrer.
  *
+ * Google for Jobs appends `utm_source=google_jobs_apply` (and usually
+ * `utm_campaign=google_jobs_apply` + `utm_medium=organic`). A non-Google
+ * `utm_source` opts out of the referrer-host fallback.
+ *
  * @param {{
  *   referrer?: string,
  *   search?: string,
@@ -157,12 +301,12 @@ function isPaidAcquisition(utm, search) {
  * }} [input]
  */
 export function detectGoogleForJobsLanding(input = {}) {
-  const utm = input.utm ?? readUtmFromLocation(input.search ?? "");
+  const utm = input.utm ?? readJobsUtmFromLocation(input.search ?? "");
   if (isPaidAcquisition(utm, input.search)) return false;
-  const source = (utm.utm_source ?? "").trim().toLowerCase();
-  if (GOOGLE_JOBS_SOURCES.has(source)) {
-    const medium = (utm.utm_medium ?? "").trim().toLowerCase();
-    return ORGANIC_GOOGLE_MEDIUMS.has(medium);
+  const source = normalizeJobsUtmToken(utm.utm_source);
+  const campaign = normalizeJobsUtmToken(utm.utm_campaign);
+  if (isGoogleJobsUtmToken(source) || isGoogleJobsUtmToken(campaign)) {
+    return ORGANIC_GOOGLE_MEDIUMS.has(normalizeJobsUtmToken(utm.utm_medium));
   }
   if (source) return false;
   return isGoogleJobsReferrerHost(referrerHostname(input.referrer));
@@ -201,6 +345,17 @@ export function jobsCaptureUrl(input = {}) {
 }
 
 /**
+ * Derived source label only. Classification uses raw search/referrer; the
+ * payload never includes UTM values, query strings, or a referrer host.
+ *
+ * @param {{ search?: string, referrer?: string, utm?: Record<string, string> }} [input]
+ */
+export function jobsAttributionProperties(input = {}) {
+  if (!detectGoogleForJobsLanding(input)) return {};
+  return { jobsSource: JOBS_SOURCE_GOOGLE_FOR_JOBS };
+}
+
+/**
  * @param {{
  *   apiKey: string,
  *   host?: string,
@@ -217,21 +372,32 @@ export async function captureJobsPageview(input) {
   const surface = classifyJobsSurface(input.pathname);
   if (!surface) return { ok: false, skipped: true };
 
+  const touch = rememberJobsDocumentTouch({
+    search: input.search ?? "",
+    referrer: input.referrer ?? "",
+  });
   const pathname = normalizeJobsPathname(input.pathname);
   const currentUrl = jobsCaptureUrl({
     origin: input.origin,
     pathname,
     href: input.href,
   });
-  const utm = readUtmFromLocation(input.search);
+  const utm = readJobsUtmFromLocation(touch.search);
   const googleForJobs = !googleLandingSent && detectGoogleForJobsLanding({
-    referrer: input.referrer,
-    search: input.search,
+    referrer: touch.referrer,
+    search: touch.search,
     utm,
   });
   if (googleForJobs) googleLandingSent = true;
 
   const host = jobsCaptureHost(input.host);
+  const source = googleForJobs
+    ? jobsAttributionProperties({
+      referrer: touch.referrer,
+      search: touch.search,
+      utm,
+    })
+    : {};
 
   /** @type {Record<string, unknown>} */
   const properties = {
@@ -239,11 +405,11 @@ export async function captureJobsPageview(input) {
     $pathname: pathname,
     path: pathname,
     surface,
-    ...utm,
+    ...source,
   };
   if (googleForJobs) properties.googleForJobs = true;
 
-  const pageview = await captureLandingEvent({
+  const pageviewPromise = captureLandingEvent({
     apiKey: input.apiKey,
     host,
     event: "$pageview",
@@ -252,22 +418,30 @@ export async function captureJobsPageview(input) {
     fetchFn: input.fetchFn,
   });
 
-  if (!googleForJobs) return pageview;
+  if (!googleForJobs) return pageviewPromise;
 
-  await captureLandingEvent({
-    apiKey: input.apiKey,
-    host,
-    event: JOBS_EVENTS.GOOGLE_FOR_JOBS_LANDING,
-    properties: {
-      $current_url: currentUrl,
-      $pathname: pathname,
-      path: pathname,
-      surface,
-      ...utm,
-    },
-    distinctId: input.distinctId,
-    fetchFn: input.fetchFn,
-  });
+  /** @type {Record<string, unknown>} */
+  const landingProperties = {
+    $current_url: currentUrl,
+    $pathname: pathname,
+    path: pathname,
+    surface,
+    ...source,
+  };
+
+  // Fire the landing event in the same turn as `$pageview`. Waiting on pageview
+  // first dropped google_for_jobs_landing when the visitor left for the ATS.
+  const [pageview] = await Promise.all([
+    pageviewPromise,
+    captureLandingEvent({
+      apiKey: input.apiKey,
+      host,
+      event: JOBS_EVENTS.GOOGLE_FOR_JOBS_LANDING,
+      properties: landingProperties,
+      distinctId: input.distinctId,
+      fetchFn: input.fetchFn,
+    }),
+  ]);
   return pageview;
 }
 
@@ -321,14 +495,24 @@ export function captureJobsCopyClicked(input) {
  * @param {"prompt" | "command"} copyKind
  */
 export function trackJobsCopyClicked(copyKind) {
-  if (!browserConfig?.apiKey) return;
   if (!isJobsCopyKind(copyKind)) return;
-  if (typeof window === "undefined") return;
-  void captureJobsCopyClicked({
-    apiKey: browserConfig.apiKey,
-    host: browserConfig.host,
+  const win = jobsWindow();
+  if (!win?.location) return;
+  const payload = {
     copyKind,
-    pathname: window.location.pathname,
-    origin: window.location.origin,
+    pathname: String(win.location.pathname ?? ""),
+    origin: String(win.location.origin ?? ""),
+  };
+  const config = readBrowserConfig();
+  if (!config?.apiKey) {
+    enqueueCopyClick(payload);
+    return;
+  }
+  void captureJobsCopyClicked({
+    apiKey: config.apiKey,
+    host: config.host,
+    copyKind: payload.copyKind,
+    pathname: payload.pathname,
+    origin: payload.origin,
   });
 }

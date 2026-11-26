@@ -1039,7 +1039,7 @@ test('accepts any one ledger check identifier set and never hard-matches company
     assert.match(error.message, identifierError);
     assert.doesNotMatch(error.message, /candidate\.url must/);
   }
-  assert.throws(() => validateLedgerCheckCandidate({ url: 'not-a-url' }), /Invalid URL|invalid/i);
+  assert.throws(() => validateLedgerCheckCandidate({ url: 'not-a-url' }), /candidate\.url must be a public HTTP\(S\) URL/);
   assert.throws(() => validateLedgerCheckCandidate({ id: 'example-role-1', url: 123 }), /candidate\.url must/);
   assert.throws(() => validateLedgerCheckCandidate({ id: 'example-role-1', url: null }), /candidate\.url must/);
 });
@@ -1144,7 +1144,7 @@ test('looks up ledger rows without requiring a URL on check', async (t) => {
 
   const invalidUrl = await runCli(script, ['ledger', 'check', '--stdin'], { url: 'not-a-url' }, env);
   assert.equal(invalidUrl.code, 1);
-  assert.match(invalidUrl.stderr, /Invalid URL|invalid/i);
+  assert.match(invalidUrl.stderr, /candidate\.url must be a public HTTP\(S\) URL/);
 
   const missingAddUrl = await runCli(script, ['ledger', 'add', '--stdin'], {
     id: 'example-role-2', company: 'Example', role: 'Staff Engineer', source: 'company', score: 80,
