@@ -484,7 +484,8 @@ test("publishes an indexable jobs board with shared site chrome", async () => {
     assert.match(openHtml, /Preview the prompt/);
     assert.match(openHtml, /Apply to this role with JobAppAgent in review mode/);
     assert.match(openHtml, /URL: https:\/\/boards\.greenhouse\.io\/exampleco\/jobs\/1001/);
-    assert.match(openHtml, /npx job-application-agent@latest apply https:\/\/boards\.greenhouse\.io\/exampleco\/jobs\/1001 --source=jobs/);
+    assert.match(openHtml, /npx job-application-agent@latest apply https:\/\/boards\.greenhouse\.io\/exampleco\/jobs\/1001/);
+    assert.doesNotMatch(openHtml, /npx job-application-agent@latest apply https:\/\/boards\.greenhouse\.io\/exampleco\/jobs\/1001 --source=/);
     // Design P1: no helper line in the bar; one-line card lead; CLI folded into a quiet disclosure.
     assert.doesNotMatch(openHtml, /For Cursor, Claude Code or Codex/);
     assert.match(openHtml, /Your agent fills the application and waits for your OK\./);
