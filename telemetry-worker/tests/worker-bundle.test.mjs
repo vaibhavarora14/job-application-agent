@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import path from 'node:path';
 import test from 'node:test';
 
 import {
@@ -18,7 +19,7 @@ test('static node:crypto import detector matches Worker upload failures', () => 
 
 test('telemetry-worker module graph has no static node:crypto import', async () => {
   const files = await collectWorkerModuleGraph();
-  assert.ok(files.some((file) => file.endsWith('job-application-agent/scripts/telemetry-schema.mjs')));
+  assert.ok(files.some((file) => file.endsWith(path.join('job-application-agent', 'scripts', 'telemetry-schema.mjs'))));
   assert.deepEqual(await filesWithStaticNodeCrypto(files), []);
 });
 
