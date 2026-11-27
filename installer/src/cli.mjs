@@ -5,7 +5,7 @@ import { fileURLToPath } from 'node:url';
 
 import { assertApplyUrlAllowed, parseApplyUrl } from '../../job-application-agent/scripts/ats/apply-url-gate.mjs';
 import { activationSnapshot, firstJobGuide, formatFirstJobGuide } from '../../job-application-agent/scripts/first-job.mjs';
-import { stripSnippetSourceArgs } from '../../job-application-agent/scripts/install-source.mjs';
+import { stripSnippetSourceArgs } from '../../job-application-agent/scripts/cli-args.mjs';
 import { consumeAutoUpdateNotice, installSkill, readInstallStatus, resolveAgentHome, setAutomaticUpdates, updateSkill } from './installer.mjs';
 import { createUpdateRunner } from './runner.mjs';
 
@@ -17,6 +17,23 @@ function updatesLine(status) {
     : 'Automatic updates: disabled (notify-only; the skill tells you when a new version exists; opt in with `updates enable`)';
 }
 const USAGE = `Usage:\n  job-application-agent install\n  job-application-agent update\n  job-application-agent status\n  job-application-agent updates enable|disable\n  job-application-agent platforms [hermes|grok|openclaw]\n  job-application-agent outreach <command>\n  job-application-agent apply <url>\n`;
+
+/** One argv prefix per installer command, including platform and outreach subcommands. */
+export const INSTALLER_COMMANDS = Object.freeze([
+  ['install'],
+  ['update'],
+  ['status'],
+  ['updates', 'enable'],
+  ['updates', 'disable'],
+  ['platforms'],
+  ['platforms', 'hermes'],
+  ['platforms', 'grok'],
+  ['platforms', 'openclaw'],
+  ['outreach', 'list'],
+  ['outreach', 'review'],
+  ['apply', 'https://jobs.example.com/boards/acme/jobs/123'],
+  ['auto-update'],
+]);
 
 function defaultPackageRoot() {
   return path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');

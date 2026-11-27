@@ -1,6 +1,9 @@
 // Forgiving argument handling and area-specific usage for the job-application CLI.
 // Usage errors only ever echo known command tokens, never caller-supplied values,
 // because error messages feed bounded skill_error analytics.
+import { stripSnippetSourceArgs } from './install-source.mjs';
+
+export { stripSnippetSourceArgs };
 
 export const COMMAND_USAGE = Object.freeze({
   cloud: 'cloud status | configure --stdin | reconcile [--dry-run] | export [path] | lease-acquire | lease-renew | lease-release | intent-prepare --stdin | intent-sent --stdin | intent-confirm --stdin',
@@ -70,14 +73,17 @@ function parseInlineJson(value) {
  * - `help` / `--help` / no args and `<area> help` print usage instead of failing;
  * - `version` / `--version` print the CLI version;
  * - `--json` / `--pretty` are dropped (output is already JSON), except `ledger list`, which keeps `--json`;
+ * - `--source` / `--source=<tag>` are stripped so every command accepts the closed snippet tag
+ *   (process.argv is left intact for install-source telemetry; unknown tags are ignored);
  * - `-` and `--stdin=` mean `--stdin`;
  * - an inline JSON object or array argument (`round lead '{"roundId":...}'` or `round lead '[{...}]'`) is read as the stdin payload;
  * - `cloud lease acquire` → `cloud lease-acquire`, `cloud intent prepare` → `cloud intent-prepare`;
  * - small aliases such as `profile show` → `profile check`, `profile get <name>` → `profile field <name>`.
  */
 export function normalizeCliArgs(input) {
-  const keepListJson = input[0] === 'ledger' && input[1] === 'list';
-  let args = [...input].filter((arg) => (arg === '--json' && keepListJson) || !NO_OP_FLAGS.has(arg));
+  const stripped = stripSnippetSourceArgs(Array.isArray(input) ? input : []);
+  const keepListJson = stripped[0] === 'ledger' && stripped[1] === 'list';
+  let args = stripped.filter((arg) => (arg === '--json' && keepListJson) || !NO_OP_FLAGS.has(arg));
   if (args.length === 0 || HELP.has(args[0])) return { args, help: args[1] && KNOWN_AREAS.includes(args[1]) ? args[1] : true };
   if (VERSION.has(args[0])) return { args, version: true };
   if (KNOWN_AREAS.includes(args[0]) && args.slice(1).some((arg) => HELP.has(arg))) return { args, help: args[0] };
@@ -102,6 +108,96 @@ export function normalizeCliArgs(input) {
   // A stdin subcommand given its JSON inline is equivalent to `--stdin`.
   if (inlineJson !== undefined && Object.hasOwn(STDIN_ACTIONS, area) && STDIN_ACTIONS[area].includes(args[1]) && args[2] === '--stdin') args = args.slice(0, 3);
   return { args, ...(inlineJson !== undefined ? { inlineJson } : {}) };
+}
+
+/**
+ * One argv prefix per documented skill-CLI area/action. Used to prove `--source`
+ * is accepted everywhere, not only on install/status.
+ */
+export const REGISTERED_SKILL_COMMANDS = Object.freeze([
+  ['cloud', 'status'],
+  ['cloud', 'configure'],
+  ['cloud', 'reconcile'],
+  ['cloud', 'export'],
+  ['cloud', 'lease-acquire'],
+  ['cloud', 'lease-renew'],
+  ['cloud', 'lease-release'],
+  ['cloud', 'intent-prepare'],
+  ['cloud', 'intent-sent'],
+  ['cloud', 'intent-confirm'],
+  ['profile', 'set'],
+  ['profile', 'migrate'],
+  ['profile', 'check'],
+  ['profile', 'field'],
+  ['resume', 'import'],
+  ['resume', 'path'],
+  ['score'],
+  ['score', 'guard'],
+  ['score', 'guard-reset'],
+  ['ledger', 'check'],
+  ['ledger', 'add'],
+  ['ledger', 'outcome'],
+  ['ledger', 'review-ack'],
+  ['ledger', 'delivery'],
+  ['ledger', 'retry'],
+  ['ledger', 'list'],
+  ['ledger', 'review'],
+  ['ledger', 'deliveries'],
+  ['autonomy', 'grant'],
+  ['autonomy', 'status'],
+  ['autonomy', 'preview'],
+  ['autonomy', 'revoke'],
+  ['review', 'stage'],
+  ['round', 'start'],
+  ['round', 'lead'],
+  ['round', 'source'],
+  ['round', 'confirm'],
+  ['round', 'complete'],
+  ['round', 'status'],
+  ['round', 'leads'],
+  ['sources', 'list'],
+  ['sources', 'jobs'],
+  ['sources', 'suggest'],
+  ['sources', 'pending'],
+  ['sources', 'sync'],
+  ['sources', 'sharing', 'status'],
+  ['sources', 'sharing', 'enable'],
+  ['sources', 'sharing', 'disable'],
+  ['sources', 'sharing', 'reset'],
+  ['attention', 'add'],
+  ['attention', 'resolve'],
+  ['attention', 'list'],
+  ['friction', 'record'],
+  ['friction', 'list'],
+  ['telemetry', 'status'],
+  ['telemetry', 'enable'],
+  ['telemetry', 'disable'],
+  ['telemetry', 'reset'],
+  ['telemetry', 'preview'],
+  ['telemetry', 'record'],
+  ['telemetry', 'contact', 'status'],
+  ['telemetry', 'contact', 'enable'],
+  ['telemetry', 'contact', 'disable'],
+  ['telemetry', 'identity', 'status'],
+  ['telemetry', 'identity', 'enable'],
+  ['telemetry', 'identity', 'disable'],
+  ['updates', 'check'],
+  ['outreach', 'policy', 'status'],
+  ['outreach', 'policy', 'enable'],
+  ['outreach', 'policy', 'disable'],
+  ['outreach', 'assess'],
+  ['outreach', 'draft'],
+  ['outreach', 'handoff'],
+  ['outreach', 'record'],
+  ['outreach', 'suppress'],
+  ['outreach', 'clear'],
+  ['outreach', 'list'],
+  ['outreach', 'show'],
+  ['outreach', 'review'],
+]);
+
+export function registeredSkillCommands() {
+  return REGISTERED_SKILL_COMMANDS;
 }
 
 const USAGE_NOTES = Object.freeze({
