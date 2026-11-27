@@ -4250,8 +4250,8 @@ async function main(rawArgs) {
   const normalized = normalizeCliArgs(rawArgs);
   if (normalized.help) return print(usageFor(normalized.help === true ? null : normalized.help));
   if (normalized.version) return print({ version: SKILL_VERSION });
-  const args = rawArgs[0] === 'outreach' ? rawArgs : normalized.args;
-  inlineJsonInput = rawArgs[0] === 'outreach' ? undefined : normalized.inlineJson;
+  const args = normalized.args;
+  inlineJsonInput = args[0] === 'outreach' ? undefined : normalized.inlineJson;
   const [area, action, value] = args;
   // Outreach is private-only, including errors: never initialize telemetry or
   // community clients, flush their queues, or run generic reconciliation here.

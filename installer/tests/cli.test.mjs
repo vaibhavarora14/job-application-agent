@@ -3,8 +3,9 @@ import { mkdtemp, mkdir, readFile, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
+import { fileURLToPath } from 'node:url';
 
-import { runCli } from '../src/cli.mjs';
+import { INSTALLER_COMMANDS, runCli } from '../src/cli.mjs';
 import { ASSESSMENT_DECISIONS_FILE } from '../../job-application-agent/scripts/routine-gates.mjs';
 import { resolveStateDir } from '../../job-application-agent/scripts/secret-store.mjs';
 
@@ -293,4 +294,43 @@ test('the npm bin exits 0 for help flags and 1 for unknown commands', async () =
   const bad = spawnSync(process.execPath, [bin, 'definitely-not-a-command'], { encoding: 'utf8' });
   assert.equal(bad.status, 1);
   assert.match(bad.stderr, /Usage:/);
+});
+
+test('every installer command accepts --source including unknown tags', async () => {
+  const f = await setup();
+  const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
+  await writeFile(
+    path.join(f.packageRoot, 'job-application-agent', 'platforms.json'),
+    await readFile(path.join(repoRoot, 'job-application-agent', 'platforms.json')),
+  );
+  const opts = {
+    packageRoot: f.packageRoot,
+    packageVersion: '3.0.0',
+    agentHome: f.agentHome,
+    homeDir: f.root,
+    platform: 'test',
+    scheduler: false,
+    env: {},
+    log: () => {},
+    launchPrompt: true,
+    output: () => {},
+  };
+  assert.ok(INSTALLER_COMMANDS.some((cmd) => cmd[0] === 'apply'));
+  assert.ok(INSTALLER_COMMANDS.some((cmd) => cmd[0] === 'platforms'));
+  for (const cmd of INSTALLER_COMMANDS) {
+    const run = async (args) => {
+      try {
+        await runCli(args, opts);
+        return { ok: true, message: '' };
+      } catch (error) {
+        return { ok: false, message: error.message };
+      }
+    };
+    const plain = await run(cmd);
+    for (const extra of [['--source=readme'], ['--source', 'jobs'], ['--source=not-a-real-tag']]) {
+      const tagged = await run([...cmd, ...extra]);
+      assert.doesNotMatch(tagged.message, /--source/, `${cmd.join(' ')} ${extra.join(' ')}: ${tagged.message}`);
+      assert.equal(tagged.ok, plain.ok, `${cmd.join(' ')} ${extra.join(' ')} ok=${tagged.ok} vs ${plain.ok} ${tagged.message}`);
+    }
+  }
 });

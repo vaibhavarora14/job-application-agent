@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
-import { COMMAND_USAGE, normalizeCliArgs, usageError, usageFor } from '../scripts/cli-args.mjs';
+import { COMMAND_USAGE, REGISTERED_SKILL_COMMANDS, normalizeCliArgs, registeredSkillCommands, usageError, usageFor } from '../scripts/cli-args.mjs';
 import { coerceIsoDateTime, leadObservedAt } from '../scripts/application-accounting.mjs';
 
 const script = fileURLToPath(new URL('../scripts/job-application.mjs', import.meta.url));
@@ -44,6 +44,9 @@ test('normalizeCliArgs handles help, version, no-op flags, stdin aliases and inl
   assert.deepEqual(normalizeCliArgs(['sources', 'list']).args, ['sources', 'list']);
   assert.deepEqual(normalizeCliArgs(['ledger', 'submit', '--stdin']).args, ['ledger', 'add', '--stdin']);
   assert.deepEqual(normalizeCliArgs(['ledger', 'list', '--stdin', '--json']).args, ['ledger', 'list', '--json']);
+  assert.deepEqual(normalizeCliArgs(['updates', 'check', '--source=skill']).args, ['updates', 'check']);
+  assert.deepEqual(normalizeCliArgs(['ledger', 'outcome', '--source', 'jobs', '--stdin']).args, ['ledger', 'outcome', '--stdin']);
+  assert.deepEqual(normalizeCliArgs(['--source=not-a-real-tag', 'cloud', 'status']).args, ['cloud', 'status']);
 });
 
 test('usage errors are area specific, keep the reason within the analytics bound, and never echo values', () => {
@@ -135,6 +138,37 @@ test('round lead without observedAt is recorded; reporting counts before leads e
   assert.equal(source.qualifiedCount, 1);
   // Matching assertions remain accepted.
   assert.equal(ok(['round', 'source', '--stdin'], { roundId, sourceId: 'indeed', status: 'searched', reviewedCount: 2, qualifiedCount: 1, evidence: 'Synthetic search.' }).reviewedCount, 2);
+});
+
+test('every registered skill command accepts --source without changing dispatch', async (t) => {
+  const { cli } = await fixture(t);
+  const commands = registeredSkillCommands();
+  assert.equal(commands, REGISTERED_SKILL_COMMANDS);
+  for (const area of Object.keys(COMMAND_USAGE)) {
+    assert.ok(commands.some((cmd) => cmd[0] === area), `REGISTERED_SKILL_COMMANDS is missing ${area}`);
+  }
+  assert.ok(commands.some((cmd) => cmd[0] === 'updates' && cmd[1] === 'check'));
+  assert.ok(commands.some((cmd) => cmd[0] === 'ledger' && cmd[1] === 'outcome'));
+  assert.ok(commands.some((cmd) => cmd[0] === 'resume' && cmd[1] === 'import'));
+  const usageReason = (stderr) => stderr.match(/^Usage \(([^)]+)\)/)?.[1] ?? null;
+  const preserved = ['ledger', 'list', '--source=readme'];
+  assert.deepEqual(normalizeCliArgs(preserved).args, ['ledger', 'list']);
+  assert.deepEqual(preserved, ['ledger', 'list', '--source=readme']);
+  for (const cmd of commands) {
+    for (const extra of [['--source=readme'], ['--source', 'jobs'], ['--source=not-a-real-tag']]) {
+      const tagged = [...cmd, ...extra];
+      assert.deepEqual(normalizeCliArgs(tagged).args, normalizeCliArgs(cmd).args, `${cmd.join(' ')} ${extra.join(' ')}`);
+      assert.deepEqual(normalizeCliArgs([...extra, ...cmd]).args, normalizeCliArgs(cmd).args, `prefix ${extra.join(' ')} ${cmd.join(' ')}`);
+    }
+    const without = cli(cmd);
+    const withSource = cli([...cmd, '--source=readme']);
+    const unknown = cli([...cmd, '--source=totally-unknown']);
+    for (const [label, result] of [['--source=readme', withSource], ['unknown tag', unknown]]) {
+      assert.doesNotMatch(result.stderr, /--source/, `${cmd.join(' ')} ${label}: ${result.stderr}`);
+      assert.equal(result.status, without.status, `${cmd.join(' ')} ${label} status ${result.status} vs ${without.status}\n${result.stderr}\n${without.stderr}`);
+      assert.equal(usageReason(result.stderr), usageReason(without.stderr), `${cmd.join(' ')} ${label} usage drifted`);
+    }
+  }
 });
 
 test('prototype property names remain unknown CLI tokens rather than aliases', () => {
