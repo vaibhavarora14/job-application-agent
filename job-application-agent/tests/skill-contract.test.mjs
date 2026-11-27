@@ -192,6 +192,10 @@ test('every SKILL.md copy requires the managed runtime before assess or apply an
     assert.match(skill, /review-each/, copy);
     assert.match(skill, /Do not auto-submit/, copy);
     assert.match(skill, /Do not invent fill counts/, copy);
+    assert.match(skill, /until a job has been assessed/, copy);
+    assert.match(skill, /resume import --stdin/, copy);
+    assert.match(skill, /absolute PDF path/, copy);
+    assert.match(skill, /do not invent a résumé/i, copy);
   }
   const canonical = await readFile(new URL('../SKILL.md', import.meta.url), 'utf8');
   assert.match(canonical, /`score` emits `application_started` for `review`/);

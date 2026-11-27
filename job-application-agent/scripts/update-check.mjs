@@ -11,11 +11,11 @@ import { dirname, join } from 'node:path';
 
 import {
   FIRST_JOB_PROMPTED_VERSION,
-  firstJobPrompt,
   isCopiedSkillDirectory,
   managedInstallConfigPath,
   managedRuntimeStatus,
 } from './managed-runtime.mjs';
+import { activationSnapshot, firstJobGuide } from './first-job.mjs';
 import { SKILL_VERSION } from './version.mjs';
 
 export const NPM_LATEST_URL = 'https://registry.npmjs.org/job-application-agent/latest';
@@ -173,11 +173,16 @@ export async function checkForUpdate({
     config = { ...config, autoUpdateNoticeShown: true };
     dirty = true;
   }
-  if (config?.installed === true && config[FIRST_JOB_PROMPTED_VERSION] !== currentVersion) {
-    const previous = typeof config[FIRST_JOB_PROMPTED_VERSION] === 'string' ? config[FIRST_JOB_PROMPTED_VERSION] : null;
-    result.firstJob = firstJobPrompt(currentVersion, previous);
-    config = { ...config, [FIRST_JOB_PROMPTED_VERSION]: currentVersion };
-    dirty = true;
+  if (config?.installed === true) {
+    const activation = await activationSnapshot({ env, homeDir });
+    if (activation.assessed !== true) {
+      const previous = typeof config[FIRST_JOB_PROMPTED_VERSION] === 'string' ? config[FIRST_JOB_PROMPTED_VERSION] : null;
+      result.firstJob = firstJobGuide(currentVersion, previous, activation);
+      if (config[FIRST_JOB_PROMPTED_VERSION] !== currentVersion) {
+        config = { ...config, [FIRST_JOB_PROMPTED_VERSION]: currentVersion };
+        dirty = true;
+      }
+    }
   }
   if (skillOnly && config?.installed !== true) result.managedRuntime = managedRuntimeStatus();
   if (dirty && config) await writeInstallConfig(configPath, config).catch(() => {});

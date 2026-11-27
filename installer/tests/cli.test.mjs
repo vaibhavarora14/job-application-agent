@@ -5,6 +5,8 @@ import path from 'node:path';
 import test from 'node:test';
 
 import { runCli } from '../src/cli.mjs';
+import { ASSESSMENT_DECISIONS_FILE } from '../../job-application-agent/scripts/routine-gates.mjs';
+import { resolveStateDir } from '../../job-application-agent/scripts/secret-store.mjs';
 
 async function setup() {
   const root = await mkdtemp(path.join(os.tmpdir(), 'job-agent-cli-'));
@@ -34,6 +36,64 @@ test('a new install is notify-only by default and status reports the installed v
   assert.match(output.join('\n'), /automatic updates: disabled \(notify-only/i);
   assert.match(output.join('\n'), /updates enable/);
   assert.doesNotMatch(output.join('\n'), /automatic updates are on/i);
+});
+
+test('install and status walk a new install to the first assessment until one exists', async () => {
+  const f = await setup();
+  const env = { ...process.env, JOB_APPLICATION_AGENT_STATE_DIR: path.join(f.root, 'jaa-state') };
+  const shared = { agentHome: f.agentHome, homeDir: f.root, env };
+  const installed = [];
+  const status = await runCli(['install'], {
+    ...shared,
+    packageRoot: f.packageRoot,
+    packageVersion: '3.0.0',
+    platform: 'test',
+    scheduler: false,
+    output: (value) => installed.push(value),
+  });
+  const installText = installed.join('\n');
+  assert.match(installText, /Next: complete one first job in review-each/);
+  assert.match(installText, /resume import --stdin/);
+  assert.match(installText, /https:\/\/jobappagent\.com\/jobs/);
+  assert.match(installText, /Do not auto-submit/);
+  assert.equal(status.firstJob.mode, 'review-each');
+  assert.equal(status.firstJob.resumeImported, false);
+  assert.doesNotMatch(installText, /Acme|Jane Doe/i);
+
+  const updated = [];
+  await runCli(['update'], {
+    ...shared,
+    packageRoot: f.packageRoot,
+    packageVersion: '3.0.0',
+    platform: 'test',
+    scheduler: false,
+    output: (value) => updated.push(value),
+  });
+  assert.doesNotMatch(updated.join('\n'), /Next: complete one first job/);
+  assert.doesNotMatch(updated.join('\n'), /No job has been assessed yet/);
+
+  const before = [];
+  const beforeStatus = await runCli(['status'], {
+    ...shared,
+    output: (value) => before.push(value),
+  });
+  assert.match(before.join('\n'), /No job has been assessed yet/);
+  assert.match(before.join('\n'), /resume import --stdin/);
+  assert.equal(beforeStatus.firstJob.autoSubmit, false);
+
+  const stateDir = resolveStateDir({ env, home: f.root });
+  await mkdir(stateDir, { recursive: true });
+  await writeFile(path.join(stateDir, ASSESSMENT_DECISIONS_FILE), JSON.stringify({
+    version: 1,
+    jobs: { ef: { decision: 'review', autoEligible: false, score: 81, at: '2026-11-26T00:00:00.000Z' } },
+  }));
+  const after = [];
+  const afterStatus = await runCli(['status'], {
+    ...shared,
+    output: (value) => after.push(value),
+  });
+  assert.doesNotMatch(after.join('\n'), /No job has been assessed yet/);
+  assert.equal(afterStatus.firstJob, undefined);
 });
 
 test('updates enable is the explicit opt-in and shows no legacy notice', async () => {

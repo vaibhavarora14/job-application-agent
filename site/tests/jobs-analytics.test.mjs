@@ -268,7 +268,7 @@ test("google-for-jobs UTM landing fires once per document and omits paid clicks"
   await captureJobsPageview({
     apiKey: "phc_public",
     pathname: "/jobs/example-slug",
-    search: "?utm_source=google&utm_medium=cpc&gclid=abc",
+    search: "?utm_source=google&utm_medium=cpc&gclid=gclid-leak-token",
     origin: "https://jobappagent.com",
     distinctId: DISTINCT,
     fetchFn,
@@ -277,7 +277,7 @@ test("google-for-jobs UTM landing fires once per document and omits paid clicks"
   assert.equal(captured[0].body.event, "$pageview");
   assert.equal("googleForJobs" in captured[0].body.properties, false);
   assert.equal(JSON.stringify(captured).includes("gclid"), false);
-  assert.equal(JSON.stringify(captured).includes("abc"), false);
+  assert.equal(JSON.stringify(captured).includes("gclid-leak-token"), false);
 
   resetJobsAnalyticsForTests();
   captured.length = 0;

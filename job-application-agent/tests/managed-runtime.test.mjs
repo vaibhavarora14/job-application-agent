@@ -10,6 +10,8 @@ import test from 'node:test';
 import { fileURLToPath } from 'node:url';
 
 import { checkForUpdate, NPM_LATEST_URL } from '../scripts/update-check.mjs';
+import { ASSESSMENT_DECISIONS_FILE } from '../scripts/routine-gates.mjs';
+import { resolveStateDir } from '../scripts/secret-store.mjs';
 
 const skillDir = fileURLToPath(new URL('..', import.meta.url));
 
@@ -60,7 +62,7 @@ test('the package tree does not demand a managed install and does not invent a f
   assert.equal(result.firstJob, undefined);
 });
 
-test('a fresh managed install prompts one review-each job once and records the skill version', async () => {
+test('a fresh managed install prompts a review-each job until one is assessed and records the skill version', async () => {
   const f = await home({ installed: true, installedVersion: '3.8.6', automaticUpdates: false });
   const first = await checkForUpdate({
     currentVersion: '3.8.6',
@@ -78,16 +80,37 @@ test('a fresh managed install prompts one review-each job once and records the s
   assert.match(first.firstJob.instruction, /Do not auto-submit/);
   assert.match(first.firstJob.instruction, /Do not invent fill counts/);
   assert.match(first.firstJob.instruction, /visible success/);
+  assert.equal(first.firstJob.resumeImported, false);
+  assert.equal(first.firstJob.assessed, false);
+  assert.match(first.firstJob.instruction, /No résumé is imported yet/);
   const second = await checkForUpdate({
     currentVersion: '3.8.6',
     env: f.env,
     homeDir: f.root,
     fetchImpl: registry('3.8.6'),
   });
-  assert.equal(second.firstJob, undefined);
+  assert.equal(second.firstJob.reason, 'pending');
+  assert.equal(second.firstJob.mode, 'review-each');
   const config = JSON.parse(await readFile(path.join(f.agentHome, 'job-application-agent', 'install.json'), 'utf8'));
   assert.equal(config.firstJobPromptedVersion, '3.8.6');
   assert.equal(config.installed, true);
+});
+
+test('firstJob stops after a local assessment is recorded', async () => {
+  const f = await home({ installed: true, installedVersion: '3.8.6', automaticUpdates: false, firstJobPromptedVersion: '3.8.6' });
+  const dir = resolveStateDir({ env: f.env, home: f.root });
+  await mkdir(dir, { recursive: true });
+  await writeFile(path.join(dir, ASSESSMENT_DECISIONS_FILE), JSON.stringify({
+    version: 1,
+    jobs: { ['ab'.repeat(32)]: { decision: 'review', autoEligible: false, score: 80, at: '2026-11-26T00:00:00.000Z' } },
+  }));
+  const result = await checkForUpdate({
+    currentVersion: '3.8.6',
+    env: f.env,
+    homeDir: f.root,
+    fetchImpl: registry('3.8.6'),
+  });
+  assert.equal(result.firstJob, undefined);
 });
 
 test('a skillVersion upgrade prompts one review-each job and keeps the earlier prompted version visible', async () => {
@@ -113,7 +136,7 @@ test('a skillVersion upgrade prompts one review-each job and keeps the earlier p
     homeDir: f.root,
     fetchImpl: registry('3.8.6'),
   });
-  assert.equal(again.firstJob, undefined);
+  assert.equal(again.firstJob.reason, 'pending');
 });
 
 function runCli(script, args, env, input) {
@@ -192,6 +215,6 @@ test('a copied skill refuses score and ledger add until the managed runtime is i
   assert.equal(prompted.firstJob.mode, 'review-each');
   assert.equal(prompted.firstJob.autoSubmit, false);
   assert.equal(prompted.managedRuntime, undefined);
-  const quiet = JSON.parse((await runCli(script, ['updates', 'check'], env)).stdout);
-  assert.equal(quiet.firstJob, undefined);
+  const still = JSON.parse((await runCli(script, ['updates', 'check'], env)).stdout);
+  assert.equal(still.firstJob.reason, 'pending');
 });
